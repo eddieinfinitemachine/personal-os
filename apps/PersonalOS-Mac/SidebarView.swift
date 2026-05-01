@@ -2,15 +2,30 @@ import SwiftUI
 import PersonalOSModels
 
 struct SidebarView: View {
-    @Binding var selectedList: TodoList
+    @Binding var selection: SidebarItem
 
     var body: some View {
-        List(selection: $selectedList) {
+        List(selection: $selection) {
             Section("Lists") {
                 ForEach(TodoList.allCases) { list in
                     Label(list.title, systemImage: list.systemImage)
-                        .tag(list)
+                        .tag(SidebarItem.list(list))
                 }
+            }
+
+            Section("Network") {
+                Label("People", systemImage: "person.2")
+                    .tag(SidebarItem.people)
+            }
+
+            Section("Workspaces") {
+                Label("Dashboards", systemImage: "square.grid.2x2")
+                    .tag(SidebarItem.dashboards)
+            }
+
+            Section("Private") {
+                Label("Vault", systemImage: "lock.shield")
+                    .tag(SidebarItem.vault)
             }
 
             Section("Smart filters") {
@@ -25,6 +40,6 @@ struct SidebarView: View {
 }
 
 #Preview {
-    SidebarView(selectedList: .constant(.todo))
+    SidebarView(selection: .constant(.list(.todo)))
         .frame(width: 200, height: 400)
 }

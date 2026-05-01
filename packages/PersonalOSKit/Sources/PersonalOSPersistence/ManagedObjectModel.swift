@@ -2,8 +2,10 @@ import Foundation
 import CoreData
 
 enum ManagedObjectModelBuilder {
-    /// Cached singleton — Core Data raises warnings if multiple NSManagedObjectModel
-    /// instances claim the same Swift subclass, so all containers share one model.
+    /// Cached singleton — Core Data raises "Multiple NSEntityDescriptions
+    /// claim the NSManagedObject subclass" warnings (and crashes when setting
+    /// values) if multiple model instances claim the same Swift class. All
+    /// containers share one model.
     nonisolated(unsafe) static let shared: NSManagedObjectModel = build()
 
     static func make() -> NSManagedObjectModel { shared }
@@ -18,6 +20,30 @@ enum ManagedObjectModelBuilder {
         let tagEntity = NSEntityDescription()
         tagEntity.name = "CDTag"
         tagEntity.managedObjectClassName = NSStringFromClass(CDTag.self)
+
+        let personEntity = NSEntityDescription()
+        personEntity.name = "CDPerson"
+        personEntity.managedObjectClassName = NSStringFromClass(CDPerson.self)
+
+        let dashboardEntity = NSEntityDescription()
+        dashboardEntity.name = "CDDashboard"
+        dashboardEntity.managedObjectClassName = NSStringFromClass(CDDashboard.self)
+
+        let fieldValueEntity = NSEntityDescription()
+        fieldValueEntity.name = "CDFieldValue"
+        fieldValueEntity.managedObjectClassName = NSStringFromClass(CDFieldValue.self)
+
+        let attachmentEntity = NSEntityDescription()
+        attachmentEntity.name = "CDAttachment"
+        attachmentEntity.managedObjectClassName = NSStringFromClass(CDAttachment.self)
+
+        let reminderEntity = NSEntityDescription()
+        reminderEntity.name = "CDReminderRule"
+        reminderEntity.managedObjectClassName = NSStringFromClass(CDReminderRule.self)
+
+        let vaultEntity = NSEntityDescription()
+        vaultEntity.name = "CDVaultEntry"
+        vaultEntity.managedObjectClassName = NSStringFromClass(CDVaultEntry.self)
 
         // CDTodo attributes
         todoEntity.properties = [
@@ -40,6 +66,87 @@ enum ManagedObjectModelBuilder {
             attribute("id", type: .UUIDAttributeType),
             attribute("name", type: .stringAttributeType),
             attribute("color", type: .stringAttributeType, defaultValue: "#9CA3AF"),
+            attribute("createdAt", type: .dateAttributeType),
+            attribute("updatedAt", type: .dateAttributeType)
+        ]
+
+        // CDDashboard attributes
+        dashboardEntity.properties = [
+            attribute("id", type: .UUIDAttributeType),
+            attribute("name", type: .stringAttributeType),
+            attribute("type", type: .stringAttributeType, defaultValue: "general"),
+            attribute("icon", type: .stringAttributeType, defaultValue: "square.grid.2x2"),
+            attribute("createdAt", type: .dateAttributeType),
+            attribute("updatedAt", type: .dateAttributeType)
+        ]
+
+        // CDAttachment attributes — `data` uses external storage for blobs
+        let dataAttribute = NSAttributeDescription()
+        dataAttribute.name = "data"
+        dataAttribute.attributeType = .binaryDataAttributeType
+        dataAttribute.isOptional = true
+        dataAttribute.allowsExternalBinaryDataStorage = true
+
+        attachmentEntity.properties = [
+            attribute("id", type: .UUIDAttributeType),
+            attribute("dashboardID", type: .UUIDAttributeType),
+            attribute("name", type: .stringAttributeType),
+            attribute("mimeType", type: .stringAttributeType),
+            attribute("sizeBytes", type: .integer64AttributeType, defaultValue: 0),
+            attribute("source", type: .integer16AttributeType, defaultValue: 0),
+            attribute("dropboxPath", type: .stringAttributeType),
+            attribute("addedAt", type: .dateAttributeType),
+            dataAttribute
+        ]
+
+        // CDVaultEntry attributes — `valueCiphertext` is opaque ECIES blob
+        vaultEntity.properties = [
+            attribute("id", type: .UUIDAttributeType),
+            attribute("label", type: .stringAttributeType),
+            attribute("category", type: .stringAttributeType),
+            attribute("notes", type: .stringAttributeType),
+            attribute("valueCiphertext", type: .binaryDataAttributeType),
+            attribute("createdAt", type: .dateAttributeType),
+            attribute("updatedAt", type: .dateAttributeType)
+        ]
+
+        // CDReminderRule attributes — soft FK to dashboard / field
+        reminderEntity.properties = [
+            attribute("id", type: .UUIDAttributeType),
+            attribute("dashboardID", type: .UUIDAttributeType),
+            attribute("fieldID", type: .UUIDAttributeType),
+            attribute("name", type: .stringAttributeType),
+            attribute("kind", type: .integer16AttributeType, defaultValue: 0),
+            attribute("configJSON", type: .stringAttributeType),
+            attribute("action", type: .integer16AttributeType, defaultValue: 0),
+            attribute("nextFireAt", type: .dateAttributeType),
+            attribute("lastFiredAt", type: .dateAttributeType),
+            attribute("enabled", type: .booleanAttributeType, defaultValue: true),
+            attribute("createdAt", type: .dateAttributeType),
+            attribute("updatedAt", type: .dateAttributeType)
+        ]
+
+        // CDFieldValue attributes
+        fieldValueEntity.properties = [
+            attribute("id", type: .UUIDAttributeType),
+            attribute("label", type: .stringAttributeType),
+            attribute("kind", type: .integer16AttributeType, defaultValue: 0),
+            attribute("position", type: .integer16AttributeType, defaultValue: 0),
+            attribute("textValue", type: .stringAttributeType),
+            attribute("numberValue", type: .doubleAttributeType),
+            attribute("dateValue", type: .dateAttributeType),
+            attribute("decimalValue", type: .decimalAttributeType)
+        ]
+
+        // CDPerson attributes
+        personEntity.properties = [
+            attribute("id", type: .UUIDAttributeType),
+            attribute("name", type: .stringAttributeType),
+            attribute("role", type: .integer16AttributeType, defaultValue: 3),
+            attribute("team", type: .stringAttributeType),
+            attribute("contactRef", type: .stringAttributeType),
+            attribute("notes", type: .stringAttributeType),
+            attribute("birthday", type: .dateAttributeType),
             attribute("createdAt", type: .dateAttributeType),
             attribute("updatedAt", type: .dateAttributeType)
         ]
@@ -67,7 +174,57 @@ enum ManagedObjectModelBuilder {
         todoEntity.properties.append(todosToTags)
         tagEntity.properties.append(tagsToTodos)
 
-        model.entities = [todoEntity, tagEntity]
+        // Many-to-many: Todo.people <-> Person.todos
+        let todosToPeople = NSRelationshipDescription()
+        todosToPeople.name = "people"
+        todosToPeople.destinationEntity = personEntity
+        todosToPeople.minCount = 0
+        todosToPeople.maxCount = 0
+        todosToPeople.deleteRule = .nullifyDeleteRule
+        todosToPeople.isOptional = true
+
+        let peopleToTodos = NSRelationshipDescription()
+        peopleToTodos.name = "todos"
+        peopleToTodos.destinationEntity = todoEntity
+        peopleToTodos.minCount = 0
+        peopleToTodos.maxCount = 0
+        peopleToTodos.deleteRule = .nullifyDeleteRule
+        peopleToTodos.isOptional = true
+
+        todosToPeople.inverseRelationship = peopleToTodos
+        peopleToTodos.inverseRelationship = todosToPeople
+
+        todoEntity.properties.append(todosToPeople)
+        personEntity.properties.append(peopleToTodos)
+
+        // One-to-many: Dashboard.fields <-> FieldValue.dashboard (cascade delete)
+        let dashboardToFields = NSRelationshipDescription()
+        dashboardToFields.name = "fields"
+        dashboardToFields.destinationEntity = fieldValueEntity
+        dashboardToFields.minCount = 0
+        dashboardToFields.maxCount = 0
+        dashboardToFields.deleteRule = .cascadeDeleteRule
+        dashboardToFields.isOptional = true
+
+        let fieldToDashboard = NSRelationshipDescription()
+        fieldToDashboard.name = "dashboard"
+        fieldToDashboard.destinationEntity = dashboardEntity
+        fieldToDashboard.minCount = 0
+        fieldToDashboard.maxCount = 1
+        fieldToDashboard.deleteRule = .nullifyDeleteRule
+        fieldToDashboard.isOptional = true
+
+        dashboardToFields.inverseRelationship = fieldToDashboard
+        fieldToDashboard.inverseRelationship = dashboardToFields
+
+        dashboardEntity.properties.append(dashboardToFields)
+        fieldValueEntity.properties.append(fieldToDashboard)
+
+        model.entities = [
+            todoEntity, tagEntity, personEntity,
+            dashboardEntity, fieldValueEntity, attachmentEntity,
+            reminderEntity, vaultEntity
+        ]
         return model
     }
 

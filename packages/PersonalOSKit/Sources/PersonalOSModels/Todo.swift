@@ -12,6 +12,7 @@ public struct Todo: Identifiable, Hashable, Sendable, Codable {
     public var source: TodoSource
     public var externalID: String?
     public var tagIDs: Set<UUID>
+    public var personIDs: Set<UUID>
     public let createdAt: Date
     public var updatedAt: Date
 
@@ -27,6 +28,7 @@ public struct Todo: Identifiable, Hashable, Sendable, Codable {
         source: TodoSource = .manual,
         externalID: String? = nil,
         tagIDs: Set<UUID> = [],
+        personIDs: Set<UUID> = [],
         createdAt: Date = .now,
         updatedAt: Date = .now
     ) {
@@ -41,6 +43,7 @@ public struct Todo: Identifiable, Hashable, Sendable, Codable {
         self.source = source
         self.externalID = externalID
         self.tagIDs = tagIDs
+        self.personIDs = personIDs
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

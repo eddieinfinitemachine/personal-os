@@ -1,11 +1,14 @@
 import SwiftUI
 import PersonalOSModels
 import PersonalOSUI
+import PersonalOSServices
 
 struct TodayTab: View {
     @Environment(\.appEnvironment) private var env
 
     @State private var viewModel: TodayViewModel?
+    @State private var quickAddViewModel: QuickAddViewModel?
+    @State private var showingQuickAdd = false
 
     var body: some View {
         NavigationStack {
@@ -18,12 +21,37 @@ struct TodayTab: View {
             }
             .navigationTitle("Today")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button {
                         viewModel?.refresh()
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        presentQuickAdd()
+                    } label: {
+                        Label("Quick Add", systemImage: "sparkles")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingQuickAdd) {
+                if let quickAddViewModel {
+                    NavigationStack {
+                        QuickAddView(viewModel: quickAddViewModel) {
+                            showingQuickAdd = false
+                            viewModel?.refresh()
+                        }
+                        .navigationTitle("Quick add")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) {
+                                Button("Close") { showingQuickAdd = false }
+                            }
+                        }
+                    }
+                    .presentationDetents([.medium, .large])
                 }
             }
         }
@@ -34,6 +62,18 @@ struct TodayTab: View {
                 viewModel?.refresh()
             }
         }
+        .task {
+            // Fire any due reminders / birthday auto-todos, then refresh.
+            _ = try? env.makeReminderEngine().tick()
+            _ = try? env.makeBirthdayService().tick()
+            viewModel?.refresh()
+        }
+    }
+
+    private func presentQuickAdd() {
+        let nlClient = env.makeAnthropicClient().map { NLCaptureService(client: $0) }
+        quickAddViewModel = QuickAddViewModel(todos: env.todos, nl: nlClient)
+        showingQuickAdd = true
     }
 
     @ViewBuilder

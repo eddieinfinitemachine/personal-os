@@ -38,6 +38,7 @@ public enum ThingsImporterError: Error, CustomStringConvertible, Sendable {
 /// - Tags (Things tag schema differs; will revisit in Sprint 2 with Tag work)
 /// - Repeating tasks / templates
 /// - Checklist items (subtasks)
+@MainActor
 public struct ThingsImporter {
     private static let logger = Logger(subsystem: "com.zelig.PersonalOS", category: "ThingsImporter")
 

@@ -3,7 +3,8 @@ import Foundation
 @testable import PersonalOSPersistence
 import PersonalOSModels
 
-@Suite("TodoStore")
+@Suite("TodoStore", .serialized)
+@MainActor
 struct TodoStoreTests {
     private func makeStore() -> TodoStore {
         TodoStore(controller: PersistenceController.inMemory())
@@ -114,7 +115,8 @@ struct TodoStoreTests {
     }
 }
 
-@Suite("TagStore")
+@Suite("TagStore", .serialized)
+@MainActor
 struct TagStoreTests {
     private func makeStore() -> (TagStore, TodoStore, PersistenceController) {
         let controller = PersistenceController.inMemory()

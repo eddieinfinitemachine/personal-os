@@ -119,12 +119,13 @@ private struct EditorSheet: View {
     let onClose: () -> Void
 
     @State private var draft: Todo?
+    @State private var people: [Person] = []
 
     var body: some View {
         NavigationStack {
             Group {
                 if let binding = todoBinding {
-                    TodoEditorView(todo: binding) { updated in
+                    TodoEditorView(todo: binding, availablePeople: people) { updated in
                         _ = try? env.todos.update(updated)
                     }
                 } else {
@@ -148,6 +149,7 @@ private struct EditorSheet: View {
         }
         .onAppear {
             draft = (try? env.todos.fetch(id: todoID)) ?? nil
+            people = (try? env.people.fetchAll()) ?? []
         }
     }
 

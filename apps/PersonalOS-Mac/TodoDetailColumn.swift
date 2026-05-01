@@ -10,11 +10,12 @@ struct TodoDetailColumn: View {
     let list: TodoList
 
     @State private var draft: Todo?
+    @State private var people: [Person] = []
 
     var body: some View {
         Group {
             if let binding = todoBinding {
-                TodoEditorView(todo: binding) { updated in
+                TodoEditorView(todo: binding, availablePeople: people) { updated in
                     env.todos.updateAndIgnoreErrors(updated)
                 }
                 .navigationTitle(binding.wrappedValue.title.isEmpty ? "Untitled" : binding.wrappedValue.title)
@@ -31,6 +32,7 @@ struct TodoDetailColumn: View {
         }
         .onAppear {
             loadDraft(for: selectedTodoID)
+            people = (try? env.people.fetchAll()) ?? []
         }
     }
 

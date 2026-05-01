@@ -7,7 +7,14 @@ public final class PersistenceController: @unchecked Sendable {
 
     private static let logger = Logger(subsystem: "com.zelig.PersonalOS", category: "Persistence")
 
-    public let container: NSPersistentCloudKitContainer
+    /// Serializes container construction. The shared NSManagedObjectModel is
+    /// mutated by NSPersistentContainer when adding stores; concurrent
+    /// container init causes data corruption (e.g. lost relationships, ghost
+    /// rows) under parallel tests. Construction is fast; the lock has no
+    /// runtime impact once containers are loaded.
+    nonisolated(unsafe) private static let setupLock = NSLock()
+
+    public let container: NSPersistentContainer
 
     public var viewContext: NSManagedObjectContext { container.viewContext }
 
@@ -18,22 +25,33 @@ public final class PersistenceController: @unchecked Sendable {
         return ctx
     }
 
-    /// In-memory store for tests and previews. CloudKit is disabled.
+    /// In-memory store for tests and previews. Uses plain NSPersistentContainer
+    /// (no CloudKit) — the cloud machinery is irrelevant for unit tests and
+    /// causes flakiness under parallel execution.
     public static func inMemory() -> PersistenceController {
         PersistenceController(inMemory: true)
     }
 
     public init(inMemory: Bool = false) {
+        Self.setupLock.lock()
+        defer { Self.setupLock.unlock() }
+
         let model = ManagedObjectModelBuilder.make()
-        let container = NSPersistentCloudKitContainer(name: "PersonalOSStore", managedObjectModel: model)
+
+        let container: NSPersistentContainer = inMemory
+            ? NSPersistentContainer(name: "PersonalOSStore", managedObjectModel: model)
+            : NSPersistentCloudKitContainer(name: "PersonalOSStore", managedObjectModel: model)
+
         guard let description = container.persistentStoreDescriptions.first else {
             preconditionFailure("No persistent store description")
         }
 
         if inMemory {
-            description.url = URL(fileURLWithPath: "/dev/null")
-            description.cloudKitContainerOptions = nil
-        } else {
+            description.type = NSInMemoryStoreType
+            description.url = nil
+            description.shouldAddStoreAsynchronously = false
+        } else if let cloudContainer = container as? NSPersistentCloudKitContainer {
+            _ = cloudContainer
             description.cloudKitContainerOptions = NSPersistentCloudKitContainerOptions(
                 containerIdentifier: PersonalOSPersistence.cloudKitContainerIdentifier
             )

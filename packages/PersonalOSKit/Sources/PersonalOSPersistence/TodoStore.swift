@@ -6,10 +6,11 @@ public enum TodoStoreError: Error, Sendable {
     case notFound(UUID)
 }
 
+@MainActor
 public struct TodoStore: Sendable {
     private let controller: PersistenceController
 
-    public init(controller: PersistenceController) {
+    nonisolated public init(controller: PersistenceController) {
         self.controller = controller
     }
 
@@ -47,6 +48,22 @@ public struct TodoStore: Sendable {
 
         let context = controller.viewContext
         return try context.fetch(request).first.map(Todo.init(managed:))
+    }
+
+    public func fetch(personID: UUID, includeCompleted: Bool = false) throws -> [Todo] {
+        let request = CDTodo.fetchRequest()
+        var clauses: [NSPredicate] = [
+            NSPredicate(format: "deletedAt == nil"),
+            NSPredicate(format: "ANY people.id == %@", personID as CVarArg)
+        ]
+        if !includeCompleted {
+            clauses.append(NSPredicate(format: "completedAt == nil"))
+        }
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: clauses)
+        request.sortDescriptors = Self.defaultSortDescriptors
+
+        let context = controller.viewContext
+        return try context.fetch(request).map(Todo.init(managed:))
     }
 
     public func fetch(externalID: String) throws -> Todo? {
@@ -114,7 +131,11 @@ public struct TodoStore: Sendable {
     public func create(_ todo: Todo) throws -> Todo {
         let context = controller.viewContext
         let cdTodo = CDTodo(context: context)
-        cdTodo.apply(todo, tagLookup: { _ in nil })
+        cdTodo.apply(
+            todo,
+            tagLookup: { id in try? Self.fetchManagedTag(id: id, in: context) },
+            personLookup: { id in try? PersonStore.fetchManaged(id: id, in: context) }
+        )
         try context.save()
         return Todo(managed: cdTodo)
     }
@@ -127,9 +148,11 @@ public struct TodoStore: Sendable {
         }
         var updated = todo
         updated.updatedAt = .now
-        cdTodo.apply(updated, tagLookup: { id in
-            try? Self.fetchManagedTag(id: id, in: context)
-        })
+        cdTodo.apply(
+            updated,
+            tagLookup: { id in try? Self.fetchManagedTag(id: id, in: context) },
+            personLookup: { id in try? PersonStore.fetchManaged(id: id, in: context) }
+        )
         try context.save()
         return Todo(managed: cdTodo)
     }

@@ -20,6 +20,7 @@ public final class CDTodo: NSManagedObject {
     @NSManaged public var createdAt: Date?
     @NSManaged public var updatedAt: Date?
     @NSManaged public var tags: NSSet?
+    @NSManaged public var people: NSSet?
 }
 
 extension CDTodo {
@@ -34,4 +35,10 @@ extension CDTodo {
 
     @objc(removeTags:)
     @NSManaged public func removeFromTags(_ values: NSSet)
+
+    @objc(addPeopleObject:)
+    @NSManaged public func addToPeople(_ value: CDPerson)
+
+    @objc(removePeopleObject:)
+    @NSManaged public func removeFromPeople(_ value: CDPerson)
 }

@@ -76,6 +76,23 @@ This is the hardest data modeling decision in the project. Three viable shapes:
 - [ ] Initial seed of dashboards — should the Mac app ship with templates ("vehicle", "pet", "home") that the user can clone, or start empty?
 - [ ] Should Things importer learn about people / projects / tags in a follow-up pass?
 
+## Sprint 2 review (2026-05-01)
+
+**All four sprint-2 chunks done:**
+- People (model, store, Todo↔Person linking, Mac+iOS UI, person picker in todo editor)
+- Dashboards (Option B confirmed: kind-discriminated CDFieldValue. Model+store+8 tests. Mac sidebar + iOS tab UI. Field editor handles text/number/date/currency/url. Add-field sheet + remove-field button.)
+- Attachments (local imports only, Sprint 2 scope. Soft-FK CDAttachment with Allows External Storage. AttachmentStore + 5 tests including dashboard-delete cascade. Mac NSOpenPanel + iOS fileImporter glue.)
+- @MainActor stores fix (lessons.md) — found while debugging post-Person flakiness
+
+**Test count**: 39 passing (was 20 at end of Sprint 1)
+**Stability**: 10/10 stable runs after the @MainActor refactor
+
+**Architectural decisions made:**
+- Option B (kind-discriminated columns) for FieldValue — confirmed by user, implemented
+- Soft FK for Attachment.dashboardID instead of Core Data relationship — simpler, manual cascade in DashboardStore.delete
+- Currency stored as `decimalAttributeType` / `NSDecimalNumber` to avoid Double precision loss
+- Reserved kinds (select, multiselect, attachment, person) declared in `FieldKind` but not yet pickable in the editor — future-proofs the schema
+
 ## Out of scope for Sprint 2 (deferred)
 
 - Anthropic NL capture (Sprint 3)

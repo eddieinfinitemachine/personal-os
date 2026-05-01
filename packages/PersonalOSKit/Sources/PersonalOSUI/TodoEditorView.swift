@@ -4,12 +4,21 @@ import PersonalOSModels
 public struct TodoEditorView: View {
     @Binding var todo: Todo
     let onSave: (Todo) -> Void
+    /// Optional pool of people to choose from. When empty, the people section
+    /// is hidden — this keeps the editor usable in contexts that don't have
+    /// a person store available (e.g. tests, simple previews).
+    let availablePeople: [Person]
 
     @State private var dueDateEnabled: Bool
 
-    public init(todo: Binding<Todo>, onSave: @escaping (Todo) -> Void) {
+    public init(
+        todo: Binding<Todo>,
+        availablePeople: [Person] = [],
+        onSave: @escaping (Todo) -> Void
+    ) {
         self._todo = todo
         self.onSave = onSave
+        self.availablePeople = availablePeople
         self._dueDateEnabled = State(initialValue: todo.wrappedValue.dueDate != nil)
     }
 
@@ -58,6 +67,22 @@ public struct TodoEditorView: View {
                         ),
                         displayedComponents: [.date, .hourAndMinute]
                     )
+                }
+            }
+
+            if !availablePeople.isEmpty {
+                Section("People") {
+                    ForEach(availablePeople) { person in
+                        Toggle(isOn: Binding(
+                            get: { todo.personIDs.contains(person.id) },
+                            set: { isOn in
+                                if isOn { todo.personIDs.insert(person.id) }
+                                else { todo.personIDs.remove(person.id) }
+                            }
+                        )) {
+                            Label(person.name, systemImage: person.role.systemImage)
+                        }
+                    }
                 }
             }
 

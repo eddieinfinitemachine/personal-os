@@ -6,10 +6,11 @@ public enum TagStoreError: Error, Sendable {
     case notFound(UUID)
 }
 
+@MainActor
 public struct TagStore: Sendable {
     private let controller: PersistenceController
 
-    public init(controller: PersistenceController) {
+    nonisolated public init(controller: PersistenceController) {
         self.controller = controller
     }
 

@@ -5,7 +5,8 @@ import SQLite3
 import PersonalOSPersistence
 import PersonalOSModels
 
-@Suite("ThingsImporter")
+@Suite("ThingsImporter", .serialized)
+@MainActor
 struct ThingsImporterTests {
 
     /// Build a tiny SQLite file mimicking Things' TMTask schema.
