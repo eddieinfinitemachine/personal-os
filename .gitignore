@@ -49,3 +49,4 @@ Package.resolved
 *.cer
 *.mobileprovision
 .vercel
+.icon-source.png
