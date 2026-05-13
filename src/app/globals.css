@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+@theme {
+  /* SF Pro on Apple devices, then a clean system fallback. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Helvetica Neue", "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+
+  /* Light defaults — Apple system colors. */
+  --color-background: oklch(1 0 0);
+  --color-foreground: oklch(0.18 0 0);
+  --color-muted: oklch(0.965 0 0);
+  --color-muted-foreground: oklch(0.5 0 0);
+  --color-border: oklch(0.9 0 0);
+  --color-input: oklch(0.93 0 0);
+  --color-ring: oklch(0.55 0.15 250);
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.18 0 0);
+  --color-accent: oklch(0.94 0 0);
+  --color-accent-foreground: oklch(0.18 0 0);
+  /* Apple system blue */
+  --color-tint: oklch(0.6 0.22 256);
+
+  --radius: 0.625rem;
+}
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+    --background: var(--color-background);
+    --foreground: var(--color-foreground);
+  }
+
+  /* Dark mode applied either by system preference or by explicit data-theme="dark". */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --color-background: oklch(0 0 0);
+      --color-foreground: oklch(0.97 0 0);
+      --color-muted: oklch(0.16 0 0);
+      --color-muted-foreground: oklch(0.62 0 0);
+      --color-border: oklch(0.22 0 0);
+      --color-input: oklch(0.22 0 0);
+      --color-ring: oklch(0.6 0.18 256);
+      --color-card: oklch(0.13 0 0);
+      --color-card-foreground: oklch(0.97 0 0);
+      --color-accent: oklch(0.2 0 0);
+      --color-accent-foreground: oklch(0.97 0 0);
+      --color-tint: oklch(0.7 0.18 256);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --color-background: oklch(0 0 0);
+    --color-foreground: oklch(0.97 0 0);
+    --color-muted: oklch(0.16 0 0);
+    --color-muted-foreground: oklch(0.62 0 0);
+    --color-border: oklch(0.22 0 0);
+    --color-input: oklch(0.22 0 0);
+    --color-ring: oklch(0.6 0.18 256);
+    --color-card: oklch(0.13 0 0);
+    --color-card-foreground: oklch(0.97 0 0);
+    --color-accent: oklch(0.2 0 0);
+    --color-accent-foreground: oklch(0.97 0 0);
+    --color-tint: oklch(0.7 0.18 256);
+  }
+
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    /* SF Pro-style features: enable tighter case + true small caps. */
+    font-feature-settings: "cv11", "ss01", "ss02";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Apple-style focus ring — subtle, blue, only on keyboard. */
+  :focus-visible {
+    outline: 2px solid var(--color-tint);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* Disable double-tap zoom on iOS for tap targets. */
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  /* iOS-style smooth scroll on inner scrollers. */
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Mobile: HIG-aligned body type. */
+  @media (max-width: 767px) {
+    body {
+      font-size: 17px;
+      letter-spacing: -0.01em;
+    }
+    /* iOS Safari auto-zooms whenever a focused input is below 16px. */
+    /* !important because Tailwind utilities (text-xs, text-sm) outweigh
+       plain element selectors. */
+    input,
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
+
+  /* On touch devices, suppress :hover background flashes that linger after tap. */
+  @media (hover: none) {
+    *:hover {
+      background-color: revert;
+    }
+  }
+}

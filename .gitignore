@@ -1,3 +1,19 @@
+# Node / Next
+node_modules/
+.next/
+out/
+.env
+.env.local
+*.tsbuildinfo
+next-env.d.ts
+
+# Prisma
+/prisma/migrations/dev.db*
+/prisma/dev.db*
+
+# User-uploaded files (photos, etc.)
+/public/uploads/
+
 # Xcode
 build/
 DerivedData/
@@ -32,3 +48,4 @@ Package.resolved
 *.p12
 *.cer
 *.mobileprovision
+.vercel

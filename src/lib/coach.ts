@@ -1,0 +1,75 @@
+// Shared helper for the coaching routes. Calls Claude with a structured
+// prompt and returns parsed action items. Used by both pet and vehicle
+// coaching routes.
+
+export type CoachItem = {
+  title: string;
+  body?: string;
+  priority?: "high" | "normal" | "low";
+  cadence?: "weekly" | "monthly" | "seasonal" | "one-time";
+};
+
+const SYSTEM_PROMPT = `You are a proactive coach for an owner who wants to be excellent — not just adequate — at caring for the asset described in the user message.
+
+Your job: produce a tight list of CONCRETE, actionable suggestions for the next 7-14 days. Think like an obsessive expert who notices the small things most owners miss.
+
+Rules for the suggestions:
+- Be specific to the breed/model and the current state. Generic advice is useless.
+- Anticipate the season and date — what's coming up that an owner often doesn't think about?
+- Mix near-term action (this week) with low-effort rituals (weekly habits worth starting).
+- Each item should be something the owner can DO, not something to be aware of. Verbs in imperative.
+- Don't repeat the maintenance/vaccination items the dashboard already surfaces — go beyond them.
+- Length: 4–7 items. No more.
+- Each item: title is one short sentence (under 10 words). body is 1-2 sentences explaining WHY.
+- Mark priority "high" only for time-sensitive things; default "normal".
+- Cadence: "weekly" / "monthly" / "seasonal" for ongoing rituals, "one-time" for discrete actions. Default "one-time".
+
+Output strict JSON, no prose, no markdown fences. Schema:
+{ "items": [ { "title": "...", "body": "...", "priority": "high|normal|low", "cadence": "weekly|monthly|seasonal|one-time" } ] }`;
+
+export async function generateCoachItems(
+  contextSummary: string
+): Promise<CoachItem[]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1500,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: "user", content: contextSummary }],
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Claude error ${res.status}: ${await res.text()}`);
+  }
+  const data = (await res.json()) as {
+    content?: Array<{ type: string; text?: string }>;
+  };
+  const raw = data.content?.find((c) => c.type === "text")?.text ?? "";
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("model did not return JSON");
+  const parsed = JSON.parse(match[0]) as { items?: CoachItem[] };
+  if (!Array.isArray(parsed.items)) throw new Error("invalid response shape");
+  return parsed.items
+    .filter((i) => i && typeof i.title === "string" && i.title.trim().length > 0)
+    .map((i) => ({
+      title: i.title.trim().slice(0, 200),
+      body: i.body?.trim().slice(0, 800),
+      priority:
+        i.priority === "high" || i.priority === "low" ? i.priority : "normal",
+      cadence:
+        i.cadence === "weekly" ||
+        i.cadence === "monthly" ||
+        i.cadence === "seasonal"
+          ? i.cadence
+          : "one-time",
+    }));
+}

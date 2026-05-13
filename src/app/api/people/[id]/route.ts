@@ -1,0 +1,45 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const body = (await request.json()) as Record<string, unknown>;
+  const data: Record<string, unknown> = {};
+  for (const k of [
+    "firstName",
+    "lastName",
+    "strength",
+    "email",
+    "phone",
+    "company",
+    "role",
+    "city",
+    "notes",
+    "imageUrl",
+  ]) {
+    if (typeof body[k] === "string" || body[k] === null) data[k] = body[k];
+  }
+  if (Array.isArray(body.circles)) data.circles = body.circles;
+  if (Array.isArray(body.tags)) data.tags = body.tags;
+  if (typeof body.archived === "boolean") data.archived = body.archived;
+  if (typeof body.starred === "boolean") data.starred = body.starred;
+  for (const k of ["birthday", "lastInteractionAt"]) {
+    if (body[k] === null) data[k] = null;
+    else if (typeof body[k] === "string") data[k] = new Date(body[k] as string);
+  }
+
+  const person = await prisma.person.update({ where: { id }, data });
+  return NextResponse.json({ person });
+}
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  await prisma.person.delete({ where: { id } });
+  return NextResponse.json({ ok: true });
+}

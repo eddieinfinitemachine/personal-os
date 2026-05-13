@@ -1,0 +1,660 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Trip {
+  id            String    @id @default(cuid())
+  name          String
+  destination   String?
+  startDate     DateTime?
+  endDate       DateTime?
+  status        String    @default("planned") // planned | booked | active | past | cancelled
+  travelers     String[]  @default([])
+  transport     String?
+  accommodation String?
+  costUsd       Float?
+  bookingUrl    String?
+  notes         String?
+  imageUrl      String?
+  archived      Boolean   @default(false)
+  position      Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  items         TripItem[]
+
+  @@index([archived, startDate])
+}
+
+model TripItem {
+  id            String    @id @default(cuid())
+  tripId        String
+  trip          Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  kind          String    // "flight" | "lodging" | "activity" | "transport" | "meal" | "note" | "task"
+  title         String
+  startAt       DateTime?
+  endAt         DateTime?
+  location      String?
+  fromLocation  String?
+  toLocation    String?
+  confirmation  String?
+  url           String?
+  costUsd       Float?
+  notes         String?
+  completedAt   DateTime?
+  position      Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([tripId, startAt, position])
+}
+
+model List {
+  id        String   @id @default(cuid())
+  name      String
+  color     String   @default("zinc") // tailwind color name
+  position  Int      @default(0)
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  todos Todo[]
+
+  @@index([position])
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  icon      String   @default("Folder")
+  color     String   @default("neutral")
+  position  Int      @default(0)
+  archived  Boolean  @default(false)
+  kind      String   @default("generic") // "generic" | "vehicle"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  todos       Todo[]
+  notes       Note[]
+  attachments Attachment[]
+  vehicle     Vehicle?
+  pet         Pet?
+  human       Human?
+
+  @@index([archived, position])
+}
+
+model Vehicle {
+  id        String  @id @default(cuid())
+  projectId String  @unique
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Identity
+  make           String
+  model          String
+  year           Int
+  vin            String?
+  chassisNumber  String?
+  engineNumber   String?
+  assemblyNumber String?
+  marketSpec     String?
+  bodyStyle      String?
+  exteriorColor  String?
+  interiorColor  String?
+  transmission   String?
+
+  // Acquisition
+  acquiredAt       DateTime?
+  acquiredFrom     String?
+  acquiredPriceUsd Float?
+  acquiredMileage  Int?
+
+  // Current state
+  currentMileage Int?
+  mileageUnit    String @default("km") // "km" | "mi"
+
+  // Long-form text
+  notes String?
+
+  // Reference data (JSON arrays of {label, value, ...})
+  fluidSpecs       Json?
+  partNumbers      Json?
+  performanceSpecs Json?
+
+  // Insurance
+  insurer         String?
+  policyNumber    String?
+  policyEffective DateTime?
+  policyExpires   DateTime?
+  insurerPhone    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  serviceItems   ServiceItem[]
+  serviceRecords ServiceRecord[]
+  contacts       VehicleContact[]
+  photos         VehiclePhoto[]
+  shoppingItems  ShoppingItem[]
+  recommendations Recommendation[]
+}
+
+model VehiclePhoto {
+  id        String  @id @default(cuid())
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  url      String
+  mimeType String?
+  size     Int?
+  width    Int?
+  height   Int?
+  caption  String?
+
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([vehicleId, position])
+}
+
+model ShoppingItem {
+  id        String  @id @default(cuid())
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  title       String
+  link        String?
+  priceUsd    Float?
+  quantity    Int?      @default(1)
+  notes       String?
+  completedAt DateTime?
+
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vehicleId, completedAt, position])
+}
+
+model Human {
+  id        String  @id @default(cuid())
+  projectId String  @unique
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Identity
+  fullName        String
+  sex             String? // "M" | "F"
+  birthDate       DateTime?
+  bloodType       String?
+  heightInches    Float?
+  primaryCarePhysician String?
+  pcpPhone        String?
+  insurer         String?
+  insurerPhone    String?
+  policyNumber    String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+
+  // Reference (JSON arrays)
+  allergiesJson   Json? // [{ allergen, severity, notes }]
+  medicationsJson Json? // [{ name, dosage, frequency, prescribedBy, since }]
+  conditionsJson  Json? // [{ name, diagnosedAt, notes }]
+
+  // AI-generated lifestage / what-to-watch note (regenerated on demand)
+  lifeStageNote   String?
+  lifeStageNoteAt DateTime?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  biometrics      BiometricReading[]
+  labResults      LabResult[]
+  medicalVisits   MedicalVisit[]
+  vaccinations    HumanVaccination[]
+  fitnessSessions FitnessSession[]
+  dnaResults      DnaResult[]
+  recommendations Recommendation[]
+}
+
+model BiometricReading {
+  id      String @id @default(cuid())
+  humanId String
+  human   Human  @relation(fields: [humanId], references: [id], onDelete: Cascade)
+
+  measuredAt DateTime
+  kind       String // "weight" | "bodyFat" | "bp" | "rhr" | "vo2" | "hrv" | "fastingGlucose" | "waist" | etc
+  value      Float
+  unit       String // "lb" | "%" | "mmHg" | "bpm" | etc
+  source     String? // "manual" | "oura" | "withings" | "apple-health"
+  notes      String?
+
+  createdAt DateTime @default(now())
+
+  @@index([humanId, kind, measuredAt])
+}
+
+model LabResult {
+  id      String @id @default(cuid())
+  humanId String
+  human   Human  @relation(fields: [humanId], references: [id], onDelete: Cascade)
+
+  drawnAt DateTime
+  panel   String // "CBC" | "CMP" | "lipid" | "thyroid" | "hormone" | etc
+  marker  String // "LDL" | "HDL" | "A1c" | "ferritin" | etc
+  value   Float
+  unit    String
+  refLow  Float?
+  refHigh Float?
+  flag    String? // "low" | "normal" | "high"
+  notes   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([humanId, marker, drawnAt])
+}
+
+model MedicalVisit {
+  id      String @id @default(cuid())
+  humanId String
+  human   Human  @relation(fields: [humanId], references: [id], onDelete: Cascade)
+
+  performedAt DateTime
+  providerName String
+  specialty   String? // "primary" | "cardiology" | "dental" | "derm" | etc
+  reason      String
+  summary     String?
+  costUsd     Float?
+  followUpAt  DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([humanId, performedAt])
+}
+
+model HumanVaccination {
+  id      String @id @default(cuid())
+  humanId String
+  human   Human  @relation(fields: [humanId], references: [id], onDelete: Cascade)
+
+  name           String
+  administeredAt DateTime
+  boosterDueAt   DateTime?
+  provider       String?
+  notes          String?
+
+  createdAt DateTime @default(now())
+
+  @@index([humanId, administeredAt])
+}
+
+model FitnessSession {
+  id      String @id @default(cuid())
+  humanId String
+  human   Human  @relation(fields: [humanId], references: [id], onDelete: Cascade)
+
+  performedAt   DateTime
+  kind          String // "run" | "lift" | "cardio" | "yoga" | "ride" | "hike"
+  durationMin   Int?
+  distanceMi    Float?
+  caloriesKcal  Int?
+  avgHr         Int?
+  maxHr         Int?
+  notes         String?
+  source        String? // "manual" | "strava" | "apple-health"
+
+  createdAt DateTime @default(now())
+
+  @@index([humanId, performedAt])
+}
+
+model DnaResult {
+  id      String @id @default(cuid())
+  humanId String
+  human   Human  @relation(fields: [humanId], references: [id], onDelete: Cascade)
+
+  category String // "ancestry" | "trait" | "health-risk" | "carrier" | "pharma"
+  title    String
+  finding  String
+  detail   String?
+  source   String? // "23andMe" | "Ancestry" | "Color"
+
+  reportedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([humanId, category])
+}
+
+model Pet {
+  id        String  @id @default(cuid())
+  projectId String  @unique
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  name        String
+  species     String   @default("dog") // "dog" | "cat" | "other"
+  breed       String?
+  sex         String? // "F" | "M"
+  color       String?
+  birthDate   DateTime?
+  microchipId String?
+
+  spayedNeuteredAt DateTime?
+
+  feedingSchedule String?
+  notes           String?
+
+  // Claude-generated breed+age-specific guidance, regenerated on demand.
+  lifeStageNote   String?
+  lifeStageNoteAt DateTime?
+
+  // Reference (JSON arrays)
+  allergies   Json?
+  medications Json? // [{ name, dosage, frequency }]
+
+  // Vet
+  vetClinic  String?
+  vetPhone   String?
+  vetAddress String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  weights         PetWeight[]
+  vaccinations    PetVaccination[]
+  vetVisits       PetVetVisit[]
+  photos          PetPhoto[]
+  shoppingItems   PetShoppingItem[]
+  recommendations Recommendation[]
+}
+
+model PetWeight {
+  id    String @id @default(cuid())
+  petId String
+  pet   Pet    @relation(fields: [petId], references: [id], onDelete: Cascade)
+
+  measuredAt DateTime
+  weightLb   Float
+  notes      String?
+
+  createdAt DateTime @default(now())
+
+  @@index([petId, measuredAt])
+}
+
+model PetVaccination {
+  id    String @id @default(cuid())
+  petId String
+  pet   Pet    @relation(fields: [petId], references: [id], onDelete: Cascade)
+
+  name           String
+  administeredAt DateTime
+  boosterDueAt   DateTime?
+  vet            String?
+  notes          String?
+
+  createdAt DateTime @default(now())
+
+  @@index([petId, administeredAt])
+}
+
+model PetVetVisit {
+  id    String @id @default(cuid())
+  petId String
+  pet   Pet    @relation(fields: [petId], references: [id], onDelete: Cascade)
+
+  performedAt DateTime
+  reason      String
+  vet         String?
+  details     String?
+  costUsd     Float?
+
+  createdAt DateTime @default(now())
+
+  @@index([petId, performedAt])
+}
+
+model PetPhoto {
+  id    String @id @default(cuid())
+  petId String
+  pet   Pet    @relation(fields: [petId], references: [id], onDelete: Cascade)
+
+  url      String
+  mimeType String?
+  size     Int?
+  width    Int?
+  height   Int?
+  caption  String?
+
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([petId, position])
+}
+
+model Recommendation {
+  id        String  @id @default(cuid())
+  scope     String // "pet" | "vehicle" | "human"
+  petId     String?
+  vehicleId String?
+  humanId   String?
+  pet       Pet?     @relation(fields: [petId], references: [id], onDelete: Cascade)
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  human     Human?   @relation(fields: [humanId], references: [id], onDelete: Cascade)
+
+  title    String
+  body     String?
+  priority String  @default("normal") // "high" | "normal" | "low"
+  cadence  String? // "weekly" | "monthly" | "seasonal" | "one-time"
+
+  generatedAt DateTime  @default(now())
+  completedAt DateTime?
+  dismissedAt DateTime?
+
+  position Int @default(0)
+
+  @@index([petId, completedAt, dismissedAt, position])
+  @@index([vehicleId, completedAt, dismissedAt, position])
+  @@index([humanId, completedAt, dismissedAt, position])
+}
+
+model PetShoppingItem {
+  id    String @id @default(cuid())
+  petId String
+  pet   Pet    @relation(fields: [petId], references: [id], onDelete: Cascade)
+
+  title       String
+  link        String?
+  priceUsd    Float?
+  quantity    Int?      @default(1)
+  notes       String?
+  completedAt DateTime?
+
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([petId, completedAt, position])
+}
+
+model ServiceItem {
+  id        String  @id @default(cuid())
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  name            String
+  intervalMonths  Int?
+  intervalMileage Int?
+  notes           String?
+
+  lastPerformedAt      DateTime?
+  lastPerformedMileage Int?
+
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vehicleId, position])
+}
+
+model ServiceRecord {
+  id        String  @id @default(cuid())
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  performedAt DateTime
+  mileage     Int?
+  shop        String?
+  workSummary String
+  details     String?
+  costUsd     Float?
+
+  createdAt DateTime @default(now())
+
+  @@index([vehicleId, performedAt])
+}
+
+model VehicleContact {
+  id        String  @id @default(cuid())
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  name    String
+  role    String?
+  address String?
+  phone   String?
+  email   String?
+  website String?
+  notes   String?
+
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([vehicleId, position])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  title     String?
+  body      String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, updatedAt])
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  kind      String // "file" | "link"
+  title     String
+  url       String
+  mimeType  String?
+  size      Int?
+  createdAt DateTime @default(now())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}
+
+model Person {
+  id                String   @id @default(cuid())
+  externalId        String?  @unique // Airtable record ID
+  firstName         String
+  lastName          String?
+  strength          String? // "close" | "strong" | "casual" | "weak"
+  circles           String[] @default([])
+  tags              String[] @default([])
+  email             String?
+  phone             String?
+  company           String?
+  role              String?
+  city              String?
+  birthday          DateTime?
+  lastInteractionAt DateTime?
+  notes             String?
+  imageUrl          String?
+  starred           Boolean  @default(false)
+  archived          Boolean  @default(false)
+  position          Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([archived, starred, lastInteractionAt])
+}
+
+// Generic life-tracking record. One model powers many lightweight pages
+// (investments, inventory, media, places, best practices). The `kind` field
+// scopes records to a page; structured fields cover most use cases without
+// needing a bespoke schema per domain.
+model Asset {
+  id         String  @id @default(cuid())
+  kind       String // "investment" | "inventory" | "media" | "place" | "practice"
+  externalId String? // e.g. Airtable record ID (rec...) — used for upserts
+  title      String
+  subtitle  String?
+  category  String? // user-defined (e.g. "venture", "watch", "book", "restaurant")
+  status    String? // "active" | "exited" | "wishlist" | "owned" | "visited" | etc
+
+  // Money
+  amountUsd     Float?
+  currentValue  Float?
+  costBasis     Float?
+  currency      String? @default("USD")
+  // Expected return as a percentage (e.g. 2400 = 2400%). Sourced from
+  // Airtable's `Return` formula when available, otherwise computed locally.
+  returnPercent Float?
+
+  // Common metadata
+  acquiredAt    DateTime?
+  exitedAt      DateTime?
+  rating        Int? // 1-5
+  url           String?
+  imageUrl      String?
+  location      String?
+  tagsJson      Json?
+  detailsJson   Json? // free-form structured data
+  notes         String?
+
+  position  Int      @default(0)
+  archived  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kind, archived, position])
+  @@unique([kind, externalId])
+}
+
+model Todo {
+  id          String    @id @default(cuid())
+  title       String
+  notes       String?
+  dueDate     DateTime?
+  completedAt DateTime?
+  position    Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  listId String
+  list   List   @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  parentId String?
+  parent   Todo?   @relation("TodoSubtasks", fields: [parentId], references: [id], onDelete: Cascade)
+  subtasks Todo[]  @relation("TodoSubtasks")
+
+  @@index([listId, completedAt, position])
+  @@index([projectId, completedAt, position])
+  @@index([parentId, completedAt, position])
+}
