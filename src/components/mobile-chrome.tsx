@@ -125,9 +125,8 @@ function MobileTopBar() {
         >
           <Menu className="size-5" />
         </button>
-        <div className="flex-1 text-center text-sm font-semibold tracking-tight truncate">
-          {state.title}
-        </div>
+        <div className="flex-1" />
+        {/* Title intentionally hidden — the page chrome speaks for itself. */}
         <div className="flex items-center gap-1 justify-end">
           {state.right}
           <ThemeToggle compact />
