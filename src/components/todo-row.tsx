@@ -305,6 +305,10 @@ export function TodoRow({
     <li
       className={cn(
         "group relative overflow-hidden md:overflow-visible",
+        // Mobile-only hairline between rows (iOS Reminders feel). Suppressed
+        // on subtasks (they have their own indented ul border) and on the
+        // last row (handled by parent ul's last:border-b-0 if used).
+        !isSubtask && "border-b border-[var(--color-border)]/50 last:border-b-0 md:border-b-0",
         dragging && "opacity-40"
       )}
       draggable={draggable}
@@ -363,14 +367,14 @@ export function TodoRow({
         }
         className="relative z-10 bg-[var(--color-background)]"
       >
-      <div className="flex items-start gap-3 px-1 py-3 md:py-2.5 hover:bg-[var(--color-accent)]/40 rounded-lg transition">
+      <div className="flex items-start gap-3 px-1 py-3 md:py-2.5 md:hover:bg-[var(--color-accent)]/40 rounded-lg transition">
         <button
           onClick={(e) => {
             e.stopPropagation();
             onToggle?.();
           }}
           className={cn(
-            "mt-0.5 ml-1 grid size-6 md:size-[22px] shrink-0 place-items-center rounded-full border-2 transition-colors duration-200 relative before:absolute before:-inset-2.5 before:content-[''] md:before:hidden",
+            "mt-0.5 grid size-6 md:size-[22px] shrink-0 place-items-center rounded-full border-2 transition-colors duration-200 relative before:absolute before:-inset-2.5 before:content-[''] md:before:hidden md:ml-1",
             completed
               ? cn("text-white", p.fill, "border-transparent")
               : cn(
@@ -424,7 +428,7 @@ export function TodoRow({
           ) : (
             <div
               className={cn(
-                "text-[15px] leading-snug",
+                "text-[17px] leading-[22px] tracking-[-0.022em] truncate md:text-[15px] md:leading-snug md:tracking-normal md:whitespace-normal",
                 completed && "line-through text-[var(--color-muted-foreground)]"
               )}
             >
@@ -432,11 +436,33 @@ export function TodoRow({
             </div>
           )}
           {todo.notes ? (
-            <div className="text-xs text-[var(--color-muted-foreground)] truncate mt-0.5">
+            <div className="text-[15px] leading-[20px] text-[var(--color-muted-foreground)] truncate mt-0.5 md:text-xs md:leading-snug">
               {todo.notes}
             </div>
           ) : null}
-          <div className="mt-1 flex items-center gap-2 text-xs text-[var(--color-muted-foreground)]">
+          {/* Mobile-only date subtitle — Reminders-style "Mon, Jun 16" */}
+          {due ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditingDate(true);
+              }}
+              className={cn(
+                "md:hidden block text-[13px] leading-[16px] mt-0.5 text-left",
+                isOverdue
+                  ? "text-rose-500 font-medium"
+                  : "text-[var(--color-muted-foreground)]"
+              )}
+            >
+              {due.toLocaleDateString(undefined, {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+              })}
+            </button>
+          ) : null}
+          {/* Desktop-only chip row: project badge, date pill, subtask count, add-subtask. */}
+          <div className="mt-1 hidden md:flex items-center gap-2 text-xs text-[var(--color-muted-foreground)]">
             {showProjectBadge ??
               (todo.projectName ? (
                 <span className="inline-flex items-center rounded bg-[var(--color-accent)]/60 px-1.5 py-0.5 text-[10px] font-medium">

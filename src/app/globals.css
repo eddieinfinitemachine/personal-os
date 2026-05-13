@@ -98,11 +98,12 @@
     -webkit-overflow-scrolling: touch;
   }
 
-  /* Mobile: HIG-aligned body type. */
+  /* Mobile: HIG-aligned body type + systemGroupedBackground page tint. */
   @media (max-width: 767px) {
     body {
       font-size: 17px;
-      letter-spacing: -0.01em;
+      letter-spacing: -0.022em;
+      background: oklch(0.965 0 0);
     }
     /* iOS Safari auto-zooms whenever a focused input is below 16px. */
     /* !important because Tailwind utilities (text-xs, text-sm) outweigh
@@ -111,6 +112,19 @@
     textarea,
     select {
       font-size: 16px !important;
+    }
+  }
+  @media (max-width: 767px) and (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) body {
+      background: oklch(0.08 0 0);
+    }
+  }
+  :root[data-theme="dark"] body {
+    /* Mobile-or-not, dark-mode body is the dark grouped bg. */
+  }
+  @media (max-width: 767px) {
+    :root[data-theme="dark"] body {
+      background: oklch(0.08 0 0);
     }
   }
 

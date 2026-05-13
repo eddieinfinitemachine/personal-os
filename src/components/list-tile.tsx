@@ -523,14 +523,14 @@ export function ListTile({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={cn(
-        "group/tile flex flex-col transition relative rounded-2xl bg-[var(--color-muted)]/60 px-4 pt-4 pb-3 md:bg-[var(--color-card)]/60 md:backdrop-blur md:pb-2 md:ring-2 md:ring-transparent",
+        "group/tile flex flex-col transition relative rounded-2xl bg-[var(--color-card)] px-4 pt-4 pb-2 shadow-[0_0_0_0.5px_rgba(0,0,0,0.04)] md:bg-[var(--color-card)]/60 md:backdrop-blur md:shadow-none md:ring-2 md:ring-transparent",
         !collapsed && "md:min-h-[420px]",
-        !adding && "cursor-pointer hover:bg-[var(--color-muted)] md:hover:bg-[var(--color-card)]",
+        !adding && "cursor-pointer md:hover:bg-[var(--color-card)]",
         isDragOver &&
           cn("md:bg-[var(--color-card)]", p.ring.replace("/50", "/70"))
       )}
     >
-      <div className="flex items-start justify-between gap-2 mb-3">
+      <div className="flex items-start justify-between gap-2 mb-1.5 md:mb-3">
         <div className="flex items-start gap-1 min-w-0">
           {reorderable ? (
             <span
@@ -559,7 +559,7 @@ export function ListTile({
             <div className="flex items-center gap-2 min-w-0 md:hidden">
               <span
                 aria-hidden
-                className={cn("shrink-0 size-5 rounded-full", p.fill)}
+                className={cn("shrink-0 size-[18px] rounded-full", p.fill)}
               />
               <h2 className="truncate text-[17px] font-semibold tracking-tight text-[var(--color-foreground)]">
                 {list.name}
@@ -705,7 +705,7 @@ export function ListTile({
                           e.stopPropagation();
                           toggleGroup(g.key);
                         }}
-                        className="w-full flex items-center gap-1.5 px-1 py-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]/40 rounded"
+                        className="w-full flex items-center gap-1.5 px-1 pt-3 pb-1 text-[13px] md:text-[11px] font-medium md:font-semibold uppercase tracking-[0.06em] md:tracking-wider text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]/40 rounded md:pt-1 md:pb-1"
                       >
                         {open ? (
                           <ChevronDown className="size-3" />
@@ -804,17 +804,17 @@ export function ListTile({
               startAdding();
             }}
             className={cn(
-              "mt-1 flex items-center gap-2 px-2 py-2 text-sm font-medium transition hover:opacity-80 text-left",
+              "flex items-center gap-2.5 px-0 py-3 text-[17px] md:text-sm font-normal md:font-medium md:mt-1 md:px-2 md:py-2 md:gap-2 transition hover:opacity-80 text-left",
               p.text
             )}
           >
             <span
               className={cn(
-                "grid size-[22px] place-items-center rounded-full",
+                "grid size-[22px] place-items-center rounded-full border-2 border-current md:border-0",
                 p.softBg
               )}
             >
-              <Plus className="size-3.5" />
+              <Plus className="size-3.5" strokeWidth={2.5} />
             </span>
             <span>New Reminder</span>
           </button>

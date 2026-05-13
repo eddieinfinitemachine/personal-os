@@ -50,7 +50,7 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
   }
 
   return (
-    <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
+    <div className="grid gap-3 md:gap-4 grid-cols-1 lg:grid-cols-3">
       {tiles.map((t) => (
         <ListTile
           key={t.list.id}
