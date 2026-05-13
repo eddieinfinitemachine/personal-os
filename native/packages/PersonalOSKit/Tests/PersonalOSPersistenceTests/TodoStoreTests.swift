@@ -45,6 +45,20 @@ struct TodoStoreTests {
         #expect(try store.fetch(list: .todo, includeCompleted: true).count == 1)
     }
 
+    @Test("count matches fetch for a list, with and without completed")
+    func countByList() throws {
+        let store = makeStore()
+        try store.create(Todo(title: "open 1", list: .todo))
+        try store.create(Todo(title: "open 2", list: .todo))
+        let completed = Todo(title: "done", list: .todo)
+        try store.create(completed)
+        try store.complete(id: completed.id)
+
+        #expect(try store.count(list: .todo) == 2)
+        #expect(try store.count(list: .todo, includeCompleted: true) == 3)
+        #expect(try store.count(list: .monitor) == 0)
+    }
+
     @Test("fetch excludes soft-deleted")
     func excludesDeleted() throws {
         let store = makeStore()

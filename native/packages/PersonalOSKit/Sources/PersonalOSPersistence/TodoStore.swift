@@ -26,6 +26,14 @@ public struct TodoStore: Sendable {
         return results.map(Todo.init(managed:))
     }
 
+    /// Cheap row count for a list — used by the Lists tab directory.
+    /// Doesn't materialize objects, just executes a `COUNT(*)`.
+    public func count(list: TodoList, includeCompleted: Bool = false) throws -> Int {
+        let request = CDTodo.fetchRequest()
+        request.predicate = Self.predicate(list: list, includeCompleted: includeCompleted)
+        return try controller.viewContext.count(for: request)
+    }
+
     public func fetchToday() throws -> [Todo] {
         let request = CDTodo.fetchRequest()
         let endOfToday = Calendar.current.startOfDay(for: .now).addingTimeInterval(86_400)

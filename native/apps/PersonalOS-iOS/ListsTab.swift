@@ -3,18 +3,44 @@ import PersonalOSModels
 import PersonalOSUI
 
 struct ListsTab: View {
+    @Environment(\.appEnvironment) private var env
+
+    @State private var counts: [TodoList: Int] = [:]
+
     var body: some View {
         NavigationStack {
             List(TodoList.allCases) { list in
                 NavigationLink(value: list) {
-                    Label(list.title, systemImage: list.systemImage)
+                    HStack(spacing: 14) {
+                        Image(systemName: "circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(list.tint)
+                        Text(list.title)
+                            .font(.body)
+                        Spacer()
+                        Text("\(counts[list] ?? 0)")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
                 }
             }
-            .navigationTitle("Lists")
+            .listStyle(.insetGrouped)
+            .navigationTitle("My Lists")
             .navigationDestination(for: TodoList.self) { list in
                 ListDetailView(list: list)
             }
+            .onAppear(perform: refreshCounts)
+            .task { refreshCounts() }
         }
+    }
+
+    private func refreshCounts() {
+        var next: [TodoList: Int] = [:]
+        for list in TodoList.allCases {
+            next[list] = (try? env.todos.count(list: list)) ?? 0
+        }
+        counts = next
     }
 }
 
@@ -35,6 +61,7 @@ struct ListDetailView: View {
             }
         }
         .navigationTitle(list.title)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -45,6 +72,24 @@ struct ListDetailView: View {
                     Image(systemName: "plus")
                 }
             }
+        }
+        .safeAreaInset(edge: .bottom) {
+            Button {
+                if let new = viewModel?.createBlank() {
+                    presentedTodoID = new.id
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.circle.fill")
+                    Text("New Reminder").fontWeight(.semibold)
+                }
+                .foregroundStyle(list.tint)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(.bar)
+            }
+            .buttonStyle(.plain)
         }
         .sheet(item: Binding(
             get: { presentedTodoID.map(IdentifiableUUID.init) },
@@ -66,43 +111,60 @@ struct ListDetailView: View {
 
     @ViewBuilder
     private func content(viewModel: TodosViewModel) -> some View {
-        if viewModel.todos.isEmpty {
-            ContentUnavailableView(
-                "\(list.title) is empty",
-                systemImage: list.systemImage,
-                description: Text("Tap + to add a todo.")
-            )
-        } else {
-            List {
-                ForEach(viewModel.todos) { todo in
-                    Button {
-                        presentedTodoID = todo.id
-                    } label: {
-                        TodoRow(todo: todo) {
-                            viewModel.toggleComplete(todo)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .swipeActions(edge: .leading) {
+        List {
+            // Reminders-style hero: big colored title flush with the rows below.
+            Section {
+                Text(list.title)
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(list.tint)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 8, trailing: 16))
+            }
+
+            if viewModel.todos.isEmpty {
+                Section {
+                    ContentUnavailableView(
+                        "\(list.title) is empty",
+                        systemImage: list.systemImage,
+                        description: Text("Tap + or New Reminder to add a todo.")
+                    )
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
+            } else {
+                Section {
+                    ForEach(viewModel.todos) { todo in
                         Button {
-                            viewModel.toggleComplete(todo)
+                            presentedTodoID = todo.id
                         } label: {
-                            Label("Complete", systemImage: "checkmark")
+                            TodoRow(todo: todo) {
+                                viewModel.toggleComplete(todo)
+                            }
                         }
-                        .tint(.green)
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) {
-                            viewModel.softDelete(todo)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                        .buttonStyle(.plain)
+                        .swipeActions(edge: .leading) {
+                            Button {
+                                viewModel.toggleComplete(todo)
+                            } label: {
+                                Label("Complete", systemImage: "checkmark")
+                            }
+                            .tint(.green)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                viewModel.softDelete(todo)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
                         }
                     }
                 }
             }
-            .refreshable {
-                viewModel.refresh()
-            }
+        }
+        .listStyle(.plain)
+        .refreshable {
+            viewModel.refresh()
         }
     }
 }
