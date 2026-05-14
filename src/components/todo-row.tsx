@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
@@ -193,24 +194,132 @@ export function TodoRow({
   const draggable = !editing && !!sourceListId && todo.id.startsWith("temp-") === false;
   const [dragging, setDragging] = useState(false);
 
-  // Mobile swipe: right → complete, left → reveal Schedule + Delete chips.
-  const [swipeX, setSwipeX] = useState(0);
   const [touchEnv, setTouchEnv] = useState(false);
+  // Tracks the active pointer for long-press → drag arbitration.
+  // axis: null (undecided) | "moved" (user panned/scrolled — cancel long-press)
+  //        | "drag" (long-press fired, drag mode is live)
   const swipeRef = useRef<{
     startX: number;
     startY: number;
     active: boolean;
-    axis: null | "x" | "y";
-    startTranslate: number;
+    axis: null | "moved" | "drag";
     pointerId: number;
   }>({
     startX: 0,
     startY: 0,
     active: false,
     axis: null,
-    startTranslate: 0,
     pointerId: -1,
   });
+
+  // Mobile long-press drag — 450ms hold without movement enters drag mode.
+  // A floating ghost follows the finger, drop targets are any element with
+  // [data-droptarget-list] up the DOM tree from elementFromPoint.
+  const longPressTimerRef = useRef<number | null>(null);
+  const swipeAreaRef = useRef<HTMLDivElement>(null);
+  const dropTargetRef = useRef<HTMLElement | null>(null);
+  const autoScrollRafRef = useRef<number | null>(null);
+  const [touchDragging, setTouchDragging] = useState(false);
+  const [ghostPos, setGhostPos] = useState({ x: 0, y: 0 });
+
+  function clearLongPress() {
+    if (longPressTimerRef.current != null) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }
+  function clearTargetHighlight() {
+    if (dropTargetRef.current) {
+      dropTargetRef.current.removeAttribute("data-droptarget-active");
+      dropTargetRef.current = null;
+    }
+  }
+  function stopAutoScroll() {
+    if (autoScrollRafRef.current != null) {
+      cancelAnimationFrame(autoScrollRafRef.current);
+      autoScrollRafRef.current = null;
+    }
+  }
+  function updateDropTarget(x: number, y: number) {
+    const el = document.elementFromPoint(x, y) as HTMLElement | null;
+    const tgt = el?.closest("[data-droptarget-list]") as HTMLElement | null;
+    if (tgt === dropTargetRef.current) return;
+    clearTargetHighlight();
+    if (!tgt) return;
+    const tgtList = tgt.getAttribute("data-droptarget-list");
+    const tgtProjRaw = tgt.getAttribute("data-droptarget-project") ?? "";
+    const tgtProj = tgtProjRaw === "" ? null : tgtProjRaw;
+    const samePlace =
+      tgtList === sourceListId && tgtProj === (todo.projectId ?? null);
+    if (samePlace) return;
+    dropTargetRef.current = tgt;
+    tgt.setAttribute("data-droptarget-active", "1");
+  }
+  function maybeAutoScroll(x: number, y: number) {
+    const V_EDGE = 90;
+    let dy = 0;
+    if (y < V_EDGE) dy = -Math.ceil(((V_EDGE - y) / V_EDGE) * 14);
+    else if (y > window.innerHeight - V_EDGE)
+      dy = Math.ceil(((y - (window.innerHeight - V_EDGE)) / V_EDGE) * 14);
+
+    // Pan the horizontal pager (if present) when the finger nears a side edge,
+    // so a cross-page drag can reach a list in another pager page.
+    const H_EDGE = 56;
+    let dx = 0;
+    const track = document.querySelector(
+      "[data-pager-track]"
+    ) as HTMLElement | null;
+    if (track) {
+      if (x < H_EDGE) dx = -Math.ceil(((H_EDGE - x) / H_EDGE) * 20);
+      else if (x > window.innerWidth - H_EDGE)
+        dx = Math.ceil(((x - (window.innerWidth - H_EDGE)) / H_EDGE) * 20);
+    }
+
+    stopAutoScroll();
+    if (dy === 0 && dx === 0) return;
+    const tick = () => {
+      if (dy !== 0) window.scrollBy(0, dy);
+      if (dx !== 0 && track) track.scrollBy({ left: dx });
+      autoScrollRafRef.current = requestAnimationFrame(tick);
+    };
+    autoScrollRafRef.current = requestAnimationFrame(tick);
+  }
+  async function performTouchMove(
+    targetListId: string,
+    targetProjectId: string | null
+  ) {
+    window.dispatchEvent(
+      new CustomEvent("personalos:todo-moved", {
+        detail: {
+          todoId: todo.id,
+          fromListId: sourceListId,
+          fromProjectId: sourceProjectId ?? null,
+          toListId: targetListId,
+          toProjectId: targetProjectId,
+        },
+      })
+    );
+    try {
+      const res = await fetch(`/api/todos/${todo.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          listId: targetListId,
+          projectId: targetProjectId,
+        }),
+      });
+      if (res.ok) router.refresh();
+    } catch {}
+  }
+
+  // Cleanup on unmount.
+  useEffect(() => {
+    return () => {
+      clearLongPress();
+      clearTargetHighlight();
+      stopAutoScroll();
+    };
+  }, []);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -220,59 +329,83 @@ export function TodoRow({
     return () => mq.removeEventListener("change", update);
   }, []);
 
-  const swipeOpen = swipeX < -40;
-
   function onSwipePointerDown(e: React.PointerEvent) {
     if (!touchEnv || editing || isSubtask) return;
-    // Don't begin a swipe on form controls / buttons.
+    // Don't start arming a drag on form controls / buttons.
     const tgt = e.target as HTMLElement;
     if (tgt.closest("input, textarea, button")) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const pointerId = e.pointerId;
     swipeRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
+      startX,
+      startY,
       active: true,
       axis: null,
-      startTranslate: swipeX,
-      pointerId: e.pointerId,
+      pointerId,
     };
+    // Arm long-press → drag. Fires only if the finger hasn't moved more
+    // than 8px in either direction within 450ms.
+    clearLongPress();
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTimerRef.current = null;
+      const s = swipeRef.current;
+      if (!s.active || s.pointerId !== pointerId) return;
+      if (s.axis === "moved") return;
+      s.axis = "drag";
+      try {
+        swipeAreaRef.current?.setPointerCapture(pointerId);
+      } catch {}
+      try {
+        (navigator as Navigator & { vibrate?: (n: number) => void }).vibrate?.(
+          20
+        );
+      } catch {}
+      setTouchDragging(true);
+      setGhostPos({ x: startX, y: startY });
+      updateDropTarget(startX, startY);
+    }, 450);
   }
   function onSwipePointerMove(e: React.PointerEvent) {
     if (!touchEnv) return;
     const s = swipeRef.current;
     if (!s.active || s.pointerId !== e.pointerId) return;
-    const dx = e.clientX - s.startX;
-    const dy = e.clientY - s.startY;
-    if (!s.axis) {
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-      s.axis = Math.abs(dx) > Math.abs(dy) * 1.4 ? "x" : "y";
+    if (s.axis === "drag") {
+      e.preventDefault();
+      setGhostPos({ x: e.clientX, y: e.clientY });
+      updateDropTarget(e.clientX, e.clientY);
+      maybeAutoScroll(e.clientX, e.clientY);
+      return;
     }
-    if (s.axis !== "x") return;
-    e.preventDefault();
-    let next = s.startTranslate + dx;
-    if (next > 0) next = next * 0.4;
-    if (next < -160) next = -160 + (next + 160) * 0.4;
-    setSwipeX(next);
+    if (s.axis === null) {
+      const dx = e.clientX - s.startX;
+      const dy = e.clientY - s.startY;
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      // User started panning before long-press fired — let native scroll
+      // take over and abandon the drag arm.
+      s.axis = "moved";
+      clearLongPress();
+    }
   }
   function onSwipePointerUp(e: React.PointerEvent) {
     if (!touchEnv) return;
     const s = swipeRef.current;
     if (!s.active || s.pointerId !== e.pointerId) return;
     s.active = false;
-    if (s.axis !== "x") {
-      setSwipeX(s.startTranslate);
-      return;
+    clearLongPress();
+    if (s.axis === "drag") {
+      e.preventDefault();
+      stopAutoScroll();
+      const tgt = dropTargetRef.current;
+      clearTargetHighlight();
+      setTouchDragging(false);
+      if (tgt) {
+        const tgtList = tgt.getAttribute("data-droptarget-list");
+        const tgtProjRaw = tgt.getAttribute("data-droptarget-project") ?? "";
+        const tgtProj = tgtProjRaw === "" ? null : tgtProjRaw;
+        if (tgtList) void performTouchMove(tgtList, tgtProj);
+      }
     }
-    if (swipeX > 60) {
-      setSwipeX(0);
-      onToggle?.();
-    } else if (swipeX < -60) {
-      setSwipeX(-128);
-    } else {
-      setSwipeX(0);
-    }
-  }
-  function closeSwipe() {
-    setSwipeX(0);
   }
 
   function onDragStart(e: React.DragEvent<HTMLLIElement>) {
@@ -316,52 +449,17 @@ export function TodoRow({
       onDragEnd={() => setDragging(false)}
       {...ctx.handlers}
     >
-      {touchEnv && !isSubtask ? (
-        <div
-          className={cn(
-            "absolute inset-y-0 right-0 z-0 flex items-center gap-1 pr-1 transition-opacity",
-            swipeOpen ? "opacity-100" : "opacity-0 pointer-events-none"
-          )}
-          aria-hidden={!swipeOpen}
-        >
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              closeSwipe();
-              setEditingDate(true);
-            }}
-            className="inline-flex h-full items-center gap-1 rounded-md bg-blue-500 px-3 text-xs font-semibold text-white"
-          >
-            <Calendar className="size-3.5" />
-            Schedule
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              closeSwipe();
-              void deleteSelf();
-            }}
-            className="inline-flex h-full items-center gap-1 rounded-md bg-rose-500 px-3 text-xs font-semibold text-white"
-          >
-            <Trash2 className="size-3.5" />
-            Delete
-          </button>
-        </div>
-      ) : null}
       <div
+        ref={swipeAreaRef}
         onPointerDown={onSwipePointerDown}
         onPointerMove={onSwipePointerMove}
         onPointerUp={onSwipePointerUp}
         onPointerCancel={onSwipePointerUp}
-        onClick={swipeOpen ? closeSwipe : undefined}
         style={
           touchEnv && !isSubtask
             ? {
-                transform: `translateX(${swipeX}px)`,
-                transition: swipeRef.current.active
-                  ? "none"
-                  : "transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1)",
-                touchAction: "pan-y",
+                touchAction: touchDragging ? "none" : "pan-y",
+                opacity: touchDragging ? 0.4 : undefined,
               }
             : undefined
         }
@@ -374,7 +472,7 @@ export function TodoRow({
             onToggle?.();
           }}
           className={cn(
-            "mt-0.5 grid size-6 md:size-[22px] shrink-0 place-items-center rounded-full border-2 transition-colors duration-200 relative before:absolute before:-inset-2.5 before:content-[''] md:before:hidden md:ml-1",
+            "mt-0.5 grid size-6 md:size-[22px] shrink-0 place-items-center rounded-full border-2 transition-colors duration-200 relative before:absolute before:-inset-2.5 before:content-[''] md:before:hidden",
             completed
               ? cn("text-white", p.fill, "border-transparent")
               : cn(
@@ -428,7 +526,7 @@ export function TodoRow({
           ) : (
             <div
               className={cn(
-                "text-[17px] leading-[22px] tracking-[-0.022em] truncate md:text-[15px] md:leading-snug md:tracking-normal md:whitespace-normal",
+                "text-[17px] leading-[22px] tracking-[-0.022em] md:text-[15px] md:leading-snug md:tracking-normal md:whitespace-normal break-words",
                 completed && "line-through text-[var(--color-muted-foreground)]"
               )}
             >
@@ -600,6 +698,33 @@ export function TodoRow({
         </ul>
       ) : null}
       <ContextMenuPopover pos={ctx.pos} items={menu} onClose={ctx.close} />
+      {touchDragging && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              style={{
+                position: "fixed",
+                left: ghostPos.x,
+                top: ghostPos.y,
+                transform: "translate(-16px, -22px) rotate(-1.5deg) scale(1.02)",
+                zIndex: 1000,
+                pointerEvents: "none",
+                maxWidth: "min(320px, 75vw)",
+              }}
+              className="rounded-xl bg-[var(--color-card)] shadow-2xl ring-2 ring-blue-500 px-3 py-2.5"
+            >
+              <div className="flex items-center gap-2.5">
+                <span
+                  aria-hidden
+                  className={cn("shrink-0 size-4 rounded-full", p.fill)}
+                />
+                <span className="text-[15px] font-medium truncate">
+                  {todo.title}
+                </span>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </li>
   );
 }

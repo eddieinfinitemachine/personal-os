@@ -249,7 +249,7 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
   }
 
   return (
-    <div className="rounded-2xl bg-[var(--color-card)]/60 backdrop-blur border border-[var(--color-border)] px-4 pt-3 pb-3 hover:bg-[var(--color-card)] transition">
+    <div className="rounded-2xl bg-[var(--color-card)] border border-[var(--color-border)] px-4 pt-3 pb-3 transition">
       <div className="flex items-center justify-between gap-2">
         <button
           onClick={toggle}
@@ -289,6 +289,8 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
             return (
               <div
                 key={g.list.id}
+                data-droptarget-list={g.list.id}
+                data-droptarget-project={data.project.id}
                 onDragOver={(e) => handleColumnDragOver(e, g.list.id)}
                 onDragLeave={(e) => handleColumnDragLeave(e, g.list.id)}
                 onDrop={(e) => handleColumnDrop(e, g.list.id)}

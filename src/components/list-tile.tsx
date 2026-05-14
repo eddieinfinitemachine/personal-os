@@ -58,6 +58,12 @@ export function ListTile({
     Map<string, Date | null>
   >(new Map());
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  // Field-level overrides for todos that stayed in this tile but had a field
+  // change (e.g. projectId after a sidebar drop). Applied in visibleTodos so
+  // the UI re-buckets immediately instead of waiting for router.refresh.
+  const [todoOverrides, setTodoOverrides] = useState<
+    Map<string, Partial<TodoLike>>
+  >(new Map());
   const [isDragOver, setIsDragOver] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const collapseKey = `personalos:listcollapse:${list.id}:${projectId ?? "all"}`;
@@ -68,6 +74,20 @@ export function ListTile({
       if (v === "1") setCollapsed(true);
     } catch {}
   }, [collapseKey]);
+
+  // Listen for "start adding" events from the mobile FAB. The FAB scopes the
+  // event to the currently visible pager list via list.id.
+  useEffect(() => {
+    function handler(e: Event) {
+      const ev = e as CustomEvent<{ listId: string }>;
+      if (ev.detail?.listId !== list.id) return;
+      setAdding(true);
+      if (collapsed) setCollapsed(false);
+    }
+    window.addEventListener("personalos:start-add-todo", handler);
+    return () =>
+      window.removeEventListener("personalos:start-add-todo", handler);
+  }, [list.id, collapsed]);
 
   function toggleCollapsed() {
     setCollapsed((v) => {
@@ -183,9 +203,11 @@ export function ListTile({
     }
   }
 
-  // Listen for cross-tile move events so the SOURCE tile immediately hides
-  // the outgoing todo while the PATCH is in flight. A "tile" is identified
-  // by the (listId, projectId) pair.
+  // Listen for move events so this tile updates immediately (without waiting
+  // for router.refresh). A Home tile (myProjectKey null + groupByProject) shows
+  // todos from every project, so a move that only changes the todo's project
+  // keeps the row in this tile and re-buckets it via an override; a move that
+  // changes the list takes the row out via hiddenIds.
   const myProjectKey = projectId ?? null;
   useEffect(() => {
     function handler(ev: Event) {
@@ -195,17 +217,33 @@ export function ListTile({
         fromProjectId: string | null;
         toListId: string;
         toProjectId: string | null;
+        toProjectName?: string | null;
       }>;
       if (!e.detail) return;
-      const isSource =
-        e.detail.fromListId === list.id && e.detail.fromProjectId === myProjectKey;
-      const isTarget =
-        e.detail.toListId === list.id && e.detail.toProjectId === myProjectKey;
-      if (isSource && !isTarget) {
+      const isInTileNow =
+        e.detail.fromListId === list.id &&
+        (myProjectKey === null || e.detail.fromProjectId === myProjectKey);
+      const willBeInTile =
+        e.detail.toListId === list.id &&
+        (myProjectKey === null || e.detail.toProjectId === myProjectKey);
+      if (isInTileNow && !willBeInTile) {
         setHiddenIds((prev) => {
           if (prev.has(e.detail.todoId)) return prev;
           const next = new Set(prev);
           next.add(e.detail.todoId);
+          return next;
+        });
+      } else if (
+        isInTileNow &&
+        willBeInTile &&
+        e.detail.toProjectId !== e.detail.fromProjectId
+      ) {
+        setTodoOverrides((prev) => {
+          const next = new Map(prev);
+          next.set(e.detail.todoId, {
+            projectId: e.detail.toProjectId,
+            projectName: e.detail.toProjectName ?? null,
+          });
           return next;
         });
       }
@@ -248,17 +286,48 @@ export function ListTile({
       }
       return next.size === prev.size ? prev : next;
     });
+    // Drop todoOverrides once the server's data matches them (or the todo
+    // dropped off this list entirely).
+    setTodoOverrides((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Map(prev);
+      const serverById = new Map(todos.map((t) => [t.id, t]));
+      for (const [id, override] of prev) {
+        const server = serverById.get(id);
+        if (!server) {
+          next.delete(id);
+          continue;
+        }
+        let matches = true;
+        for (const k of Object.keys(override) as (keyof TodoLike)[]) {
+          if (server[k] !== override[k]) {
+            matches = false;
+            break;
+          }
+        }
+        if (matches) next.delete(id);
+      }
+      return next.size === prev.size ? prev : next;
+    });
   }, [todos]);
 
   const visibleTodos = useMemo<TodoLike[]>(() => {
-    const merged = [...todos, ...pendingTodos].filter((t) => !hiddenIds.has(t.id));
-    if (completionOverrides.size === 0) return merged;
-    return merged.map((t) =>
-      completionOverrides.has(t.id)
-        ? { ...t, completedAt: completionOverrides.get(t.id) ?? null }
-        : t
-    );
-  }, [todos, pendingTodos, completionOverrides, hiddenIds]);
+    // Pending (just-added) todos render first so they appear at the top
+    // immediately. The server already sorts new rows above existing ones
+    // (createdAt DESC tiebreaker on equal position), so post-refresh order
+    // matches the optimistic order.
+    const merged = [...pendingTodos, ...todos].filter((t) => !hiddenIds.has(t.id));
+    if (completionOverrides.size === 0 && todoOverrides.size === 0)
+      return merged;
+    return merged.map((t) => {
+      let next = t;
+      const fieldOverride = todoOverrides.get(t.id);
+      if (fieldOverride) next = { ...next, ...fieldOverride };
+      if (completionOverrides.has(t.id))
+        next = { ...next, completedAt: completionOverrides.get(t.id) ?? null };
+      return next;
+    });
+  }, [todos, pendingTodos, completionOverrides, hiddenIds, todoOverrides]);
 
   async function createTodo(rawTitle: string) {
     const trimmed = rawTitle.trim();
@@ -266,7 +335,6 @@ export function ListTile({
 
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setPendingTodos((prev) => [
-      ...prev,
       {
         id: tempId,
         title: trimmed,
@@ -275,6 +343,7 @@ export function ListTile({
         completedAt: null,
         projectId: projectId ?? null,
       },
+      ...prev,
     ]);
 
     try {
@@ -522,92 +591,54 @@ export function ListTile({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      data-droptarget-list={list.id}
+      data-droptarget-project={myProjectKey ?? ""}
       className={cn(
-        "group/tile flex flex-col transition relative rounded-2xl bg-[var(--color-card)] px-4 pt-4 pb-2 shadow-[0_0_0_0.5px_rgba(0,0,0,0.04)] md:bg-[var(--color-card)]/60 md:backdrop-blur md:shadow-none md:ring-2 md:ring-transparent",
+        "group/tile flex flex-col transition relative md:rounded-2xl md:bg-[var(--color-card)] md:px-4 md:pt-4 md:pb-2 md:ring-2 md:ring-transparent md:border md:border-[var(--color-border)]",
         !collapsed && "md:min-h-[420px]",
-        !adding && "cursor-pointer md:hover:bg-[var(--color-card)]",
+        !adding && "md:cursor-pointer",
         isDragOver &&
           cn("md:bg-[var(--color-card)]", p.ring.replace("/50", "/70"))
       )}
     >
-      <div className="flex items-start justify-between gap-2 mb-1.5 md:mb-3">
-        <div className="flex items-start gap-1 min-w-0">
-          {reorderable ? (
-            <span
-              className="mt-1 text-[var(--color-muted-foreground)] hidden md:inline-block opacity-0 group-hover/tile:opacity-50 hover:opacity-100 transition cursor-grab active:cursor-grabbing"
-              title="Drag to reorder"
+      {/* Mobile: Reminders-style — large bold colored title, no chrome. */}
+      <h2
+        className={cn(
+          "md:hidden text-[34px] font-bold tracking-tight leading-[1.05] mb-3",
+          p.text
+        )}
+      >
+        {list.name}
+      </h2>
+
+      {/* Desktop header: flush-left title, all chrome on the right side. */}
+      <div className="hidden md:flex items-start justify-between gap-2 mb-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex md:items-baseline md:gap-3 min-w-0">
+            <h2
+              className={cn(
+                "text-2xl font-bold tracking-tight truncate",
+                p.text
+              )}
             >
-              <GripVertical className="size-4" />
+              {list.name}
+            </h2>
+            <span
+              className={cn(
+                "text-2xl font-bold tabular-nums shrink-0",
+                p.text
+              )}
+            >
+              {totalCount + (visibleTodos.length - todos.length)}
             </span>
-          ) : null}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleCollapsed();
-            }}
-            className="mt-1 rounded p-0.5 text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] transition"
-            title={collapsed ? "Expand" : "Collapse"}
-          >
-            {collapsed ? (
-              <ChevronRight className="size-4" />
-            ) : (
-              <ChevronDown className="size-4" />
-            )}
-          </button>
-          <div className="min-w-0 flex-1">
-            {/* Mobile: Reminders-style — small colored dot + neutral title + muted count. */}
-            <div className="flex items-center gap-2 min-w-0 md:hidden">
-              <span
-                aria-hidden
-                className={cn("shrink-0 size-[18px] rounded-full", p.fill)}
-              />
-              <h2 className="truncate text-[17px] font-semibold tracking-tight text-[var(--color-foreground)]">
-                {list.name}
-              </h2>
-              <span className="shrink-0 text-sm tabular-nums text-[var(--color-muted-foreground)]">
-                {totalCount + (visibleTodos.length - todos.length)}
-              </span>
-            </div>
-            {/* Desktop: bold colored title + colored count, unchanged. */}
-            <div className="hidden md:flex md:items-baseline md:gap-3 min-w-0">
-              <h2
-                className={cn(
-                  "text-2xl font-bold tracking-tight truncate",
-                  p.text
-                )}
-              >
-                {list.name}
-              </h2>
-              <span
-                className={cn(
-                  "text-2xl font-bold tabular-nums shrink-0",
-                  p.text
-                )}
-              >
-                {totalCount + (visibleTodos.length - todos.length)}
-              </span>
-            </div>
-            {projectLabel ? (
-              <div className="text-xs text-[var(--color-muted-foreground)] truncate -mt-0.5">
-                {projectLabel}
-              </div>
-            ) : null}
           </div>
+          {projectLabel ? (
+            <div className="text-xs text-[var(--color-muted-foreground)] truncate -mt-0.5">
+              {projectLabel}
+            </div>
+          ) : null}
         </div>
         <div className="flex items-center gap-0.5">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              startAdding();
-            }}
-            className={cn(
-              "rounded-full p-1.5 text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] transition",
-              p.text
-            )}
-            title={`Add to ${list.name}`}
-          >
-            <Plus className="size-4" />
-          </button>
           {!list.isDefault ? (
             <div className="relative">
               <button
@@ -638,8 +669,35 @@ export function ListTile({
         </div>
       </div>
 
-      {collapsed ? null : (
       <div className="flex-1 flex flex-col">
+        {adding ? (
+          <form onSubmit={addTodo} className="px-1 pt-1 pb-2">
+            <div className="flex items-start gap-3 py-1">
+              <span
+                className={cn(
+                  "mt-0.5 size-6 md:size-[22px] shrink-0 rounded-full border-2 border-[var(--color-border)]"
+                )}
+              />
+              <input
+                autoFocus
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onPaste={handlePaste}
+                onBlur={() => {
+                  if (!title.trim()) setAdding(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setAdding(false);
+                    setTitle("");
+                  }
+                }}
+                placeholder="New Reminder (paste a list to add many)"
+                className="flex-1 bg-transparent text-[17px] md:text-[15px] focus:outline-none placeholder:text-[var(--color-muted-foreground)]/70"
+              />
+            </div>
+          </form>
+        ) : null}
         {groupByProject ? (
           (() => {
             const buckets = new Map<string, TodoLike[]>();
@@ -672,6 +730,8 @@ export function ListTile({
                   return (
                     <div
                       key={g.key}
+                      data-droptarget-list={list.id}
+                      data-droptarget-project={groupProjectId ?? ""}
                       onDragOver={(e) => {
                         if (
                           !e.dataTransfer.types.includes(
@@ -705,16 +765,18 @@ export function ListTile({
                           e.stopPropagation();
                           toggleGroup(g.key);
                         }}
-                        className="w-full flex items-center gap-1.5 px-1 pt-3 pb-1 text-[13px] md:text-[11px] font-medium md:font-semibold uppercase tracking-[0.06em] md:tracking-wider text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]/40 rounded md:pt-1 md:pb-1"
+                        className="w-full flex items-center gap-1.5 px-0 pt-3 pb-1 text-[13px] md:text-[11px] font-medium md:font-semibold uppercase tracking-[0.06em] md:tracking-wider text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]/40 rounded md:pt-1 md:pb-1"
                       >
-                        {open ? (
-                          <ChevronDown className="size-3" />
-                        ) : (
-                          <ChevronRight className="size-3" />
-                        )}
                         <span className="truncate">{g.label}</span>
                         <span className="tabular-nums opacity-70">
                           {g.todos.length}
+                        </span>
+                        <span className="ml-auto">
+                          {open ? (
+                            <ChevronDown className="size-3" />
+                          ) : (
+                            <ChevronRight className="size-3" />
+                          )}
                         </span>
                       </button>
                       {open ? (
@@ -770,34 +832,7 @@ export function ListTile({
           </ul>
         )}
 
-        {adding ? (
-          <form onSubmit={addTodo} className="px-1 pt-2 pb-1">
-            <div className="flex items-start gap-3 py-1">
-              <span
-                className={cn(
-                  "mt-0.5 size-6 md:size-[22px] shrink-0 rounded-full border-2 border-[var(--color-border)]"
-                )}
-              />
-              <input
-                autoFocus
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                onPaste={handlePaste}
-                onBlur={() => {
-                  if (!title.trim()) setAdding(false);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setAdding(false);
-                    setTitle("");
-                  }
-                }}
-                placeholder="New Reminder (paste a list to add many)"
-                className="flex-1 bg-transparent text-[15px] focus:outline-none placeholder:text-[var(--color-muted-foreground)]/70"
-              />
-            </div>
-          </form>
-        ) : (
+        {!adding ? (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -818,11 +853,10 @@ export function ListTile({
             </span>
             <span>New Reminder</span>
           </button>
-        )}
+        ) : null}
 
         <div className="flex-1 min-h-[20px]" aria-hidden />
       </div>
-      )}
     </div>
   );
 }

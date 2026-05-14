@@ -138,7 +138,7 @@ export function Sidebar({ projects: initialProjects }: { projects: SidebarProjec
     <aside className="w-64 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-muted)]/40 flex flex-col min-h-screen">
       <div className="px-4 py-5 flex items-center justify-between gap-2">
         <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
-          Personal OS
+          EC
         </div>
         <button
           onClick={() => setCollapsedPersisted(true)}
@@ -485,7 +485,14 @@ function ProjectSidebarRow({
       todoId: string;
       sourceListId?: string;
       sourceProjectId?: string | null;
-      todo?: { projectId?: string | null };
+      todo?: {
+        id: string;
+        title: string;
+        notes?: string | null;
+        dueDate?: Date | string | null;
+        completedAt?: Date | string | null;
+        projectId?: string | null;
+      };
     } | null = null;
     try {
       payload = JSON.parse(raw);
@@ -494,26 +501,33 @@ function ProjectSidebarRow({
     }
     if (!payload?.todoId) return;
     if (payload.todo?.projectId === project.id) return;
-    try {
-      await fetch(`/api/todos/${payload.todoId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: project.id }),
-      });
-    } catch {
-      return;
+
+    // Optimistic: emit the move in the standard event format BEFORE the PATCH
+    // so list-tile/project-card can re-bucket the todo immediately. The list
+    // doesn't change — only the project does.
+    if (payload.sourceListId) {
+      window.dispatchEvent(
+        new CustomEvent("personalos:todo-moved", {
+          detail: {
+            todoId: payload.todoId,
+            fromListId: payload.sourceListId,
+            fromProjectId: payload.sourceProjectId ?? null,
+            toListId: payload.sourceListId,
+            toProjectId: project.id,
+            toProjectName: project.name,
+            todo: payload.todo,
+          },
+        })
+      );
     }
-    window.dispatchEvent(
-      new CustomEvent("personalos:todo-moved", {
-        detail: {
-          todoId: payload.todoId,
-          sourceListId: payload.sourceListId,
-          sourceProjectId: payload.sourceProjectId ?? null,
-          targetProjectId: project.id,
-        },
-      })
-    );
     onTodoDropped?.();
+
+    // Fire-and-forget — the optimistic event already updated the UI.
+    fetch(`/api/todos/${payload.todoId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: project.id }),
+    }).catch(() => {});
   }
 
   return (

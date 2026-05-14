@@ -98,12 +98,13 @@
     -webkit-overflow-scrolling: touch;
   }
 
-  /* Mobile: HIG-aligned body type + systemGroupedBackground page tint. */
+  /* Mobile: HIG-aligned body type. Flat Reminders-style page bg — pure white
+     in light, pure black in dark — since list tiles render chrome-less. */
   @media (max-width: 767px) {
     body {
       font-size: 17px;
       letter-spacing: -0.022em;
-      background: oklch(0.965 0 0);
+      background: oklch(1 0 0);
     }
     /* iOS Safari auto-zooms whenever a focused input is below 16px. */
     /* !important because Tailwind utilities (text-xs, text-sm) outweigh
@@ -116,15 +117,12 @@
   }
   @media (max-width: 767px) and (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) body {
-      background: oklch(0.08 0 0);
+      background: oklch(0 0 0);
     }
-  }
-  :root[data-theme="dark"] body {
-    /* Mobile-or-not, dark-mode body is the dark grouped bg. */
   }
   @media (max-width: 767px) {
     :root[data-theme="dark"] body {
-      background: oklch(0.08 0 0);
+      background: oklch(0 0 0);
     }
   }
 
@@ -133,5 +131,26 @@
     *:hover {
       background-color: revert;
     }
+  }
+
+  /* Hide scrollbars on opt-in containers (mobile horizontal pager). */
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+
+  /* Touch long-press drag drop-target highlight. Imperatively toggled via
+     [data-droptarget-active="1"] in todo-row.tsx. Box-shadow respects the
+     element's border-radius (unlike outline). */
+  [data-droptarget-active="1"] {
+    box-shadow: inset 0 0 0 2px var(--color-tint),
+      0 0 0 0.5px rgba(0, 0, 0, 0.04) !important;
+    background-color: color-mix(
+      in oklab,
+      var(--color-tint) 10%,
+      transparent
+    ) !important;
   }
 }

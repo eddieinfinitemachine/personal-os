@@ -115,7 +115,7 @@ export default async function HomePage() {
       <HomeTiles tiles={tiles} />
 
       {projectCards.length > 0 ? (
-        <section className="mt-8">
+        <section className="mt-8 hidden md:block">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)] mb-3">
             By project
           </h2>

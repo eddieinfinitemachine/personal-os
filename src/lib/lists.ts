@@ -2,8 +2,8 @@ import { prisma } from "@/lib/prisma";
 
 export const DEFAULT_LISTS = [
   { name: "To Do", color: "blue", position: 0 },
-  { name: "Monitor", color: "amber", position: 1 },
-  { name: "Later", color: "zinc", position: 2 },
+  { name: "Monitor", color: "orange", position: 1 },
+  { name: "Later", color: "violet", position: 2 },
 ] as const;
 
 // Each list color resolves to a bundle of static Tailwind classes so the
@@ -86,23 +86,23 @@ export function palette(color: string) {
   return LIST_PALETTE[(color as ListColor) in LIST_PALETTE ? (color as ListColor) : "zinc"];
 }
 
-// Idempotent: ensures the three default lists exist. Module-level guard so
-// we only hit the DB once per server process — every subsequent page load
-// is a no-op.
+// Idempotent: ensures the three default lists exist *and* their color/position
+// match DEFAULT_LISTS. Module-level guard so we only hit the DB once per
+// server process — every subsequent page load is a no-op.
 let ensured = false;
 export async function ensureDefaultLists(): Promise<void> {
   if (ensured) return;
-  const count = await prisma.list.count({ where: { isDefault: true } });
-  if (count >= DEFAULT_LISTS.length) {
-    ensured = true;
-    return;
-  }
   for (const def of DEFAULT_LISTS) {
     const existing = await prisma.list.findFirst({
       where: { isDefault: true, name: def.name },
     });
     if (!existing) {
       await prisma.list.create({ data: { ...def, isDefault: true } });
+    } else if (existing.color !== def.color || existing.position !== def.position) {
+      await prisma.list.update({
+        where: { id: existing.id },
+        data: { color: def.color, position: def.position },
+      });
     }
   }
   ensured = true;

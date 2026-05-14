@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Todos, projects, people — one home.",
     start_url: "/",
     display: "standalone",
-    background_color: "#2a1452",
-    theme_color: "#2a1452",
+    background_color: "#eaedf4",
+    theme_color: "#eaedf4",
     icons: [
       {
         src: "/icon-192.png",

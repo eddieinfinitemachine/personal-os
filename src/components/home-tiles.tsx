@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ListTile, type ListInfo } from "./list-tile";
+import { palette } from "@/lib/lists";
+import { cn } from "@/lib/utils";
 import type { TodoLike } from "./todo-row";
 
 export type HomeTile = {
@@ -49,28 +51,135 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
     startTransition(() => router.refresh());
   }
 
+  // Mobile pager: horizontal scroll-snap track with a segmented tab indicator.
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const scrollRafRef = useRef<number | null>(null);
+
+  function onTrackScroll() {
+    if (scrollRafRef.current != null) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      const t = trackRef.current;
+      if (!t) return;
+      const width = t.clientWidth;
+      if (width === 0) return;
+      const idx = Math.round(t.scrollLeft / width);
+      setActiveIdx((prev) => (prev === idx ? prev : idx));
+    });
+  }
+
+  function scrollToIdx(i: number) {
+    const t = trackRef.current;
+    if (!t) return;
+    t.scrollTo({ left: i * t.clientWidth, behavior: "smooth" });
+  }
+
+  // Broadcast the currently visible pager list so MobileFab can target its
+  // inline add input. Re-emit on demand so a late-mounting MobileFab can ask.
+  useEffect(() => {
+    const activeList = tiles[activeIdx]?.list;
+    if (!activeList) return;
+    window.dispatchEvent(
+      new CustomEvent("personalos:active-list", {
+        detail: { listId: activeList.id },
+      })
+    );
+  }, [activeIdx, tiles]);
+
+  useEffect(() => {
+    function onRequest() {
+      const activeList = tiles[activeIdx]?.list;
+      if (!activeList) return;
+      window.dispatchEvent(
+        new CustomEvent("personalos:active-list", {
+          detail: { listId: activeList.id },
+        })
+      );
+    }
+    window.addEventListener("personalos:request-active-list", onRequest);
+    return () =>
+      window.removeEventListener("personalos:request-active-list", onRequest);
+  }, [activeIdx, tiles]);
+
   return (
-    <div className="grid gap-3 md:gap-4 grid-cols-1 lg:grid-cols-3">
-      {tiles.map((t) => (
-        <ListTile
-          key={t.list.id}
-          list={t.list}
-          todos={t.todos}
-          totalCount={t.totalCount}
-          reorderable
-          groupByProject
-          onReorderStart={(id) => setDraggingId(id)}
-          onReorderOver={(id) => {
-            if (!draggingId || draggingId === id) return;
-            if (overId === id) return;
-            setOverId(id);
-            moveTile(draggingId, id);
+    <>
+      {/* Mobile: compact dot indicator + horizontal scroll-snap pager. */}
+      <div className="md:hidden">
+        <div className="mb-2 flex justify-center gap-2.5">
+          {tiles.map((t, i) => {
+            const p = palette(t.list.color);
+            const active = activeIdx === i;
+            return (
+              <button
+                key={t.list.id}
+                onClick={() => scrollToIdx(i)}
+                aria-label={`Go to ${t.list.name}`}
+                className="p-2 -m-2"
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    "block rounded-full transition-all duration-200",
+                    active
+                      ? cn("size-2.5", p.fill.split(" ")[0])
+                      : "size-1.5 bg-[var(--color-muted-foreground)]/35"
+                  )}
+                />
+              </button>
+            );
+          })}
+        </div>
+
+        <div
+          ref={trackRef}
+          onScroll={onTrackScroll}
+          data-pager-track
+          className="flex -mx-4 overflow-x-auto snap-x snap-mandatory scrollbar-none"
+          style={{
+            scrollSnapStop: "always",
+            overscrollBehaviorX: "contain",
           }}
-          onReorderDrop={() => {
-            persistOrder();
-          }}
-        />
-      ))}
-    </div>
+        >
+          {tiles.map((t) => (
+            <div
+              key={t.list.id}
+              className="snap-start shrink-0 w-screen px-4"
+            >
+              <ListTile
+                list={t.list}
+                todos={t.todos}
+                totalCount={t.totalCount}
+                groupByProject
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Desktop: grid (drag-to-reorder tiles is desktop-only). */}
+      <div className="hidden md:grid gap-4 grid-cols-1 lg:grid-cols-3">
+        {tiles.map((t) => (
+          <ListTile
+            key={t.list.id}
+            list={t.list}
+            todos={t.todos}
+            totalCount={t.totalCount}
+            reorderable
+            groupByProject
+            onReorderStart={(id) => setDraggingId(id)}
+            onReorderOver={(id) => {
+              if (!draggingId || draggingId === id) return;
+              if (overId === id) return;
+              setOverId(id);
+              moveTile(draggingId, id);
+            }}
+            onReorderDrop={() => {
+              persistOrder();
+            }}
+          />
+        ))}
+      </div>
+    </>
   );
 }
