@@ -595,7 +595,7 @@ export function ListTile({
       data-droptarget-project={myProjectKey ?? ""}
       className={cn(
         "group/tile flex flex-col transition relative md:rounded-2xl md:bg-[var(--color-card)] md:px-4 md:pt-4 md:pb-2 md:ring-2 md:ring-transparent md:border md:border-[var(--color-border)]",
-        !collapsed && "md:min-h-[420px]",
+        list.isDefault && "md:min-h-[420px]",
         !adding && "md:cursor-pointer",
         isDragOver &&
           cn("md:bg-[var(--color-card)]", p.ring.replace("/50", "/70"))
