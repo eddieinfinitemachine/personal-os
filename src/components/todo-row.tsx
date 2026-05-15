@@ -559,6 +559,46 @@ export function TodoRow({
               })}
             </button>
           ) : null}
+          {/* Mobile-only subtask controls. Project badge + date are handled
+              separately above (date subtitle); only subtask affordances live
+              here on mobile. */}
+          {!isSubtask ? (
+            <div className="md:hidden mt-1.5 flex items-center gap-3 text-[13px] text-[var(--color-muted-foreground)]">
+              {hasSubs ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSubsExpanded((v) => !v);
+                  }}
+                  className="inline-flex items-center gap-1 py-1 -my-1"
+                >
+                  {subsExpanded ? (
+                    <ChevronDown className="size-3.5" />
+                  ) : (
+                    <ChevronRight className="size-3.5" />
+                  )}
+                  <span className="tabular-nums">
+                    {subtasks.filter((s) => s.completedAt == null).length}/
+                    {subtasks.length}
+                  </span>
+                </button>
+              ) : null}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAddingSub(true);
+                  setSubsExpanded(true);
+                }}
+                className={cn(
+                  "inline-flex items-center gap-1 py-1 -my-1",
+                  p.text
+                )}
+              >
+                <Plus className="size-3.5" strokeWidth={2.5} />
+                <span>Subtask</span>
+              </button>
+            </div>
+          ) : null}
           {/* Desktop-only chip row: project badge, date pill, subtask count, add-subtask. */}
           <div className="mt-1 hidden md:flex items-center gap-2 text-xs text-[var(--color-muted-foreground)]">
             {showProjectBadge ??

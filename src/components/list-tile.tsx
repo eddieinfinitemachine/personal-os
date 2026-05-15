@@ -765,7 +765,8 @@ export function ListTile({
                           e.stopPropagation();
                           toggleGroup(g.key);
                         }}
-                        className="w-full flex items-center gap-1.5 px-0 pt-3 pb-1 text-[13px] md:text-[11px] font-medium md:font-semibold uppercase tracking-[0.06em] md:tracking-wider text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]/40 rounded md:pt-1 md:pb-1"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className="w-full flex items-center gap-1.5 px-0 py-3 text-[13px] md:text-[11px] font-medium md:font-semibold uppercase tracking-[0.06em] md:tracking-wider text-[var(--color-muted-foreground)] active:bg-[var(--color-accent)]/60 md:hover:bg-[var(--color-accent)]/40 rounded md:py-1"
                       >
                         <span className="truncate">{g.label}</span>
                         <span className="tabular-nums opacity-70">
