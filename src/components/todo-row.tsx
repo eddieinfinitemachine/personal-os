@@ -212,13 +212,14 @@ export function TodoRow({
     pointerId: -1,
   });
 
-  // Mobile long-press drag — 450ms hold without movement enters drag mode.
+  // Mobile long-press drag — 500ms hold without movement enters drag mode.
   // A floating ghost follows the finger, drop targets are any element with
   // [data-droptarget-list] up the DOM tree from elementFromPoint.
   const longPressTimerRef = useRef<number | null>(null);
   const swipeAreaRef = useRef<HTMLDivElement>(null);
   const dropTargetRef = useRef<HTMLElement | null>(null);
   const autoScrollRafRef = useRef<number | null>(null);
+  const justDraggedRef = useRef(false);
   const [touchDragging, setTouchDragging] = useState(false);
   const [ghostPos, setGhostPos] = useState({ x: 0, y: 0 });
 
@@ -345,7 +346,8 @@ export function TodoRow({
       pointerId,
     };
     // Arm long-press → drag. Fires only if the finger hasn't moved more
-    // than 8px in either direction within 450ms.
+    // than 5px in either direction within 500ms. Tighter threshold (vs 8px)
+    // makes scroll intent win over drag whenever the user starts panning.
     clearLongPress();
     longPressTimerRef.current = window.setTimeout(() => {
       longPressTimerRef.current = null;
@@ -358,13 +360,13 @@ export function TodoRow({
       } catch {}
       try {
         (navigator as Navigator & { vibrate?: (n: number) => void }).vibrate?.(
-          20
+          16
         );
       } catch {}
       setTouchDragging(true);
       setGhostPos({ x: startX, y: startY });
       updateDropTarget(startX, startY);
-    }, 450);
+    }, 500);
   }
   function onSwipePointerMove(e: React.PointerEvent) {
     if (!touchEnv) return;
@@ -380,7 +382,7 @@ export function TodoRow({
     if (s.axis === null) {
       const dx = e.clientX - s.startX;
       const dy = e.clientY - s.startY;
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
       // User started panning before long-press fired — let native scroll
       // take over and abandon the drag arm.
       s.axis = "moved";
@@ -399,6 +401,12 @@ export function TodoRow({
       const tgt = dropTargetRef.current;
       clearTargetHighlight();
       setTouchDragging(false);
+      // The synthetic click that follows the pointerup of a drag would
+      // otherwise hit the title and open edit mode. Block it briefly.
+      justDraggedRef.current = true;
+      window.setTimeout(() => {
+        justDraggedRef.current = false;
+      }, 350);
       if (tgt) {
         const tgtList = tgt.getAttribute("data-droptarget-list");
         const tgtProjRaw = tgt.getAttribute("data-droptarget-project") ?? "";
@@ -498,6 +506,8 @@ export function TodoRow({
             // On desktop, that felt twitchy — require a double-click instead.
             if (touchEnv) {
               e.stopPropagation();
+              // Suppress the synthetic click that follows a long-press drag.
+              if (justDraggedRef.current) return;
               if (!completed) setEditing(true);
             }
           }}
@@ -559,23 +569,24 @@ export function TodoRow({
               })}
             </button>
           ) : null}
-          {/* Mobile-only subtask controls. Project badge + date are handled
-              separately above (date subtitle); only subtask affordances live
-              here on mobile. */}
-          {!isSubtask ? (
-            <div className="md:hidden mt-1.5 flex items-center gap-3 text-[13px] text-[var(--color-muted-foreground)]">
+          {/* Mobile subtask row — only rendered when the task actually has
+              subtasks (show count + collapse) OR while the row is in edit
+              mode (offer "+ Subtask" contextually). Stays muted so it doesn't
+              compete with the title visually. */}
+          {!isSubtask && (hasSubs || editing) ? (
+            <div className="md:hidden mt-1 flex items-center gap-3 text-[12px] text-[var(--color-muted-foreground)]/75">
               {hasSubs ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     setSubsExpanded((v) => !v);
                   }}
-                  className="inline-flex items-center gap-1 py-1 -my-1"
+                  className="inline-flex items-center gap-0.5 py-1 -my-1"
                 >
                   {subsExpanded ? (
-                    <ChevronDown className="size-3.5" />
+                    <ChevronDown className="size-3" />
                   ) : (
-                    <ChevronRight className="size-3.5" />
+                    <ChevronRight className="size-3" />
                   )}
                   <span className="tabular-nums">
                     {subtasks.filter((s) => s.completedAt == null).length}/
@@ -583,20 +594,19 @@ export function TodoRow({
                   </span>
                 </button>
               ) : null}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setAddingSub(true);
-                  setSubsExpanded(true);
-                }}
-                className={cn(
-                  "inline-flex items-center gap-1 py-1 -my-1",
-                  p.text
-                )}
-              >
-                <Plus className="size-3.5" strokeWidth={2.5} />
-                <span>Subtask</span>
-              </button>
+              {editing ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAddingSub(true);
+                    setSubsExpanded(true);
+                  }}
+                  className="inline-flex items-center gap-0.5 py-1 -my-1"
+                >
+                  <Plus className="size-3" />
+                  <span>Subtask</span>
+                </button>
+              ) : null}
             </div>
           ) : null}
           {/* Desktop-only chip row: project badge, date pill, subtask count, add-subtask. */}
