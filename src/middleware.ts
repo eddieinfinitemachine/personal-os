@@ -13,13 +13,15 @@ export function middleware(req: NextRequest) {
   const passthrough = () =>
     NextResponse.next({ request: { headers: fwd } });
 
-  // Skip framework / asset routes
+  // Skip framework / asset routes (and the iOS shortcut bundle so it can be
+  // installed by tapping the URL without going through the password gate).
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
     pathname.startsWith("/icon") ||
     pathname.startsWith("/manifest") ||
-    pathname === "/sw.js"
+    pathname === "/sw.js" ||
+    pathname.endsWith(".shortcut")
   ) {
     return passthrough();
   }
