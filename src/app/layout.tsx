@@ -5,6 +5,7 @@ import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
 import { MobileChromeProvider } from "@/components/mobile-chrome";
 import { themePreloadScript } from "@/components/theme-toggle";
+import { ServiceWorkerRegister } from "@/components/sw-register";
 import { prisma } from "@/lib/prisma";
 
 const getSidebarProjects = unstable_cache(
@@ -73,6 +74,7 @@ export default async function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themePreloadScript }} />
       </head>
       <body className="antialiased">
+        <ServiceWorkerRegister />
         <MobileChromeProvider projects={mobileProjects}>
           <div className="flex min-h-screen">
             <div className="hidden md:flex">

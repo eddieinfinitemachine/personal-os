@@ -21,6 +21,8 @@ export function middleware(req: NextRequest) {
     pathname.startsWith("/icon") ||
     pathname.startsWith("/manifest") ||
     pathname === "/sw.js" ||
+    pathname.startsWith("/workbox-") ||
+    pathname.startsWith("/swe-worker-") ||
     pathname.endsWith(".shortcut")
   ) {
     return passthrough();
