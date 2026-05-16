@@ -116,7 +116,14 @@ export function PageHeader({
 function MobileTopBar() {
   const { state, openDrawer } = useMobileChrome();
   return (
-    <header className="md:hidden fixed top-0 inset-x-0 z-30 bg-[var(--color-background)]/95 backdrop-blur border-b border-[var(--color-border)] pt-[env(safe-area-inset-top)]">
+    <header
+      className="md:hidden fixed top-0 inset-x-0 z-30 bg-[var(--color-background)]/95 backdrop-blur border-b border-[var(--color-border)] pt-[env(safe-area-inset-top)]"
+      style={{
+        transform: "translate3d(0,0,0)",
+        WebkitTransform: "translate3d(0,0,0)",
+        willChange: "transform",
+      }}
+    >
       <div className="h-12 px-3 flex items-center gap-2">
         <button
           onClick={openDrawer}
@@ -146,7 +153,14 @@ const TAB_DESTINATIONS = [
 function MobileTabBar() {
   const pathname = usePathname();
   return (
-    <nav className="md:hidden fixed inset-x-0 bottom-0 z-30 bg-[var(--color-background)]/95 backdrop-blur border-t border-[var(--color-border)] pb-[env(safe-area-inset-bottom)]">
+    <nav
+      className="md:hidden fixed inset-x-0 bottom-0 z-30 bg-[var(--color-background)]/95 backdrop-blur border-t border-[var(--color-border)] pb-[env(safe-area-inset-bottom)]"
+      style={{
+        transform: "translate3d(0,0,0)",
+        WebkitTransform: "translate3d(0,0,0)",
+        willChange: "transform",
+      }}
+    >
       <ul className="h-14 grid grid-cols-4">
         {TAB_DESTINATIONS.map((t) => {
           const active =
