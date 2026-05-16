@@ -4,11 +4,10 @@ import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
-// Mobile "+" — taps the active pager list's inline add input on. No drawer.
-// The active list ID is broadcast by HomeTiles via the personalos:active-list
-// window event; this component reflects it and dispatches a
-// personalos:start-add-todo event with that ID, which list-tile.tsx listens
-// for and opens its top inline input in response.
+// Mobile "+" — opens the active pager list's inline add input. No drawer.
+// HomeTiles broadcasts the active list ID via the personalos:active-list
+// window event; on tap we dispatch personalos:start-add-todo with that ID,
+// which list-tile.tsx listens for.
 export function MobileFab() {
   const [activeListId, setActiveListId] = useState<string | null>(null);
 
@@ -47,7 +46,7 @@ export function MobileFab() {
         "bg-[var(--color-tint)] text-white",
         "shadow-[0_10px_24px_-6px_color-mix(in_oklab,var(--color-tint),transparent_30%),0_2px_6px_rgba(0,0,0,0.25)]",
         "active:scale-90 transition-transform duration-150 ease-out",
-        !activeListId && "opacity-50 pointer-events-none"
+        !activeListId && "opacity-50"
       )}
     >
       <Plus className="size-7" strokeWidth={2.5} />

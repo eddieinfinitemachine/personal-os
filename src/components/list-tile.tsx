@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { ChevronDown, ChevronRight, GripVertical, MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import { palette } from "@/lib/lists";
 import { cn } from "@/lib/utils";
 import { TodoRow, type TodoLike } from "./todo-row";
@@ -49,55 +49,25 @@ export function ListTile({
   const [menuOpen, setMenuOpen] = useState(false);
   const [, startTransition] = useTransition();
 
-  // Optimistic state. Adds live in pendingTodos; toggles live in completionOverrides.
-  // Cross-list drops temporarily hide outgoing todos via hiddenIds (until the
-  // server-rendered list catches up). All three auto-prune off the `todos` prop
-  // so we never wait on router.refresh() to feel responsive.
+  // Optimistic state: adds, hides, and per-field overrides — applied to
+  // visibleTodos so the UI updates without waiting on router.refresh().
   const [pendingTodos, setPendingTodos] = useState<TodoLike[]>([]);
-  const [completionOverrides, setCompletionOverrides] = useState<
-    Map<string, Date | null>
-  >(new Map());
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
-  // Field-level overrides for todos that stayed in this tile but had a field
-  // change (e.g. projectId after a sidebar drop). Applied in visibleTodos so
-  // the UI re-buckets immediately instead of waiting for router.refresh.
   const [todoOverrides, setTodoOverrides] = useState<
     Map<string, Partial<TodoLike>>
   >(new Map());
   const [isDragOver, setIsDragOver] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-  const collapseKey = `personalos:listcollapse:${list.id}:${projectId ?? "all"}`;
 
-  useEffect(() => {
-    try {
-      const v = localStorage.getItem(collapseKey);
-      if (v === "1") setCollapsed(true);
-    } catch {}
-  }, [collapseKey]);
-
-  // Listen for "start adding" events from the mobile FAB. The FAB scopes the
-  // event to the currently visible pager list via list.id.
   useEffect(() => {
     function handler(e: Event) {
       const ev = e as CustomEvent<{ listId: string }>;
       if (ev.detail?.listId !== list.id) return;
       setAdding(true);
-      if (collapsed) setCollapsed(false);
     }
     window.addEventListener("personalos:start-add-todo", handler);
     return () =>
       window.removeEventListener("personalos:start-add-todo", handler);
-  }, [list.id, collapsed]);
-
-  function toggleCollapsed() {
-    setCollapsed((v) => {
-      const next = !v;
-      try {
-        localStorage.setItem(collapseKey, next ? "1" : "0");
-      } catch {}
-      return next;
-    });
-  }
+  }, [list.id]);
 
   // Per-group collapse state, persisted in localStorage. Used only when
   // groupByProject is enabled.
@@ -267,27 +237,8 @@ export function ListTile({
       for (const id of prev) if (serverIds.has(id)) next.add(id);
       return next.size === prev.size ? prev : next;
     });
-    // Drop completion overrides once the server's value matches (or the todo
-    // dropped off the incomplete list, which already reflects the toggle).
-    setCompletionOverrides((prev) => {
-      if (prev.size === 0) return prev;
-      const next = new Map(prev);
-      const serverById = new Map(todos.map((t) => [t.id, t]));
-      for (const [id, override] of prev) {
-        const server = serverById.get(id);
-        if (!server) {
-          // Not in incomplete list anymore — server has accepted the toggle.
-          next.delete(id);
-          continue;
-        }
-        const serverDone = server.completedAt != null;
-        const overrideDone = override != null;
-        if (serverDone === overrideDone) next.delete(id);
-      }
-      return next.size === prev.size ? prev : next;
-    });
-    // Drop todoOverrides once the server's data matches them (or the todo
-    // dropped off this list entirely).
+    // Drop todoOverrides once the server matches them (or the todo dropped
+    // off this list).
     setTodoOverrides((prev) => {
       if (prev.size === 0) return prev;
       const next = new Map(prev);
@@ -317,17 +268,12 @@ export function ListTile({
     // (createdAt DESC tiebreaker on equal position), so post-refresh order
     // matches the optimistic order.
     const merged = [...pendingTodos, ...todos].filter((t) => !hiddenIds.has(t.id));
-    if (completionOverrides.size === 0 && todoOverrides.size === 0)
-      return merged;
+    if (todoOverrides.size === 0) return merged;
     return merged.map((t) => {
-      let next = t;
       const fieldOverride = todoOverrides.get(t.id);
-      if (fieldOverride) next = { ...next, ...fieldOverride };
-      if (completionOverrides.has(t.id))
-        next = { ...next, completedAt: completionOverrides.get(t.id) ?? null };
-      return next;
+      return fieldOverride ? { ...t, ...fieldOverride } : t;
     });
-  }, [todos, pendingTodos, completionOverrides, hiddenIds, todoOverrides]);
+  }, [todos, pendingTodos, hiddenIds, todoOverrides]);
 
   async function createTodo(rawTitle: string) {
     const trimmed = rawTitle.trim();
@@ -405,11 +351,21 @@ export function ListTile({
     const current = visibleTodos.find((t) => t.id === id);
     if (!current) return;
     const next = current.completedAt ? null : new Date();
-    setCompletionOverrides((prev) => {
+    setTodoOverrides((prev) => {
       const map = new Map(prev);
-      map.set(id, next);
+      map.set(id, { ...prev.get(id), completedAt: next });
       return map;
     });
+    const rollback = () =>
+      setTodoOverrides((prev) => {
+        const map = new Map(prev);
+        const existing = prev.get(id);
+        if (!existing) return prev;
+        const { completedAt: _, ...rest } = existing;
+        if (Object.keys(rest).length === 0) map.delete(id);
+        else map.set(id, rest);
+        return map;
+      });
     fetch(`/api/todos/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -417,20 +373,9 @@ export function ListTile({
     })
       .then((res) => {
         if (res.ok) startTransition(() => router.refresh());
-        else
-          setCompletionOverrides((prev) => {
-            const map = new Map(prev);
-            map.delete(id);
-            return map;
-          });
+        else rollback();
       })
-      .catch(() => {
-        setCompletionOverrides((prev) => {
-          const map = new Map(prev);
-          map.delete(id);
-          return map;
-        });
-      });
+      .catch(rollback);
   }
 
   async function toggleSubtask(subtaskId: string) {

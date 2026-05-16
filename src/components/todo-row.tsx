@@ -220,8 +220,17 @@ export function TodoRow({
   const dropTargetRef = useRef<HTMLElement | null>(null);
   const autoScrollRafRef = useRef<number | null>(null);
   const justDraggedRef = useRef(false);
+  // Ghost element + pager track are written to directly during drag — no
+  // setState in the pointermove hot path (would re-render the row at 60Hz+).
+  const ghostRef = useRef<HTMLDivElement>(null);
+  const pagerTrackRef = useRef<HTMLElement | null>(null);
   const [touchDragging, setTouchDragging] = useState(false);
-  const [ghostPos, setGhostPos] = useState({ x: 0, y: 0 });
+
+  function positionGhost(x: number, y: number) {
+    const el = ghostRef.current;
+    if (!el) return;
+    el.style.transform = `translate3d(${x - 16}px, ${y - 22}px, 0) rotate(-1.5deg) scale(1.02)`;
+  }
 
   function clearLongPress() {
     if (longPressTimerRef.current != null) {
@@ -267,9 +276,7 @@ export function TodoRow({
     // so a cross-page drag can reach a list in another pager page.
     const H_EDGE = 56;
     let dx = 0;
-    const track = document.querySelector(
-      "[data-pager-track]"
-    ) as HTMLElement | null;
+    const track = pagerTrackRef.current;
     if (track) {
       if (x < H_EDGE) dx = -Math.ceil(((H_EDGE - x) / H_EDGE) * 20);
       else if (x > window.innerWidth - H_EDGE)
@@ -363,8 +370,12 @@ export function TodoRow({
           16
         );
       } catch {}
+      pagerTrackRef.current = document.querySelector(
+        "[data-pager-track]"
+      ) as HTMLElement | null;
       setTouchDragging(true);
-      setGhostPos({ x: startX, y: startY });
+      // Position the ghost once the portal mounts (next frame).
+      requestAnimationFrame(() => positionGhost(startX, startY));
       updateDropTarget(startX, startY);
     }, 500);
   }
@@ -374,7 +385,7 @@ export function TodoRow({
     if (!s.active || s.pointerId !== e.pointerId) return;
     if (s.axis === "drag") {
       e.preventDefault();
-      setGhostPos({ x: e.clientX, y: e.clientY });
+      positionGhost(e.clientX, e.clientY);
       updateDropTarget(e.clientX, e.clientY);
       maybeAutoScroll(e.clientX, e.clientY);
       return;
@@ -400,6 +411,7 @@ export function TodoRow({
       stopAutoScroll();
       const tgt = dropTargetRef.current;
       clearTargetHighlight();
+      pagerTrackRef.current = null;
       setTouchDragging(false);
       // The synthetic click that follows the pointerup of a drag would
       // otherwise hit the title and open edit mode. Block it briefly.
@@ -751,14 +763,16 @@ export function TodoRow({
       {touchDragging && typeof document !== "undefined"
         ? createPortal(
             <div
+              ref={ghostRef}
               style={{
                 position: "fixed",
-                left: ghostPos.x,
-                top: ghostPos.y,
-                transform: "translate(-16px, -22px) rotate(-1.5deg) scale(1.02)",
+                top: 0,
+                left: 0,
+                transform: "translate3d(-9999px, -9999px, 0)",
                 zIndex: 1000,
                 pointerEvents: "none",
                 maxWidth: "min(320px, 75vw)",
+                willChange: "transform",
               }}
               className="rounded-xl bg-[var(--color-card)] shadow-2xl ring-2 ring-blue-500 px-3 py-2.5"
             >

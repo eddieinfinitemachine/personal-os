@@ -122,7 +122,7 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
                   className={cn(
                     "block rounded-full transition-all duration-200",
                     active
-                      ? cn("size-2.5", p.fill.split(" ")[0])
+                      ? cn("size-2.5", p.dot)
                       : "size-1.5 bg-[var(--color-muted-foreground)]/35"
                   )}
                 />
