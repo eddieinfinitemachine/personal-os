@@ -141,6 +141,7 @@ model Vehicle {
   contacts       VehicleContact[]
   photos         VehiclePhoto[]
   shoppingItems  ShoppingItem[]
+  drives         VehicleDrive[]
   recommendations Recommendation[]
 }
 
@@ -536,6 +537,21 @@ model VehicleContact {
   createdAt DateTime @default(now())
 
   @@index([vehicleId, position])
+}
+
+model VehicleDrive {
+  id          String   @id @default(cuid())
+  vehicleId   String
+  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  drivenAt    DateTime
+  distance    Int
+  destination String?
+  notes       String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([vehicleId, drivenAt])
 }
 
 model Note {

@@ -19,6 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { MileageEditor } from "./mileage-editor";
 import { AddServiceRecord } from "./add-service-record";
+import { LogDrive } from "./log-drive";
 import { PhotoGallery } from "../photo-gallery";
 import { ShoppingList } from "../shopping-list";
 import { CoachingPanel } from "../coaching-panel";
@@ -55,6 +56,7 @@ export async function VehicleDashboard({ projectId }: { projectId: string }) {
         where: { completedAt: null, dismissedAt: null },
         orderBy: { position: "asc" },
       },
+      drives: { orderBy: { drivenAt: "desc" }, take: 20 },
     },
   });
 
@@ -117,11 +119,6 @@ export async function VehicleDashboard({ projectId }: { projectId: string }) {
             currentMileage={vehicle.currentMileage}
             unit={vehicle.mileageUnit}
           />
-          {vehicle.acquiredPriceUsd != null ? (
-            <div className="text-base font-semibold tabular-nums">
-              Purchase ${vehicle.acquiredPriceUsd.toLocaleString()}
-            </div>
-          ) : null}
           {vehicle.acquiredAt ? (
             <div className="text-xs text-[var(--color-muted-foreground)]">
               Acquired {formatDate(vehicle.acquiredAt)}
@@ -156,6 +153,18 @@ export async function VehicleDashboard({ projectId }: { projectId: string }) {
       />
 
       <PhotoGallery apiBase={`/api/vehicles/${vehicle.id}`} photos={vehicle.photos} />
+
+      <LogDrive
+        vehicleId={vehicle.id}
+        unit={vehicle.mileageUnit}
+        drives={vehicle.drives.map((d) => ({
+          id: d.id,
+          drivenAt: d.drivenAt.toISOString(),
+          distance: d.distance,
+          destination: d.destination,
+          notes: d.notes,
+        }))}
+      />
 
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold flex items-center gap-2">
