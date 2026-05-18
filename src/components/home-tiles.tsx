@@ -104,9 +104,9 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
 
   return (
     <>
-      {/* Mobile: compact dot indicator + horizontal scroll-snap pager. */}
+      {/* Mobile: scrollable pill bar (one chip per list with count) + pager. */}
       <div className="md:hidden">
-        <div className="mb-2 flex justify-center gap-2.5">
+        <div className="mb-3 -mx-4 px-4 flex gap-1.5 overflow-x-auto scrollbar-none">
           {tiles.map((t, i) => {
             const p = palette(t.list.color);
             const active = activeIdx === i;
@@ -115,17 +115,16 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
                 key={t.list.id}
                 onClick={() => scrollToIdx(i)}
                 aria-label={`Go to ${t.list.name}`}
-                className="p-2 -m-2"
+                className={cn(
+                  "shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium transition",
+                  active
+                    ? "bg-[var(--color-accent)] text-[var(--color-foreground)] ring-1 ring-[var(--color-foreground)]/10"
+                    : "text-[var(--color-muted-foreground)]"
+                )}
               >
-                <span
-                  aria-hidden
-                  className={cn(
-                    "block rounded-full transition-all duration-200",
-                    active
-                      ? cn("size-2.5", p.dot)
-                      : "size-1.5 bg-[var(--color-muted-foreground)]/35"
-                  )}
-                />
+                <span aria-hidden className={cn("size-2 rounded-full", p.dot)} />
+                <span className="whitespace-nowrap">{t.list.name}</span>
+                <span className="tabular-nums opacity-70">{t.totalCount}</span>
               </button>
             );
           })}

@@ -668,6 +668,10 @@ export function TodoRow({
               ) : null}
               {editing ? (
                 <button
+                  // mousedown preventDefault stops the title input from
+                  // blurring; without it, save() fires, setEditing(false)
+                  // unmounts this button, and the click never registers.
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={(e) => {
                     e.stopPropagation();
                     setAddingSub(true);
@@ -682,6 +686,7 @@ export function TodoRow({
               {editing ? (
                 <div className="relative" data-project-picker>
                   <button
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={(e) => {
                       e.stopPropagation();
                       setProjectPickerOpen((v) => !v);
