@@ -168,8 +168,14 @@ export function TodoRow({
     router.refresh();
   }
 
-  // Project picker (mobile + desktop edit row).
+  // Project picker (mobile + desktop edit row). Rendered via portal at the
+  // body level with position computed from the chip's bounding rect — keeps
+  // it from being constrained by row overflow or weird ancestor positioning.
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [projectPickerPos, setProjectPickerPos] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
   const [availableProjects, setAvailableProjects] = useState<
     { id: string; name: string }[]
   >([]);
@@ -183,10 +189,14 @@ export function TodoRow({
       .catch(() => {});
   }, [projectPickerNeedsLoad]);
   useEffect(() => {
-    if (!projectPickerOpen) return;
+    if (!projectPickerOpen) {
+      setProjectPickerPos(null);
+      return;
+    }
     function onDown(e: MouseEvent | TouchEvent) {
       const t = e.target as HTMLElement | null;
       if (t?.closest("[data-project-picker]")) return;
+      if (t?.closest("[data-project-picker-popover]")) return;
       setProjectPickerOpen(false);
     }
     document.addEventListener("mousedown", onDown);
@@ -196,6 +206,15 @@ export function TodoRow({
       document.removeEventListener("touchstart", onDown);
     };
   }, [projectPickerOpen]);
+  function openProjectPicker(anchorRect: DOMRect) {
+    const POP_W = 192; // matches w-48
+    const left = Math.min(
+      anchorRect.left,
+      window.innerWidth - POP_W - 8
+    );
+    setProjectPickerPos({ top: anchorRect.bottom + 4, left });
+    setProjectPickerOpen(true);
+  }
   async function moveToProject(projectId: string | null) {
     setProjectPickerOpen(false);
     await fetch(`/api/todos/${todo.id}`, {
@@ -684,52 +703,22 @@ export function TodoRow({
                 </button>
               ) : null}
               {editing ? (
-                <div className="relative" data-project-picker>
-                  <button
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setProjectPickerOpen((v) => !v);
-                    }}
-                    className="inline-flex items-center gap-0.5 py-1 -my-1 max-w-[8rem]"
-                  >
-                    <Folder className="size-3" />
-                    <span className="truncate">
-                      {todo.projectName ?? "Project"}
-                    </span>
-                  </button>
-                  {projectPickerOpen ? (
-                    <div
-                      className="absolute left-0 top-full mt-1 z-50 w-48 max-h-64 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-xl"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {todo.projectId ? (
-                        <button
-                          onClick={() => moveToProject(null)}
-                          className="block w-full text-left px-3 py-2 text-[13px] text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]"
-                        >
-                          Remove from project
-                        </button>
-                      ) : null}
-                      {availableProjects
-                        .filter((pr) => pr.id !== todo.projectId)
-                        .map((pr) => (
-                          <button
-                            key={pr.id}
-                            onClick={() => moveToProject(pr.id)}
-                            className="block w-full text-left px-3 py-2 text-[13px] text-[var(--color-foreground)] hover:bg-[var(--color-accent)]"
-                          >
-                            {pr.name}
-                          </button>
-                        ))}
-                      {availableProjects.length === 0 ? (
-                        <div className="px-3 py-2 text-[13px] text-[var(--color-muted-foreground)]">
-                          Loading…
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
+                <button
+                  data-project-picker
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openProjectPicker(
+                      (e.currentTarget as HTMLElement).getBoundingClientRect()
+                    );
+                  }}
+                  className="inline-flex items-center gap-0.5 py-1 -my-1 max-w-[8rem]"
+                >
+                  <Folder className="size-3" />
+                  <span className="truncate">
+                    {todo.projectName ?? "Project"}
+                  </span>
+                </button>
               ) : null}
             </div>
           ) : null}
@@ -821,52 +810,22 @@ export function TodoRow({
                   <Plus className="size-3" />
                   <span>Subtask</span>
                 </button>
-                <div className="relative" data-project-picker>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setProjectPickerOpen((v) => !v);
-                    }}
-                    className="inline-flex items-center gap-1 rounded px-1 py-0.5 opacity-0 md:group-hover:opacity-60 md:hover:opacity-100 hover:bg-[var(--color-accent)] transition"
-                    title={todo.projectName ?? "Assign to project"}
-                  >
-                    <Folder className="size-3" />
-                    <span className="max-w-[8rem] truncate">
-                      {todo.projectName ?? "Project"}
-                    </span>
-                  </button>
-                  {projectPickerOpen ? (
-                    <div
-                      className="absolute left-0 top-full mt-1 z-50 w-48 max-h-64 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-xl"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {todo.projectId ? (
-                        <button
-                          onClick={() => moveToProject(null)}
-                          className="block w-full text-left px-3 py-2 text-[13px] text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]"
-                        >
-                          Remove from project
-                        </button>
-                      ) : null}
-                      {availableProjects
-                        .filter((pr) => pr.id !== todo.projectId)
-                        .map((pr) => (
-                          <button
-                            key={pr.id}
-                            onClick={() => moveToProject(pr.id)}
-                            className="block w-full text-left px-3 py-2 text-[13px] text-[var(--color-foreground)] hover:bg-[var(--color-accent)]"
-                          >
-                            {pr.name}
-                          </button>
-                        ))}
-                      {availableProjects.length === 0 ? (
-                        <div className="px-3 py-2 text-[13px] text-[var(--color-muted-foreground)]">
-                          Loading…
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
+                <button
+                  data-project-picker
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openProjectPicker(
+                      (e.currentTarget as HTMLElement).getBoundingClientRect()
+                    );
+                  }}
+                  className="inline-flex items-center gap-1 rounded px-1 py-0.5 opacity-0 md:group-hover:opacity-60 md:hover:opacity-100 hover:bg-[var(--color-accent)] transition"
+                  title={todo.projectName ?? "Assign to project"}
+                >
+                  <Folder className="size-3" />
+                  <span className="max-w-[8rem] truncate">
+                    {todo.projectName ?? "Project"}
+                  </span>
+                </button>
               </>
             ) : null}
           </div>
@@ -912,6 +871,47 @@ export function TodoRow({
         </ul>
       ) : null}
       <ContextMenuPopover pos={ctx.pos} items={menu} onClose={ctx.close} />
+      {projectPickerOpen && projectPickerPos && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              data-project-picker-popover
+              style={{
+                position: "fixed",
+                top: projectPickerPos.top,
+                left: projectPickerPos.left,
+                zIndex: 60,
+              }}
+              className="w-48 max-h-64 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {todo.projectId ? (
+                <button
+                  onClick={() => moveToProject(null)}
+                  className="block w-full text-left px-3 py-2 text-[13px] text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]"
+                >
+                  Remove from project
+                </button>
+              ) : null}
+              {availableProjects
+                .filter((pr) => pr.id !== todo.projectId)
+                .map((pr) => (
+                  <button
+                    key={pr.id}
+                    onClick={() => moveToProject(pr.id)}
+                    className="block w-full text-left px-3 py-2 text-[13px] text-[var(--color-foreground)] hover:bg-[var(--color-accent)]"
+                  >
+                    {pr.name}
+                  </button>
+                ))}
+              {availableProjects.length === 0 ? (
+                <div className="px-3 py-2 text-[13px] text-[var(--color-muted-foreground)]">
+                  Loading…
+                </div>
+              ) : null}
+            </div>,
+            document.body
+          )
+        : null}
       {touchDragging && typeof document !== "undefined"
         ? createPortal(
             <div
