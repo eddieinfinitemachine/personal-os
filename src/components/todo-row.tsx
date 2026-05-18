@@ -9,6 +9,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Folder,
   Pencil,
   Plus,
   Trash2,
@@ -166,6 +167,44 @@ export function TodoRow({
     });
     router.refresh();
   }
+
+  // Project picker (mobile + desktop edit row).
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [availableProjects, setAvailableProjects] = useState<
+    { id: string; name: string }[]
+  >([]);
+  const projectPickerNeedsLoad =
+    (projectPickerOpen || ctx.isOpen) && availableProjects.length === 0;
+  useEffect(() => {
+    if (!projectPickerNeedsLoad) return;
+    fetch("/api/projects")
+      .then((r) => r.json())
+      .then((d) => setAvailableProjects(d.projects ?? []))
+      .catch(() => {});
+  }, [projectPickerNeedsLoad]);
+  useEffect(() => {
+    if (!projectPickerOpen) return;
+    function onDown(e: MouseEvent | TouchEvent) {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest("[data-project-picker]")) return;
+      setProjectPickerOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("touchstart", onDown);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+    };
+  }, [projectPickerOpen]);
+  async function moveToProject(projectId: string | null) {
+    setProjectPickerOpen(false);
+    await fetch(`/api/todos/${todo.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    });
+    router.refresh();
+  }
   const menu: AnyMenuEntry[] = [
     {
       label: "Rename",
@@ -181,6 +220,27 @@ export function TodoRow({
           label: l.name,
           onSelect: () => moveToList(l.id),
         })),
+    },
+    {
+      label: "Project…",
+      icon: <Folder className="size-3.5" />,
+      submenu: [
+        ...(todo.projectId
+          ? [
+              {
+                label: "Remove from project",
+                destructive: true,
+                onSelect: () => moveToProject(null),
+              },
+            ]
+          : []),
+        ...availableProjects
+          .filter((pr) => pr.id !== todo.projectId)
+          .map((pr) => ({
+            label: pr.name,
+            onSelect: () => moveToProject(pr.id),
+          })),
+      ],
     },
     { separator: true },
     {
@@ -618,6 +678,53 @@ export function TodoRow({
                   <Plus className="size-3" />
                   <span>Subtask</span>
                 </button>
+              ) : null}
+              {editing ? (
+                <div className="relative" data-project-picker>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setProjectPickerOpen((v) => !v);
+                    }}
+                    className="inline-flex items-center gap-0.5 py-1 -my-1 max-w-[8rem]"
+                  >
+                    <Folder className="size-3" />
+                    <span className="truncate">
+                      {todo.projectName ?? "Project"}
+                    </span>
+                  </button>
+                  {projectPickerOpen ? (
+                    <div
+                      className="absolute left-0 top-full mt-1 z-50 w-48 max-h-64 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-xl"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {todo.projectId ? (
+                        <button
+                          onClick={() => moveToProject(null)}
+                          className="block w-full text-left px-3 py-2 text-[13px] text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]"
+                        >
+                          Remove from project
+                        </button>
+                      ) : null}
+                      {availableProjects
+                        .filter((pr) => pr.id !== todo.projectId)
+                        .map((pr) => (
+                          <button
+                            key={pr.id}
+                            onClick={() => moveToProject(pr.id)}
+                            className="block w-full text-left px-3 py-2 text-[13px] text-[var(--color-foreground)] hover:bg-[var(--color-accent)]"
+                          >
+                            {pr.name}
+                          </button>
+                        ))}
+                      {availableProjects.length === 0 ? (
+                        <div className="px-3 py-2 text-[13px] text-[var(--color-muted-foreground)]">
+                          Loading…
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           ) : null}
