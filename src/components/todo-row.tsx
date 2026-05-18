@@ -728,14 +728,8 @@ export function TodoRow({
               ) : null}
             </div>
           ) : null}
-          {/* Desktop-only chip row: project badge, date pill, subtask count, add-subtask. */}
+          {/* Desktop-only chip row: date pill, subtask count, add-subtask, project picker. */}
           <div className="mt-1 hidden md:flex items-center gap-2 text-xs text-[var(--color-muted-foreground)]">
-            {showProjectBadge ??
-              (todo.projectName ? (
-                <span className="inline-flex items-center rounded bg-[var(--color-accent)]/60 px-1.5 py-0.5 text-[10px] font-medium">
-                  {todo.projectName}
-                </span>
-              ) : null)}
             {editingDate ? (
               <input
                 ref={dateRef}
@@ -822,6 +816,57 @@ export function TodoRow({
                   <Plus className="size-3" />
                   <span>Subtask</span>
                 </button>
+                <div className="relative" data-project-picker>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setProjectPickerOpen((v) => !v);
+                    }}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-[var(--color-accent)] transition",
+                      todo.projectName
+                        ? "opacity-100"
+                        : "opacity-50 md:opacity-0 md:group-hover:opacity-60 md:hover:opacity-100"
+                    )}
+                    title={todo.projectName ?? "Assign to project"}
+                  >
+                    <Folder className="size-3" />
+                    <span className="max-w-[8rem] truncate">
+                      {todo.projectName ?? "Project"}
+                    </span>
+                  </button>
+                  {projectPickerOpen ? (
+                    <div
+                      className="absolute left-0 top-full mt-1 z-50 w-48 max-h-64 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-xl"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {todo.projectId ? (
+                        <button
+                          onClick={() => moveToProject(null)}
+                          className="block w-full text-left px-3 py-2 text-[13px] text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]"
+                        >
+                          Remove from project
+                        </button>
+                      ) : null}
+                      {availableProjects
+                        .filter((pr) => pr.id !== todo.projectId)
+                        .map((pr) => (
+                          <button
+                            key={pr.id}
+                            onClick={() => moveToProject(pr.id)}
+                            className="block w-full text-left px-3 py-2 text-[13px] text-[var(--color-foreground)] hover:bg-[var(--color-accent)]"
+                          >
+                            {pr.name}
+                          </button>
+                        ))}
+                      {availableProjects.length === 0 ? (
+                        <div className="px-3 py-2 text-[13px] text-[var(--color-muted-foreground)]">
+                          Loading…
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
               </>
             ) : null}
           </div>
