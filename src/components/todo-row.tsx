@@ -822,12 +822,7 @@ export function TodoRow({
                       e.stopPropagation();
                       setProjectPickerOpen((v) => !v);
                     }}
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-[var(--color-accent)] transition",
-                      todo.projectName
-                        ? "opacity-100"
-                        : "opacity-50 md:opacity-0 md:group-hover:opacity-60 md:hover:opacity-100"
-                    )}
+                    className="inline-flex items-center gap-1 rounded px-1 py-0.5 opacity-0 md:group-hover:opacity-60 md:hover:opacity-100 hover:bg-[var(--color-accent)] transition"
                     title={todo.projectName ?? "Assign to project"}
                   >
                     <Folder className="size-3" />
