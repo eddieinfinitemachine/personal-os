@@ -669,34 +669,6 @@ export function ListTile({
       </div>
 
       <div className="flex-1 flex flex-col">
-        {adding ? (
-          <form onSubmit={addTodo} className="px-1 pt-1 pb-2">
-            <div className="flex items-start gap-3 py-1">
-              <span
-                className={cn(
-                  "mt-0.5 size-6 md:size-[22px] shrink-0 rounded-full border-2 border-[var(--color-border)]"
-                )}
-              />
-              <input
-                autoFocus
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                onPaste={handlePaste}
-                onBlur={() => {
-                  if (!title.trim()) setAdding(false);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setAdding(false);
-                    setTitle("");
-                  }
-                }}
-                placeholder="New Reminder"
-                className="flex-1 bg-transparent text-[17px] md:text-[15px] focus:outline-none placeholder:text-[var(--color-muted-foreground)]/70"
-              />
-            </div>
-          </form>
-        ) : null}
         {groupByProject ? (
           (() => {
             const buckets = new Map<string, TodoLike[]>();
@@ -851,7 +823,34 @@ export function ListTile({
           </ul>
         )}
 
-        {!adding ? (
+        {adding ? (
+          <form onSubmit={addTodo} className="px-1 pt-1 pb-2">
+            <div className="flex items-start gap-3 py-1">
+              <span
+                className={cn(
+                  "mt-0.5 size-6 md:size-[22px] shrink-0 rounded-full border-2 border-[var(--color-border)]"
+                )}
+              />
+              <input
+                autoFocus
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onPaste={handlePaste}
+                onBlur={() => {
+                  if (!title.trim()) setAdding(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setAdding(false);
+                    setTitle("");
+                  }
+                }}
+                placeholder="New Reminder"
+                className="flex-1 bg-transparent text-[17px] md:text-[15px] focus:outline-none placeholder:text-[var(--color-muted-foreground)]/70"
+              />
+            </div>
+          </form>
+        ) : (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -872,7 +871,7 @@ export function ListTile({
             </span>
             <span>New Reminder</span>
           </button>
-        ) : null}
+        )}
 
         <div className="flex-1 min-h-[20px]" aria-hidden />
       </div>
