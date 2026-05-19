@@ -52,11 +52,13 @@ export type MobileProject = { id: string; name: string };
 export function MobileChromeProvider({
   children,
   projects,
+  appName = "Kaizen",
 }: {
   children: ReactNode;
   projects: MobileProject[];
+  appName?: string;
 }) {
-  const [title, setTitle] = useState("Kaizen");
+  const [title, setTitle] = useState(appName);
   const [right, setRight] = useState<ReactNode | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -76,7 +78,7 @@ export function MobileChromeProvider({
     <Ctx.Provider value={api}>
       {children}
       <MobileTopBar />
-      <MobileDrawer projects={projects} />
+      <MobileDrawer projects={projects} appName={appName} />
       <MobileFab />
       <MobileTabBar />
     </Ctx.Provider>
@@ -200,7 +202,7 @@ const DRAWER_PRIMARY = [
   { href: "/best-practices", label: "Best practices", Icon: Lightbulb },
 ];
 
-function MobileDrawer({ projects }: { projects: MobileProject[] }) {
+function MobileDrawer({ projects, appName }: { projects: MobileProject[]; appName: string }) {
   const { drawerOpen, closeDrawer } = useMobileChrome();
   const pathname = usePathname();
   // Close on route change.
@@ -237,7 +239,7 @@ function MobileDrawer({ projects }: { projects: MobileProject[] }) {
       >
         <div className="flex items-center justify-between px-4 py-4">
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
-            Kaizen
+            {appName}
           </div>
           <button
             onClick={closeDrawer}

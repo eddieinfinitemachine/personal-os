@@ -22,6 +22,9 @@ async function getSidebarProjects(userId: string) {
   });
 }
 
+// Static metadata defaults to the public brand. The dynamic per-host title
+// (incl. "EC" for the private host) is set per-page where it matters; the
+// manifest itself is host-aware via app/manifest.ts.
 export const metadata: Metadata = {
   title: "Kaizen — A little better, every day.",
   description: "Tasks, projects, people, trips, possessions — your life, organized.",
@@ -32,6 +35,9 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
   },
 };
+
+// Hosts that get the private "EC" branding. Keep in sync with manifest.ts.
+const PRIVATE_HOSTS = new Set(["internal.eddiecohen.com"]);
 
 export const viewport: Viewport = {
   themeColor: "#000000",
@@ -50,6 +56,8 @@ export default async function RootLayout({
   const h = await headers();
   const pathname = h.get("x-pathname") ?? "";
   const userId = h.get("x-user-id");
+  const host = (h.get("host") ?? "").split(":")[0].toLowerCase();
+  const appName = PRIVATE_HOSTS.has(host) ? "EC" : "Kaizen";
   const isAuthRoute =
     pathname === "/login" ||
     pathname.startsWith("/login/") ||
@@ -83,10 +91,10 @@ export default async function RootLayout({
       </head>
       <body className="antialiased">
         <ServiceWorkerRegister />
-        <MobileChromeProvider projects={mobileProjects}>
+        <MobileChromeProvider projects={mobileProjects} appName={appName}>
           <div className="flex min-h-screen">
             <div className="hidden md:flex">
-              <Sidebar projects={projects} />
+              <Sidebar projects={projects} appName={appName} />
             </div>
             <main className="flex-1 overflow-x-hidden pt-[calc(48px+env(safe-area-inset-top))] pb-[calc(56px+env(safe-area-inset-bottom))] md:pt-0 md:pb-0">
               {children}

@@ -14,7 +14,13 @@ type SidebarProject = {
   _count: { todos: number };
 };
 
-export function Sidebar({ projects: initialProjects }: { projects: SidebarProject[] }) {
+export function Sidebar({
+  projects: initialProjects,
+  appName = "EC",
+}: {
+  projects: SidebarProject[];
+  appName?: string;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [adding, setAdding] = useState(false);
@@ -138,7 +144,7 @@ export function Sidebar({ projects: initialProjects }: { projects: SidebarProjec
     <aside className="w-64 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-muted)]/40 flex flex-col min-h-screen">
       <div className="px-4 py-5 flex items-center justify-between gap-2">
         <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
-          EC
+          {appName}
         </div>
         <button
           onClick={() => setCollapsedPersisted(true)}
