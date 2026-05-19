@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { ChevronDown, ChevronRight, MoreHorizontal, Plus, Trash2 } from "lucide-react";
-import { palette } from "@/lib/lists";
+import { LIST_PALETTE, palette } from "@/lib/lists";
 import { cn } from "@/lib/utils";
 import { TodoRow, type TodoLike } from "./todo-row";
 
@@ -57,6 +57,30 @@ export function ListTile({
     Map<string, Partial<TodoLike>>
   >(new Map());
   const [isDragOver, setIsDragOver] = useState(false);
+  const [extraTodos, setExtraTodos] = useState<TodoLike[]>([]);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Reset the "show more" cache whenever the underlying todos prop changes
+  // (router.refresh) so we don't show stale extras after a server re-fetch.
+  useEffect(() => {
+    setExtraTodos([]);
+  }, [todos]);
+
+  async function loadMore() {
+    if (loadingMore || extraTodos.length > 0) return;
+    setLoadingMore(true);
+    try {
+      const q = new URLSearchParams({ listId: list.id });
+      if (projectId) q.set("projectId", projectId);
+      const res = await fetch(`/api/todos?${q.toString()}`);
+      if (!res.ok) return;
+      const { todos: all } = (await res.json()) as { todos: TodoLike[] };
+      const seen = new Set(todos.map((t) => t.id));
+      setExtraTodos(all.filter((t) => !seen.has(t.id)));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     function handler(e: Event) {
@@ -267,13 +291,15 @@ export function ListTile({
     // immediately. The server already sorts new rows above existing ones
     // (createdAt DESC tiebreaker on equal position), so post-refresh order
     // matches the optimistic order.
-    const merged = [...pendingTodos, ...todos].filter((t) => !hiddenIds.has(t.id));
+    const merged = [...pendingTodos, ...todos, ...extraTodos].filter(
+      (t) => !hiddenIds.has(t.id)
+    );
     if (todoOverrides.size === 0) return merged;
     return merged.map((t) => {
       const fieldOverride = todoOverrides.get(t.id);
       return fieldOverride ? { ...t, ...fieldOverride } : t;
     });
-  }, [todos, pendingTodos, hiddenIds, todoOverrides]);
+  }, [todos, pendingTodos, extraTodos, hiddenIds, todoOverrides]);
 
   async function createTodo(rawTitle: string) {
     const trimmed = rawTitle.trim();
@@ -394,6 +420,16 @@ export function ListTile({
       body: JSON.stringify({ title, parentId }),
     });
     startTransition(() => router.refresh());
+  }
+
+  async function changeColor(color: string) {
+    setMenuOpen(false);
+    const res = await fetch(`/api/lists/${list.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color }),
+    });
+    if (res.ok) startTransition(() => router.refresh());
   }
 
   async function deleteList() {
@@ -584,33 +620,56 @@ export function ListTile({
           ) : null}
         </div>
         <div className="flex items-center gap-0.5">
-          {!list.isDefault ? (
-            <div className="relative">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMenuOpen((v) => !v);
-                }}
-                className="rounded-full p-1.5 text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] transition"
-                title="List options"
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen((v) => !v);
+              }}
+              className="rounded-full p-1.5 text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] transition"
+              title="List options"
+            >
+              <MoreHorizontal className="size-4" />
+            </button>
+            {menuOpen ? (
+              <div
+                className="absolute right-0 top-full z-10 mt-1 w-44 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
               >
-                <MoreHorizontal className="size-4" />
-              </button>
-              {menuOpen ? (
-                <div
-                  className="absolute right-0 top-full z-10 mt-1 w-40 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg overflow-hidden"
-                  onClick={(e) => e.stopPropagation()}
-                >
+                <div className="px-3 pt-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+                  Color
+                </div>
+                <div className="px-3 pb-2 grid grid-cols-8 gap-1.5">
+                  {Object.keys(LIST_PALETTE).map((c) => {
+                    const cp = LIST_PALETTE[c as keyof typeof LIST_PALETTE];
+                    const active = c === list.color;
+                    return (
+                      <button
+                        key={c}
+                        onClick={() => changeColor(c)}
+                        title={c}
+                        className={cn(
+                          "size-4 rounded-full transition",
+                          cp.dot,
+                          active
+                            ? "ring-2 ring-offset-1 ring-offset-[var(--color-card)] ring-[var(--color-foreground)]"
+                            : "hover:scale-110"
+                        )}
+                      />
+                    );
+                  })}
+                </div>
+                {!list.isDefault ? (
                   <button
                     onClick={deleteList}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rose-500 hover:bg-[var(--color-accent)]"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rose-500 hover:bg-[var(--color-accent)] border-t border-[var(--color-border)]"
                   >
                     <Trash2 className="size-3.5" /> Delete list
                   </button>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -745,10 +804,20 @@ export function ListTile({
                     </div>
                   );
                 })}
-                {totalCount > todos.length ? (
-                  <div className="px-2 py-2 text-xs text-[var(--color-muted-foreground)]">
-                    +{totalCount - todos.length} more…
-                  </div>
+                {totalCount > todos.length + extraTodos.length ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      loadMore();
+                    }}
+                    disabled={loadingMore}
+                    className="px-2 py-2 text-xs text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] transition"
+                  >
+                    {loadingMore
+                      ? "Loading…"
+                      : `+${totalCount - todos.length - extraTodos.length} more…`}
+                  </button>
                 ) : null}
               </div>
             );
@@ -767,12 +836,21 @@ export function ListTile({
                 onAddSubtask={addSubtask}
               />
             ))}
-            {totalCount > todos.length ? (
-              <li
-                data-row
-                className="px-2 py-2 text-xs text-[var(--color-muted-foreground)]"
-              >
-                +{totalCount - todos.length} more…
+            {totalCount > todos.length + extraTodos.length ? (
+              <li data-row className="-mx-1">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    loadMore();
+                  }}
+                  disabled={loadingMore}
+                  className="px-2 py-2 text-xs text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] transition"
+                >
+                  {loadingMore
+                    ? "Loading…"
+                    : `+${totalCount - todos.length - extraTodos.length} more…`}
+                </button>
               </li>
             ) : null}
           </ul>

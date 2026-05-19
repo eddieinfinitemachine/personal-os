@@ -13,15 +13,35 @@ export async function GET(request: Request) {
   else if (projectId) where.projectId = projectId;
   if (!includeCompleted) where.completedAt = null;
 
-  const todos = await prisma.todo.findMany({
-    where,
+  const rows = await prisma.todo.findMany({
+    where: { ...where, parentId: null },
     orderBy: [
       { completedAt: "asc" },
       { dueDate: "asc" },
       { position: "asc" },
       { createdAt: "asc" },
     ],
+    include: {
+      project: { select: { name: true } },
+      subtasks: { orderBy: [{ position: "asc" }, { createdAt: "asc" }] },
+    },
   });
+  const todos = rows.map((t) => ({
+    id: t.id,
+    title: t.title,
+    notes: t.notes,
+    dueDate: t.dueDate,
+    completedAt: t.completedAt,
+    projectId: t.projectId,
+    projectName: t.project?.name ?? null,
+    subtasks: t.subtasks.map((s) => ({
+      id: s.id,
+      title: s.title,
+      notes: s.notes,
+      dueDate: s.dueDate,
+      completedAt: s.completedAt,
+    })),
+  }));
   return NextResponse.json({ todos });
 }
 
