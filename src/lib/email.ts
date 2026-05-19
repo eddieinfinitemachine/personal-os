@@ -27,13 +27,17 @@ export async function sendMagicLinkEmail(
   const base = originUrl?.replace(/\/$/, "") ?? APP_URL_FALLBACK;
   const link = `${base}/api/auth/verify?token=${token}`;
 
-  await getResend().emails.send({
+  const { error } = await getResend().emails.send({
     from: FROM_EMAIL,
     to: email,
     subject: "Sign in to Kaizen",
     html: renderMagicLinkHtml(link),
     text: `Sign in to Kaizen by opening this link (expires in 15 minutes):\n\n${link}\n\nIf you didn't request this, you can safely ignore it.`,
   });
+  if (error) {
+    // Resend SDK v6 returns errors in the response rather than throwing.
+    throw new Error(`Resend send failed: ${error.name} — ${error.message}`);
+  }
 }
 
 function renderMagicLinkHtml(link: string): string {
