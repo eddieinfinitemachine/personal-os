@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUserId } from "@/lib/auth";
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { id } = await params;
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -12,7 +16,9 @@ export async function POST(
   }
 
   const pet = await prisma.pet.findUnique({ where: { id } });
-  if (!pet) return NextResponse.json({ error: "pet not found" }, { status: 404 });
+  if (!pet || pet.userId !== userId) {
+    return NextResponse.json({ error: "pet not found" }, { status: 404 });
+  }
 
   const today = new Date();
   const todayIso = today.toISOString().slice(0, 10);

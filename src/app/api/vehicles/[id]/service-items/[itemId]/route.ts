@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUserId } from "@/lib/auth";
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string; itemId: string }> }
 ) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { itemId } = await params;
   const body = (await request.json()) as {
     name?: string;
@@ -27,15 +31,29 @@ export async function PATCH(
   if (body.lastPerformedMileage !== undefined) {
     updates.lastPerformedMileage = body.lastPerformedMileage;
   }
+
+  const existing = await prisma.serviceItem.findUnique({ where: { id: itemId } });
+  if (!existing || existing.userId !== userId) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+
   const item = await prisma.serviceItem.update({ where: { id: itemId }, data: updates });
   return NextResponse.json({ item });
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string; itemId: string }> }
 ) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { itemId } = await params;
-  await prisma.serviceItem.delete({ where: { id: itemId } });
+  const result = await prisma.serviceItem.deleteMany({
+    where: { id: itemId, userId },
+  });
+  if (result.count === 0) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
   return NextResponse.json({ ok: true });
 }

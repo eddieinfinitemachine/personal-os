@@ -1,11 +1,17 @@
 import { prisma } from "@/lib/prisma";
 import { AssetGrid } from "@/components/asset-grid";
+import { getSession } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default async function InvestmentsPage() {
+  const session = await getSession();
+  if (!session) redirect("/login");
+  const userId = session.userId;
+
   const assets = await prisma.asset.findMany({
-    where: { kind: "investment", archived: false },
+    where: { userId, kind: "investment", archived: false },
     orderBy: [{ position: "asc" }, { createdAt: "desc" }],
   });
 

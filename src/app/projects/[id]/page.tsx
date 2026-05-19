@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
 import { ensureDefaultLists } from "@/lib/lists";
 import { ListTile } from "@/components/list-tile";
 import { ProjectTabs, type ProjectTab } from "@/components/project-tabs";
@@ -24,8 +25,12 @@ export default async function ProjectPage({
   const { id } = await params;
   const { tab: rawTab } = await searchParams;
 
+  const session = await getSession();
+  if (!session) notFound();
+  const userId = session.userId;
+
   const project = await prisma.project.findUnique({ where: { id } });
-  if (!project) notFound();
+  if (!project || project.userId !== userId) notFound();
 
   const hasDashboard =
     project.kind === "vehicle" ||
@@ -68,28 +73,28 @@ export default async function ProjectPage({
           <HumanDashboard projectId={id} />
         ) : null
       ) : null}
-      {tab === "tasks" ? <TasksTab projectId={id} /> : null}
-      {tab === "notes" ? <NotesTab projectId={id} /> : null}
-      {tab === "files" ? <FilesTab projectId={id} /> : null}
+      {tab === "tasks" ? <TasksTab projectId={id} userId={userId} /> : null}
+      {tab === "notes" ? <NotesTab projectId={id} userId={userId} /> : null}
+      {tab === "files" ? <FilesTab projectId={id} userId={userId} /> : null}
 
       <ProjectChat projectId={id} projectName={project.name} />
     </div>
   );
 }
 
-async function TasksTab({ projectId }: { projectId: string }) {
-  await ensureDefaultLists();
+async function TasksTab({ projectId, userId }: { projectId: string; userId: string }) {
+  await ensureDefaultLists(userId);
 
   // Project pages always show only the three canonical lists (To Do, Monitor,
   // Later). Custom lists belong to the personal/Home view.
   const lists = await prisma.list.findMany({
-    where: { isDefault: true },
+    where: { userId, isDefault: true },
     orderBy: [{ position: "asc" }, { createdAt: "asc" }],
   });
 
   // Single fetch — bucket in memory.
   const allTodos = await prisma.todo.findMany({
-    where: { projectId, completedAt: null, parentId: null },
+    where: { userId, projectId, completedAt: null, parentId: null },
     orderBy: [
       { dueDate: "asc" },
       { position: "asc" },
@@ -142,17 +147,17 @@ async function TasksTab({ projectId }: { projectId: string }) {
   );
 }
 
-async function NotesTab({ projectId }: { projectId: string }) {
+async function NotesTab({ projectId, userId }: { projectId: string; userId: string }) {
   const notes = await prisma.note.findMany({
-    where: { projectId },
+    where: { userId, projectId },
     orderBy: { updatedAt: "desc" },
   });
   return <NotesPane projectId={projectId} notes={notes} />;
 }
 
-async function FilesTab({ projectId }: { projectId: string }) {
+async function FilesTab({ projectId, userId }: { projectId: string; userId: string }) {
   const attachments = await prisma.attachment.findMany({
-    where: { projectId },
+    where: { userId, projectId },
     orderBy: { createdAt: "desc" },
   });
   return <FilesPane projectId={projectId} attachments={attachments} />;

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { computeDue } from "@/lib/maintenance";
+import { getCurrentUserId } from "@/lib/auth";
 
 type ChatTurn = { role: "user" | "assistant"; content: string };
 
@@ -9,9 +10,9 @@ function fmtDate(d: Date | string | null | undefined): string {
   return new Date(d).toISOString().slice(0, 10);
 }
 
-async function buildContext(projectId: string): Promise<string> {
+async function buildContext(projectId: string, userId: string): Promise<string> {
   const project = await prisma.project.findUnique({ where: { id: projectId } });
-  if (!project) return "Project not found.";
+  if (!project || project.userId !== userId) return "Project not found.";
 
   const today = new Date();
   const lines: string[] = [];
@@ -147,7 +148,7 @@ async function buildContext(projectId: string): Promise<string> {
 
   // Todos / Notes / Attachments — applies to every project kind.
   const todos = await prisma.todo.findMany({
-    where: { projectId: project.id, completedAt: null },
+    where: { userId, projectId: project.id, completedAt: null },
     include: { list: true },
     orderBy: [{ dueDate: "asc" }, { position: "asc" }, { createdAt: "asc" }],
     take: 50,
@@ -171,7 +172,7 @@ async function buildContext(projectId: string): Promise<string> {
   }
 
   const notes = await prisma.note.findMany({
-    where: { projectId: project.id },
+    where: { userId, projectId: project.id },
     orderBy: { updatedAt: "desc" },
     take: 5,
   });
@@ -185,7 +186,7 @@ async function buildContext(projectId: string): Promise<string> {
   }
 
   const attachments = await prisma.attachment.findMany({
-    where: { projectId: project.id },
+    where: { userId, projectId: project.id },
     orderBy: { createdAt: "desc" },
     take: 20,
   });
@@ -204,6 +205,9 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { id } = await params;
   const body = (await request.json()) as {
     question?: string;
@@ -218,7 +222,7 @@ export async function POST(
     return NextResponse.json({ error: "ANTHROPIC_API_KEY not set" }, { status: 500 });
   }
 
-  const context = await buildContext(id);
+  const context = await buildContext(id, userId);
 
   const systemPrompt = `You are a knowledgeable assistant for the owner of this project. You have read-only access to the project's full state below. Answer the owner's questions directly using this data — refer to specific records, dates, mileages, weights, items, etc. Suggest concrete actions when asked. Be concise (under 250 words unless the question requires depth) and use markdown lists/headings when helpful. Don't append boilerplate disclaimers.
 

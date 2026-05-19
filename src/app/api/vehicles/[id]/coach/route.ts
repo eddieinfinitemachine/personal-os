@@ -2,11 +2,15 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateCoachItems } from "@/lib/coach";
 import { computeDue } from "@/lib/maintenance";
+import { getCurrentUserId } from "@/lib/auth";
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { id } = await params;
   const vehicle = await prisma.vehicle.findUnique({
     where: { id },
@@ -15,7 +19,7 @@ export async function POST(
       serviceRecords: { orderBy: { performedAt: "desc" }, take: 5 },
     },
   });
-  if (!vehicle) {
+  if (!vehicle || vehicle.userId !== userId) {
     return NextResponse.json({ error: "vehicle not found" }, { status: 404 });
   }
 
@@ -81,6 +85,7 @@ export async function POST(
 
   await prisma.recommendation.createMany({
     data: items.map((i, idx) => ({
+      userId,
       scope: "vehicle",
       vehicleId: id,
       title: i.title,

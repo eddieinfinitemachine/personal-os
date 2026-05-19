@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateCoachItems } from "@/lib/coach";
+import { getCurrentUserId } from "@/lib/auth";
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { id } = await params;
   const pet = await prisma.pet.findUnique({
     where: { id },
@@ -15,7 +19,9 @@ export async function POST(
       vetVisits: { orderBy: { performedAt: "desc" }, take: 3 },
     },
   });
-  if (!pet) return NextResponse.json({ error: "pet not found" }, { status: 404 });
+  if (!pet || pet.userId !== userId) {
+    return NextResponse.json({ error: "pet not found" }, { status: 404 });
+  }
 
   const today = new Date();
   const dob = pet.birthDate ? new Date(pet.birthDate) : null;
@@ -100,6 +106,7 @@ export async function POST(
 
   await prisma.recommendation.createMany({
     data: items.map((i, idx) => ({
+      userId,
       scope: "pet",
       petId: id,
       title: i.title,

@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUserId } from "@/lib/auth";
 
 export async function GET(request: Request) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const url = new URL(request.url);
   const kind = url.searchParams.get("kind");
-  const where: Record<string, unknown> = { archived: false };
+  const where: Record<string, unknown> = { userId, archived: false };
   if (kind) where.kind = kind;
   const assets = await prisma.asset.findMany({
     where,
@@ -14,6 +18,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const body = (await request.json()) as Record<string, unknown>;
   const kind = typeof body.kind === "string" ? body.kind : null;
   const title = typeof body.title === "string" ? body.title.trim() : "";
@@ -24,7 +31,7 @@ export async function POST(request: Request) {
     );
 
   const max = await prisma.asset.aggregate({
-    where: { kind },
+    where: { userId, kind },
     _max: { position: true },
   });
   const snapshot = {
@@ -47,6 +54,7 @@ export async function POST(request: Request) {
 
   const asset = await prisma.asset.create({
     data: {
+      userId,
       kind,
       ...snapshot,
       position: (max._max.position ?? -1) + 1,

@@ -1,8 +1,10 @@
 import { HomeTiles, type HomeTile } from "@/components/home-tiles";
 import { NewListButton } from "@/components/new-list-button";
 import { ProjectCard, type ProjectCardData } from "@/components/project-card";
+import { KaizenLanding } from "@/components/kaizen-landing";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists } from "@/lib/lists";
+import { getSession } from "@/lib/auth";
 import type { TodoLike } from "@/components/todo-row";
 
 const PREVIEW_LIMIT = 12;
@@ -11,20 +13,25 @@ const PROJECT_LIST_PREVIEW = 8;
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  await ensureDefaultLists();
+  const session = await getSession();
+  if (!session) return <KaizenLanding />;
+  const userId = session.userId;
+
+  await ensureDefaultLists(userId);
 
   // Single fetch for all open top-level todos plus their subtasks. Bucket in
   // memory rather than firing N×M queries per (list, project) tile.
   const [lists, projects, allTodos] = await Promise.all([
     prisma.list.findMany({
+      where: { userId },
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
     }),
     prisma.project.findMany({
-      where: { archived: false },
+      where: { userId, archived: false },
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
     }),
     prisma.todo.findMany({
-      where: { completedAt: null, parentId: null },
+      where: { userId, completedAt: null, parentId: null },
       orderBy: [
         { dueDate: "asc" },
         { position: "asc" },

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
@@ -13,6 +13,7 @@ import {
   Paperclip,
   Plus,
   Trash2,
+  Upload,
 } from "lucide-react";
 
 export type AttachmentData = {
@@ -56,6 +57,49 @@ export function FilesPane({
   const [url, setUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function uploadFiles(files: FileList | File[]) {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    setUploadError(null);
+    setUploading(true);
+
+    let failed = 0;
+    for (let i = 0; i < list.length; i++) {
+      const f = list[i];
+      setUploadProgress(`Uploading ${i + 1} of ${list.length}: ${f.name}`);
+      const form = new FormData();
+      form.append("projectId", projectId);
+      form.append("file", f);
+      try {
+        const res = await fetch("/api/attachments/upload", { method: "POST", body: form });
+        if (!res.ok) {
+          failed++;
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          setUploadError(body.error ?? `Upload failed: ${f.name}`);
+        }
+      } catch {
+        failed++;
+        setUploadError(`Network error uploading ${f.name}`);
+      }
+    }
+
+    setUploading(false);
+    setUploadProgress(null);
+    if (failed < list.length) {
+      startTransition(() => router.refresh());
+    }
+  }
+
+  async function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    if (e.target.files) await uploadFiles(e.target.files);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
 
   async function addLink(e: React.FormEvent) {
     e.preventDefault();
@@ -88,6 +132,59 @@ export function FilesPane({
 
   return (
     <div className="space-y-4">
+      {/* Drag-drop / upload zone */}
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={async (e) => {
+          e.preventDefault();
+          setDragOver(false);
+          if (e.dataTransfer.files.length) await uploadFiles(e.dataTransfer.files);
+        }}
+        className={`rounded-xl border-2 border-dashed p-5 transition-colors ${
+          dragOver
+            ? "border-[var(--color-foreground)] bg-[var(--color-card)]"
+            : "border-[var(--color-border)]"
+        }`}
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <Upload className="size-5 text-[var(--color-muted-foreground)]" />
+            <div>
+              <div className="text-sm font-medium">Upload files</div>
+              <div className="text-xs text-[var(--color-muted-foreground)]">
+                Drag &amp; drop, or click to browse. Up to 50 MB each.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="inline-flex items-center gap-2 self-start rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-1.5 text-sm font-medium hover:bg-[var(--color-card)] disabled:opacity-50 sm:self-auto"
+          >
+            {uploading ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+            {uploading ? "Uploading…" : "Choose files"}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            onChange={onPickFiles}
+            className="hidden"
+          />
+        </div>
+        {uploadProgress ? (
+          <div className="mt-3 text-xs text-[var(--color-muted-foreground)]">{uploadProgress}</div>
+        ) : null}
+        {uploadError ? (
+          <div className="mt-3 text-xs text-rose-500">{uploadError}</div>
+        ) : null}
+      </div>
+
       <div className="rounded-xl border border-dashed border-[var(--color-border)] p-4">
         {adding ? (
           <form onSubmit={addLink} className="flex flex-col gap-2 sm:flex-row sm:items-center">

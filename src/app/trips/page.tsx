@@ -1,12 +1,18 @@
 import { prisma } from "@/lib/prisma";
 import { AddTripButton } from "@/components/add-trip-button";
 import { TripsList, type TripRow } from "@/components/trips-list";
+import { getSession } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default async function TripsPage() {
+  const session = await getSession();
+  if (!session) redirect("/login");
+  const userId = session.userId;
+
   const trips = await prisma.trip.findMany({
-    where: { archived: false },
+    where: { userId, archived: false },
     orderBy: [
       { startDate: { sort: "asc", nulls: "last" } },
       { createdAt: "desc" },

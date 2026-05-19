@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUserId } from "@/lib/auth";
 
 type Parsed = {
   performedAt?: string;
@@ -14,6 +15,9 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { id } = await params;
   const body = (await request.json()) as { text?: string };
   const text = body.text?.trim();
@@ -29,8 +33,13 @@ export async function POST(
     );
   }
 
+  const vehicle = await prisma.vehicle.findUnique({ where: { id } });
+  if (!vehicle || vehicle.userId !== userId) {
+    return NextResponse.json({ error: "vehicle not found" }, { status: 404 });
+  }
+
   const items = await prisma.serviceItem.findMany({
-    where: { vehicleId: id },
+    where: { vehicleId: id, userId },
     select: { id: true, name: true, intervalMonths: true, intervalMileage: true },
     orderBy: { position: "asc" },
   });

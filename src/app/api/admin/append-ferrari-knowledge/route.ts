@@ -31,8 +31,13 @@ When vetting a new shop for this car, confirm two things up front:
 If they can't answer both yes, find another shop.`;
 
 export async function POST() {
+  const FOUNDER_EMAIL = process.env.FOUNDER_EMAIL ?? "emcohen@me.com";
+  const founder = await prisma.user.findUnique({ where: { email: FOUNDER_EMAIL } });
+  if (!founder) return NextResponse.json({ error: "founder user missing" }, { status: 500 });
+  const userId = founder.id;
+
   const vehicle = await prisma.vehicle.findFirst({
-    where: { project: { name: "Ferrari 456 GT" } },
+    where: { userId, project: { name: "Ferrari 456 GT" } },
     include: { serviceItems: true },
   });
   if (!vehicle) {
@@ -45,6 +50,7 @@ export async function POST() {
   await prisma.serviceRecord.create({
     data: {
       vehicleId: vehicle.id,
+      userId,
       performedAt: julyChange,
       mileage: null,
       shop: "Previous owner",

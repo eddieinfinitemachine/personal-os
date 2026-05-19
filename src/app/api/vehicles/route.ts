@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUserId } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const body = (await request.json()) as Record<string, unknown>;
   const make = typeof body.make === "string" ? body.make.trim() : "";
   const model = typeof body.model === "string" ? body.model.trim() : "";
@@ -27,9 +31,10 @@ export async function POST(request: Request) {
       ? body.name.trim()
       : `${year} ${make} ${model}`;
 
-  const max = await prisma.project.aggregate({ _max: { position: true } });
+  const max = await prisma.project.aggregate({ where: { userId }, _max: { position: true } });
   const project = await prisma.project.create({
     data: {
+      userId,
       name,
       kind: "vehicle",
       icon: "Car",
@@ -40,6 +45,7 @@ export async function POST(request: Request) {
 
   const vehicle = await prisma.vehicle.create({
     data: {
+      userId,
       projectId: project.id,
       make,
       model,

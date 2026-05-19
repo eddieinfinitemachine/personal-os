@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isListColor } from "@/lib/lists";
+import { getCurrentUserId } from "@/lib/auth";
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { id } = await params;
+  const existing = await prisma.list.findUnique({ where: { id } });
+  if (!existing || existing.userId !== userId) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
   const body = (await request.json()) as {
     name?: string;
     color?: string;
@@ -27,12 +35,15 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { id } = await params;
   const list = await prisma.list.findUnique({ where: { id } });
-  if (!list) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!list || list.userId !== userId) return NextResponse.json({ error: "not found" }, { status: 404 });
   if (list.isDefault) {
     return NextResponse.json({ error: "default lists cannot be deleted" }, { status: 400 });
   }

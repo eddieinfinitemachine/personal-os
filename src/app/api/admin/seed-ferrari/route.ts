@@ -253,18 +253,24 @@ In Case of an Accident or Breakdown
 - Have the car towed to J. Scuderia or New Vernon Coach if at all possible.`;
 
 export async function POST() {
+  const FOUNDER_EMAIL = process.env.FOUNDER_EMAIL ?? "emcohen@me.com";
+  const founder = await prisma.user.findUnique({ where: { email: FOUNDER_EMAIL } });
+  if (!founder) return NextResponse.json({ error: "founder user missing" }, { status: 500 });
+  const userId = founder.id;
+
   // Idempotent: if a vehicle project named the same exists, return it.
   const existing = await prisma.project.findFirst({
-    where: { name: PROJECT_NAME, kind: "vehicle" },
+    where: { userId, name: PROJECT_NAME, kind: "vehicle" },
     include: { vehicle: true },
   });
   if (existing && existing.vehicle) {
     return NextResponse.json({ projectId: existing.id, alreadyExists: true });
   }
 
-  const maxPosition = await prisma.project.aggregate({ _max: { position: true } });
+  const maxPosition = await prisma.project.aggregate({ where: { userId }, _max: { position: true } });
   const project = await prisma.project.create({
     data: {
+      userId,
       name: PROJECT_NAME,
       kind: "vehicle",
       icon: "Car",
@@ -276,6 +282,7 @@ export async function POST() {
   const vehicle = await prisma.vehicle.create({
     data: {
       projectId: project.id,
+      userId,
       make: "Ferrari",
       model: "456 GT",
       year: 1995,
@@ -307,13 +314,13 @@ export async function POST() {
   });
 
   await prisma.serviceItem.createMany({
-    data: SERVICE_ITEMS.map((s) => ({ ...s, vehicleId: vehicle.id })),
+    data: SERVICE_ITEMS.map((s) => ({ ...s, vehicleId: vehicle.id, userId })),
   });
   await prisma.serviceRecord.createMany({
-    data: SERVICE_RECORDS.map((r) => ({ ...r, vehicleId: vehicle.id })),
+    data: SERVICE_RECORDS.map((r) => ({ ...r, vehicleId: vehicle.id, userId })),
   });
   await prisma.vehicleContact.createMany({
-    data: CONTACTS.map((c) => ({ ...c, vehicleId: vehicle.id })),
+    data: CONTACTS.map((c) => ({ ...c, vehicleId: vehicle.id, userId })),
   });
 
   return NextResponse.json({ projectId: project.id, alreadyExists: false });

@@ -56,7 +56,7 @@ export function MobileChromeProvider({
   children: ReactNode;
   projects: MobileProject[];
 }) {
-  const [title, setTitle] = useState("Personal OS");
+  const [title, setTitle] = useState("Kaizen");
   const [right, setRight] = useState<ReactNode | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -237,7 +237,7 @@ function MobileDrawer({ projects }: { projects: MobileProject[] }) {
       >
         <div className="flex items-center justify-between px-4 py-4">
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
-            Personal OS
+            Kaizen
           </div>
           <button
             onClick={closeDrawer}

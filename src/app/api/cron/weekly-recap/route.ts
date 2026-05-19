@@ -18,6 +18,11 @@ export async function GET(request: Request) {
     );
   }
 
+  const FOUNDER_EMAIL = process.env.FOUNDER_EMAIL ?? "emcohen@me.com";
+  const founder = await prisma.user.findUnique({ where: { email: FOUNDER_EMAIL } });
+  if (!founder) return NextResponse.json({ error: "founder user missing" }, { status: 500 });
+  const userId = founder.id;
+
   const now = new Date();
   const weekAgo = new Date(now);
   weekAgo.setDate(weekAgo.getDate() - 7);
@@ -34,7 +39,7 @@ export async function GET(request: Request) {
     newProjects,
   ] = await Promise.all([
     prisma.todo.findMany({
-      where: { completedAt: { gte: weekAgo } },
+      where: { userId, completedAt: { gte: weekAgo } },
       orderBy: { completedAt: "asc" },
       include: {
         list: { select: { name: true } },
@@ -42,11 +47,11 @@ export async function GET(request: Request) {
       },
     }),
     prisma.note.findMany({
-      where: { createdAt: { gte: weekAgo } },
+      where: { userId, createdAt: { gte: weekAgo } },
       include: { project: { select: { name: true } } },
     }),
     prisma.serviceRecord.findMany({
-      where: { performedAt: { gte: weekAgo } },
+      where: { userId, performedAt: { gte: weekAgo } },
       include: {
         vehicle: {
           include: { project: { select: { name: true } } },
@@ -54,28 +59,28 @@ export async function GET(request: Request) {
       },
     }),
     prisma.petVetVisit.findMany({
-      where: { performedAt: { gte: weekAgo } },
+      where: { userId, performedAt: { gte: weekAgo } },
       include: {
         pet: { include: { project: { select: { name: true } } } },
       },
     }),
     prisma.petWeight.findMany({
-      where: { measuredAt: { gte: weekAgo } },
+      where: { userId, measuredAt: { gte: weekAgo } },
       include: {
         pet: { include: { project: { select: { name: true } } } },
       },
       orderBy: { measuredAt: "asc" },
     }),
     prisma.petVaccination.findMany({
-      where: { administeredAt: { gte: weekAgo } },
+      where: { userId, administeredAt: { gte: weekAgo } },
       include: {
         pet: { include: { project: { select: { name: true } } } },
       },
     }),
-    prisma.petPhoto.count({ where: { createdAt: { gte: weekAgo } } }),
-    prisma.vehiclePhoto.count({ where: { createdAt: { gte: weekAgo } } }),
+    prisma.petPhoto.count({ where: { userId, createdAt: { gte: weekAgo } } }),
+    prisma.vehiclePhoto.count({ where: { userId, createdAt: { gte: weekAgo } } }),
     prisma.project.findMany({
-      where: { createdAt: { gte: weekAgo }, archived: false },
+      where: { userId, createdAt: { gte: weekAgo }, archived: false },
     }),
   ]);
 
@@ -186,7 +191,7 @@ export async function GET(request: Request) {
   const recap = data.content?.find((c) => c.type === "text")?.text?.trim() ?? "";
   if (!recap) return NextResponse.json({ error: "empty recap" }, { status: 502 });
 
-  const project = await ensureJournalProject();
+  const project = await ensureJournalProject(userId);
   const weekLabel = `Week of ${weekAgo.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
@@ -198,6 +203,7 @@ export async function GET(request: Request) {
 
   const note = await prisma.note.create({
     data: {
+      userId,
       projectId: project.id,
       title: weekLabel,
       body:

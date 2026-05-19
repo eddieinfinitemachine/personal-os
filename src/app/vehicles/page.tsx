@@ -2,12 +2,18 @@ import Link from "next/link";
 import { Car } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { AddVehicleButton } from "@/components/add-vehicle-button";
+import { getSession } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default async function VehiclesPage() {
+  const session = await getSession();
+  if (!session) redirect("/login");
+  const userId = session.userId;
+
   const projects = await prisma.project.findMany({
-    where: { kind: "vehicle", archived: false },
+    where: { userId, kind: "vehicle", archived: false },
     orderBy: [{ position: "asc" }, { createdAt: "asc" }],
     include: {
       vehicle: {

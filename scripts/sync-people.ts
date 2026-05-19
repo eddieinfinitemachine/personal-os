@@ -78,6 +78,11 @@ async function main() {
     throw new Error("AIRTABLE_API_KEY or AIRTABLE_PERSONAL_BASE missing in .env");
   }
 
+  const FOUNDER_EMAIL = process.env.FOUNDER_EMAIL ?? "emcohen@me.com";
+  const founder = await prisma.user.findUnique({ where: { email: FOUNDER_EMAIL } });
+  if (!founder) throw new Error(`founder user (${FOUNDER_EMAIL}) missing`);
+  const userId = founder.id;
+
   console.log("Fetching People records from Airtable…");
   const records = await fetchAll(baseId, "tblEhdx9Dxg5AjzU1", apiKey);
   console.log(`Got ${records.length} records.`);
@@ -109,7 +114,7 @@ async function main() {
         await prisma.person.upsert({
           where: { externalId: r.id },
           update: data,
-          create: { externalId: r.id, ...data },
+          create: { externalId: r.id, userId, ...data },
         });
         upserted++;
       })

@@ -79,15 +79,21 @@ const SEEDS: VehicleSeed[] = [
 ];
 
 export async function POST() {
+  const FOUNDER_EMAIL = process.env.FOUNDER_EMAIL ?? "emcohen@me.com";
+  const founder = await prisma.user.findUnique({ where: { email: FOUNDER_EMAIL } });
+  if (!founder) return NextResponse.json({ error: "founder user missing" }, { status: 500 });
+  const userId = founder.id;
+
   const created: string[] = [];
   for (const seed of SEEDS) {
     let project = await prisma.project.findFirst({
-      where: { name: seed.projectName, archived: false },
+      where: { userId, name: seed.projectName, archived: false },
     });
     if (!project) {
-      const max = await prisma.project.aggregate({ _max: { position: true } });
+      const max = await prisma.project.aggregate({ where: { userId }, _max: { position: true } });
       project = await prisma.project.create({
         data: {
+          userId,
           name: seed.projectName,
           kind: "vehicle",
           icon: "Car",
@@ -112,7 +118,7 @@ export async function POST() {
       });
     } else {
       await prisma.vehicle.create({
-        data: { ...seed.vehicle, projectId: project.id },
+        data: { ...seed.vehicle, projectId: project.id, userId },
       });
     }
     created.push(seed.projectName);

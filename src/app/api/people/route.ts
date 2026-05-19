@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUserId } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const people = await prisma.person.findMany({
-    where: { archived: false },
+    where: { userId, archived: false },
     orderBy: [
       { starred: "desc" },
       { lastInteractionAt: { sort: "asc", nulls: "first" } },
@@ -16,12 +20,16 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const body = (await request.json()) as Record<string, unknown>;
   const firstName = typeof body.firstName === "string" ? body.firstName.trim() : "";
   if (!firstName) {
     return NextResponse.json({ error: "firstName required" }, { status: 400 });
   }
   const snapshot = {
+    userId,
     firstName,
     lastName: typeof body.lastName === "string" ? body.lastName : null,
     strength: typeof body.strength === "string" ? body.strength : null,

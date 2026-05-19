@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { PERSONAL } from "@/lib/personal";
+import { getCurrentUserId } from "@/lib/auth";
 
-export async function POST() {
+export async function POST(request: Request) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "ANTHROPIC_API_KEY not set" }, { status: 500 });

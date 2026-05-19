@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import {
@@ -7,6 +7,7 @@ import {
   type TripDetail,
   type TripItemRow,
 } from "@/components/trip-itinerary";
+import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,10 @@ export default async function TripDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const session = await getSession();
+  if (!session) redirect("/login");
+  const userId = session.userId;
+
   const { id } = await params;
   const trip = await prisma.trip.findUnique({
     where: { id },
@@ -28,6 +33,7 @@ export default async function TripDetailPage({
     },
   });
   if (!trip) notFound();
+  if (trip.userId !== userId) notFound();
 
   const detail: TripDetail = {
     id: trip.id,

@@ -19,9 +19,9 @@ function marker(key: string): string {
   return `[autopilot:${key}]`;
 }
 
-async function existingMarkers(): Promise<Set<string>> {
+async function existingMarkers(userId: string): Promise<Set<string>> {
   const todos = await prisma.todo.findMany({
-    where: { completedAt: null, notes: { contains: "[autopilot:" } },
+    where: { userId, completedAt: null, notes: { contains: "[autopilot:" } },
     select: { notes: true },
   });
   const set = new Set<string>();
@@ -39,7 +39,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const list = await getDefaultTodoList();
+  const FOUNDER_EMAIL = process.env.FOUNDER_EMAIL ?? "emcohen@me.com";
+  const founder = await prisma.user.findUnique({ where: { email: FOUNDER_EMAIL } });
+  if (!founder) return NextResponse.json({ error: "founder user missing" }, { status: 500 });
+  const userId = founder.id;
+
+  const list = await getDefaultTodoList(userId);
   if (!list) {
     return NextResponse.json(
       { error: "default 'To Do' list missing" },
@@ -49,13 +54,14 @@ export async function GET(request: Request) {
 
   const now = new Date();
   const dropped: string[] = [];
-  const seen = await existingMarkers();
+  const seen = await existingMarkers(userId);
 
   // 1. Vehicle insurance policies expiring within lead window.
   const policyHorizon = new Date(now);
   policyHorizon.setDate(policyHorizon.getDate() + VEHICLE_POLICY_LEAD_DAYS);
   const vehicles = await prisma.vehicle.findMany({
     where: {
+      userId,
       policyExpires: { gte: now, lte: policyHorizon },
     },
     include: { project: { select: { id: true, name: true } } },
@@ -72,6 +78,7 @@ export async function GET(request: Request) {
     const insurer = v.insurer ? ` (${v.insurer})` : "";
     await prisma.todo.create({
       data: {
+        userId,
         title: `Renew ${v.project.name} insurance${insurer} — expires in ${days}d`,
         notes: `Policy ${v.policyNumber ?? ""} expires ${expIso}.${phone} ${tag}`.trim(),
         listId: list.id,
@@ -87,6 +94,7 @@ export async function GET(request: Request) {
   vaxHorizon.setDate(vaxHorizon.getDate() + VAX_BOOSTER_LEAD_DAYS);
   const vaccinations = await prisma.petVaccination.findMany({
     where: {
+      userId,
       boosterDueAt: { gte: now, lte: vaxHorizon },
     },
     include: {
@@ -107,6 +115,7 @@ export async function GET(request: Request) {
     const clinic = vax.pet.vetClinic ? ` (${vax.pet.vetClinic})` : "";
     await prisma.todo.create({
       data: {
+        userId,
         title: `${vax.pet.project.name}: ${vax.name} booster due in ${days}d`,
         notes: `Booster due ${dueIso}.${vetPhone}${clinic} ${tag}`.trim(),
         listId: list.id,
@@ -119,6 +128,7 @@ export async function GET(request: Request) {
 
   // 3. Vehicle ServiceItems that are overdue or due-soon.
   const allItems = await prisma.serviceItem.findMany({
+    where: { userId },
     include: {
       vehicle: {
         select: {
@@ -149,6 +159,7 @@ export async function GET(request: Request) {
           : "";
     await prisma.todo.create({
       data: {
+        userId,
         title: `${item.vehicle.project.name}: ${item.name} — ${verb} (${detail})`,
         notes: `Service item flagged by autopilot. ${tag}`,
         listId: list.id,

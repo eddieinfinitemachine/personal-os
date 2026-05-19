@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUserId } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -7,7 +8,14 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { id } = await params;
+  const existing = await prisma.trip.findUnique({ where: { id } });
+  if (!existing || existing.userId !== userId) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
   const body = (await request.json()) as Record<string, unknown>;
 
   const data: Record<string, unknown> = {};
@@ -52,10 +60,17 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { id } = await params;
+  const existing = await prisma.trip.findUnique({ where: { id } });
+  if (!existing || existing.userId !== userId) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
   await prisma.trip.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

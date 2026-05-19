@@ -25,8 +25,13 @@ export async function POST() {
     );
   }
 
+  const FOUNDER_EMAIL = process.env.FOUNDER_EMAIL ?? "emcohen@me.com";
+  const founder = await prisma.user.findUnique({ where: { email: FOUNDER_EMAIL } });
+  if (!founder) return NextResponse.json({ error: "founder user missing" }, { status: 500 });
+  const userId = founder.id;
+
   const items = await prisma.asset.findMany({
-    where: { kind: "inventory", archived: false },
+    where: { userId, kind: "inventory", archived: false },
     orderBy: { createdAt: "asc" },
   });
 

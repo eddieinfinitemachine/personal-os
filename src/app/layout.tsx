@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
-import { unstable_cache } from "next/cache";
 import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
 import { MobileChromeProvider } from "@/components/mobile-chrome";
@@ -8,29 +7,28 @@ import { themePreloadScript } from "@/components/theme-toggle";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import { prisma } from "@/lib/prisma";
 
-const getSidebarProjects = unstable_cache(
-  async () =>
-    prisma.project.findMany({
-      where: { archived: false },
-      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-      select: {
-        id: true,
-        name: true,
-        icon: true,
-        _count: { select: { todos: { where: { completedAt: null } } } },
-      },
-    }),
-  ["sidebar-projects-v1"],
-  { revalidate: 15, tags: ["sidebar-projects"] }
-);
+// Per-request because the cache key would need to include userId; for a
+// friends-only deployment the small extra query is fine.
+async function getSidebarProjects(userId: string) {
+  return prisma.project.findMany({
+    where: { userId, archived: false },
+    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      icon: true,
+      _count: { select: { todos: { where: { completedAt: null } } } },
+    },
+  });
+}
 
 export const metadata: Metadata = {
-  title: "Personal OS",
-  description: "Todos, projects, people — one home.",
+  title: "Kaizen — A little better, every day.",
+  description: "Tasks, projects, people, trips, possessions — your life, organized.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    title: "Personal OS",
+    title: "Kaizen",
     statusBarStyle: "black-translucent",
   },
 };
@@ -51,7 +49,16 @@ export default async function RootLayout({
 }) {
   const h = await headers();
   const pathname = h.get("x-pathname") ?? "";
-  const isBare = pathname === "/login" || pathname.startsWith("/login/");
+  const userId = h.get("x-user-id");
+  const isAuthRoute =
+    pathname === "/login" ||
+    pathname.startsWith("/login/") ||
+    pathname === "/signup" ||
+    pathname.startsWith("/signup/");
+  // Logged-out users on `/` see the landing page (rendered by page.tsx).
+  // Render layout in "bare" mode (no sidebar/mobile chrome) for auth pages
+  // and for the public landing on `/`.
+  const isBare = isAuthRoute || (pathname === "/" && !userId);
 
   if (isBare) {
     return (
@@ -64,7 +71,8 @@ export default async function RootLayout({
     );
   }
 
-  const projects = await getSidebarProjects();
+  // userId is guaranteed here because !isBare means middleware found a valid session.
+  const projects = userId ? await getSidebarProjects(userId) : [];
 
   const mobileProjects = projects.map((p) => ({ id: p.id, name: p.name }));
 

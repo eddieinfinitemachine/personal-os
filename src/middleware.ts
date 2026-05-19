@@ -1,24 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jwtVerify } from "jose";
 
-// Routes that should never be gated.
-const PUBLIC_PATHS = ["/login", "/api/login"];
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || "dev-secret-not-for-production",
+);
+const SESSION_COOKIE = "kaizen-session";
 
-export function middleware(req: NextRequest) {
+// Public paths — landing/signup/login and the auth API.
+const PUBLIC_PREFIXES = ["/login", "/signup", "/api/auth"];
+
+function isPublic(pathname: string): boolean {
+  if (pathname === "/") return true;
+  return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
+}
+
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Forward the pathname so server components (root layout) can branch on it
-  // without re-parsing the URL.
+  // Forward pathname so server components can branch.
   const fwd = new Headers(req.headers);
   fwd.set("x-pathname", pathname);
-  const passthrough = () =>
-    NextResponse.next({ request: { headers: fwd } });
 
-  // Skip framework / asset routes (and the iOS shortcut bundle so it can be
-  // installed by tapping the URL without going through the password gate).
+  const passthrough = (extra?: Record<string, string>) => {
+    if (extra) for (const [k, v] of Object.entries(extra)) fwd.set(k, v);
+    return NextResponse.next({ request: { headers: fwd } });
+  };
+
+  // Framework / static / PWA assets.
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
     pathname.startsWith("/icon") ||
+    pathname.startsWith("/apple-icon") ||
     pathname.startsWith("/manifest") ||
     pathname === "/sw.js" ||
     pathname.startsWith("/workbox-") ||
@@ -28,8 +41,7 @@ export function middleware(req: NextRequest) {
     return passthrough();
   }
 
-  // Allow cron + capture endpoints to bypass cookie auth — they have their own
-  // bearer-token gating.
+  // Bearer-token endpoints handle their own auth.
   if (
     pathname.startsWith("/api/cron/") ||
     pathname.startsWith("/api/capture/") ||
@@ -38,13 +50,27 @@ export function middleware(req: NextRequest) {
     return passthrough();
   }
 
-  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
+  // Verify session — populate x-user-id on success.
+  const token = req.cookies.get(SESSION_COOKIE)?.value;
+  let userId: string | null = null;
+  if (token) {
+    try {
+      const { payload } = await jwtVerify(token, JWT_SECRET);
+      if (typeof payload.userId === "string") userId = payload.userId;
+    } catch {
+      // Invalid/expired — fall through.
+    }
+  }
+
+  if (userId) {
+    return passthrough({ "x-user-id": userId });
+  }
+
+  if (isPublic(pathname)) {
     return passthrough();
   }
 
-  const authed = req.cookies.get("personalos-auth")?.value === "ok";
-  if (authed) return passthrough();
-
+  // Unauthenticated request to a gated route → redirect to /login.
   const url = req.nextUrl.clone();
   url.pathname = "/login";
   url.searchParams.set("from", pathname);

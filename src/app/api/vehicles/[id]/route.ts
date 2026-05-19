@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUserId } from "@/lib/auth";
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { id } = await params;
   const body = (await request.json()) as Record<string, unknown>;
 
@@ -47,6 +51,11 @@ export async function PATCH(
     } else {
       updates[key] = v;
     }
+  }
+
+  const existing = await prisma.vehicle.findUnique({ where: { id } });
+  if (!existing || existing.userId !== userId) {
+    return NextResponse.json({ error: "vehicle not found" }, { status: 404 });
   }
 
   const vehicle = await prisma.vehicle.update({ where: { id }, data: updates });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUserId } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -7,7 +8,14 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { id } = await params;
+  const trip = await prisma.trip.findUnique({ where: { id } });
+  if (!trip || trip.userId !== userId) {
+    return NextResponse.json({ error: "trip not found" }, { status: 404 });
+  }
   const body = (await request.json()) as Record<string, unknown>;
   const kind = typeof body.kind === "string" ? body.kind : "note";
   const title = typeof body.title === "string" ? body.title.trim() : "";
@@ -20,6 +28,7 @@ export async function POST(
   });
   const item = await prisma.tripItem.create({
     data: {
+      userId,
       tripId: id,
       kind,
       title,

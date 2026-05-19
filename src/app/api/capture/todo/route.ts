@@ -75,11 +75,17 @@ async function handle(input: {
   if (!input.title) {
     return NextResponse.json({ error: "title required" }, { status: 400 });
   }
-  await ensureDefaultLists();
+
+  const FOUNDER_EMAIL = process.env.FOUNDER_EMAIL ?? "emcohen@me.com";
+  const founder = await prisma.user.findUnique({ where: { email: FOUNDER_EMAIL } });
+  if (!founder) return NextResponse.json({ error: "founder user missing" }, { status: 500 });
+  const userId = founder.id;
+
+  await ensureDefaultLists(userId);
 
   const listName = input.list ?? "To Do";
   const list = await prisma.list.findFirst({
-    where: { name: { equals: listName, mode: "insensitive" } },
+    where: { userId, name: { equals: listName, mode: "insensitive" } },
   });
   if (!list) {
     return NextResponse.json(
@@ -92,6 +98,7 @@ async function handle(input: {
   if (input.project) {
     const proj = await prisma.project.findFirst({
       where: {
+        userId,
         archived: false,
         name: { equals: input.project, mode: "insensitive" },
       },
@@ -107,6 +114,7 @@ async function handle(input: {
 
   const todo = await prisma.todo.create({
     data: {
+      userId,
       title: input.title,
       listId: list.id,
       projectId,

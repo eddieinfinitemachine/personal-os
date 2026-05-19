@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BookOpen, Calendar, Car, ChevronDown, ChevronRight, Eye, EyeOff, Folder, Home, Lightbulb, MapPin, PanelLeftClose, PanelLeftOpen, Package, Pencil, Plane, Plus, Loader2, MoreHorizontal, Trash2, TrendingUp, User, Users } from "lucide-react";
+import { BookOpen, Calendar, Car, ChevronDown, ChevronRight, Eye, EyeOff, Folder, Home, Lightbulb, MapPin, PanelLeftClose, PanelLeftOpen, Package, Pencil, Plane, Plus, Loader2, MoreHorizontal, Settings, Trash2, TrendingUp, User, Users } from "lucide-react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
@@ -353,11 +353,21 @@ export function Sidebar({ projects: initialProjects }: { projects: SidebarProjec
         </div>
       </div>
 
-      <div className="mt-auto px-4 py-3 border-t border-[var(--color-border)] flex items-center justify-between gap-2">
-        <span className="text-[10px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
-          Theme
-        </span>
-        <ThemeToggle />
+      <div className="mt-auto border-t border-[var(--color-border)]">
+        <div className="px-2 py-2">
+          <SidebarLink
+            href="/settings"
+            icon={<Settings className="size-4" />}
+            label="Settings"
+            active={pathname === "/settings"}
+          />
+        </div>
+        <div className="px-4 py-3 border-t border-[var(--color-border)] flex items-center justify-between gap-2">
+          <span className="text-[10px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
+            Theme
+          </span>
+          <ThemeToggle />
+        </div>
       </div>
     </aside>
   );

@@ -1,11 +1,17 @@
 import { prisma } from "@/lib/prisma";
 import { FriendsList, type PersonRow } from "@/components/friends-list";
+import { getSession } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default async function FriendsPage() {
+  const session = await getSession();
+  if (!session) redirect("/login");
+  const userId = session.userId;
+
   const people = await prisma.person.findMany({
-    where: { archived: false },
+    where: { userId, archived: false },
     orderBy: [
       { starred: "desc" },
       { lastInteractionAt: { sort: "asc", nulls: "first" } },

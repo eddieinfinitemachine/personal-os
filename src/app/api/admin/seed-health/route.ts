@@ -292,12 +292,18 @@ const HEALTH_NOTE = `## Trajectory across 3 draws (Nov 2024 → Mar 2026)
 - **Sun** — Active recovery`;
 
 export async function POST() {
+  const FOUNDER_EMAIL = process.env.FOUNDER_EMAIL ?? "emcohen@me.com";
+  const founder = await prisma.user.findUnique({ where: { email: FOUNDER_EMAIL } });
+  if (!founder) return NextResponse.json({ error: "founder user missing" }, { status: 500 });
+  const userId = founder.id;
+
   let project = await prisma.project.findFirst({
-    where: { name: "Health", archived: false },
+    where: { userId, name: "Health", archived: false },
   });
   if (!project) {
     project = await prisma.project.create({
       data: {
+        userId,
         name: "Health",
         kind: "human",
         icon: "Heart",
@@ -327,8 +333,8 @@ export async function POST() {
   let human;
   if (existing) {
     await prisma.$transaction([
-      prisma.labResult.deleteMany({ where: { humanId: existing.id } }),
-      prisma.medicalVisit.deleteMany({ where: { humanId: existing.id } }),
+      prisma.labResult.deleteMany({ where: { humanId: existing.id, userId } }),
+      prisma.medicalVisit.deleteMany({ where: { humanId: existing.id, userId } }),
     ]);
     human = await prisma.human.update({
       where: { id: existing.id },
@@ -336,7 +342,7 @@ export async function POST() {
     });
   } else {
     human = await prisma.human.create({
-      data: { ...humanData, projectId: project.id },
+      data: { ...humanData, projectId: project.id, userId },
     });
   }
 
@@ -346,6 +352,7 @@ export async function POST() {
     await prisma.labResult.createMany({
       data: draw.markers.map((m) => ({
         humanId: human.id,
+        userId,
         drawnAt,
         panel: m.panel,
         marker: m.marker,
@@ -361,6 +368,7 @@ export async function POST() {
     await prisma.medicalVisit.create({
       data: {
         humanId: human.id,
+        userId,
         performedAt: drawnAt,
         providerName: "Quest Diagnostics",
         specialty: "lab work",

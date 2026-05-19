@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Personal OS",
-    short_name: "Personal OS",
-    description: "Todos, projects, people — one home.",
+    name: "Kaizen",
+    short_name: "Kaizen",
+    description: "Tasks, projects, people, trips — your life, organized.",
     start_url: "/",
     display: "standalone",
     background_color: "#eaedf4",

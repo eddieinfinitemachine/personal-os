@@ -28,7 +28,12 @@ model Trip {
 
   items         TripItem[]
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([archived, startDate])
+  @@index([userId])
 }
 
 model TripItem {
@@ -51,7 +56,12 @@ model TripItem {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([tripId, startAt, position])
+  @@index([userId])
 }
 
 model List {
@@ -65,7 +75,12 @@ model List {
 
   todos Todo[]
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([position])
+  @@index([userId])
 }
 
 model Project {
@@ -86,7 +101,12 @@ model Project {
   pet         Pet?
   human       Human?
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([archived, position])
+  @@index([userId])
 }
 
 model Vehicle {
@@ -143,6 +163,11 @@ model Vehicle {
   shoppingItems  ShoppingItem[]
   drives         VehicleDrive[]
   recommendations Recommendation[]
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model VehiclePhoto {
@@ -160,7 +185,12 @@ model VehiclePhoto {
   position  Int      @default(0)
   createdAt DateTime @default(now())
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([vehicleId, position])
+  @@index([userId])
 }
 
 model ShoppingItem {
@@ -179,7 +209,12 @@ model ShoppingItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([vehicleId, completedAt, position])
+  @@index([userId])
 }
 
 model Human {
@@ -222,6 +257,11 @@ model Human {
   fitnessSessions FitnessSession[]
   dnaResults      DnaResult[]
   recommendations Recommendation[]
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model BiometricReading {
@@ -238,7 +278,12 @@ model BiometricReading {
 
   createdAt DateTime @default(now())
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([humanId, kind, measuredAt])
+  @@index([userId])
 }
 
 model LabResult {
@@ -258,7 +303,12 @@ model LabResult {
 
   createdAt DateTime @default(now())
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([humanId, marker, drawnAt])
+  @@index([userId])
 }
 
 model MedicalVisit {
@@ -276,7 +326,12 @@ model MedicalVisit {
 
   createdAt DateTime @default(now())
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([humanId, performedAt])
+  @@index([userId])
 }
 
 model HumanVaccination {
@@ -292,7 +347,12 @@ model HumanVaccination {
 
   createdAt DateTime @default(now())
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([humanId, administeredAt])
+  @@index([userId])
 }
 
 model FitnessSession {
@@ -312,7 +372,12 @@ model FitnessSession {
 
   createdAt DateTime @default(now())
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([humanId, performedAt])
+  @@index([userId])
 }
 
 model DnaResult {
@@ -329,7 +394,12 @@ model DnaResult {
   reportedAt DateTime?
   createdAt  DateTime  @default(now())
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([humanId, category])
+  @@index([userId])
 }
 
 model Pet {
@@ -372,6 +442,11 @@ model Pet {
   photos          PetPhoto[]
   shoppingItems   PetShoppingItem[]
   recommendations Recommendation[]
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model PetWeight {
@@ -385,7 +460,12 @@ model PetWeight {
 
   createdAt DateTime @default(now())
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([petId, measuredAt])
+  @@index([userId])
 }
 
 model PetVaccination {
@@ -401,7 +481,12 @@ model PetVaccination {
 
   createdAt DateTime @default(now())
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([petId, administeredAt])
+  @@index([userId])
 }
 
 model PetVetVisit {
@@ -417,7 +502,12 @@ model PetVetVisit {
 
   createdAt DateTime @default(now())
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([petId, performedAt])
+  @@index([userId])
 }
 
 model PetPhoto {
@@ -435,7 +525,12 @@ model PetPhoto {
   position  Int      @default(0)
   createdAt DateTime @default(now())
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([petId, position])
+  @@index([userId])
 }
 
 model Recommendation {
@@ -461,7 +556,12 @@ model Recommendation {
 
   @@index([petId, completedAt, dismissedAt, position])
   @@index([vehicleId, completedAt, dismissedAt, position])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([humanId, completedAt, dismissedAt, position])
+  @@index([userId])
 }
 
 model PetShoppingItem {
@@ -480,7 +580,12 @@ model PetShoppingItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([petId, completedAt, position])
+  @@index([userId])
 }
 
 model ServiceItem {
@@ -500,7 +605,12 @@ model ServiceItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([vehicleId, position])
+  @@index([userId])
 }
 
 model ServiceRecord {
@@ -517,7 +627,12 @@ model ServiceRecord {
 
   createdAt DateTime @default(now())
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([vehicleId, performedAt])
+  @@index([userId])
 }
 
 model VehicleContact {
@@ -536,7 +651,12 @@ model VehicleContact {
   position  Int      @default(0)
   createdAt DateTime @default(now())
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([vehicleId, position])
+  @@index([userId])
 }
 
 model VehicleDrive {
@@ -551,7 +671,12 @@ model VehicleDrive {
 
   createdAt   DateTime @default(now())
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([vehicleId, drivenAt])
+  @@index([userId])
 }
 
 model Note {
@@ -564,7 +689,12 @@ model Note {
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([projectId, updatedAt])
+  @@index([userId])
 }
 
 model Attachment {
@@ -579,7 +709,12 @@ model Attachment {
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([projectId, createdAt])
+  @@index([userId])
 }
 
 model Person {
@@ -605,7 +740,12 @@ model Person {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([archived, starred, lastInteractionAt])
+  @@index([userId])
 }
 
 // Generic life-tracking record. One model powers many lightweight pages
@@ -647,7 +787,12 @@ model Asset {
   updatedAt DateTime @updatedAt
 
   @@index([kind, archived, position])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([kind, externalId])
+  @@index([userId])
 }
 
 model Todo {
@@ -672,5 +817,67 @@ model Todo {
 
   @@index([listId, completedAt, position])
   @@index([projectId, completedAt, position])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([parentId, completedAt, position])
+  @@index([userId])
+}
+
+// ─── Auth ──────────────────────────────────────────────────────────
+
+model User {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  name       String?
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+
+  // auto-generated back-references
+  trips                        Trip[]
+  tripItems                    TripItem[]
+  lists                        List[]
+  projects                     Project[]
+  vehicles                     Vehicle[]
+  vehiclePhotos                VehiclePhoto[]
+  shoppingItems                ShoppingItem[]
+  humans                       Human[]
+  biometricReadings            BiometricReading[]
+  labResults                   LabResult[]
+  medicalVisits                MedicalVisit[]
+  humanVaccinations            HumanVaccination[]
+  fitnessSessions              FitnessSession[]
+  dnaResults                   DnaResult[]
+  pets                         Pet[]
+  petWeights                   PetWeight[]
+  petVaccinations              PetVaccination[]
+  petVetVisits                 PetVetVisit[]
+  petPhotos                    PetPhoto[]
+  recommendations              Recommendation[]
+  petShoppingItems             PetShoppingItem[]
+  serviceItems                 ServiceItem[]
+  serviceRecords               ServiceRecord[]
+  vehicleContacts              VehicleContact[]
+  vehicleDrives                VehicleDrive[]
+  notes                        Note[]
+  attachments                  Attachment[]
+  persons                      Person[]
+  assets                       Asset[]
+  todos                        Todo[]
+
+  @@index([email])
+}
+
+model MagicLinkToken {
+  id         String    @id @default(cuid())
+  token      String    @unique
+  email      String
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
 }

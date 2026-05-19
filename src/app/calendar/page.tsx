@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { CalendarView } from "@/components/calendar-view";
+import { getSession } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +10,10 @@ export default async function CalendarPage({
 }: {
   searchParams: Promise<{ month?: string }>;
 }) {
+  const session = await getSession();
+  if (!session) redirect("/login");
+  const userId = session.userId;
+
   const { month: rawMonth } = await searchParams;
   // Month is YYYY-MM. Default to current month.
   const today = new Date();
@@ -23,6 +29,7 @@ export default async function CalendarPage({
 
   const todos = await prisma.todo.findMany({
     where: {
+      userId,
       dueDate: { gte: start, lt: end },
       completedAt: null,
     },
@@ -50,6 +57,7 @@ export default async function CalendarPage({
   upcomingEnd.setDate(upcomingEnd.getDate() + 14);
   const upcomingTodos = await prisma.todo.findMany({
     where: {
+      userId,
       dueDate: { gte: upcomingStart, lt: upcomingEnd },
       completedAt: null,
     },

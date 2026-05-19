@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { safeFilename, saveFile } from "@/lib/storage";
+import { getCurrentUserId } from "@/lib/auth";
 
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
@@ -17,6 +18,9 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { id } = await params;
   const form = await request.formData();
   const file = form.get("file");
@@ -33,17 +37,23 @@ export async function POST(
     return NextResponse.json({ error: "unsupported image type" }, { status: 415 });
   }
 
+  const vehicle = await prisma.vehicle.findUnique({ where: { id } });
+  if (!vehicle || vehicle.userId !== userId) {
+    return NextResponse.json({ error: "vehicle not found" }, { status: 404 });
+  }
+
   const buffer = Buffer.from(await file.arrayBuffer());
   const filename = safeFilename(file.name);
   const url = await saveFile(`vehicles/${id}`, filename, buffer);
 
   const max = await prisma.vehiclePhoto.aggregate({
-    where: { vehicleId: id },
+    where: { vehicleId: id, userId },
     _max: { position: true },
   });
 
   const photo = await prisma.vehiclePhoto.create({
     data: {
+      userId,
       vehicleId: id,
       url,
       mimeType: file.type || null,
