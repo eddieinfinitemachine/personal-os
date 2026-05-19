@@ -11,10 +11,21 @@ function getResend(): Resend {
 }
 
 const FROM_EMAIL = process.env.EMAIL_FROM ?? "Kaizen <onboarding@resend.dev>";
-const APP_URL = process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+const APP_URL_FALLBACK =
+  process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
-export async function sendMagicLinkEmail(email: string, token: string): Promise<void> {
-  const link = `${APP_URL}/api/auth/verify?token=${token}`;
+/**
+ * Send a magic-link email. Pass `originUrl` to use the request's actual host
+ * (e.g. so a sign-up from kaizen.eddiecohen.com gets a link back to that host
+ * rather than whatever APP_URL is set to globally).
+ */
+export async function sendMagicLinkEmail(
+  email: string,
+  token: string,
+  originUrl?: string,
+): Promise<void> {
+  const base = originUrl?.replace(/\/$/, "") ?? APP_URL_FALLBACK;
+  const link = `${base}/api/auth/verify?token=${token}`;
 
   await getResend().emails.send({
     from: FROM_EMAIL,

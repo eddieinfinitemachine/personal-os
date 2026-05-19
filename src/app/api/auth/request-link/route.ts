@@ -74,8 +74,15 @@ export async function POST(req: NextRequest) {
     data: { token, email, expiresAt },
   });
 
+  // Use the request's own origin so links go back to whichever host the user
+  // signed up from (kaizen.eddiecohen.com, internal.eddiecohen.com, etc.).
+  // Falls back to APP_URL env when no origin is present (rare).
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  const host = req.headers.get("host");
+  const origin = forwardedProto && host ? `${forwardedProto}://${host}` : new URL(req.url).origin;
+
   try {
-    await sendMagicLinkEmail(email, token);
+    await sendMagicLinkEmail(email, token, origin);
   } catch (err) {
     console.error("magic link email failed", err);
     return NextResponse.json(

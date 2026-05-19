@@ -1,3 +1,5 @@
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { HomeTiles, type HomeTile } from "@/components/home-tiles";
 import { NewListButton } from "@/components/new-list-button";
 import { ProjectCard, type ProjectCardData } from "@/components/project-card";
@@ -10,11 +12,22 @@ import type { TodoLike } from "@/components/todo-row";
 const PREVIEW_LIMIT = 12;
 const PROJECT_LIST_PREVIEW = 8;
 
+// Hostnames that should bypass the public landing page — they go straight to
+// the dashboard (or /login if not signed in). Use this for any private/founder
+// URL where you don't want the marketing surface.
+const PRIVATE_HOSTS = new Set(["internal.eddiecohen.com"]);
+
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const session = await getSession();
-  if (!session) return <KaizenLanding />;
+
+  if (!session) {
+    const host = (await headers()).get("host") ?? "";
+    const baseHost = host.split(":")[0].toLowerCase();
+    if (PRIVATE_HOSTS.has(baseHost)) redirect("/login");
+    return <KaizenLanding />;
+  }
   const userId = session.userId;
 
   await ensureDefaultLists(userId);
