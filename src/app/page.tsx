@@ -28,7 +28,7 @@ export default async function HomePage() {
       orderBy: [
         { dueDate: "asc" },
         { position: "asc" },
-        { createdAt: "desc" },
+        { createdAt: "asc" },
       ],
       include: {
         project: { select: { name: true } },

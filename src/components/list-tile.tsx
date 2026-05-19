@@ -287,11 +287,10 @@ export function ListTile({
   }, [todos]);
 
   const visibleTodos = useMemo<TodoLike[]>(() => {
-    // Pending (just-added) todos render first so they appear at the top
-    // immediately. The server already sorts new rows above existing ones
-    // (createdAt DESC tiebreaker on equal position), so post-refresh order
-    // matches the optimistic order.
-    const merged = [...pendingTodos, ...todos, ...extraTodos].filter(
+    // Pending (just-added) todos render at the bottom so new reminders
+    // append in the user's reading order. Server sorts by createdAt ASC
+    // tiebreaker, so post-refresh order matches the optimistic order.
+    const merged = [...todos, ...extraTodos, ...pendingTodos].filter(
       (t) => !hiddenIds.has(t.id)
     );
     if (todoOverrides.size === 0) return merged;
@@ -307,6 +306,7 @@ export function ListTile({
 
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setPendingTodos((prev) => [
+      ...prev,
       {
         id: tempId,
         title: trimmed,
@@ -315,7 +315,6 @@ export function ListTile({
         completedAt: null,
         projectId: projectId ?? null,
       },
-      ...prev,
     ]);
 
     try {
@@ -696,7 +695,7 @@ export function ListTile({
                     setTitle("");
                   }
                 }}
-                placeholder="New Reminder (paste a list to add many)"
+                placeholder="New Reminder"
                 className="flex-1 bg-transparent text-[17px] md:text-[15px] focus:outline-none placeholder:text-[var(--color-muted-foreground)]/70"
               />
             </div>

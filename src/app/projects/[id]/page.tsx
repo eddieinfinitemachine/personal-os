@@ -93,7 +93,7 @@ async function TasksTab({ projectId }: { projectId: string }) {
     orderBy: [
       { dueDate: "asc" },
       { position: "asc" },
-      { createdAt: "desc" },
+      { createdAt: "asc" },
     ],
     include: {
       subtasks: { orderBy: [{ position: "asc" }, { createdAt: "asc" }] },
