@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { ChevronDown, ChevronRight, MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import { LIST_PALETTE, palette } from "@/lib/lists";
 import { cn } from "@/lib/utils";
 import { TodoRow, type TodoLike } from "./todo-row";
@@ -632,13 +632,10 @@ export function ListTile({
             </button>
             {menuOpen ? (
               <div
-                className="absolute right-0 top-full z-10 mt-1 w-44 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg overflow-hidden"
+                className="absolute right-0 top-full z-10 mt-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="px-3 pt-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
-                  Color
-                </div>
-                <div className="px-3 pb-2 grid grid-cols-8 gap-1.5">
+                <div className="flex items-center gap-1.5 p-2">
                   {Object.keys(LIST_PALETTE).map((c) => {
                     const cp = LIST_PALETTE[c as keyof typeof LIST_PALETTE];
                     const active = c === list.color;
@@ -648,13 +645,12 @@ export function ListTile({
                         onClick={() => changeColor(c)}
                         title={c}
                         className={cn(
-                          "size-4 rounded-full transition",
-                          cp.dot,
-                          active
-                            ? "ring-2 ring-offset-1 ring-offset-[var(--color-card)] ring-[var(--color-foreground)]"
-                            : "hover:scale-110"
+                          "grid size-6 place-items-center rounded-full text-white transition hover:scale-110",
+                          cp.dot
                         )}
-                      />
+                      >
+                        {active ? <Check className="size-3.5" strokeWidth={3} /> : null}
+                      </button>
                     );
                   })}
                 </div>
