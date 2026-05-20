@@ -669,6 +669,60 @@ export function ListTile({
       </div>
 
       <div className="flex-1 flex flex-col">
+        {/* Mobile-only: New Reminder input at the TOP of the tile (pre-1c1f088 behavior).
+            The desktop counterpart still lives in-place at the bottom, below the list. */}
+        <div className="md:hidden">
+          {adding ? (
+            <form onSubmit={addTodo} className="px-1 pt-1 pb-2">
+              <div className="flex items-start gap-3 py-1">
+                <span
+                  className={cn(
+                    "mt-0.5 size-6 shrink-0 rounded-full border-2 border-[var(--color-border)]"
+                  )}
+                />
+                <input
+                  autoFocus
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onPaste={handlePaste}
+                  onBlur={() => {
+                    if (!title.trim()) setAdding(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setAdding(false);
+                      setTitle("");
+                    }
+                  }}
+                  placeholder="New Reminder"
+                  className="flex-1 bg-transparent text-[17px] focus:outline-none placeholder:text-[var(--color-muted-foreground)]/70"
+                />
+              </div>
+            </form>
+          ) : (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                startAdding();
+              }}
+              className={cn(
+                "flex items-center gap-2.5 px-0 py-3 text-[17px] font-normal transition hover:opacity-80 text-left",
+                p.text
+              )}
+            >
+              <span
+                className={cn(
+                  "grid size-[22px] place-items-center rounded-full border-2 border-current",
+                  p.softBg
+                )}
+              >
+                <Plus className="size-3.5" strokeWidth={2.5} />
+              </span>
+              <span>New Reminder</span>
+            </button>
+          )}
+        </div>
+
         {groupByProject ? (
           (() => {
             const buckets = new Map<string, TodoLike[]>();
@@ -823,55 +877,59 @@ export function ListTile({
           </ul>
         )}
 
-        {adding ? (
-          <form onSubmit={addTodo} className="px-1 pt-1 pb-2">
-            <div className="flex items-start gap-3 py-1">
-              <span
-                className={cn(
-                  "mt-0.5 size-6 md:size-[22px] shrink-0 rounded-full border-2 border-[var(--color-border)]"
-                )}
-              />
-              <input
-                autoFocus
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                onPaste={handlePaste}
-                onBlur={() => {
-                  if (!title.trim()) setAdding(false);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setAdding(false);
-                    setTitle("");
-                  }
-                }}
-                placeholder="New Reminder"
-                className="flex-1 bg-transparent text-[17px] md:text-[15px] focus:outline-none placeholder:text-[var(--color-muted-foreground)]/70"
-              />
-            </div>
-          </form>
-        ) : (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              startAdding();
-            }}
-            className={cn(
-              "flex items-center gap-2.5 px-0 py-3 text-[17px] md:text-sm font-normal md:font-medium md:mt-1 md:px-2 md:py-2 md:gap-2 transition hover:opacity-80 text-left",
-              p.text
-            )}
-          >
-            <span
+        {/* Desktop-only: original in-place add at the bottom. The mobile
+            equivalent is rendered at the top of the tile (above). */}
+        <div className="hidden md:block">
+          {adding ? (
+            <form onSubmit={addTodo} className="px-1 pt-1 pb-2">
+              <div className="flex items-start gap-3 py-1">
+                <span
+                  className={cn(
+                    "mt-0.5 size-[22px] shrink-0 rounded-full border-2 border-[var(--color-border)]"
+                  )}
+                />
+                <input
+                  autoFocus
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onPaste={handlePaste}
+                  onBlur={() => {
+                    if (!title.trim()) setAdding(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setAdding(false);
+                      setTitle("");
+                    }
+                  }}
+                  placeholder="New Reminder"
+                  className="flex-1 bg-transparent text-[15px] focus:outline-none placeholder:text-[var(--color-muted-foreground)]/70"
+                />
+              </div>
+            </form>
+          ) : (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                startAdding();
+              }}
               className={cn(
-                "grid size-[22px] place-items-center rounded-full border-2 border-current md:border-0",
-                p.softBg
+                "flex items-center gap-2 px-2 py-2 mt-1 text-sm font-medium transition hover:opacity-80 text-left",
+                p.text
               )}
             >
-              <Plus className="size-3.5" strokeWidth={2.5} />
-            </span>
-            <span>New Reminder</span>
-          </button>
-        )}
+              <span
+                className={cn(
+                  "grid size-[22px] place-items-center rounded-full",
+                  p.softBg
+                )}
+              >
+                <Plus className="size-3.5" strokeWidth={2.5} />
+              </span>
+              <span>New Reminder</span>
+            </button>
+          )}
+        </div>
 
         <div className="flex-1 min-h-[20px]" aria-hidden />
       </div>

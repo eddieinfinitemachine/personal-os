@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BookOpen, Calendar, Car, ChevronDown, ChevronRight, Eye, EyeOff, Folder, Home, Lightbulb, MapPin, PanelLeftClose, PanelLeftOpen, Package, Pencil, Plane, Plus, Loader2, MoreHorizontal, Settings, Trash2, TrendingUp, User, Users } from "lucide-react";
+import { BookOpen, Calendar, Camera, Car, ChevronDown, ChevronRight, Eye, EyeOff, Folder, Home, Lightbulb, MapPin, PanelLeftClose, PanelLeftOpen, Package, Pencil, Plane, Plus, Loader2, MoreHorizontal, Settings, Trash2, TrendingUp, User, Users } from "lucide-react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
@@ -162,6 +162,12 @@ export function Sidebar({
           icon={<Home className="size-4" />}
           label="Home"
           active={pathname === "/"}
+        />
+        <SidebarLink
+          href="/capture"
+          icon={<Camera className="size-4" />}
+          label="Capture"
+          active={pathname === "/capture"}
         />
         <SidebarLink
           href="/calendar"

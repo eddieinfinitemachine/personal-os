@@ -94,12 +94,14 @@ model Project {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  todos       Todo[]
-  notes       Note[]
-  attachments Attachment[]
-  vehicle     Vehicle?
-  pet         Pet?
-  human       Human?
+  todos        Todo[]
+  notes        Note[]
+  attachments  Attachment[]
+  vehicle      Vehicle?
+  pet          Pet?
+  human        Human?
+  assets       Asset[]
+  interactions Interaction[]
 
 
   userId String
@@ -791,8 +793,12 @@ model Asset {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
   @@unique([kind, externalId])
   @@index([userId])
+  @@index([projectId])
 }
 
 model Todo {
@@ -866,8 +872,34 @@ model User {
   persons                      Person[]
   assets                       Asset[]
   todos                        Todo[]
+  interactions                 Interaction[]
 
   @@index([email])
+}
+
+// Timestamped log of social interactions — replaces relying on
+// Person.lastInteractionAt as the only signal. One row per encounter, with
+// optional people / project / photo links.
+model Interaction {
+  id         String   @id @default(cuid())
+  occurredAt DateTime
+  kind       String   // "dinner" | "call" | "meeting" | "event" | "message" | "other"
+  title      String
+  location   String?
+  notes      String?
+  photoUrl   String?
+  personIds  String[] @default([])
+  source     String   @default("manual") // "manual" | "smart-capture"
+  createdAt  DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId, occurredAt])
+  @@index([projectId])
 }
 
 model MagicLinkToken {
