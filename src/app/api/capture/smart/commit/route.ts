@@ -25,16 +25,18 @@ export async function POST(request: Request) {
   const proposal = body.proposal;
   if (
     !proposal ||
-    !["inventory", "interaction", "person"].includes(proposal.type)
+    !["asset", "interaction", "person", "trip", "todo"].includes(proposal.type)
   ) {
     return NextResponse.json({ error: "proposal required" }, { status: 400 });
   }
 
   // Validate projectId (if set) belongs to this user.
-  // PersonProposal has no projectId; only inventory + interaction do.
+  // Only asset / interaction / todo carry a projectId.
   let projectId: string | null = null;
   const proposalProjectId =
-    proposal.type === "person" ? null : proposal.projectId;
+    proposal.type === "asset" || proposal.type === "interaction" || proposal.type === "todo"
+      ? proposal.projectId ?? null
+      : null;
   if (proposalProjectId) {
     const project = await prisma.project.findUnique({
       where: { id: proposalProjectId },
@@ -42,25 +44,34 @@ export async function POST(request: Request) {
     if (project && project.userId === userId) projectId = project.id;
   }
 
-  if (proposal.type === "inventory") {
+  if (proposal.type === "asset") {
+    // Default status per assetKind if Claude didn't set one.
+    const DEFAULT_STATUS: Record<string, string> = {
+      inventory: "owned",
+      investment: "active",
+      media: "wishlist",
+      place: "wishlist",
+      practice: "active",
+    };
     const asset = await prisma.asset.create({
       data: {
         userId,
-        kind: "inventory",
-        // Default to "owned" — capturing something you bought / have always
-        // implies ownership unless Claude or the user explicitly flagged it
-        // as wishlist / exited / lost.
-        status: proposal.status ?? "owned",
+        kind: proposal.assetKind,
+        status: proposal.status ?? DEFAULT_STATUS[proposal.assetKind] ?? null,
+        amountUsd: proposal.amountUsd ?? null,
+        rating: proposal.rating ?? null,
         title: proposal.title,
         subtitle: proposal.subtitle ?? null,
         category: proposal.category ?? null,
         costBasis: proposal.costBasis ?? null,
         currentValue: proposal.currentValue ?? null,
         location: proposal.location ?? null,
-        // Default acquiredAt to today for owned items if Claude didn't extract one.
+        // Default acquiredAt to today for inventory items marked owned (if
+        // Claude didn't extract a date). Other kinds stay null.
         acquiredAt: proposal.acquiredAt
           ? new Date(proposal.acquiredAt)
-          : (proposal.status ?? "owned") === "owned"
+          : proposal.assetKind === "inventory" &&
+              (proposal.status ?? "owned") === "owned"
             ? new Date()
             : null,
         imageUrl: proposal.photoUrl || null,
@@ -168,6 +179,54 @@ export async function POST(request: Request) {
       created = true;
     }
     return NextResponse.json({ person, created });
+  }
+
+  // Trip path — create a new Trip row.
+  if (proposal.type === "trip") {
+    const trip = await prisma.trip.create({
+      data: {
+        userId,
+        name: proposal.name,
+        destination: proposal.destination ?? null,
+        startDate: proposal.startDate ? new Date(proposal.startDate) : null,
+        endDate: proposal.endDate ? new Date(proposal.endDate) : null,
+        status: proposal.status ?? "planned",
+        travelers: proposal.travelers ?? [],
+        transport: proposal.transport ?? null,
+        accommodation: proposal.accommodation ?? null,
+        costUsd: proposal.costUsd ?? null,
+        bookingUrl: proposal.bookingUrl ?? null,
+        notes: proposal.notes ?? null,
+        imageUrl: proposal.photoUrl ?? null,
+      },
+    });
+    return NextResponse.json({ trip });
+  }
+
+  // Todo path — create a new Todo on the named list (default "To Do").
+  if (proposal.type === "todo") {
+    await ensureDefaultLists(userId);
+    const listName = proposal.listName?.trim() || "To Do";
+    const list = await prisma.list.findFirst({
+      where: { userId, name: { equals: listName, mode: "insensitive" } },
+    });
+    if (!list) {
+      return NextResponse.json(
+        { error: `list "${listName}" not found` },
+        { status: 404 },
+      );
+    }
+    const todo = await prisma.todo.create({
+      data: {
+        userId,
+        listId: list.id,
+        projectId,
+        title: proposal.title,
+        notes: proposal.notes ?? null,
+        dueDate: proposal.dueDate ? new Date(proposal.dueDate) : null,
+      },
+    });
+    return NextResponse.json({ todo });
   }
 
   // Interaction path.

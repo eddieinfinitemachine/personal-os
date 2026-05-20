@@ -147,7 +147,7 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
       // Stash Claude's follow-up todo suggestion in a separate state and
       // strip it from the proposal — the user has to opt in via the UI.
       const incoming = body.proposal;
-      if (incoming.type === "inventory" && incoming.followupTodo?.title) {
+      if (incoming.type === "asset" && incoming.followupTodo?.title) {
         setSuggestedFollowupTitle(incoming.followupTodo.title);
         setProposal({ ...incoming, followupTodo: null });
       } else {
@@ -180,12 +180,28 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
         return;
       }
       // Route to the most relevant destination.
-      if (proposal.type !== "person" && proposal.projectId) {
-        router.push(`/projects/${proposal.projectId}`);
-      } else if (proposal.type === "inventory") {
-        router.push("/inventory");
+      // Post-save routing per proposal type.
+      const projectHop =
+        (proposal.type === "asset" || proposal.type === "todo") &&
+        proposal.projectId;
+      if (projectHop) {
+        router.push(`/projects/${projectHop}`);
+      } else if (proposal.type === "asset") {
+        // 5 asset kinds → 5 sections.
+        const ROUTE: Record<typeof proposal.assetKind, string> = {
+          inventory: "/inventory",
+          investment: "/investments",
+          media: "/media",
+          place: "/places",
+          practice: "/best-practices",
+        };
+        router.push(ROUTE[proposal.assetKind] ?? "/inventory");
+      } else if (proposal.type === "trip") {
+        router.push("/trips");
+      } else if (proposal.type === "todo") {
+        router.push("/");
       } else {
-        // Both "interaction" and "person" land on /friends.
+        // interaction + person land on /friends.
         router.push("/friends");
       }
       router.refresh();
@@ -336,11 +352,11 @@ function Preview({
       <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
         <div className="mb-3 flex items-center justify-between">
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
-            Preview · {proposal.type}
+            Preview · {previewLabel(proposal)}
           </div>
         </div>
 
-        {proposal.type === "inventory" ? (
+        {proposal.type === "asset" ? (
           <InventoryFields
             proposal={proposal}
             projects={projects}
@@ -349,8 +365,12 @@ function Preview({
           />
         ) : proposal.type === "interaction" ? (
           <InteractionFields proposal={proposal} projects={projects} patch={patch} />
-        ) : (
+        ) : proposal.type === "person" ? (
           <PersonFields proposal={proposal} patch={patch} />
+        ) : proposal.type === "trip" ? (
+          <TripFields proposal={proposal} patch={patch} />
+        ) : (
+          <TodoFields proposal={proposal} projects={projects} patch={patch} />
         )}
 
         {error ? <div className="mt-3 text-sm text-rose-500">{error}</div> : null}
@@ -406,10 +426,10 @@ function InventoryFields({
   suggestedFollowupTitle,
   patch,
 }: {
-  proposal: Extract<CaptureProposal, { type: "inventory" }>;
+  proposal: Extract<CaptureProposal, { type: "asset" }>;
   projects: Project[];
   suggestedFollowupTitle: string | null;
-  patch: (part: Partial<Extract<CaptureProposal, { type: "inventory" }>>) => void;
+  patch: (part: Partial<Extract<CaptureProposal, { type: "asset" }>>) => void;
 }) {
   const followup = proposal.followupTodo ?? null;
   return (
@@ -746,6 +766,181 @@ function PersonFields({
       </Field>
     </div>
   );
+}
+
+function TripFields({
+  proposal,
+  patch,
+}: {
+  proposal: Extract<CaptureProposal, { type: "trip" }>;
+  patch: (part: Partial<Extract<CaptureProposal, { type: "trip" }>>) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <Field label="Name">
+        <input
+          value={proposal.name}
+          onChange={(e) => patch({ name: e.target.value })}
+          className={INPUT_CLASS}
+        />
+      </Field>
+      <Field label="Destination">
+        <input
+          value={proposal.destination ?? ""}
+          onChange={(e) => patch({ destination: e.target.value })}
+          placeholder="Tokyo, Japan"
+          className={INPUT_CLASS}
+        />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Start">
+          <input
+            type="date"
+            value={proposal.startDate ?? ""}
+            onChange={(e) => patch({ startDate: e.target.value || null })}
+            className={INPUT_CLASS}
+          />
+        </Field>
+        <Field label="End">
+          <input
+            type="date"
+            value={proposal.endDate ?? ""}
+            onChange={(e) => patch({ endDate: e.target.value || null })}
+            className={INPUT_CLASS}
+          />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Status">
+          <select
+            value={proposal.status ?? "planned"}
+            onChange={(e) =>
+              patch({ status: e.target.value as typeof proposal.status })
+            }
+            className={INPUT_CLASS}
+          >
+            <option value="planned">Planned</option>
+            <option value="booked">Booked</option>
+            <option value="active">Active</option>
+            <option value="past">Past</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </Field>
+        <Field label="Cost (USD)">
+          <input
+            type="number"
+            value={proposal.costUsd ?? ""}
+            onChange={(e) =>
+              patch({ costUsd: e.target.value === "" ? null : Number(e.target.value) })
+            }
+            className={INPUT_CLASS}
+          />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Transport">
+          <input
+            value={proposal.transport ?? ""}
+            onChange={(e) => patch({ transport: e.target.value })}
+            className={INPUT_CLASS}
+          />
+        </Field>
+        <Field label="Accommodation">
+          <input
+            value={proposal.accommodation ?? ""}
+            onChange={(e) => patch({ accommodation: e.target.value })}
+            className={INPUT_CLASS}
+          />
+        </Field>
+      </div>
+      <Field label="Travelers">
+        <input
+          value={(proposal.travelers ?? []).join(", ")}
+          onChange={(e) =>
+            patch({
+              travelers: e.target.value
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean),
+            })
+          }
+          placeholder="comma-separated"
+          className={INPUT_CLASS}
+        />
+      </Field>
+      <Field label="Notes">
+        <textarea
+          value={proposal.notes ?? ""}
+          onChange={(e) => patch({ notes: e.target.value })}
+          rows={2}
+          className={`${INPUT_CLASS} resize-none`}
+        />
+      </Field>
+    </div>
+  );
+}
+
+function TodoFields({
+  proposal,
+  projects,
+  patch,
+}: {
+  proposal: Extract<CaptureProposal, { type: "todo" }>;
+  projects: Project[];
+  patch: (part: Partial<Extract<CaptureProposal, { type: "todo" }>>) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <Field label="Title">
+        <input
+          value={proposal.title}
+          onChange={(e) => patch({ title: e.target.value })}
+          className={INPUT_CLASS}
+        />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Due">
+          <input
+            type="date"
+            value={proposal.dueDate ?? ""}
+            onChange={(e) => patch({ dueDate: e.target.value || null })}
+            className={INPUT_CLASS}
+          />
+        </Field>
+        <Field label="List">
+          <select
+            value={proposal.listName ?? "To Do"}
+            onChange={(e) => patch({ listName: e.target.value })}
+            className={INPUT_CLASS}
+          >
+            <option value="To Do">To Do</option>
+            <option value="Monitor">Monitor</option>
+            <option value="Later">Later</option>
+          </select>
+        </Field>
+      </div>
+      <Field label="Project">
+        <ProjectSelect
+          value={proposal.projectId ?? null}
+          projects={projects}
+          onChange={(v) => patch({ projectId: v })}
+        />
+      </Field>
+      <Field label="Notes">
+        <textarea
+          value={proposal.notes ?? ""}
+          onChange={(e) => patch({ notes: e.target.value })}
+          rows={2}
+          className={`${INPUT_CLASS} resize-none`}
+        />
+      </Field>
+    </div>
+  );
+}
+
+function previewLabel(p: CaptureProposal): string {
+  if (p.type === "asset") return p.assetKind;
+  return p.type;
 }
 
 function ProjectSelect({

@@ -105,8 +105,12 @@ export async function POST(request: Request) {
   }
 
   // Validate the projectId Claude returned (if any) actually belongs to this user.
-  // PersonProposal doesn't have a projectId — only inventory + interaction do.
-  if (proposal.type !== "person") {
+  // Only types that carry a projectId: asset, interaction, todo.
+  if (
+    proposal.type === "asset" ||
+    proposal.type === "interaction" ||
+    proposal.type === "todo"
+  ) {
     const pid = proposal.projectId;
     if (pid && !activeProjects.some((p) => p.id === pid)) {
       proposal = { ...proposal, projectId: null };
@@ -114,12 +118,13 @@ export async function POST(request: Request) {
   }
 
   // Attach the uploaded photo URL onto the proposal so the commit step can use it.
-  if (proposal.type === "inventory") {
-    proposal = { ...proposal, photoUrl: photoUrl ?? "" };
-  } else if (proposal.type === "person") {
-    if (photoUrl) proposal = { ...proposal, photoUrl };
-  } else if (photoUrl) {
-    proposal = { ...proposal, photoUrl };
+  if (photoUrl) {
+    if (proposal.type === "asset" || proposal.type === "trip") {
+      proposal = { ...proposal, photoUrl };
+    } else if (proposal.type === "interaction" || proposal.type === "person") {
+      proposal = { ...proposal, photoUrl };
+    }
+    // (todo has no photoUrl field; skip silently)
   }
 
   return NextResponse.json({ proposal });
