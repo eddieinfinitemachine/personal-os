@@ -812,6 +812,8 @@ function PersonEditor({
           </Field>
         </div>
 
+        {person ? <PersonInteractionsList personId={person.id} /> : null}
+
         {error ? (
           <div className="border-t border-rose-500/30 bg-rose-500/10 px-5 py-2 text-sm text-rose-500">
             {error}
@@ -900,5 +902,104 @@ function Input({
       onChange={(e) => onChange(e.target.value)}
       className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2.5 py-2 text-sm focus:border-[var(--color-ring)] focus:outline-none min-h-[40px]"
     />
+  );
+}
+
+type InteractionRow = {
+  id: string;
+  occurredAt: string;
+  kind: string;
+  title: string;
+  location: string | null;
+  notes: string | null;
+  source: string;
+};
+
+function PersonInteractionsList({ personId }: { personId: string }) {
+  const [rows, setRows] = useState<InteractionRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRows(null);
+    setError(null);
+    fetch(`/api/people/${personId}/interactions`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const body = (await res.json()) as { interactions: InteractionRow[] };
+        if (!cancelled) setRows(body.interactions);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [personId]);
+
+  return (
+    <div className="border-t border-[var(--color-border)] px-5 py-4">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+          Interactions
+        </div>
+        <div className="text-xs text-[var(--color-muted-foreground)]">
+          {rows ? `${rows.length} total` : ""}
+        </div>
+      </div>
+      {error ? (
+        <div className="text-sm text-rose-500">Couldn&apos;t load: {error}</div>
+      ) : rows === null ? (
+        <div className="flex items-center gap-2 text-sm text-[var(--color-muted-foreground)]">
+          <Loader2 className="size-3.5 animate-spin" /> Loading…
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="text-sm text-[var(--color-muted-foreground)]">
+          No interactions yet. Use Check in or the ⌘K capture (&ldquo;had dinner
+          with X at Y&rdquo;) to log one.
+        </div>
+      ) : (
+        <ol className="space-y-2.5">
+          {rows.map((r) => (
+            <li
+              key={r.id}
+              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2.5"
+            >
+              <div className="flex items-baseline justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium">{r.title}</div>
+                  {r.location ? (
+                    <div className="mt-0.5 truncate text-xs text-[var(--color-muted-foreground)]">
+                      {r.location}
+                    </div>
+                  ) : null}
+                  {r.notes ? (
+                    <div className="mt-1 line-clamp-2 text-xs text-[var(--color-muted-foreground)]">
+                      {r.notes}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="shrink-0 text-right text-xs text-[var(--color-muted-foreground)]">
+                  <div>
+                    {new Date(r.occurredAt).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      year:
+                        new Date(r.occurredAt).getFullYear() !==
+                        new Date().getFullYear()
+                          ? "numeric"
+                          : undefined,
+                    })}
+                  </div>
+                  <div className="mt-0.5 text-[10px] uppercase tracking-wider opacity-70">
+                    {r.kind}
+                  </div>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
   );
 }
