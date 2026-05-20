@@ -55,18 +55,30 @@ Decide:
 Be conservative. If the text/photo doesn't clearly fit, pick inventory only if there's a visible object + price-like signal, otherwise interaction if any person name is mentioned.
 
 For inventory:
+
+STATUS — read the text carefully. Status is the single most important field.
+- "owned" → past-tense acquisition phrasing. Trigger phrases: "bought", "got", "paid", "picked up", "purchased", "received", "have", "own", "snagged", "scored", "took home", "brought home", or just a price + item name with no verb at all ("$850 watch from Brooklyn Flea"). DEFAULT to this when ambiguous.
+- "wishlist" → forward-looking / desire phrasing. Trigger phrases: "want", "want to buy", "looking at", "saving for", "considering", "thinking about", "on my list", "would love", "next purchase", "obsessed with", "eyeing". Anything that implies the user does NOT yet possess it.
+- "exited" → past disposal. "Sold", "gave away", "donated", "returned", "got rid of".
+- "lost" → "lost", "stolen", "broken beyond repair".
+
+Consequences of status (don't violate these):
+- If status is "wishlist": costBasis MUST be null (they haven't paid). acquiredAt MUST be null. sourceVendor can still be the store they're considering. A natural followupTodo is "Buy <item>" — include it.
+- If status is "owned" with NO price in the text: costBasis = null (don't invent).
+- If status is "exited": acquiredAt can stay null unless they mentioned when they got it.
+
+OTHER FIELDS:
 - "title": short product name ("Submariner", "KitchenAid Pro 600", "Oil filter").
 - "subtitle": "Brand · Model" when identifiable from the photo or text.
 - "category": one short bucket ("watch", "camera", "audio", "kitchen", "tools", "instrument", "electronics", "art", "furniture", "clothing", "outdoor", "collectible", "auto-part").
-- "status": DEFAULT TO "owned" — anything the user is logging via a "bought / paid / got / picked up / have" phrasing is presumed owned. Use "wishlist" only if the user said "want", "looking at", or "saving for". Use "exited" if they explicitly said "sold / gave away".
-- "costBasis": price the user mentioned (USD). Strip "$", commas. Null if not mentioned.
-- "currentValue": REALISTIC fair-market resale value as of <TODAY>, integer USD. ALWAYS attempt this when the item is identifiable from the photo or title — use your knowledge of eBay sold listings, Chrono24, Reverb, StockX, KBB, and similar secondary-market data sources to estimate. Don't be timid: for a typical Submariner give ~$10K, not null; for a used iPhone 14 give ~$400, not null. Use null ONLY when the item is genuinely ambiguous (e.g. a no-name generic photo with no make/model). For consumables that depreciate to zero once used (oil filter, food, beauty products), use a small realistic value (often the purchase price minus 20–50%) rather than 0 — they have some salvage / unopened value.
-- "location": physical location only if user mentioned ("living room shelf", "garage"). Don't invent.
-- "acquiredAt": ISO date if user gave one ("last weekend" → most recent Sat/Sun before <TODAY>). Default to <TODAY> if status is "owned" and no date was given.
-- "sourceVendor": store / market / dealer name if mentioned.
-- "notes": 1–2 short sentences with anything non-obvious (depreciation trend, authenticity tips, etc.). Skip if generic.
+- "costBasis": price the user mentioned (USD). Strip "$", commas. Null if not mentioned OR status is wishlist.
+- "currentValue": REALISTIC fair-market value as of <TODAY>, integer USD. ALWAYS attempt this when the item is identifiable. For OWNED items use secondary-market resale (eBay sold / Chrono24 / Reverb / StockX / KBB). For WISHLIST items use what the user would PAY today (retail / current asking / typical street price). Don't be timid: Submariner ~$10K, used iPhone 14 ~$400, generic oil filter ~$8. Null ONLY when truly unidentifiable.
+- "location": physical location only if user mentioned. Don't invent. Leave null for wishlist (they don't have it).
+- "acquiredAt": ISO date if user gave one. Null for wishlist / exited / lost unless explicitly stated.
+- "sourceVendor": store / market / dealer name if mentioned. For wishlist, this can be where they're considering buying from.
+- "notes": 1–2 short sentences with anything non-obvious (depreciation trend, authenticity tips, "back in stock soon", etc.). Skip if generic.
 - "projectId": scan ACTIVE_PROJECTS for a clear semantic match (e.g. "oil filter for the Ferrari" → the Ferrari project's id). Return the id verbatim. Null if no clear match.
-- "followupTodo": if the item naturally implies a next action ("Install on car", "Register warranty", "Photograph for insurance"), include one short title. Only if obvious. Null otherwise.
+- "followupTodo": if the item naturally implies a next action, include one short title. Use "Buy <item>" for wishlist items, "Install <item>" / "Register warranty" / "Photograph for insurance" for owned items. Null if no obvious follow-up.
 
 For interaction:
 - "kind": one of "dinner", "call", "meeting", "event", "message", "other".
