@@ -37,7 +37,26 @@ export type InteractionProposal = {
   photoUrl?: string | null;
 };
 
-export type CaptureProposal = InventoryProposal | InteractionProposal;
+export type PersonProposal = {
+  type: "person";
+  firstName: string;
+  lastName?: string | null;
+  role?: string | null;     // "artist", "founder", "engineer"
+  company?: string | null;  // "Pixar", "Carnegie Mellon"
+  city?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  birthday?: string | null; // ISO YYYY-MM-DD
+  strength?: "close" | "strong" | "casual" | "weak" | null;
+  circles?: string[];       // social circles / tags
+  notes?: string | null;
+  photoUrl?: string | null;
+};
+
+export type CaptureProposal =
+  | InventoryProposal
+  | InteractionProposal
+  | PersonProposal;
 
 interface ParseInput {
   text: string;
@@ -46,13 +65,18 @@ interface ParseInput {
   activeProjects: ActiveProject[];
 }
 
-const SYSTEM_PROMPT = `You classify a user's quick "capture" into one of two structured records and extract the fields needed to file it. The user may have attached a photo (often the object they bought, or a receipt) and a short typed description.
+const SYSTEM_PROMPT = `You classify a user's quick "capture" into one of THREE structured records and extract the fields needed to file it. The user may have attached a photo (an object they bought, a receipt, a business card, a screenshot of a profile) and a short typed description.
 
 Decide:
-- "inventory" — they bought / acquired a physical thing (object visible in photo, or text describes a purchase)
-- "interaction" — they're logging a social encounter ("had dinner with X", "called Y", "met Z")
+- "inventory" — they bought / acquired a physical thing (object visible in photo, or text describes a purchase / "I bought / paid / got / want to buy").
+- "interaction" — they're logging a social ENCOUNTER ("had dinner with X", "called Y", "met Z at the event last night"). The defining signal is an event/time happened.
+- "person" — they're adding someone to the CRM directly, WITHOUT an associated event. Triggers: "add X to my CRM", "add X to my friends", "X is [a role]", "remind me about X", "save X who is …", or a business-card photo with name + role + company. NO event/time signal means person, not interaction.
 
-Be conservative. If the text/photo doesn't clearly fit, pick inventory only if there's a visible object + price-like signal, otherwise interaction if any person name is mentioned.
+Disambiguation:
+- "Met Sophie at the party Friday" → interaction (event signal).
+- "Add Sophie Loeb to my CRM. She is an artist." → person (no event).
+- A business card with no event context → person.
+- Photo of someone you met somewhere + no time signal → person (you can describe what they do, not when).
 
 For inventory:
 
@@ -88,6 +112,17 @@ For interaction:
 - "notes": only if there's substance beyond the title.
 - "personHints": every person named, as { firstName, lastName }. Best effort split on whitespace ("Joe Milstein" → firstName "Joe", lastName "Milstein"; "Joe" alone → firstName "Joe", no lastName).
 - "projectId": match against ACTIVE_PROJECTS only if the meeting is clearly *about* a project ("met with Joe about Walden" → Walden project id). Null otherwise.
+
+For person:
+- "firstName" / "lastName": split the name on whitespace. "Sophie Loeb" → firstName="Sophie", lastName="Loeb". A single token → firstName only.
+- "role": their work / what they do, if user said. "she is an artist" → "artist". "founder of Acme" → "founder". Lowercase, short.
+- "company": if user said or if you confidently recognize the person. "founder of Acme" → "Acme".
+- "city": only if user mentioned or you confidently know.
+- "email" / "phone" / "birthday": only if literally in the text or photo (business card OCR).
+- "strength": "close" | "strong" | "casual" | "weak" — only if user gave a clear cue ("good friend" → strong, "barely know them" → weak). Otherwise null.
+- "circles": tags / groups for context (e.g. ["nyc art", "school friends"]) — only if user mentioned explicitly. Don't invent.
+- "notes": 1-2 sentences with anything else worth remembering. If you confidently recognize the person from training knowledge as a notable public figure (well-known artist, founder, journalist, etc.), include 1 short factual sentence about what they're known for — clearly attributed ("known for…" / "best known as…"). DO NOT speculate or fabricate. If you don't recognize them with high confidence, leave notes null.
+- "photoUrl" is handled separately by the server; don't set it.
 
 OUTPUT FORMAT: strict JSON, single object, no prose, no markdown fences. Discriminator is the "type" field.`;
 
@@ -197,8 +232,9 @@ export async function parseCapture(input: ParseInput): Promise<CaptureProposal> 
     !parsed ||
     typeof parsed !== "object" ||
     !("type" in parsed) ||
-    ((parsed as { type: unknown }).type !== "inventory" &&
-      (parsed as { type: unknown }).type !== "interaction")
+    !["inventory", "interaction", "person"].includes(
+      (parsed as { type: string }).type,
+    )
   ) {
     throw new Error(
       `Claude returned unexpected shape: ${JSON.stringify(parsed).slice(0, 300)}`,

@@ -23,15 +23,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "bad json" }, { status: 400 });
   }
   const proposal = body.proposal;
-  if (!proposal || (proposal.type !== "inventory" && proposal.type !== "interaction")) {
+  if (
+    !proposal ||
+    !["inventory", "interaction", "person"].includes(proposal.type)
+  ) {
     return NextResponse.json({ error: "proposal required" }, { status: 400 });
   }
 
   // Validate projectId (if set) belongs to this user.
+  // PersonProposal has no projectId; only inventory + interaction do.
   let projectId: string | null = null;
-  if (proposal.projectId) {
+  const proposalProjectId =
+    proposal.type === "person" ? null : proposal.projectId;
+  if (proposalProjectId) {
     const project = await prisma.project.findUnique({
-      where: { id: proposal.projectId },
+      where: { id: proposalProjectId },
     });
     if (project && project.userId === userId) projectId = project.id;
   }
@@ -88,6 +94,80 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ asset, followupTodo });
+  }
+
+  // Person path — add directly to the CRM, no interaction row.
+  if (proposal.type === "person") {
+    const firstName = proposal.firstName?.trim();
+    if (!firstName) {
+      return NextResponse.json({ error: "firstName required" }, { status: 400 });
+    }
+    const lastName = proposal.lastName?.trim() || null;
+
+    // Upsert by (firstName + lastName) case-insensitive — same pattern as
+    // the interaction path so we don't create duplicates.
+    const where: {
+      userId: string;
+      firstName: { equals: string; mode: "insensitive" };
+      lastName?: { equals: string; mode: "insensitive" } | null;
+    } = {
+      userId,
+      firstName: { equals: firstName, mode: "insensitive" },
+    };
+    if (lastName) where.lastName = { equals: lastName, mode: "insensitive" };
+    else where.lastName = null;
+
+    let person = await prisma.person.findFirst({ where });
+    let created = false;
+    if (person) {
+      // Existing person — patch any fields the user filled that aren't set yet.
+      const existing = person;
+      const patch: Record<string, unknown> = {};
+      function fillStr(field: string, current: string | null, v: string | null | undefined) {
+        if (!v || current) return;
+        const t = v.trim();
+        if (t) patch[field] = t;
+      }
+      function fillArr(field: string, current: string[], v: string[] | null | undefined) {
+        if (!v || v.length === 0) return;
+        if (current.length === 0) patch[field] = v;
+      }
+      fillStr("role", existing.role, proposal.role);
+      fillStr("company", existing.company, proposal.company);
+      fillStr("city", existing.city, proposal.city);
+      fillStr("email", existing.email, proposal.email);
+      fillStr("phone", existing.phone, proposal.phone);
+      fillStr("strength", existing.strength, proposal.strength);
+      fillStr("notes", existing.notes, proposal.notes);
+      fillStr("imageUrl", existing.imageUrl, proposal.photoUrl);
+      fillArr("circles", existing.circles, proposal.circles);
+      if (proposal.birthday && !existing.birthday) {
+        patch.birthday = new Date(proposal.birthday);
+      }
+      if (Object.keys(patch).length > 0) {
+        person = await prisma.person.update({ where: { id: existing.id }, data: patch });
+      }
+    } else {
+      person = await prisma.person.create({
+        data: {
+          userId,
+          firstName,
+          lastName,
+          role: proposal.role ?? null,
+          company: proposal.company ?? null,
+          city: proposal.city ?? null,
+          email: proposal.email ?? null,
+          phone: proposal.phone ?? null,
+          strength: proposal.strength ?? null,
+          circles: proposal.circles ?? [],
+          notes: proposal.notes ?? null,
+          imageUrl: proposal.photoUrl ?? null,
+          birthday: proposal.birthday ? new Date(proposal.birthday) : null,
+        },
+      });
+      created = true;
+    }
+    return NextResponse.json({ person, created });
   }
 
   // Interaction path.

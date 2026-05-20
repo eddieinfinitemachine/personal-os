@@ -180,11 +180,12 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
         return;
       }
       // Route to the most relevant destination.
-      if (proposal.projectId) {
+      if (proposal.type !== "person" && proposal.projectId) {
         router.push(`/projects/${proposal.projectId}`);
       } else if (proposal.type === "inventory") {
         router.push("/inventory");
       } else {
+        // Both "interaction" and "person" land on /friends.
         router.push("/friends");
       }
       router.refresh();
@@ -346,8 +347,10 @@ function Preview({
             suggestedFollowupTitle={suggestedFollowupTitle}
             patch={patch}
           />
-        ) : (
+        ) : proposal.type === "interaction" ? (
           <InteractionFields proposal={proposal} projects={projects} patch={patch} />
+        ) : (
+          <PersonFields proposal={proposal} patch={patch} />
         )}
 
         {error ? <div className="mt-3 text-sm text-rose-500">{error}</div> : null}
@@ -634,6 +637,110 @@ function InteractionFields({
           value={proposal.notes ?? ""}
           onChange={(e) => patch({ notes: e.target.value })}
           rows={2}
+          className={`${INPUT_CLASS} resize-none`}
+        />
+      </Field>
+    </div>
+  );
+}
+
+function PersonFields({
+  proposal,
+  patch,
+}: {
+  proposal: Extract<CaptureProposal, { type: "person" }>;
+  patch: (part: Partial<Extract<CaptureProposal, { type: "person" }>>) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="First name">
+          <input
+            value={proposal.firstName}
+            onChange={(e) => patch({ firstName: e.target.value })}
+            className={INPUT_CLASS}
+          />
+        </Field>
+        <Field label="Last name">
+          <input
+            value={proposal.lastName ?? ""}
+            onChange={(e) => patch({ lastName: e.target.value })}
+            className={INPUT_CLASS}
+          />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Role">
+          <input
+            value={proposal.role ?? ""}
+            onChange={(e) => patch({ role: e.target.value })}
+            placeholder="artist · founder · engineer"
+            className={INPUT_CLASS}
+          />
+        </Field>
+        <Field label="Company">
+          <input
+            value={proposal.company ?? ""}
+            onChange={(e) => patch({ company: e.target.value })}
+            className={INPUT_CLASS}
+          />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="City">
+          <input
+            value={proposal.city ?? ""}
+            onChange={(e) => patch({ city: e.target.value })}
+            className={INPUT_CLASS}
+          />
+        </Field>
+        <Field label="Strength">
+          <select
+            value={proposal.strength ?? ""}
+            onChange={(e) =>
+              patch({
+                strength:
+                  (e.target.value || null) as
+                    | "close"
+                    | "strong"
+                    | "casual"
+                    | "weak"
+                    | null,
+              })
+            }
+            className={INPUT_CLASS}
+          >
+            <option value="">—</option>
+            <option value="close">Close</option>
+            <option value="strong">Strong</option>
+            <option value="casual">Casual</option>
+            <option value="weak">Weak</option>
+          </select>
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Email">
+          <input
+            value={proposal.email ?? ""}
+            onChange={(e) => patch({ email: e.target.value })}
+            type="email"
+            className={INPUT_CLASS}
+          />
+        </Field>
+        <Field label="Phone">
+          <input
+            value={proposal.phone ?? ""}
+            onChange={(e) => patch({ phone: e.target.value })}
+            type="tel"
+            className={INPUT_CLASS}
+          />
+        </Field>
+      </div>
+      <Field label="Notes">
+        <textarea
+          value={proposal.notes ?? ""}
+          onChange={(e) => patch({ notes: e.target.value })}
+          rows={3}
           className={`${INPUT_CLASS} resize-none`}
         />
       </Field>

@@ -105,14 +105,19 @@ export async function POST(request: Request) {
   }
 
   // Validate the projectId Claude returned (if any) actually belongs to this user.
-  if (proposal.projectId) {
-    const ok = activeProjects.some((p) => p.id === proposal.projectId);
-    if (!ok) proposal.projectId = null;
+  // PersonProposal doesn't have a projectId — only inventory + interaction do.
+  if (proposal.type !== "person") {
+    const pid = proposal.projectId;
+    if (pid && !activeProjects.some((p) => p.id === pid)) {
+      proposal = { ...proposal, projectId: null };
+    }
   }
 
   // Attach the uploaded photo URL onto the proposal so the commit step can use it.
   if (proposal.type === "inventory") {
     proposal = { ...proposal, photoUrl: photoUrl ?? "" };
+  } else if (proposal.type === "person") {
+    if (photoUrl) proposal = { ...proposal, photoUrl };
   } else if (photoUrl) {
     proposal = { ...proposal, photoUrl };
   }
