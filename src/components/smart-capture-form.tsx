@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import { Camera, Loader2, Sparkles, X } from "lucide-react";
 import type { CaptureProposal } from "@/lib/smart-capture";
 
@@ -158,13 +157,12 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
         >
           {photoPreview ? (
             <div className="relative">
-              <Image
+              {/* Plain img — next/image misbehaves with blob: URLs even with unoptimized. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
                 src={photoPreview}
                 alt="Capture preview"
-                width={320}
-                height={240}
                 className="max-h-[300px] w-auto rounded-lg object-contain"
-                unoptimized
               />
               <button
                 type="button"
