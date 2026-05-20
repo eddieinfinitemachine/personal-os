@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Loader2, Pencil, Plus, Save, Star, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { haptic } from "@/lib/haptic";
 import {
   ContextMenuPopover,
   useContextMenu,
@@ -539,6 +540,8 @@ function PersonEditor({
   const [circles, setCircles] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -590,33 +593,60 @@ function PersonEditor({
       birthday: draft.birthday || null,
       notes: draft.notes || null,
     };
-    const res = person
-      ? await fetch(`/api/people/${person.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        })
-      : await fetch("/api/people", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-    setSaving(false);
-    if (res.ok) {
+    setError(null);
+    try {
+      const res = person
+        ? await fetch(`/api/people/${person.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          })
+        : await fetch("/api/people", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(body.error ?? `Save failed (HTTP ${res.status}).`);
+        setSaving(false);
+        return;
+      }
+      haptic("success");
       onClose();
       router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Network error.");
+      setSaving(false);
     }
   }
 
   async function remove() {
     if (!person) return;
-    if (!confirm(`Delete ${person.firstName}?`)) return;
+    // Inline two-tap confirm — iOS PWAs suppress window.confirm().
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      haptic("tick");
+      return;
+    }
     setDeleting(true);
-    const res = await fetch(`/api/people/${person.id}`, { method: "DELETE" });
-    setDeleting(false);
-    if (res.ok) {
+    setError(null);
+    try {
+      const res = await fetch(`/api/people/${person.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(body.error ?? `Delete failed (HTTP ${res.status}).`);
+        setDeleting(false);
+        setConfirmingDelete(false);
+        return;
+      }
+      haptic("success");
       onClose();
       router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Network error.");
+      setDeleting(false);
+      setConfirmingDelete(false);
     }
   }
 
@@ -628,12 +658,12 @@ function PersonEditor({
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-end sm:place-items-center bg-black/60 p-0 sm:p-4"
+      className="fixed inset-0 z-50 grid place-items-end sm:place-items-center bg-black/60 p-0 pb-[calc(56px+env(safe-area-inset-bottom))] sm:p-4 sm:pb-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full sm:max-w-xl rounded-t-2xl sm:rounded-2xl border-t sm:border border-[var(--color-border)] bg-[var(--color-card)] shadow-2xl max-h-[95vh] overflow-y-auto pb-[env(safe-area-inset-bottom)]">
+      <div className="w-full sm:max-w-xl rounded-t-2xl sm:rounded-2xl border-t sm:border border-[var(--color-border)] bg-[var(--color-card)] shadow-2xl max-h-[80vh] sm:max-h-[85vh] overflow-y-auto">
         <div className="sticky top-0 flex items-center justify-between gap-2 px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-card)]">
           <div className="text-sm font-semibold">
             {person ? `${person.firstName} ${person.lastName ?? ""}` : "New person"}
@@ -741,19 +771,30 @@ function PersonEditor({
           </Field>
         </div>
 
+        {error ? (
+          <div className="border-t border-rose-500/30 bg-rose-500/10 px-5 py-2 text-sm text-rose-500">
+            {error}
+          </div>
+        ) : null}
+
         <div className="sticky bottom-0 flex items-center justify-between gap-2 px-5 py-3 border-t border-[var(--color-border)] bg-[var(--color-card)]">
           {person ? (
             <button
               onClick={remove}
-              disabled={deleting}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-rose-500 hover:bg-rose-500/10 disabled:opacity-50"
+              disabled={deleting || saving}
+              className={
+                "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50 " +
+                (confirmingDelete
+                  ? "bg-rose-500 text-white hover:bg-rose-600"
+                  : "text-rose-500 hover:bg-rose-500/10")
+              }
             >
               {deleting ? (
                 <Loader2 className="size-3.5 animate-spin" />
               ) : (
                 <Trash2 className="size-3.5" />
               )}
-              Delete
+              {confirmingDelete ? "Tap to confirm" : "Delete"}
             </button>
           ) : (
             <span />

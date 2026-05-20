@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
 import { MobileChromeProvider } from "@/components/mobile-chrome";
+import { CommandPalette } from "@/components/command-palette";
 import { themePreloadScript } from "@/components/theme-toggle";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import { prisma } from "@/lib/prisma";
@@ -91,6 +92,7 @@ export default async function RootLayout({
       </head>
       <body className="antialiased">
         <ServiceWorkerRegister />
+        <CommandPalette />
         <MobileChromeProvider projects={mobileProjects} appName={appName}>
           <div className="flex min-h-screen">
             <div className="hidden md:flex">

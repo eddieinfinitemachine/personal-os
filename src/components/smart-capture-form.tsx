@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Camera, Loader2, Sparkles, X } from "lucide-react";
 import type { CaptureProposal } from "@/lib/smart-capture";
 
@@ -17,11 +17,18 @@ const PLACEHOLDERS = [
 
 export function SmartCaptureForm({ projects }: { projects: Project[] }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Pre-fill text from URL (?text=…) — set from the ⌘K command palette so
+  // typing a sentence into the palette and hitting Enter lands you here with
+  // the input already populated.
+  const initialText = searchParams.get("text") ?? "";
+  const autoparse = searchParams.get("autoparse") === "1";
 
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const [parsing, setParsing] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +37,7 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
     string | null
   >(null);
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
+  const autoparseTriggered = useRef(false);
 
   // Rotate the placeholder every 4s while the textarea is empty.
   useEffect(() => {
@@ -40,6 +48,16 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
     );
     return () => clearInterval(t);
   }, [text]);
+
+  // Auto-parse when navigated here from ⌘K with ?autoparse=1 — runs once.
+  useEffect(() => {
+    if (!autoparse || autoparseTriggered.current) return;
+    if (!initialText.trim()) return;
+    autoparseTriggered.current = true;
+    // Defer one tick so all state is mounted.
+    setTimeout(() => onParse(), 30);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoparse, initialText]);
 
   // Generate a preview (data URL via FileReader — more reliable on iOS
   // Safari + PWAs than URL.createObjectURL, which sometimes silently
