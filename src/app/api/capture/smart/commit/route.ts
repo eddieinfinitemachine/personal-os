@@ -41,13 +41,22 @@ export async function POST(request: Request) {
       data: {
         userId,
         kind: "inventory",
+        // Default to "owned" — capturing something you bought / have always
+        // implies ownership unless Claude or the user explicitly flagged it
+        // as wishlist / exited / lost.
+        status: proposal.status ?? "owned",
         title: proposal.title,
         subtitle: proposal.subtitle ?? null,
         category: proposal.category ?? null,
         costBasis: proposal.costBasis ?? null,
         currentValue: proposal.currentValue ?? null,
         location: proposal.location ?? null,
-        acquiredAt: proposal.acquiredAt ? new Date(proposal.acquiredAt) : null,
+        // Default acquiredAt to today for owned items if Claude didn't extract one.
+        acquiredAt: proposal.acquiredAt
+          ? new Date(proposal.acquiredAt)
+          : (proposal.status ?? "owned") === "owned"
+            ? new Date()
+            : null,
         imageUrl: proposal.photoUrl || null,
         notes: proposal.notes ?? null,
         projectId,

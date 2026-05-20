@@ -424,13 +424,27 @@ function InventoryFields({
           className={INPUT_CLASS}
         />
       </Field>
-      <Field label="Where it lives">
-        <input
-          value={proposal.location ?? ""}
-          onChange={(e) => patch({ location: e.target.value })}
-          className={INPUT_CLASS}
-        />
-      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Status">
+          <select
+            value={proposal.status ?? "owned"}
+            onChange={(e) => patch({ status: e.target.value })}
+            className={INPUT_CLASS}
+          >
+            <option value="owned">Owned</option>
+            <option value="wishlist">Wishlist</option>
+            <option value="exited">Exited (sold/gave away)</option>
+            <option value="lost">Lost</option>
+          </select>
+        </Field>
+        <Field label="Where it lives">
+          <input
+            value={proposal.location ?? ""}
+            onChange={(e) => patch({ location: e.target.value })}
+            className={INPUT_CLASS}
+          />
+        </Field>
+      </div>
       <Field label="Project">
         <ProjectSelect
           value={proposal.projectId ?? null}

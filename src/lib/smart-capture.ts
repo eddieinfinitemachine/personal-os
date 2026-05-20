@@ -13,6 +13,7 @@ export type InventoryProposal = {
   title: string;
   subtitle?: string | null; // "Brand · Model" if identifiable
   category?: string | null; // "watch" | "kitchen" | "tools" | ...
+  status?: string | null; // "owned" | "wishlist" | "exited" | "lost" — defaults to "owned" for "I bought / I have" captures
   costBasis?: number | null; // user-paid (from text), USD
   currentValue?: number | null; // Claude estimate, USD
   location?: string | null; // "living room shelf", "garage"
@@ -57,10 +58,11 @@ For inventory:
 - "title": short product name ("Submariner", "KitchenAid Pro 600", "Oil filter").
 - "subtitle": "Brand · Model" when identifiable from the photo or text.
 - "category": one short bucket ("watch", "camera", "audio", "kitchen", "tools", "instrument", "electronics", "art", "furniture", "clothing", "outdoor", "collectible", "auto-part").
+- "status": DEFAULT TO "owned" — anything the user is logging via a "bought / paid / got / picked up / have" phrasing is presumed owned. Use "wishlist" only if the user said "want", "looking at", or "saving for". Use "exited" if they explicitly said "sold / gave away".
 - "costBasis": price the user mentioned (USD). Strip "$", commas. Null if not mentioned.
-- "currentValue": realistic fair-market resale value as of <TODAY> (eBay sold / Chrono24 / Reverb pricing — secondary market, not retail). Integer USD. Null if you genuinely can't estimate.
+- "currentValue": REALISTIC fair-market resale value as of <TODAY>, integer USD. ALWAYS attempt this when the item is identifiable from the photo or title — use your knowledge of eBay sold listings, Chrono24, Reverb, StockX, KBB, and similar secondary-market data sources to estimate. Don't be timid: for a typical Submariner give ~$10K, not null; for a used iPhone 14 give ~$400, not null. Use null ONLY when the item is genuinely ambiguous (e.g. a no-name generic photo with no make/model). For consumables that depreciate to zero once used (oil filter, food, beauty products), use a small realistic value (often the purchase price minus 20–50%) rather than 0 — they have some salvage / unopened value.
 - "location": physical location only if user mentioned ("living room shelf", "garage"). Don't invent.
-- "acquiredAt": ISO date if user gave one ("last weekend" → most recent Sat/Sun before <TODAY>). Null if not mentioned.
+- "acquiredAt": ISO date if user gave one ("last weekend" → most recent Sat/Sun before <TODAY>). Default to <TODAY> if status is "owned" and no date was given.
 - "sourceVendor": store / market / dealer name if mentioned.
 - "notes": 1–2 short sentences with anything non-obvious (depreciation trend, authenticity tips, etc.). Skip if generic.
 - "projectId": scan ACTIVE_PROJECTS for a clear semantic match (e.g. "oil filter for the Ferrari" → the Ferrari project's id). Return the id verbatim. Null if no clear match.
