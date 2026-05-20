@@ -631,18 +631,12 @@ export function TodoRow({
         <div
           className="flex-1 min-w-0 cursor-text select-none md:select-text"
           onClick={(e) => {
-            // On touch, single-tap enters edit mode (was the previous behavior).
-            // On desktop, that felt twitchy — require a double-click instead.
-            if (touchEnv) {
-              e.stopPropagation();
-              // Suppress the synthetic click that follows a long-press drag.
-              if (justDraggedRef.current) return;
-              if (!completed) setEditing(true);
-            }
-          }}
-          onDoubleClick={(e) => {
             e.stopPropagation();
-            if (!completed) setEditing(true);
+            // Suppress the synthetic click that follows a long-press drag
+            // (touch only — desktop drag uses native events that don't fire
+            // a click anyway).
+            if (touchEnv && justDraggedRef.current) return;
+            if (!completed && !editing) setEditing(true);
           }}
         >
           {editing ? (
