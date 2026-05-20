@@ -46,15 +46,24 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
       setPhotoPreview(null);
       return;
     }
+    console.log("[capture] FileReader start", { name: photo.name, size: photo.size, type: photo.type });
     let cancelled = false;
     const reader = new FileReader();
     reader.onload = () => {
       if (cancelled) return;
       const result = reader.result;
+      console.log("[capture] FileReader onload", {
+        type: typeof result,
+        length: typeof result === "string" ? result.length : null,
+      });
       if (typeof result === "string") setPhotoPreview(result);
     };
-    reader.onerror = () => {
-      if (!cancelled) setPhotoPreview(null);
+    reader.onerror = (err) => {
+      console.error("[capture] FileReader onerror", err);
+      if (!cancelled) {
+        setError("Couldn't read that image. Try a different one.");
+        setPhotoPreview(null);
+      }
     };
     reader.readAsDataURL(photo);
     return () => {
@@ -67,7 +76,14 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
 
   function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
+    console.log("[capture] onPickFile", {
+      hasFile: !!f,
+      name: f?.name,
+      size: f?.size,
+      type: f?.type,
+    });
     if (f) setPhoto(f);
+    // Reset so the user can re-pick the same file.
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -158,51 +174,65 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
 
   return (
     <div className="max-w-xl space-y-4">
-      {/* Photo zone */}
-      <label className="block">
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          onChange={onPickFile}
-          className="hidden"
-        />
-        <div
-          onClick={() => fileRef.current?.click()}
-          className="flex min-h-[160px] cursor-pointer items-center justify-center rounded-2xl border-2 border-dashed border-[var(--color-border)] bg-[var(--color-card)] p-6 hover:border-[var(--color-foreground)] transition"
-        >
-          {photoPreview ? (
-            <div className="relative">
-              {/* Plain img — next/image misbehaves with blob: URLs even with unoptimized. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={photoPreview}
-                alt="Capture preview"
-                className="max-h-[300px] w-auto rounded-lg object-contain"
-              />
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setPhoto(null);
-                }}
-                className="absolute -right-2 -top-2 grid size-7 place-items-center rounded-full bg-[var(--color-foreground)] text-[var(--color-background)] shadow"
-                aria-label="Remove photo"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-          ) : (
-            <div className="text-center">
-              <Camera className="mx-auto mb-2 size-7 text-[var(--color-muted-foreground)]" />
-              <div className="text-sm font-medium">Take photo or upload</div>
-              <div className="mt-0.5 text-xs text-[var(--color-muted-foreground)]">
-                Camera or library — optional. Kaizen reads the image too.
+      {/* Photo zone — `photo` (not `photoPreview`) drives the branch so the
+          user sees feedback the instant they pick a file, even before the
+          FileReader finishes decoding. The label pattern (no JS .click())
+          is the most reliable on iOS Safari + PWAs. */}
+      {photo ? (
+        <div className="flex min-h-[160px] items-center justify-center rounded-2xl border-2 border-dashed border-[var(--color-border)] bg-[var(--color-card)] p-6">
+          <div className="relative">
+            {photoPreview ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={photoPreview}
+                  alt="Capture preview"
+                  className="max-h-[300px] w-auto rounded-lg object-contain"
+                  onError={() => {
+                    console.error("[capture] preview <img> failed to render", {
+                      previewLen: photoPreview?.length,
+                      photoType: photo?.type,
+                      photoSize: photo?.size,
+                    });
+                    setError("Couldn't render that image. Try a different one.");
+                  }}
+                />
+              </>
+            ) : (
+              <div className="grid h-40 w-64 place-items-center rounded-lg bg-[var(--color-background)] text-[var(--color-muted-foreground)]">
+                <div className="flex items-center gap-2 text-sm">
+                  <Loader2 className="size-4 animate-spin" /> Loading preview…
+                </div>
               </div>
-            </div>
-          )}
+            )}
+            <button
+              type="button"
+              onClick={() => setPhoto(null)}
+              className="absolute -right-2 -top-2 grid size-7 place-items-center rounded-full bg-[var(--color-foreground)] text-[var(--color-background)] shadow"
+              aria-label="Remove photo"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
         </div>
-      </label>
+      ) : (
+        <label className="flex min-h-[160px] cursor-pointer items-center justify-center rounded-2xl border-2 border-dashed border-[var(--color-border)] bg-[var(--color-card)] p-6 transition hover:border-[var(--color-foreground)]">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            onChange={onPickFile}
+            className="sr-only"
+          />
+          <div className="text-center">
+            <Camera className="mx-auto mb-2 size-7 text-[var(--color-muted-foreground)]" />
+            <div className="text-sm font-medium">Take photo or upload</div>
+            <div className="mt-0.5 text-xs text-[var(--color-muted-foreground)]">
+              Camera or library — optional. Kaizen reads the image too.
+            </div>
+          </div>
+        </label>
+      )}
 
       {/* Text zone */}
       <textarea
