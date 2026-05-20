@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Trash2, X } from "lucide-react";
 import type { AssetRow } from "./asset-grid";
+import { haptic } from "@/lib/haptic";
 
 export type EditorField = {
   key: keyof AssetRow;
@@ -30,6 +31,8 @@ export function AssetEditor({
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
 
   // Hydrate the draft when opened.
@@ -68,8 +71,12 @@ export function AssetEditor({
 
   async function save() {
     const title = draft.title?.trim();
-    if (!title) return;
+    if (!title) {
+      setError("Title is required.");
+      return;
+    }
     setSaving(true);
+    setError(null);
     const payload: Record<string, unknown> = { kind, title };
     for (const f of fields) {
       const raw = draft[f.key as string];
@@ -83,44 +90,72 @@ export function AssetEditor({
         payload[f.key as string] = raw === undefined ? null : raw;
       }
     }
-    const res = asset
-      ? await fetch(`/api/assets/${asset.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        })
-      : await fetch("/api/assets", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-    setSaving(false);
-    if (res.ok) {
+    try {
+      const res = asset
+        ? await fetch(`/api/assets/${asset.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          })
+        : await fetch("/api/assets", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(body.error ?? `Save failed (HTTP ${res.status}).`);
+        setSaving(false);
+        return;
+      }
+      haptic("success");
       onClose();
       router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Network error.");
+      setSaving(false);
     }
   }
 
   async function remove() {
     if (!asset) return;
-    if (!confirm(`Delete "${asset.title}"?`)) return;
+    // Inline two-tap confirm instead of window.confirm() — iOS PWAs often
+    // suppress the native confirm dialog, which made the Delete button
+    // appear broken.
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      haptic("tick");
+      return;
+    }
     setDeleting(true);
-    const res = await fetch(`/api/assets/${asset.id}`, { method: "DELETE" });
-    setDeleting(false);
-    if (res.ok) {
+    setError(null);
+    try {
+      const res = await fetch(`/api/assets/${asset.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(body.error ?? `Delete failed (HTTP ${res.status}).`);
+        setDeleting(false);
+        setConfirmingDelete(false);
+        return;
+      }
+      haptic("success");
       onClose();
       router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Network error.");
+      setDeleting(false);
+      setConfirmingDelete(false);
     }
   }
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 pb-[calc(1rem+56px+env(safe-area-inset-bottom))] md:pb-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-2xl rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div className="w-full max-w-2xl rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-2xl max-h-[85vh] overflow-y-auto">
         <div className="sticky top-0 flex items-center justify-between gap-2 px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-card)]">
           <div className="text-sm font-semibold">
             {asset ? `Edit · ${asset.title}` : "New entry"}
@@ -203,19 +238,30 @@ export function AssetEditor({
           ))}
         </div>
 
+        {error ? (
+          <div className="border-t border-rose-500/30 bg-rose-500/10 px-5 py-2 text-sm text-rose-500">
+            {error}
+          </div>
+        ) : null}
+
         <div className="sticky bottom-0 flex items-center justify-between gap-2 px-5 py-3 border-t border-[var(--color-border)] bg-[var(--color-card)]">
           {asset ? (
             <button
               onClick={remove}
               disabled={deleting || saving}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-rose-500 hover:bg-rose-500/10 disabled:opacity-50"
+              className={
+                "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50 " +
+                (confirmingDelete
+                  ? "bg-rose-500 text-white hover:bg-rose-600"
+                  : "text-rose-500 hover:bg-rose-500/10")
+              }
             >
               {deleting ? (
                 <Loader2 className="size-3.5 animate-spin" />
               ) : (
                 <Trash2 className="size-3.5" />
               )}
-              Delete
+              {confirmingDelete ? "Tap to confirm" : "Delete"}
             </button>
           ) : (
             <span />
