@@ -63,6 +63,11 @@ export function TodoRow({
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(todo.title);
+  // Optimistic title overlay — set immediately on save() so the rendered text
+  // updates BEFORE the server round-trips. Cleared once the parent's
+  // router.refresh propagates the new todo.title back down.
+  const [optimisticTitle, setOptimisticTitle] = useState<string | null>(null);
+  const displayTitle = optimisticTitle ?? todo.title;
   const [editingDate, setEditingDate] = useState(false);
   const [addingSub, setAddingSub] = useState(false);
   const [subDraft, setSubDraft] = useState("");
@@ -78,6 +83,13 @@ export function TodoRow({
     if (!editing) setDraft(todo.title);
   }, [todo.title, editing]);
 
+  // Clear the optimistic overlay once the server-truth catches up.
+  useEffect(() => {
+    if (optimisticTitle && todo.title === optimisticTitle) {
+      setOptimisticTitle(null);
+    }
+  }, [todo.title, optimisticTitle]);
+
   useEffect(() => {
     if (editing) {
       const el = inputRef.current;
@@ -91,18 +103,32 @@ export function TodoRow({
 
   async function save() {
     const next = draft.trim();
-    if (!next || next === todo.title) {
+    if (!next || next === (optimisticTitle ?? todo.title)) {
       setEditing(false);
-      setDraft(todo.title);
+      setDraft(optimisticTitle ?? todo.title);
       return;
     }
+    // Instant: drop edit mode, paint the new title immediately. Server fire
+    // happens in the background — no UI blocking on the round-trip.
     setEditing(false);
-    await fetch(`/api/todos/${todo.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: next }),
-    });
-    router.refresh();
+    setOptimisticTitle(next);
+    try {
+      const res = await fetch(`/api/todos/${todo.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: next }),
+      });
+      if (!res.ok) {
+        // Rollback — server rejected. Drop the optimistic overlay.
+        setOptimisticTitle(null);
+        setDraft(todo.title);
+        return;
+      }
+      router.refresh();
+    } catch {
+      setOptimisticTitle(null);
+      setDraft(todo.title);
+    }
   }
 
   function cancelEdit() {
@@ -631,7 +657,7 @@ export function TodoRow({
                 completed && "line-through text-[var(--color-muted-foreground)]"
               )}
             >
-              {todo.title}
+              {displayTitle}
             </div>
           )}
           {todo.notes ? (
