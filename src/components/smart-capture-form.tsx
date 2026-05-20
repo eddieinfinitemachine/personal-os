@@ -38,15 +38,31 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
     return () => clearInterval(t);
   }, [text]);
 
-  // Generate a preview URL when a photo is selected.
+  // Generate a preview (data URL via FileReader — more reliable on iOS
+  // Safari + PWAs than URL.createObjectURL, which sometimes silently
+  // returns a URL the <img> tag can't render).
   useEffect(() => {
     if (!photo) {
       setPhotoPreview(null);
       return;
     }
-    const url = URL.createObjectURL(photo);
-    setPhotoPreview(url);
-    return () => URL.revokeObjectURL(url);
+    let cancelled = false;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (cancelled) return;
+      const result = reader.result;
+      if (typeof result === "string") setPhotoPreview(result);
+    };
+    reader.onerror = () => {
+      if (!cancelled) setPhotoPreview(null);
+    };
+    reader.readAsDataURL(photo);
+    return () => {
+      cancelled = true;
+      try {
+        reader.abort();
+      } catch {}
+    };
   }, [photo]);
 
   function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
