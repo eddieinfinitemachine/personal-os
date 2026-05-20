@@ -128,8 +128,12 @@ export async function parseCapture(input: ParseInput): Promise<CaptureProposal> 
     });
   }
 
+  // Haiku 4.5 — vision-capable, fast (~1-2s parse), and much less likely
+  // to hit 529 overload than Sonnet. For structured extraction from text +
+  // image, it's the right size of model. Trade: slightly weaker on nuanced
+  // market-value estimates — but the user can edit in the preview anyway.
   const body = JSON.stringify({
-    model: "claude-sonnet-4-6",
+    model: "claude-haiku-4-5-20251001",
     max_tokens: 2000,
     system: SYSTEM_PROMPT.replace(/<TODAY>/g, input.today),
     messages: [{ role: "user", content: userContent }],
