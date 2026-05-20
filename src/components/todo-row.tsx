@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { palette } from "@/lib/lists";
 import { cn } from "@/lib/utils";
+import { linkify } from "@/lib/linkify";
+import { TodoDetailModal } from "./todo-detail-modal";
 import {
   ContextMenuPopover,
   useContextMenu,
@@ -163,6 +165,12 @@ export function TodoRow({
   // stale closure (subDraft hasn't visually cleared yet from React's POV),
   // creating a duplicate subtask. The ref short-circuits the second call.
   const submittingSubRef = useRef(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  // Disambiguate single-click (edit) vs double-click (open detail modal).
+  // First click sets a short timer; if a second click arrives before it
+  // fires, we cancel the timer and open the modal instead.
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const CLICK_DELAY_MS = 220;
   async function submitSubtask() {
     if (submittingSubRef.current) return;
     const t = subDraft.trim();
@@ -263,6 +271,11 @@ export function TodoRow({
     router.refresh();
   }
   const menu: AnyMenuEntry[] = [
+    {
+      label: "Show details",
+      icon: <ChevronRight className="size-3.5" />,
+      onSelect: () => setDetailOpen(true),
+    },
     {
       label: "Rename",
       icon: <Pencil className="size-3.5" />,
@@ -632,11 +645,24 @@ export function TodoRow({
           className="flex-1 min-w-0 cursor-text select-none md:select-text"
           onClick={(e) => {
             e.stopPropagation();
-            // Suppress the synthetic click that follows a long-press drag
-            // (touch only — desktop drag uses native events that don't fire
-            // a click anyway).
+            // Suppress synthetic click after a long-press drag on touch.
             if (touchEnv && justDraggedRef.current) return;
-            if (!completed && !editing) setEditing(true);
+            if (completed || editing) return;
+            // Defer single-click edit to see if a double-click follows.
+            // Double-click cancels this and opens the detail modal.
+            if (clickTimerRef.current) return;
+            clickTimerRef.current = setTimeout(() => {
+              clickTimerRef.current = null;
+              setEditing(true);
+            }, CLICK_DELAY_MS);
+          }}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            if (clickTimerRef.current) {
+              clearTimeout(clickTimerRef.current);
+              clickTimerRef.current = null;
+            }
+            setDetailOpen(true);
           }}
         >
           {editing ? (
@@ -663,7 +689,10 @@ export function TodoRow({
                 completed && "line-through text-[var(--color-muted-foreground)]"
               )}
             >
-              {displayTitle}
+              {linkify(displayTitle, (e) => {
+                // Don't let link clicks trigger edit / open modal.
+                e.stopPropagation();
+              })}
             </div>
           )}
           {todo.notes ? (
@@ -903,6 +932,18 @@ export function TodoRow({
         </ul>
       ) : null}
       <ContextMenuPopover pos={ctx.pos} items={menu} onClose={ctx.close} />
+      <TodoDetailModal
+        open={detailOpen}
+        todoId={todo.id}
+        initialTitle={displayTitle}
+        initialNotes={todo.notes ?? null}
+        initialSubtasks={subtasks.map((s) => ({
+          id: s.id,
+          title: s.title,
+          completedAt: s.completedAt ?? null,
+        }))}
+        onClose={() => setDetailOpen(false)}
+      />
       {projectPickerOpen && projectPickerPos && typeof document !== "undefined"
         ? createPortal(
             <div
