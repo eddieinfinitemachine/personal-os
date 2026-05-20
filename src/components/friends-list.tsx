@@ -26,6 +26,8 @@ export type PersonRow = {
   city: string | null;
   birthday: string | null;
   lastInteractionAt: string | null;
+  lastInteractionTitle: string | null;
+  lastInteractionKind: string | null;
   createdAt: string | null;
   notes: string | null;
   imageUrl: string | null;
@@ -508,6 +510,11 @@ function PersonRowItem({
             <span className={cn("text-xs", bucketColor(b))}>
               {bucketLabel(days)}
             </span>
+            {person.lastInteractionTitle ? (
+              <span className="text-[11px] text-[var(--color-muted-foreground)] truncate">
+                · {person.lastInteractionTitle}
+              </span>
+            ) : null}
             {person.strength ? (
               <span className="text-[10px] uppercase tracking-wider rounded bg-[var(--color-accent)]/60 px-1.5 py-0.5">
                 {person.strength}
