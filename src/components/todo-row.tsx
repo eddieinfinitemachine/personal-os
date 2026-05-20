@@ -157,15 +157,27 @@ export function TodoRow({
     if (addingSub) subInputRef.current?.focus();
   }, [addingSub]);
 
+  // Guard against double-submit. Pressing Enter calls submitSubtask, which
+  // sets addingSub=false. React then unmounts the input on the next render,
+  // which fires the input's onBlur — calling submitSubtask AGAIN with the
+  // stale closure (subDraft hasn't visually cleared yet from React's POV),
+  // creating a duplicate subtask. The ref short-circuits the second call.
+  const submittingSubRef = useRef(false);
   async function submitSubtask() {
+    if (submittingSubRef.current) return;
     const t = subDraft.trim();
     if (!t) {
       setAddingSub(false);
       return;
     }
+    submittingSubRef.current = true;
     setSubDraft("");
     setAddingSub(false);
-    await onAddSubtask?.(todo.id, t);
+    try {
+      await onAddSubtask?.(todo.id, t);
+    } finally {
+      submittingSubRef.current = false;
+    }
   }
 
   // Right-click / long-press context menu.
