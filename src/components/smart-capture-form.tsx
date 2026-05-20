@@ -300,7 +300,7 @@ function Preview({
   }
 
   return (
-    <div className="max-w-xl space-y-4 pb-[calc(56px+96px+env(safe-area-inset-bottom))] md:pb-4">
+    <div className="max-w-xl space-y-4 pb-4">
       <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
         <div className="mb-3 flex items-center justify-between">
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
@@ -318,14 +318,13 @@ function Preview({
         ) : (
           <InteractionFields proposal={proposal} projects={projects} patch={patch} />
         )}
-      </div>
 
-      {error ? <div className="text-sm text-rose-500">{error}</div> : null}
+        {error ? <div className="mt-3 text-sm text-rose-500">{error}</div> : null}
 
-      {/* Sticky approve bar — sits ABOVE the mobile bottom tab (56px) plus
-          home-indicator safe area. On desktop it's a normal block. */}
-      <div className="fixed inset-x-0 bottom-[calc(56px+env(safe-area-inset-bottom))] z-30 border-t border-[var(--color-border)] bg-[var(--color-background)] px-4 py-3 md:static md:border-t-0 md:bg-transparent md:p-0">
-        <div className="mx-auto flex max-w-xl items-center gap-2">
+        {/* Action buttons live INSIDE the card, normal flow. No fixed/sticky —
+            iOS Safari's collapsing address bar makes fixed-bottom elements
+            slide around, which feels broken. */}
+        <div className="mt-5 flex items-center gap-2 border-t border-[var(--color-border)] pt-4">
           <button
             onClick={onDiscard}
             disabled={committing}
