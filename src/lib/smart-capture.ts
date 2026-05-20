@@ -128,24 +128,46 @@ export async function parseCapture(input: ParseInput): Promise<CaptureProposal> 
     });
   }
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 2000,
-      system: SYSTEM_PROMPT.replace(/<TODAY>/g, input.today),
-      messages: [{ role: "user", content: userContent }],
-    }),
+  const body = JSON.stringify({
+    model: "claude-sonnet-4-6",
+    max_tokens: 2000,
+    system: SYSTEM_PROMPT.replace(/<TODAY>/g, input.today),
+    messages: [{ role: "user", content: userContent }],
   });
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Claude error (${res.status}): ${err.slice(0, 500)}`);
+  // Anthropic returns 529 "Overloaded" + 503 / 502 transient errors under load.
+  // Retry with exponential-ish backoff before surfacing to the user.
+  let res: Response | null = null;
+  let lastErr: { status: number; body: string } | null = null;
+  const delaysMs = [0, 1200, 3000];
+  for (const delay of delaysMs) {
+    if (delay) await new Promise((r) => setTimeout(r, delay));
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body,
+    });
+    if (res.ok) break;
+    const errBody = await res.text();
+    lastErr = { status: res.status, body: errBody };
+    // Only retry transient server errors. 4xx (bad request, auth, etc.) bails immediately.
+    if (![502, 503, 529].includes(res.status)) break;
+  }
+
+  if (!res || !res.ok) {
+    const status = lastErr?.status ?? 0;
+    if (status === 529) {
+      throw new Error(
+        "Claude is overloaded right now — try again in a few seconds.",
+      );
+    }
+    throw new Error(
+      `Claude error (${status}): ${(lastErr?.body ?? "").slice(0, 500)}`,
+    );
   }
 
   const data = (await res.json()) as {

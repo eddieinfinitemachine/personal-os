@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { haptic } from "@/lib/haptic";
 
 // Mobile "+" — multi-action.
 //   tap        → open the active pager list's inline add input.
@@ -42,12 +43,6 @@ export function MobileFab() {
     };
   }, []);
 
-  function vibrate(pattern: number | number[]) {
-    try {
-      (navigator as Navigator & { vibrate?: (p: number | number[]) => void }).vibrate?.(pattern);
-    } catch {}
-  }
-
   function clearTimers() {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
@@ -63,13 +58,14 @@ export function MobileFab() {
     longPressFired.current = false;
     setPressing(true);
     clearTimers();
-    vibrate(6);
-    midPressTimer.current = setTimeout(() => vibrate(12), MID_PRESS_MS);
+    haptic("tick");
+    midPressTimer.current = setTimeout(() => haptic("press"), MID_PRESS_MS);
     longPressTimer.current = setTimeout(() => {
       longPressFired.current = true;
       setPressing(false);
-      vibrate([30, 40, 18]);
-      router.push("/capture");
+      haptic("success");
+      // Small delay so the haptic + final pulse register before unmount.
+      setTimeout(() => router.push("/capture"), 120);
     }, LONG_PRESS_MS);
   }
 
@@ -85,7 +81,7 @@ export function MobileFab() {
         detail: { listId: activeListId },
       }),
     );
-    vibrate(8);
+    haptic("tick");
   }
 
   function onClick() {
