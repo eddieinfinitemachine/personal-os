@@ -26,6 +26,9 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
   const [committing, setCommitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [proposal, setProposal] = useState<CaptureProposal | null>(null);
+  const [suggestedFollowupTitle, setSuggestedFollowupTitle] = useState<
+    string | null
+  >(null);
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
 
   // Rotate the placeholder every 4s while the textarea is empty.
@@ -110,7 +113,16 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
         setParsing(false);
         return;
       }
-      setProposal(body.proposal);
+      // Stash Claude's follow-up todo suggestion in a separate state and
+      // strip it from the proposal — the user has to opt in via the UI.
+      const incoming = body.proposal;
+      if (incoming.type === "inventory" && incoming.followupTodo?.title) {
+        setSuggestedFollowupTitle(incoming.followupTodo.title);
+        setProposal({ ...incoming, followupTodo: null });
+      } else {
+        setSuggestedFollowupTitle(null);
+        setProposal(incoming);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error.");
     } finally {
@@ -163,6 +175,7 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
       <Preview
         proposal={proposal}
         projects={projects}
+        suggestedFollowupTitle={suggestedFollowupTitle}
         onChange={setProposal}
         onSave={onCommit}
         onDiscard={reset}
@@ -264,6 +277,7 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
 interface PreviewProps {
   proposal: CaptureProposal;
   projects: Project[];
+  suggestedFollowupTitle: string | null;
   onChange: (p: CaptureProposal) => void;
   onSave: () => void;
   onDiscard: () => void;
@@ -274,6 +288,7 @@ interface PreviewProps {
 function Preview({
   proposal,
   projects,
+  suggestedFollowupTitle,
   onChange,
   onSave,
   onDiscard,
@@ -285,7 +300,7 @@ function Preview({
   }
 
   return (
-    <div className="max-w-xl space-y-4 pb-24">
+    <div className="max-w-xl space-y-4 pb-[calc(56px+96px+env(safe-area-inset-bottom))] md:pb-4">
       <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
         <div className="mb-3 flex items-center justify-between">
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
@@ -294,7 +309,12 @@ function Preview({
         </div>
 
         {proposal.type === "inventory" ? (
-          <InventoryFields proposal={proposal} projects={projects} patch={patch} />
+          <InventoryFields
+            proposal={proposal}
+            projects={projects}
+            suggestedFollowupTitle={suggestedFollowupTitle}
+            patch={patch}
+          />
         ) : (
           <InteractionFields proposal={proposal} projects={projects} patch={patch} />
         )}
@@ -302,22 +322,24 @@ function Preview({
 
       {error ? <div className="text-sm text-rose-500">{error}</div> : null}
 
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-[var(--color-border)] bg-[var(--color-background)] px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:static sm:border-t-0 sm:bg-transparent sm:p-0">
+      {/* Sticky approve bar — sits ABOVE the mobile bottom tab (56px) plus
+          home-indicator safe area. On desktop it's a normal block. */}
+      <div className="fixed inset-x-0 bottom-[calc(56px+env(safe-area-inset-bottom))] z-30 border-t border-[var(--color-border)] bg-[var(--color-background)] px-4 py-3 md:static md:border-t-0 md:bg-transparent md:p-0">
         <div className="mx-auto flex max-w-xl items-center gap-2">
           <button
             onClick={onDiscard}
             disabled={committing}
-            className="h-11 flex-1 rounded-xl border border-[var(--color-border)] text-sm font-medium hover:bg-[var(--color-card)] disabled:opacity-50"
+            className="h-12 flex-1 rounded-xl border border-[var(--color-border)] text-base font-medium hover:bg-[var(--color-card)] disabled:opacity-50"
           >
             Discard
           </button>
           <button
             onClick={onSave}
             disabled={committing}
-            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--color-foreground)] text-sm font-medium text-[var(--color-background)] disabled:opacity-50"
+            className="inline-flex h-12 flex-[2] items-center justify-center gap-2 rounded-xl bg-[var(--color-foreground)] text-base font-semibold text-[var(--color-background)] disabled:opacity-50"
           >
             {committing ? <Loader2 className="size-4 animate-spin" /> : null}
-            {committing ? "Saving…" : "Save"}
+            {committing ? "Saving…" : "Approve & save"}
           </button>
         </div>
       </div>
@@ -348,10 +370,12 @@ const INPUT_CLASS =
 function InventoryFields({
   proposal,
   projects,
+  suggestedFollowupTitle,
   patch,
 }: {
   proposal: Extract<CaptureProposal, { type: "inventory" }>;
   projects: Project[];
+  suggestedFollowupTitle: string | null;
   patch: (part: Partial<Extract<CaptureProposal, { type: "inventory" }>>) => void;
 }) {
   const followup = proposal.followupTodo ?? null;
@@ -422,17 +446,15 @@ function InventoryFields({
           className={`${INPUT_CLASS} resize-none`}
         />
       </Field>
+      {/* Follow-up todo: opt-in, never auto-checked. If Claude suggested
+          one, surface it as a subtle suggestion the user can add. Once
+          added, the title is editable and a delete button removes it. */}
       {followup ? (
         <div className="flex items-start gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] p-3">
-          <input
-            type="checkbox"
-            checked
-            onChange={() => patch({ followupTodo: null })}
-            className="mt-0.5"
-            id="followup"
-          />
-          <label htmlFor="followup" className="text-sm">
-            <div className="font-medium">Also create a todo:</div>
+          <div className="flex-1">
+            <div className="mb-1 text-xs font-medium text-[var(--color-muted-foreground)]">
+              Follow-up todo (will be created)
+            </div>
             <input
               value={followup.title}
               onChange={(e) =>
@@ -440,10 +462,32 @@ function InventoryFields({
                   followupTodo: { ...followup, title: e.target.value },
                 })
               }
-              className={`${INPUT_CLASS} mt-1`}
+              className={INPUT_CLASS}
             />
-          </label>
+          </div>
+          <button
+            type="button"
+            onClick={() => patch({ followupTodo: null })}
+            aria-label="Remove follow-up todo"
+            className="mt-5 grid size-7 place-items-center rounded-full text-[var(--color-muted-foreground)] hover:bg-[var(--color-card)] hover:text-[var(--color-foreground)]"
+          >
+            <X className="size-4" />
+          </button>
         </div>
+      ) : suggestedFollowupTitle ? (
+        <button
+          type="button"
+          onClick={() =>
+            patch({ followupTodo: { title: suggestedFollowupTitle } })
+          }
+          className="flex w-full items-center justify-between rounded-md border border-dashed border-[var(--color-border)] px-3 py-2.5 text-left text-sm text-[var(--color-muted-foreground)] hover:border-[var(--color-foreground)] hover:text-[var(--color-foreground)]"
+        >
+          <span>
+            <span className="opacity-60">Suggested:</span> Also add todo &ldquo;
+            {suggestedFollowupTitle}&rdquo;
+          </span>
+          <span className="ml-3 text-base">+</span>
+        </button>
       ) : null}
     </div>
   );
