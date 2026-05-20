@@ -26,6 +26,7 @@ export type PersonRow = {
   city: string | null;
   birthday: string | null;
   lastInteractionAt: string | null;
+  createdAt: string | null;
   notes: string | null;
   imageUrl: string | null;
   starred: boolean;
@@ -97,6 +98,18 @@ export function FriendsList({ initialPeople }: { initialPeople: PersonRow[] }) {
   const [editing, setEditing] = useState<PersonRow | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [checkingIn, setCheckingIn] = useState<Set<string>>(new Set());
+  type SortMode = "name" | "recent" | "overdue" | "added";
+  const [sortMode, setSortMode] = useState<SortMode>(() => {
+    if (typeof window === "undefined") return "name";
+    return (
+      (localStorage.getItem("personalos:friends-sort") as SortMode) ?? "name"
+    );
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("personalos:friends-sort", sortMode);
+    } catch {}
+  }, [sortMode]);
 
   useEffect(() => {
     setPeople(initialPeople);
@@ -151,18 +164,31 @@ export function FriendsList({ initialPeople }: { initialPeople: PersonRow[] }) {
       }
       return true;
     });
-    // Starred always rises to the top within the filtered set.
+    // Starred always rises to the top within the filtered set, then the
+    // explicit sortMode kicks in.
+    const lastSeenMs = (p: PersonRow) =>
+      p.lastInteractionAt ? new Date(p.lastInteractionAt).getTime() : 0;
+    const createdMs = (p: PersonRow) =>
+      p.createdAt ? new Date(p.createdAt).getTime() : 0;
+    const cmpName = (a: PersonRow, b: PersonRow) =>
+      `${a.firstName} ${a.lastName ?? ""}`
+        .toLowerCase()
+        .localeCompare(`${b.firstName} ${b.lastName ?? ""}`.toLowerCase());
+
     return result.sort((a, b) => {
       if (a.starred !== b.starred) return a.starred ? -1 : 1;
-      const ad = a.lastInteractionAt
-        ? new Date(a.lastInteractionAt).getTime()
-        : 0;
-      const bd = b.lastInteractionAt
-        ? new Date(b.lastInteractionAt).getTime()
-        : 0;
-      return ad - bd;
+      switch (sortMode) {
+        case "name":
+          return cmpName(a, b);
+        case "recent": // most-recently-seen first; "never" sinks to bottom.
+          return lastSeenMs(b) - lastSeenMs(a) || cmpName(a, b);
+        case "overdue": // oldest / never-seen first (people you owe a check-in).
+          return lastSeenMs(a) - lastSeenMs(b) || cmpName(a, b);
+        case "added": // most-recently-added first.
+          return createdMs(b) - createdMs(a) || cmpName(a, b);
+      }
     });
-  }, [people, filter]);
+  }, [people, filter, sortMode]);
 
   function toggle<T extends string>(arr: T[] | undefined, v: T): T[] {
     const set = new Set(arr ?? []);
@@ -333,16 +359,31 @@ export function FriendsList({ initialPeople }: { initialPeople: PersonRow[] }) {
       </div>
 
       {/* Action row */}
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between gap-2">
         <div className="text-xs text-[var(--color-muted-foreground)]">
           {filtered.length} {filtered.length === 1 ? "person" : "people"}
         </div>
-        <button
-          onClick={() => setAddOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-foreground)] text-[var(--color-background)] px-3 py-1.5 text-sm font-medium min-h-[36px]"
-        >
-          <Plus className="size-4" /> Add person
-        </button>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-[var(--color-muted-foreground)]">
+            <span className="hidden sm:inline">Sort:</span>
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as SortMode)}
+              className="min-h-[36px] rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 py-1 text-sm text-[var(--color-foreground)] focus:border-[var(--color-ring)] focus:outline-none"
+            >
+              <option value="name">Name (A→Z)</option>
+              <option value="recent">Last seen (recent)</option>
+              <option value="overdue">Last seen (oldest)</option>
+              <option value="added">Recently added</option>
+            </select>
+          </label>
+          <button
+            onClick={() => setAddOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-foreground)] text-[var(--color-background)] px-3 py-1.5 text-sm font-medium min-h-[36px]"
+          >
+            <Plus className="size-4" /> Add person
+          </button>
+        </div>
       </div>
 
       {/* List */}

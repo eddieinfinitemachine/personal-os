@@ -36,6 +36,7 @@ export default async function FriendsPage() {
     lastInteractionAt: p.lastInteractionAt
       ? p.lastInteractionAt.toISOString()
       : null,
+    createdAt: p.createdAt ? p.createdAt.toISOString() : null,
     notes: p.notes,
     imageUrl: p.imageUrl,
     starred: p.starred,
