@@ -107,6 +107,15 @@ interface ParseInput {
 
 const SYSTEM_PROMPT = `You classify a user's quick "capture" into one of FIVE structured record types and extract the fields needed to file it. The user may have attached a photo (an object, a receipt, a business card, a screenshot) and a short typed description.
 
+You have access to a \`web_search\` tool (up to 3 searches per request). Use it WHEN it materially improves the record — not for every capture. Specifically:
+- PERSON: if the person's full name is given, search for them to fill role, company, city, recent work / what they're known for, and a 1-2 sentence bio in "notes". Cite the gist (e.g. "represented by Mendes Wood DM" / "based in São Paulo"). Cross-reference at least 2 sources before populating a confident field. If the name is too common or ambiguous, leave fields null rather than guess.
+- ASSET (inventory / investment / media / place): search if it materially improves the value estimate, edition, or factual details ("current eBay sold for Submariner 124060", "current price Anthropic Series E"). Skip for clear consumables.
+- INTERACTION / TRIP / TODO: do NOT search. These don't need lookups.
+
+Always finish with the strict JSON object as your FINAL text response (the LAST text block). Tool use happens between; final answer is JSON only.
+
+
+
 Top-level types (the "type" discriminator):
 - "asset"       — anything that lives in their asset library. Has 5 sub-kinds (assetKind):
                   • inventory  — physical things owned/wanted (watches, gear, tools)
@@ -239,15 +248,19 @@ export async function parseCapture(input: ParseInput): Promise<CaptureProposal> 
     });
   }
 
-  // Haiku 4.5 — vision-capable, fast (~1-2s parse), and much less likely
-  // to hit 529 overload than Sonnet. For structured extraction from text +
-  // image, it's the right size of model. Trade: slightly weaker on nuanced
-  // market-value estimates — but the user can edit in the preview anyway.
+  // Sonnet 4.6 + Anthropic's web_search server tool. Sonnet handles tool use
+  // more reliably than Haiku, and web_search lets it actually look up real
+  // information about a person, current market prices, place reviews, etc.
+  // Anthropic runs the search behind the scenes — we just declare the tool.
+  // max_uses caps total searches per request to keep latency + cost bounded.
   const body = JSON.stringify({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 2000,
+    model: "claude-sonnet-4-6",
+    max_tokens: 4000,
     system: SYSTEM_PROMPT.replace(/<TODAY>/g, input.today),
     messages: [{ role: "user", content: userContent }],
+    tools: [
+      { type: "web_search_20250305", name: "web_search", max_uses: 3 },
+    ],
   });
 
   // Anthropic returns 529 "Overloaded" + 503 / 502 transient errors under load.
@@ -288,8 +301,13 @@ export async function parseCapture(input: ParseInput): Promise<CaptureProposal> 
   const data = (await res.json()) as {
     content?: Array<{ type: string; text?: string }>;
   };
-  const text =
-    data.content?.find((c) => c.type === "text")?.text?.trim() ?? "";
+  // After tool use, the final answer is the LAST text block, not the first.
+  // (Intermediate text may explain what Claude is searching for.)
+  const textBlocks = (data.content ?? []).filter(
+    (c): c is { type: "text"; text: string } =>
+      c.type === "text" && typeof c.text === "string",
+  );
+  const text = textBlocks[textBlocks.length - 1]?.text?.trim() ?? "";
   const cleaned = text
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/```\s*$/i, "")
