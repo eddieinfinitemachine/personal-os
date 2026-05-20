@@ -37,16 +37,18 @@ type NavCommand = {
   icon: React.ReactNode;
 };
 
+// Order matches the sidebar so ⌘1–9 == top 9 sidebar entries.
 const NAV_COMMANDS: NavCommand[] = [
   { id: "home", label: "Home", href: "/", icon: <Home className="size-4" /> },
   { id: "capture", label: "Capture", hint: "Photo + sentence → smart capture", href: "/capture", icon: <Camera className="size-4" /> },
   { id: "calendar", label: "Calendar", href: "/calendar", icon: <Calendar className="size-4" /> },
   { id: "personal", label: "Personal", href: "/personal", icon: <User className="size-4" /> },
   { id: "friends", label: "Friends", href: "/friends", icon: <Users className="size-4" /> },
-  { id: "trips", label: "Trips", href: "/trips", icon: <Plane className="size-4" /> },
   { id: "vehicles", label: "Vehicles", href: "/vehicles", icon: <Folder className="size-4" /> },
+  { id: "trips", label: "Trips", href: "/trips", icon: <Plane className="size-4" /> },
   { id: "investments", label: "Investments", href: "/investments", icon: <TrendingUp className="size-4" /> },
   { id: "inventory", label: "Inventory", href: "/inventory", icon: <Package className="size-4" /> },
+  { id: "media", label: "Media", href: "/media", icon: <Lightbulb className="size-4" /> },
   { id: "places", label: "Places", href: "/places", icon: <MapPin className="size-4" /> },
   { id: "best-practices", label: "Best practices", href: "/best-practices", icon: <Lightbulb className="size-4" /> },
   { id: "settings", label: "Settings", href: "/settings", icon: <Settings className="size-4" /> },
@@ -71,22 +73,55 @@ export function CommandPalette() {
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Global hotkey: ⌘K on Mac, Ctrl+K elsewhere.
+  // Global hotkeys:
+  //   ⌘K / ⌃K  → open/close palette
+  //   ⌘1..⌘9 / ⌃1..⌃9 → jump straight to NAV_COMMANDS[0..8]
+  // Skipped while a text input is focused so number keys still type normally.
   useEffect(() => {
+    function inEditable(): boolean {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el) return false;
+      const tag = el.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        el.isContentEditable
+      );
+    }
     function onKey(e: KeyboardEvent) {
       const k = e.key.toLowerCase();
+      // ⌘K / ⌃K toggle palette.
       if (k === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         setOpen((v) => !v);
+        return;
       }
       if (e.key === "Escape" && open) {
         e.preventDefault();
         setOpen(false);
+        return;
+      }
+      // ⌘1..⌘9 (Mac) / ⌃1..⌃9 (others) → jump to NAV_COMMANDS[n-1].
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        /^[1-9]$/.test(e.key) &&
+        !inEditable() &&
+        !open
+      ) {
+        const idx = parseInt(e.key, 10) - 1;
+        const target = NAV_COMMANDS[idx];
+        if (target) {
+          e.preventDefault();
+          router.push(target.href);
+        }
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, [open, router]);
 
   useEffect(() => {
     if (open) {
@@ -239,12 +274,14 @@ export function CommandPalette() {
           )}
         </ul>
 
-        <div className="border-t border-[var(--color-border)] bg-[var(--color-background)] px-4 py-2 text-[11px] text-[var(--color-muted-foreground)] flex items-center justify-between">
+        <div className="border-t border-[var(--color-border)] bg-[var(--color-background)] px-4 py-2 text-[11px] text-[var(--color-muted-foreground)] flex items-center justify-between gap-2">
           <span>
             <kbd className="rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono">↑↓</kbd>{" "}
             navigate ·{" "}
             <kbd className="rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono">↵</kbd>{" "}
-            select
+            select ·{" "}
+            <kbd className="rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono">⌘1–9</kbd>{" "}
+            jump
           </span>
           <span>
             <kbd className="rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono">⌘↵</kbd>{" "}
