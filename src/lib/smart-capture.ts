@@ -112,7 +112,12 @@ You have access to a \`web_search\` tool (up to 3 searches per request). Use it 
 - ASSET (inventory / investment / media / place): search if it materially improves the value estimate, edition, or factual details ("current eBay sold for Submariner 124060", "current price Anthropic Series E"). Skip for clear consumables.
 - INTERACTION / TRIP / TODO: do NOT search. These don't need lookups.
 
-Always finish with the strict JSON object as your FINAL text response (the LAST text block). Tool use happens between; final answer is JSON only.
+CRITICAL OUTPUT FORMAT:
+- Your ENTIRE final text response must be a single JSON object — nothing else.
+- NO prose, NO commentary, NO "Here is the JSON:" preamble, NO "I'll record what's given" trailing notes.
+- NO markdown code fences (no \`\`\`json).
+- If you need to think out loud, do it via tool calls (search queries), not in text blocks.
+- The last text block in your response will be JSON-parsed verbatim. If it has any non-JSON text it will fail.
 
 
 
@@ -307,18 +312,45 @@ export async function parseCapture(input: ParseInput): Promise<CaptureProposal> 
     (c): c is { type: "text"; text: string } =>
       c.type === "text" && typeof c.text === "string",
   );
-  const text = textBlocks[textBlocks.length - 1]?.text?.trim() ?? "";
-  const cleaned = text
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/```\s*$/i, "")
-    .trim();
+  // Try parsing the LAST text block first (the intended JSON). If that fails,
+  // fall back to scanning every text block for the first balanced { … } object
+  // — Claude sometimes narrates its reasoning alongside the JSON instead of
+  // emitting pure JSON, despite the prompt's instructions.
+  const candidates: string[] = [];
+  for (let i = textBlocks.length - 1; i >= 0; i--) {
+    const raw = textBlocks[i].text.trim();
+    candidates.push(
+      raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim(),
+    );
+  }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch (e) {
+  let parsed: unknown = null;
+  let lastError: string | null = null;
+
+  for (const cleaned of candidates) {
+    // Direct parse.
+    try {
+      parsed = JSON.parse(cleaned);
+      break;
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : String(e);
+    }
+    // Brace-extracted parse — find the first balanced {…} and try that.
+    const extracted = extractFirstJsonObject(cleaned);
+    if (extracted) {
+      try {
+        parsed = JSON.parse(extracted);
+        break;
+      } catch (e) {
+        lastError = e instanceof Error ? e.message : String(e);
+      }
+    }
+  }
+
+  if (parsed == null) {
+    const sample = candidates[0]?.slice(0, 300) ?? "";
     throw new Error(
-      `Could not parse Claude JSON: ${e instanceof Error ? e.message : String(e)} — sample: ${cleaned.slice(0, 300)}`,
+      `Could not parse Claude JSON: ${lastError ?? "no candidate parsed"} — sample: ${sample}`,
     );
   }
 
@@ -336,4 +368,34 @@ export async function parseCapture(input: ParseInput): Promise<CaptureProposal> 
   }
 
   return parsed as CaptureProposal;
+}
+
+// Scan a string for the first top-level balanced {…} object, respecting
+// string literals (so braces inside JSON string values don't break the count).
+// Returns null if no balanced object is found.
+function extractFirstJsonObject(s: string): string | null {
+  const start = s.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inStr = false;
+  let escape = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inStr) {
+      if (ch === "\\") escape = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return s.slice(start, i + 1);
+    }
+  }
+  return null;
 }
