@@ -75,6 +75,7 @@ export async function POST(request: Request) {
             ? new Date()
             : null,
         imageUrl: proposal.photoUrl || null,
+        url: proposal.url ?? null,
         notes: proposal.notes ?? null,
         projectId,
         detailsJson: {

@@ -32,6 +32,7 @@ export type AssetProposal = {
   location?: string | null;
   acquiredAt?: string | null;
   sourceVendor?: string | null;
+  url?: string | null;       // canonical URL (article, product page, place website)
   notes?: string | null;
   projectId?: string | null;
   followupTodo?: { title: string; listName?: string | null } | null;
@@ -155,6 +156,7 @@ Disambiguation rules:
 - "Habit: …" / "Principle: …" / "Best practice: …" → asset/practice.
 - "Remind me to …" / "todo: …" / "I need to …" → todo (NOT a person, NOT an interaction).
 - A future trip with dates → trip. A wished-for restaurant → asset/place.
+- TEXT THAT IS JUST A URL or "read this / bookmark this / save this <URL>" → asset/media. Treat as a "to read / to watch" bookmark: visit the URL via web_search if useful, set title = the page/article title, creator = the publication or author, url = the URL itself, status = "wishlist". Same for "want to watch <YouTube URL>" → asset/media with format="video".
 
 For asset (across all assetKinds):
 
