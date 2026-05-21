@@ -36,6 +36,9 @@ export type AssetProposal = {
   projectId?: string | null;
   followupTodo?: { title: string; listName?: string | null } | null;
   photoUrl?: string | null;
+  // Per-assetKind enrichment — schema-free key/value. See SYSTEM_PROMPT for
+  // the suggested keys per kind. Merged into Asset.detailsJson at commit.
+  details?: Record<string, unknown> | null;
 };
 
 export type InteractionProposal = {
@@ -56,7 +59,17 @@ export type PersonProposal = {
   lastName?: string | null;
   role?: string | null;     // "artist", "founder", "engineer"
   company?: string | null;  // "Pixar", "Carnegie Mellon"
-  city?: string | null;
+  city?: string | null;     // city ONLY — not a country
+  country?: string | null;  // separate from city ("Saudi Arabia", "United States")
+  socialUrls?: {
+    linkedin?: string | null;
+    twitter?: string | null;
+    instagram?: string | null;
+    github?: string | null;
+    website?: string | null;
+  } | null;
+  howWeMet?: string | null; // "intro from Maya at Lucali", "Stanford '22"
+  interests?: string[];     // ["climbing", "chess", "Brazilian art"]
   email?: string | null;
   phone?: string | null;
   birthday?: string | null; // ISO YYYY-MM-DD
@@ -145,6 +158,14 @@ Disambiguation rules:
 
 For asset (across all assetKinds):
 
+Per-assetKind ENRICHMENT goes into a "details" object (we'll merge it into the row's detailsJson). Always populate ANY of these you can extract from the text or via web search; omit (don't fabricate) the rest.
+
+- inventory.details: { brand, model, year, condition ("new"|"used"|"vintage"), warranty (months remaining), serialNumber, purchaseChannel ("ebay"|"NAPA"|...) }
+- investment.details: { round ("pre-seed"|"seed"|"A"|"B"|...), leadInvestor, coInvestors[], valuationUsd, ourStakePct, vehicle ("safe"|"equity"|"convertible"|"common"|"crypto"), assetClass ("venture"|"public-equity"|"crypto"|"real-estate"|"art") }
+- media.details: { format ("book"|"film"|"show"|"album"|"podcast"|"essay"), creator, genre, releaseYear, runtimeMinutes, language, recommendedBy }
+- place.details: { neighborhood, cuisine ("ramen"|"izakaya"|"steakhouse"|...), priceRange ("$"|"$$"|"$$$"|"$$$$"), reservationRequired (bool), dressCode, hours, websiteUrl, instagramUrl, michelin (1|2|3 stars), nearestSubway }
+- practice.details: { cadence ("daily"|"weekly"|"seasonal"), trigger ("after coffee"|"before bed"), durationMinutes, why, anchoredHabit }
+
 assetKind defaults & status semantics:
 - inventory: status defaults to "owned" (or "wishlist" if forward-looking).
 - investment: status defaults to "active". Use "exited" if sold, "wishlist" if "thinking about investing".
@@ -189,11 +210,15 @@ For person:
 - "firstName" / "lastName": split the name on whitespace. "Sophie Loeb" → firstName="Sophie", lastName="Loeb". A single token → firstName only.
 - "role": their work / what they do, if user said. "she is an artist" → "artist". "founder of Acme" → "founder". Lowercase, short.
 - "company": if user said or if you confidently recognize the person. "founder of Acme" → "Acme".
-- "city": only if user mentioned or you confidently know.
+- "city": the CITY only ("São Paulo", "Brooklyn", "Riyadh"). Do NOT put a country here — that's "country".
+- "country": country name ("Brazil", "United States", "Saudi Arabia"). Extract from text ("from Saudi" → country="Saudi Arabia") or from web search.
+- "socialUrls": object with optional keys linkedin / twitter / instagram / github / website. Populate ONLY when the URL or handle is mentioned in the text, visible in a photo (business card / screenshot), or found via your web search with high confidence. For Twitter/IG, store the full URL (https://twitter.com/handle), not just the handle.
+- "howWeMet": short context if user mentioned it ("intro from Maya", "met at the Olto launch", "Stanford 2018"). Otherwise null.
+- "interests": short array of topics they care about ("climbing", "Brazilian art", "VC", "kid swaps") — only if the user mentioned them or you're highly confident from web search. Maximum 5.
 - "email" / "phone" / "birthday": only if literally in the text or photo (business card OCR).
 - "strength": "close" | "strong" | "casual" | "weak" — only if user gave a clear cue ("good friend" → strong, "barely know them" → weak). Otherwise null.
 - "circles": tags / groups for context (e.g. ["nyc art", "school friends"]) — only if user mentioned explicitly. Don't invent.
-- "notes": 1-2 sentences with anything else worth remembering. If you confidently recognize the person from training knowledge as a notable public figure (well-known artist, founder, journalist, etc.), include 1 short factual sentence about what they're known for — clearly attributed ("known for…" / "best known as…"). DO NOT speculate or fabricate. If you don't recognize them with high confidence, leave notes null.
+- "notes": 1-2 sentences with anything else worth remembering. If you confidently recognize the person from training knowledge or web search as a notable public figure, include 1 short factual sentence about what they're known for. DO NOT speculate or fabricate. If you don't recognize them with high confidence, leave notes null.
 - "photoUrl" is handled separately by the server; don't set it.
 
 For trip:

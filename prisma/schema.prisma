@@ -732,6 +732,12 @@ model Person {
   company           String?
   role              String?
   city              String?
+  country           String?
+  // { linkedin?, twitter?, instagram?, github?, website? } — open shape so
+  // we can add platforms without migrations.
+  socialUrls        Json?
+  howWeMet          String?
+  interests         String[] @default([])
   birthday          DateTime?
   lastInteractionAt DateTime?
   notes             String?

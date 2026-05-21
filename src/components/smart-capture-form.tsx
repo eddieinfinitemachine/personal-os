@@ -811,9 +811,20 @@ function PersonFields({
           <input
             value={proposal.city ?? ""}
             onChange={(e) => patch({ city: e.target.value })}
+            placeholder="São Paulo"
             className={INPUT_CLASS}
           />
         </Field>
+        <Field label="Country">
+          <input
+            value={proposal.country ?? ""}
+            onChange={(e) => patch({ country: e.target.value })}
+            placeholder="Brazil"
+            className={INPUT_CLASS}
+          />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
         <Field label="Strength">
           <select
             value={proposal.strength ?? ""}
@@ -836,6 +847,81 @@ function PersonFields({
             <option value="casual">Casual</option>
             <option value="weak">Weak</option>
           </select>
+        </Field>
+        <Field label="How we met">
+          <input
+            value={proposal.howWeMet ?? ""}
+            onChange={(e) => patch({ howWeMet: e.target.value })}
+            placeholder="intro from Maya"
+            className={INPUT_CLASS}
+          />
+        </Field>
+      </div>
+      <Field label="Interests">
+        <input
+          value={(proposal.interests ?? []).join(", ")}
+          onChange={(e) =>
+            patch({
+              interests: e.target.value
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean),
+            })
+          }
+          placeholder="climbing, Brazilian art, venture"
+          className={INPUT_CLASS}
+        />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="LinkedIn">
+          <input
+            value={proposal.socialUrls?.linkedin ?? ""}
+            onChange={(e) =>
+              patch({
+                socialUrls: { ...(proposal.socialUrls ?? {}), linkedin: e.target.value || null },
+              })
+            }
+            placeholder="https://linkedin.com/in/…"
+            className={INPUT_CLASS}
+          />
+        </Field>
+        <Field label="Twitter / X">
+          <input
+            value={proposal.socialUrls?.twitter ?? ""}
+            onChange={(e) =>
+              patch({
+                socialUrls: { ...(proposal.socialUrls ?? {}), twitter: e.target.value || null },
+              })
+            }
+            placeholder="https://x.com/…"
+            className={INPUT_CLASS}
+          />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Instagram">
+          <input
+            value={proposal.socialUrls?.instagram ?? ""}
+            onChange={(e) =>
+              patch({
+                socialUrls: { ...(proposal.socialUrls ?? {}), instagram: e.target.value || null },
+              })
+            }
+            placeholder="https://instagram.com/…"
+            className={INPUT_CLASS}
+          />
+        </Field>
+        <Field label="Website">
+          <input
+            value={proposal.socialUrls?.website ?? ""}
+            onChange={(e) =>
+              patch({
+                socialUrls: { ...(proposal.socialUrls ?? {}), website: e.target.value || null },
+              })
+            }
+            placeholder="https://…"
+            className={INPUT_CLASS}
+          />
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">

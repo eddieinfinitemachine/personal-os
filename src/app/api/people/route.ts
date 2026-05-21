@@ -35,11 +35,20 @@ export async function POST(request: Request) {
     strength: typeof body.strength === "string" ? body.strength : null,
     circles: Array.isArray(body.circles) ? (body.circles as string[]) : [],
     tags: Array.isArray(body.tags) ? (body.tags as string[]) : [],
+    interests: Array.isArray(body.interests)
+      ? (body.interests as string[])
+      : [],
     email: typeof body.email === "string" ? body.email : null,
     phone: typeof body.phone === "string" ? body.phone : null,
     company: typeof body.company === "string" ? body.company : null,
     role: typeof body.role === "string" ? body.role : null,
     city: typeof body.city === "string" ? body.city : null,
+    country: typeof body.country === "string" ? body.country : null,
+    howWeMet: typeof body.howWeMet === "string" ? body.howWeMet : null,
+    socialUrls:
+      body.socialUrls && typeof body.socialUrls === "object"
+        ? (body.socialUrls as Record<string, string | null>)
+        : undefined,
     birthday: typeof body.birthday === "string" ? new Date(body.birthday) : null,
     lastInteractionAt:
       typeof body.lastInteractionAt === "string"

@@ -24,6 +24,16 @@ export type PersonRow = {
   company: string | null;
   role: string | null;
   city: string | null;
+  country: string | null;
+  socialUrls: {
+    linkedin?: string | null;
+    twitter?: string | null;
+    instagram?: string | null;
+    github?: string | null;
+    website?: string | null;
+  } | null;
+  howWeMet: string | null;
+  interests: string[];
   birthday: string | null;
   lastInteractionAt: string | null;
   lastInteractionTitle: string | null;
@@ -520,9 +530,9 @@ function PersonRowItem({
                 {person.strength}
               </span>
             ) : null}
-            {person.city ? (
+            {person.city || person.country ? (
               <span className="text-[11px] text-[var(--color-muted-foreground)] truncate">
-                {person.city}
+                {[person.city, person.country].filter(Boolean).join(", ")}
               </span>
             ) : null}
           </div>
@@ -603,6 +613,13 @@ function PersonEditor({
         company: person.company ?? "",
         role: person.role ?? "",
         city: person.city ?? "",
+        country: person.country ?? "",
+        howWeMet: person.howWeMet ?? "",
+        interests: (person.interests ?? []).join(", "),
+        linkedin: person.socialUrls?.linkedin ?? "",
+        twitter: person.socialUrls?.twitter ?? "",
+        instagram: person.socialUrls?.instagram ?? "",
+        website: person.socialUrls?.website ?? "",
         birthday: person.birthday ? person.birthday.slice(0, 10) : "",
         notes: person.notes ?? "",
       });
@@ -628,6 +645,21 @@ function PersonEditor({
     const firstName = draft.firstName?.trim();
     if (!firstName) return;
     setSaving(true);
+    const interests = (draft.interests || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const socialUrls = {
+      linkedin: draft.linkedin || null,
+      twitter: draft.twitter || null,
+      instagram: draft.instagram || null,
+      website: draft.website || null,
+    };
+    const anySocial =
+      socialUrls.linkedin ||
+      socialUrls.twitter ||
+      socialUrls.instagram ||
+      socialUrls.website;
     const payload = {
       firstName,
       lastName: draft.lastName || null,
@@ -638,6 +670,10 @@ function PersonEditor({
       company: draft.company || null,
       role: draft.role || null,
       city: draft.city || null,
+      country: draft.country || null,
+      howWeMet: draft.howWeMet || null,
+      interests,
+      socialUrls: anySocial ? socialUrls : null,
       birthday: draft.birthday || null,
       notes: draft.notes || null,
     };
@@ -757,6 +793,48 @@ function PersonEditor({
             <Input
               value={draft.city ?? ""}
               onChange={(v) => setDraft((d) => ({ ...d, city: v }))}
+            />
+          </Field>
+          <Field label="Country">
+            <Input
+              value={draft.country ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, country: v }))}
+            />
+          </Field>
+          <Field label="How we met" full>
+            <Input
+              value={draft.howWeMet ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, howWeMet: v }))}
+            />
+          </Field>
+          <Field label="Interests (comma-separated)" full>
+            <Input
+              value={draft.interests ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, interests: v }))}
+            />
+          </Field>
+          <Field label="LinkedIn">
+            <Input
+              value={draft.linkedin ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, linkedin: v }))}
+            />
+          </Field>
+          <Field label="Twitter / X">
+            <Input
+              value={draft.twitter ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, twitter: v }))}
+            />
+          </Field>
+          <Field label="Instagram">
+            <Input
+              value={draft.instagram ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, instagram: v }))}
+            />
+          </Field>
+          <Field label="Website">
+            <Input
+              value={draft.website ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, website: v }))}
             />
           </Field>
           <Field label="Email">

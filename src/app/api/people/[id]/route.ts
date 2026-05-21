@@ -25,15 +25,23 @@ export async function PATCH(
     "company",
     "role",
     "city",
+    "country",
+    "howWeMet",
     "notes",
     "imageUrl",
   ]) {
     if (typeof body[k] === "string" || body[k] === null) data[k] = body[k];
   }
   if (Array.isArray(body.circles)) data.circles = body.circles;
+  if (Array.isArray(body.interests)) data.interests = body.interests;
   if (Array.isArray(body.tags)) data.tags = body.tags;
   if (typeof body.archived === "boolean") data.archived = body.archived;
   if (typeof body.starred === "boolean") data.starred = body.starred;
+  if (body.socialUrls === null) {
+    data.socialUrls = null;
+  } else if (typeof body.socialUrls === "object" && body.socialUrls !== null) {
+    data.socialUrls = body.socialUrls;
+  }
   for (const k of ["birthday", "lastInteractionAt"]) {
     if (body[k] === null) data[k] = null;
     else if (typeof body[k] === "string") data[k] = new Date(body[k] as string);

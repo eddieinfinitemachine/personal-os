@@ -80,6 +80,7 @@ export async function POST(request: Request) {
         detailsJson: {
           source: "smart-capture",
           sourceVendor: proposal.sourceVendor ?? null,
+          ...(proposal.details ?? {}),
         },
       },
     });
@@ -146,12 +147,20 @@ export async function POST(request: Request) {
       fillStr("role", existing.role, proposal.role);
       fillStr("company", existing.company, proposal.company);
       fillStr("city", existing.city, proposal.city);
+      fillStr("country", existing.country, proposal.country);
+      fillStr("howWeMet", existing.howWeMet, proposal.howWeMet);
       fillStr("email", existing.email, proposal.email);
       fillStr("phone", existing.phone, proposal.phone);
       fillStr("strength", existing.strength, proposal.strength);
       fillStr("notes", existing.notes, proposal.notes);
       fillStr("imageUrl", existing.imageUrl, proposal.photoUrl);
       fillArr("circles", existing.circles, proposal.circles);
+      fillArr("interests", existing.interests, proposal.interests);
+      if (proposal.socialUrls && !existing.socialUrls) {
+        // Only set socialUrls if the existing record has none — don't blindly
+        // overwrite a user-curated set with what Claude found.
+        patch.socialUrls = proposal.socialUrls;
+      }
       if (proposal.birthday && !existing.birthday) {
         patch.birthday = new Date(proposal.birthday);
       }
@@ -167,6 +176,10 @@ export async function POST(request: Request) {
           role: proposal.role ?? null,
           company: proposal.company ?? null,
           city: proposal.city ?? null,
+          country: proposal.country ?? null,
+          howWeMet: proposal.howWeMet ?? null,
+          socialUrls: proposal.socialUrls ?? undefined,
+          interests: proposal.interests ?? [],
           email: proposal.email ?? null,
           phone: proposal.phone ?? null,
           strength: proposal.strength ?? null,
