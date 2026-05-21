@@ -538,9 +538,9 @@ function Surfaces() {
             visual={<ChromeVisual />}
           />
           <SurfaceCard
-            title="iOS share sheet"
-            shortcut="iOS"
-            body="Share anything from your phone — links, selections, photos — same brain, same destinations."
+            title="iOS · Home Screen"
+            shortcut="Long-press"
+            body="Long-press the Kaizen icon for an instant Add Item shortcut. Or use the share sheet from any app — links, selections, photos."
             visual={<PhoneVisual />}
           />
         </div>
