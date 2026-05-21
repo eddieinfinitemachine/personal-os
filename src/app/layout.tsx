@@ -67,10 +67,10 @@ export default async function RootLayout({
     pathname.startsWith("/login/") ||
     pathname === "/signup" ||
     pathname.startsWith("/signup/");
+  const isPrintRoute = pathname.startsWith("/print/");
   // Logged-out users on `/` see the landing page (rendered by page.tsx).
-  // Render layout in "bare" mode (no sidebar/mobile chrome) for auth pages
-  // and for the public landing on `/`.
-  const isBare = isAuthRoute || (pathname === "/" && !userId);
+  // Print views render bare so the sheet looks clean on paper.
+  const isBare = isAuthRoute || isPrintRoute || (pathname === "/" && !userId);
 
   if (isBare) {
     return (

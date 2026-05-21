@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BookOpen, Calendar, Camera, Car, ChevronDown, ChevronRight, Eye, EyeOff, Folder, Home, Lightbulb, MapPin, PanelLeftClose, PanelLeftOpen, Package, Pencil, Plane, Plus, Loader2, MoreHorizontal, Settings, Trash2, TrendingUp, User, Users } from "lucide-react";
+import { BookOpen, Calendar, Camera, Car, ChevronDown, ChevronRight, Eye, EyeOff, Folder, Home, Lightbulb, MapPin, PanelLeftClose, PanelLeftOpen, Package, Pencil, Plane, Plus, Loader2, MoreHorizontal, Printer, Settings, Trash2, TrendingUp, User, Users } from "lucide-react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
@@ -228,6 +228,12 @@ export function Sidebar({
           icon={<Lightbulb className="size-4" />}
           label="Best practices"
           active={pathname === "/best-practices"}
+        />
+        <SidebarLink
+          href="/print/today"
+          icon={<Printer className="size-4" />}
+          label="Daily print"
+          active={pathname === "/print/today"}
         />
       </nav>
 
