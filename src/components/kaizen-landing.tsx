@@ -538,9 +538,9 @@ function Surfaces() {
             visual={<ChromeVisual />}
           />
           <SurfaceCard
-            title="iOS · Home Screen"
-            shortcut="Long-press"
-            body="Long-press the Kaizen icon for an instant Add Item shortcut. Or use the share sheet from any app — links, selections, photos."
+            title="iOS"
+            shortcut="One tap"
+            body="Add the Kaizen Shortcut to your Home Screen, Lock Screen, or Action Button for one-tap capture. Or share-sheet any link, selection, or photo from any app."
             visual={<PhoneVisual />}
           />
         </div>
