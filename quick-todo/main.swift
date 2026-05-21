@@ -218,6 +218,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
+        // Install a (mostly invisible) main menu so ⌘C / ⌘X / ⌘V / ⌘A reach
+        // the NSTextField via the standard responder chain. Without this,
+        // accessory apps don't get any keyboard-shortcut routing because
+        // there's no Edit menu owning the bindings.
+        installMainMenu()
+
         // Request notification permission silently.
         UNUserNotificationCenter.current().requestAuthorization(
             options: [.alert, .sound], completionHandler: { _, _ in }
@@ -270,6 +276,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let url = URL(string: "https://personal-os-two-gold.vercel.app/") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    private func installMainMenu() {
+        let mainMenu = NSMenu()
+
+        // App menu (just Quit). Hidden but routes ⌘Q.
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(
+            NSMenuItem(
+                title: "Quit Quick Todo",
+                action: #selector(NSApp.terminate(_:)),
+                keyEquivalent: "q"
+            )
+        )
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        // Edit menu — wires ⌘X / ⌘C / ⌘V / ⌘A / ⌘Z to the standard
+        // first-responder selectors. nil target = follow the responder chain.
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(
+            NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        )
+        let redo = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(redo)
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(
+            NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        )
+        editMenu.addItem(
+            NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        )
+        editMenu.addItem(
+            NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        )
+        editMenu.addItem(
+            NSMenuItem(
+                title: "Select All",
+                action: #selector(NSText.selectAll(_:)),
+                keyEquivalent: "a"
+            )
+        )
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
+        NSApp.mainMenu = mainMenu
     }
 }
 
