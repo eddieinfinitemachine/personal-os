@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Capture to Kaizen</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --fg: #111;
+      --bg: #fff;
+      --muted: #6b6b6b;
+      --border: #e5e5e5;
+      --accent: #2563eb;
+      --card: #fafafa;
+      --error: #e11d48;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --fg: #fafafa;
+        --bg: #0a0a0a;
+        --muted: #a3a3a3;
+        --border: #262626;
+        --card: #161616;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
+    body {
+      width: 360px;
+      font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 14px;
+    }
+    .eyebrow {
+      font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 4px;
+    }
+    .url {
+      font-size: 11px;
+      color: var(--muted);
+      word-break: break-all;
+      margin-bottom: 12px;
+      max-height: 32px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    label { display: block; font-weight: 500; margin-bottom: 6px; }
+    textarea {
+      width: 100%;
+      min-height: 64px;
+      padding: 8px 10px;
+      font: inherit;
+      color: var(--fg);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      resize: vertical;
+    }
+    textarea:focus { outline: none; border-color: var(--accent); }
+    .row { display: flex; gap: 8px; margin-top: 10px; }
+    button {
+      flex: 1;
+      padding: 8px 10px;
+      font: inherit; font-weight: 600;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--card);
+      color: var(--fg);
+      cursor: pointer;
+    }
+    button.primary {
+      background: var(--fg);
+      color: var(--bg);
+      border-color: var(--fg);
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--muted);
+      min-height: 16px;
+    }
+    .status.error { color: var(--error); }
+    .status.ok { color: #15803d; }
+    .footer {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+    a { color: inherit; }
+  </style>
+</head>
+<body>
+  <div class="eyebrow">Capture to Kaizen</div>
+  <div id="url" class="url"></div>
+  <label for="note">Note (optional)</label>
+  <textarea id="note" placeholder="read this, want to try, met with…"></textarea>
+  <div class="row">
+    <button id="cancel" type="button">Cancel</button>
+    <button id="send" class="primary" type="button">Send</button>
+  </div>
+  <div id="status" class="status" role="status"></div>
+  <div class="footer">
+    <a id="settings" href="#">Settings</a>
+    <span>⌘⇧J quick-send · ⌘⇧L popup</span>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
