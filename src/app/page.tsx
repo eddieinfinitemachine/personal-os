@@ -4,6 +4,7 @@ import { HomeTiles, type HomeTile } from "@/components/home-tiles";
 import { NewListButton } from "@/components/new-list-button";
 import { ProjectCard, type ProjectCardData } from "@/components/project-card";
 import { KaizenLanding } from "@/components/kaizen-landing";
+import { CaptureInboxPill } from "@/components/capture-inbox";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists } from "@/lib/lists";
 import { getSession } from "@/lib/auth";
@@ -130,7 +131,10 @@ export default async function HomePage() {
             between lists.
           </p>
         </div>
-        <NewListButton />
+        <div className="flex items-center gap-2">
+          <CaptureInboxPill />
+          <NewListButton />
+        </div>
       </header>
       <HomeTiles tiles={tiles} />
 

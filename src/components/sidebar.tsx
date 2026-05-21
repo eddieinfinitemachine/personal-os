@@ -6,7 +6,6 @@ import { BookOpen, Calendar, Camera, Car, ChevronDown, ChevronRight, Eye, EyeOff
 import { useEffect, useRef, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
-import { CaptureInboxPill } from "./capture-inbox";
 
 type SidebarProject = {
   id: string;
@@ -144,11 +143,8 @@ export function Sidebar({
   return (
     <aside className="w-64 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-muted)]/40 flex flex-col min-h-screen">
       <div className="px-4 py-5 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
-            {appName}
-          </div>
-          <CaptureInboxPill />
+        <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+          {appName}
         </div>
         <button
           onClick={() => setCollapsedPersisted(true)}
