@@ -5,22 +5,11 @@ import { AlertCircle, Inbox, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCapture, useCaptureReadyPulse } from "@/lib/capture-store";
 
-// Fixed top-right pill. Hidden when there are no in-flight or pending
-// captures. Pulses on parsing → ready transitions so the user notices
-// without auto-opening the drawer.
+// Mounts the global ⌘⇧K hotkey only. The actual pill UI is rendered inline
+// in the sidebar via <CaptureInboxPill> to avoid overlapping with per-page
+// action buttons (New list, Add person, etc.) in the top-right corner.
 export function CaptureInbox() {
-  const { captures, drawerOpen, setDrawerOpen } = useCapture();
-  const pulseCount = useCaptureReadyPulse();
-  const [pulsing, setPulsing] = useState(false);
-
-  useEffect(() => {
-    if (pulseCount === 0) return;
-    setPulsing(true);
-    const t = setTimeout(() => setPulsing(false), 1500);
-    return () => clearTimeout(t);
-  }, [pulseCount]);
-
-  // Global hotkey: ⌘⇧K toggles the drawer.
+  const { drawerOpen, setDrawerOpen } = useCapture();
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.shiftKey && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -31,6 +20,20 @@ export function CaptureInbox() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [drawerOpen, setDrawerOpen]);
+  return null;
+}
+
+export function CaptureInboxPill() {
+  const { captures, drawerOpen, setDrawerOpen } = useCapture();
+  const pulseCount = useCaptureReadyPulse();
+  const [pulsing, setPulsing] = useState(false);
+
+  useEffect(() => {
+    if (pulseCount === 0) return;
+    setPulsing(true);
+    const t = setTimeout(() => setPulsing(false), 1500);
+    return () => clearTimeout(t);
+  }, [pulseCount]);
 
   if (captures.length === 0) return null;
 
@@ -45,11 +48,10 @@ export function CaptureInbox() {
       aria-label={`Capture inbox (${captures.length})`}
       title="Capture inbox  ·  ⌘⇧K"
       className={cn(
-        "hidden md:inline-flex fixed top-3 right-3 z-40",
-        "items-center gap-2 rounded-full border bg-[var(--color-card)] px-3 py-1.5 text-sm font-medium shadow-sm",
+        "inline-flex items-center gap-1.5 rounded-full border bg-[var(--color-background)] px-2 py-0.5 text-[11px] font-medium",
         "border-[var(--color-border)] hover:border-[var(--color-foreground)] transition",
         pulsing &&
-          "ring-2 ring-[var(--color-tint)]/60 ring-offset-2 ring-offset-[var(--color-background)] animate-[pulse_1.2s_ease-in-out_2]",
+          "ring-2 ring-[var(--color-tint)]/60 animate-[pulse_1.2s_ease-in-out_2]",
       )}
     >
       {parsingCount > 0 || savingCount > 0 ? (

@@ -41,7 +41,6 @@ export function CaptureDrawer() {
     };
   }, [drawerOpen, projects.length]);
 
-  // Esc closes.
   useEffect(() => {
     if (!drawerOpen) return;
     function onKey(e: KeyboardEvent) {
@@ -53,6 +52,11 @@ export function CaptureDrawer() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [drawerOpen, setDrawerOpen]);
+
+  // Auto-close when the queue empties (e.g., last capture was approved).
+  useEffect(() => {
+    if (drawerOpen && captures.length === 0) setDrawerOpen(false);
+  }, [drawerOpen, captures.length, setDrawerOpen]);
 
   if (!drawerOpen) return null;
 
@@ -85,11 +89,6 @@ export function CaptureDrawer() {
         </div>
 
         <div className="space-y-3 p-4">
-          {captures.length === 0 ? (
-            <div className="px-1 py-6 text-center text-sm text-[var(--color-muted-foreground)]">
-              Nothing pending. ⌘K to capture something.
-            </div>
-          ) : null}
           {captures.map((c) => (
             <CaptureCard
               key={c.id}
