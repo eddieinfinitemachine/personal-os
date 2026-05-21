@@ -420,119 +420,72 @@ function Field({
 const INPUT_CLASS =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm focus:border-[var(--color-ring)] focus:outline-none";
 
-// Per-assetKind UI config. The Asset Prisma model is shared across all five
-// kinds (inventory / investment / media / place / practice), but the right
-// label, placeholder, and which fields make sense differ a lot — a place
-// doesn't have a "Brand · Model" or "Market value"; a practice doesn't have
-// money fields at all.
 type AssetKind = Extract<CaptureProposal, { type: "asset" }>["assetKind"];
 
-const ASSET_KIND_UI: Record<
-  AssetKind,
-  {
-    titleLabel: string;
-    subtitleLabel: string;
-    subtitlePlaceholder?: string;
-    showMoney: boolean;
-    paidLabel: string;
-    valueLabel: string;
-    showVendor: boolean;
-    vendorLabel: string;
-    showLocation: boolean;
-    locationLabel: string;
-    locationPlaceholder?: string;
-    statusOptions: { value: string; label: string }[];
-    defaultStatus: string;
-  }
-> = {
+type AssetKindUi = {
+  titleLabel: string;
+  subtitleLabel: string;
+  subtitlePlaceholder?: string;
+  money?: { paidLabel: string; valueLabel: string };
+  vendor?: { label: string };
+  location?: { label: string; placeholder?: string };
+  statusOptions: { value: string; label: string }[];
+};
+
+const ASSET_KIND_UI: Record<AssetKind, AssetKindUi> = {
   inventory: {
     titleLabel: "Title",
     subtitleLabel: "Brand · Model",
-    showMoney: true,
-    paidLabel: "You paid (USD)",
-    valueLabel: "Market value (USD)",
-    showVendor: true,
-    vendorLabel: "Where you got it",
-    showLocation: true,
-    locationLabel: "Where it lives",
+    money: { paidLabel: "You paid (USD)", valueLabel: "Market value (USD)" },
+    vendor: { label: "Where you got it" },
+    location: { label: "Where it lives" },
     statusOptions: [
       { value: "owned", label: "Owned" },
       { value: "wishlist", label: "Wishlist" },
       { value: "exited", label: "Exited (sold/gave away)" },
       { value: "lost", label: "Lost" },
     ],
-    defaultStatus: "owned",
   },
   investment: {
     titleLabel: "Investment",
     subtitleLabel: "Type / vehicle",
     subtitlePlaceholder: "venture · stocks · crypto · real estate",
-    showMoney: true,
-    paidLabel: "Amount invested (USD)",
-    valueLabel: "Current value (USD)",
-    showVendor: true,
-    vendorLabel: "Through (broker / fund / platform)",
-    showLocation: false,
-    locationLabel: "",
+    money: { paidLabel: "Amount invested (USD)", valueLabel: "Current value (USD)" },
+    vendor: { label: "Through (broker / fund / platform)" },
     statusOptions: [
       { value: "active", label: "Active" },
       { value: "exited", label: "Exited" },
       { value: "wishlist", label: "Considering" },
     ],
-    defaultStatus: "active",
   },
   media: {
     titleLabel: "Title",
     subtitleLabel: "Author / creator",
-    showMoney: false,
-    paidLabel: "",
-    valueLabel: "",
-    showVendor: false,
-    vendorLabel: "",
-    showLocation: false,
-    locationLabel: "",
     statusOptions: [
       { value: "wishlist", label: "Want to read/watch" },
       { value: "reading", label: "Reading / watching" },
       { value: "watched", label: "Read / watched" },
     ],
-    defaultStatus: "wishlist",
   },
   place: {
     titleLabel: "Place",
     subtitleLabel: "Cuisine / type",
     subtitlePlaceholder: "ramen · cocktail bar · trail · hotel",
-    showMoney: false,
-    paidLabel: "",
-    valueLabel: "",
-    showVendor: false,
-    vendorLabel: "",
-    showLocation: true,
-    locationLabel: "Address / area",
-    locationPlaceholder: "46 Bowery, NYC",
+    location: { label: "Address / area", placeholder: "46 Bowery, NYC" },
     statusOptions: [
       { value: "wishlist", label: "Want to go" },
       { value: "visited", label: "Visited" },
       { value: "saved", label: "Saved" },
     ],
-    defaultStatus: "wishlist",
   },
   practice: {
     titleLabel: "Practice",
     subtitleLabel: "Area",
     subtitlePlaceholder: "fitness · finance · mind · creativity",
-    showMoney: false,
-    paidLabel: "",
-    valueLabel: "",
-    showVendor: false,
-    vendorLabel: "",
-    showLocation: false,
-    locationLabel: "",
     statusOptions: [
       { value: "active", label: "Active" },
       { value: "exited", label: "Stopped" },
     ],
-    defaultStatus: "active",
   },
 };
 
@@ -566,9 +519,9 @@ function InventoryFields({
           className={INPUT_CLASS}
         />
       </Field>
-      {ui.showMoney ? (
+      {ui.money ? (
         <div className="grid grid-cols-2 gap-3">
-          <Field label={ui.paidLabel}>
+          <Field label={ui.money.paidLabel}>
             <input
               type="number"
               value={proposal.costBasis ?? ""}
@@ -578,7 +531,7 @@ function InventoryFields({
               className={INPUT_CLASS}
             />
           </Field>
-          <Field label={ui.valueLabel}>
+          <Field label={ui.money.valueLabel}>
             <input
               type="number"
               value={proposal.currentValue ?? ""}
@@ -590,8 +543,8 @@ function InventoryFields({
           </Field>
         </div>
       ) : null}
-      {ui.showVendor ? (
-        <Field label={ui.vendorLabel}>
+      {ui.vendor ? (
+        <Field label={ui.vendor.label}>
           <input
             value={proposal.sourceVendor ?? ""}
             onChange={(e) => patch({ sourceVendor: e.target.value })}
@@ -599,10 +552,34 @@ function InventoryFields({
           />
         </Field>
       ) : null}
-      <div className={ui.showLocation ? "grid grid-cols-2 gap-3" : ""}>
+      {ui.location ? (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Status">
+            <select
+              value={proposal.status ?? ui.statusOptions[0].value}
+              onChange={(e) => patch({ status: e.target.value })}
+              className={INPUT_CLASS}
+            >
+              {ui.statusOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label={ui.location.label}>
+            <input
+              value={proposal.location ?? ""}
+              onChange={(e) => patch({ location: e.target.value })}
+              placeholder={ui.location.placeholder}
+              className={INPUT_CLASS}
+            />
+          </Field>
+        </div>
+      ) : (
         <Field label="Status">
           <select
-            value={proposal.status ?? ui.defaultStatus}
+            value={proposal.status ?? ui.statusOptions[0].value}
             onChange={(e) => patch({ status: e.target.value })}
             className={INPUT_CLASS}
           >
@@ -613,17 +590,7 @@ function InventoryFields({
             ))}
           </select>
         </Field>
-        {ui.showLocation ? (
-          <Field label={ui.locationLabel}>
-            <input
-              value={proposal.location ?? ""}
-              onChange={(e) => patch({ location: e.target.value })}
-              placeholder={ui.locationPlaceholder}
-              className={INPUT_CLASS}
-            />
-          </Field>
-        ) : null}
-      </div>
+      )}
       <Field label="Project">
         <ProjectSelect
           value={proposal.projectId ?? null}

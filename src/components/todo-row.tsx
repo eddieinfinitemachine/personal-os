@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
@@ -65,9 +65,6 @@ export function TodoRow({
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(todo.title);
-  // Optimistic title overlay — set immediately on save() so the rendered text
-  // updates BEFORE the server round-trips. Cleared once the parent's
-  // router.refresh propagates the new todo.title back down.
   const [optimisticTitle, setOptimisticTitle] = useState<string | null>(null);
   const displayTitle = optimisticTitle ?? todo.title;
   const [editingDate, setEditingDate] = useState(false);
@@ -80,12 +77,10 @@ export function TodoRow({
   const subtasks = todo.subtasks ?? [];
   const hasSubs = subtasks.length > 0;
 
-  // Re-sync draft when the underlying todo title changes from server.
   useEffect(() => {
     if (!editing) setDraft(todo.title);
   }, [todo.title, editing]);
 
-  // Clear the optimistic overlay once the server-truth catches up.
   useEffect(() => {
     if (optimisticTitle && todo.title === optimisticTitle) {
       setOptimisticTitle(null);
@@ -110,8 +105,6 @@ export function TodoRow({
       setDraft(optimisticTitle ?? todo.title);
       return;
     }
-    // Instant: drop edit mode, paint the new title immediately. Server fire
-    // happens in the background — no UI blocking on the round-trip.
     setEditing(false);
     setOptimisticTitle(next);
     try {
@@ -121,7 +114,6 @@ export function TodoRow({
         body: JSON.stringify({ title: next }),
       });
       if (!res.ok) {
-        // Rollback — server rejected. Drop the optimistic overlay.
         setOptimisticTitle(null);
         setDraft(todo.title);
         return;
@@ -159,18 +151,25 @@ export function TodoRow({
     if (addingSub) subInputRef.current?.focus();
   }, [addingSub]);
 
-  // Guard against double-submit. Pressing Enter calls submitSubtask, which
-  // sets addingSub=false. React then unmounts the input on the next render,
-  // which fires the input's onBlur — calling submitSubtask AGAIN with the
-  // stale closure (subDraft hasn't visually cleared yet from React's POV),
-  // creating a duplicate subtask. The ref short-circuits the second call.
+  // Enter handler hides the input; the resulting onBlur fires submitSubtask
+  // again with a stale closure (subDraft hasn't visually cleared yet),
+  // creating a duplicate. Ref short-circuits the second call.
   const submittingSubRef = useRef(false);
   const [detailOpen, setDetailOpen] = useState(false);
-  // Disambiguate single-click (edit) vs double-click (open detail modal).
-  // First click sets a short timer; if a second click arrives before it
-  // fires, we cancel the timer and open the modal instead.
+  // Defer single-click → edit so an incoming double-click can open the
+  // detail modal instead. 220ms = standard browser dblclick threshold.
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const CLICK_DELAY_MS = 220;
+  useEffect(() => {
+    return () => {
+      if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+    };
+  }, []);
+
+  const linkifiedTitle = useMemo(
+    () => linkify(displayTitle, (e) => e.stopPropagation()),
+    [displayTitle],
+  );
   async function submitSubtask() {
     if (submittingSubRef.current) return;
     const t = subDraft.trim();
@@ -645,11 +644,8 @@ export function TodoRow({
           className="flex-1 min-w-0 cursor-text select-none md:select-text"
           onClick={(e) => {
             e.stopPropagation();
-            // Suppress synthetic click after a long-press drag on touch.
             if (touchEnv && justDraggedRef.current) return;
             if (completed || editing) return;
-            // Defer single-click edit to see if a double-click follows.
-            // Double-click cancels this and opens the detail modal.
             if (clickTimerRef.current) return;
             clickTimerRef.current = setTimeout(() => {
               clickTimerRef.current = null;
@@ -689,10 +685,7 @@ export function TodoRow({
                 completed && "line-through text-[var(--color-muted-foreground)]"
               )}
             >
-              {linkify(displayTitle, (e) => {
-                // Don't let link clicks trigger edit / open modal.
-                e.stopPropagation();
-              })}
+              {linkifiedTitle}
             </div>
           )}
           {todo.notes ? (
@@ -932,18 +925,20 @@ export function TodoRow({
         </ul>
       ) : null}
       <ContextMenuPopover pos={ctx.pos} items={menu} onClose={ctx.close} />
-      <TodoDetailModal
-        open={detailOpen}
-        todoId={todo.id}
-        initialTitle={displayTitle}
-        initialNotes={todo.notes ?? null}
-        initialSubtasks={subtasks.map((s) => ({
-          id: s.id,
-          title: s.title,
-          completedAt: s.completedAt ?? null,
-        }))}
-        onClose={() => setDetailOpen(false)}
-      />
+      {detailOpen ? (
+        <TodoDetailModal
+          open
+          todoId={todo.id}
+          initialTitle={displayTitle}
+          initialNotes={todo.notes ?? null}
+          initialSubtasks={subtasks.map((s) => ({
+            id: s.id,
+            title: s.title,
+            completedAt: s.completedAt ?? null,
+          }))}
+          onClose={() => setDetailOpen(false)}
+        />
+      ) : null}
       {projectPickerOpen && projectPickerPos && typeof document !== "undefined"
         ? createPortal(
             <div

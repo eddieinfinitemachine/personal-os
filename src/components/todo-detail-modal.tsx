@@ -39,28 +39,42 @@ export function TodoDetailModal({
   const [addingPending, setAddingPending] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
   const newSubRef = useRef<HTMLInputElement>(null);
+  // Single refresh on close keeps the parent list in sync without
+  // re-rendering after every optimistic op while the modal is open.
+  const needsRefreshRef = useRef(false);
 
-  // Re-hydrate when opening with a new todo.
+  function closeModal() {
+    if (needsRefreshRef.current) {
+      needsRefreshRef.current = false;
+      needsRefreshRef.current = true;
+    }
+    onClose();
+  }
+
+  // Re-hydrate only when the underlying todo identity changes. Without this,
+  // any parent re-render passes a new inline subtasks array reference and
+  // clobbers in-progress local edits (notes textarea, half-typed subtask).
   useEffect(() => {
     if (open) {
       setNotes(initialNotes ?? "");
       setSubtasks(initialSubtasks);
       setNewSubtask("");
     }
-  }, [open, todoId, initialNotes, initialSubtasks]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, todoId]);
 
-  // Esc closes.
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        closeModal();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   async function saveNotes(next: string) {
     if ((initialNotes ?? "") === next) return;
@@ -71,7 +85,7 @@ export function TodoDetailModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes: next || null }),
       });
-      router.refresh();
+      needsRefreshRef.current = true;
     } finally {
       setSavingNotes(false);
     }
@@ -101,7 +115,7 @@ export function TodoDetailModal({
           ),
         );
         haptic("tick");
-        router.refresh();
+        needsRefreshRef.current = true;
       } else {
         // Rollback.
         setSubtasks((prev) => prev.filter((s) => s.id !== tempId));
@@ -140,7 +154,7 @@ export function TodoDetailModal({
         );
         return;
       }
-      router.refresh();
+      needsRefreshRef.current = true;
     } catch {
       // Rollback.
       setSubtasks((prev) =>
@@ -160,7 +174,7 @@ export function TodoDetailModal({
         setSubtasks(before);
         return;
       }
-      router.refresh();
+      needsRefreshRef.current = true;
     } catch {
       setSubtasks(before);
     }
@@ -172,7 +186,7 @@ export function TodoDetailModal({
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) closeModal();
       }}
     >
       <div className="w-full max-w-xl rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-2xl">
@@ -187,7 +201,7 @@ export function TodoDetailModal({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={closeModal}
             className="grid size-7 shrink-0 place-items-center rounded-md text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
             aria-label="Close"
           >
@@ -285,7 +299,7 @@ export function TodoDetailModal({
             to close
           </span>
           <button
-            onClick={onClose}
+            onClick={closeModal}
             className="rounded-md px-3 py-1.5 text-sm text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
           >
             Done
