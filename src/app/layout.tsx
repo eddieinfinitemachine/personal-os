@@ -4,8 +4,11 @@ import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
 import { MobileChromeProvider } from "@/components/mobile-chrome";
 import { CommandPalette } from "@/components/command-palette";
+import { CaptureInbox } from "@/components/capture-inbox";
+import { CaptureDrawer } from "@/components/capture-drawer";
 import { themePreloadScript } from "@/components/theme-toggle";
 import { ServiceWorkerRegister } from "@/components/sw-register";
+import { CaptureProvider } from "@/lib/capture-store";
 import { prisma } from "@/lib/prisma";
 
 // Per-request because the cache key would need to include userId; for a
@@ -92,17 +95,21 @@ export default async function RootLayout({
       </head>
       <body className="antialiased">
         <ServiceWorkerRegister />
-        <CommandPalette />
-        <MobileChromeProvider projects={mobileProjects} appName={appName}>
-          <div className="flex min-h-screen">
-            <div className="hidden md:flex">
-              <Sidebar projects={projects} appName={appName} />
+        <CaptureProvider>
+          <CommandPalette />
+          <CaptureInbox />
+          <CaptureDrawer />
+          <MobileChromeProvider projects={mobileProjects} appName={appName}>
+            <div className="flex min-h-screen">
+              <div className="hidden md:flex">
+                <Sidebar projects={projects} appName={appName} />
+              </div>
+              <main className="flex-1 overflow-x-hidden pt-[calc(48px+env(safe-area-inset-top))] pb-[calc(56px+env(safe-area-inset-bottom))] md:pt-0 md:pb-0">
+                {children}
+              </main>
             </div>
-            <main className="flex-1 overflow-x-hidden pt-[calc(48px+env(safe-area-inset-top))] pb-[calc(56px+env(safe-area-inset-bottom))] md:pt-0 md:pb-0">
-              {children}
-            </main>
-          </div>
-        </MobileChromeProvider>
+          </MobileChromeProvider>
+        </CaptureProvider>
       </body>
     </html>
   );

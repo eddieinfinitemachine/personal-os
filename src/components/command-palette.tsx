@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useCapture } from "@/lib/capture-store";
 import {
   Calendar,
   Camera,
@@ -68,6 +69,7 @@ function fuzzyMatch(needle: string, haystack: string): boolean {
 
 export function CommandPalette() {
   const router = useRouter();
+  const { enqueue } = useCapture();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);
@@ -185,9 +187,9 @@ export function CommandPalette() {
     if (item.kind === "nav") {
       router.push(item.cmd.href);
     } else {
-      // Pre-fill the capture form via URL param. The form auto-parses on load.
-      const params = new URLSearchParams({ text: trimmed, autoparse: "1" });
-      router.push(`/capture?${params.toString()}`);
+      // Background parse — no navigation. The inbox pill (top-right)
+      // surfaces the in-flight + ready state.
+      enqueue(trimmed);
     }
   }
 
@@ -200,11 +202,11 @@ export function CommandPalette() {
       setActiveIdx((i) => Math.max(0, i - 1));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      // ⌘↵ always sends to capture, even when not at a "looks-like-capture" length.
+      // ⌘↵ always enqueues as a capture, even when the text doesn't
+      // pass the "looks like a sentence" heuristic.
       if ((e.metaKey || e.ctrlKey) && trimmed) {
-        const params = new URLSearchParams({ text: trimmed, autoparse: "1" });
+        enqueue(trimmed);
         setOpen(false);
-        router.push(`/capture?${params.toString()}`);
         return;
       }
       pick(activeIdx);

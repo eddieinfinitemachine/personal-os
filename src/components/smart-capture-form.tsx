@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Camera, Loader2, Sparkles, X } from "lucide-react";
 import type { CaptureProposal } from "@/lib/smart-capture";
 
-type Project = { id: string; name: string; kind: string };
+export type Project = { id: string; name: string; kind: string };
 
 const PLACEHOLDERS = [
   "Paid $850 at Brooklyn Flea, in the living room",
@@ -322,7 +322,7 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
   );
 }
 
-interface PreviewProps {
+export type ProposalEditorProps = {
   proposal: CaptureProposal;
   projects: Project[];
   suggestedFollowupTitle: string | null;
@@ -331,6 +331,13 @@ interface PreviewProps {
   onDiscard: () => void;
   committing: boolean;
   error: string | null;
+};
+// Re-exported for callers that mount the editor outside SmartCaptureForm
+// (e.g. the capture drawer renders one per ready capture).
+export type PreviewProps = ProposalEditorProps;
+
+export function ProposalEditor(props: ProposalEditorProps) {
+  return <Preview {...props} />;
 }
 
 function Preview({
