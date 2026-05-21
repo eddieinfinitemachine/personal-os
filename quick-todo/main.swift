@@ -2,8 +2,8 @@ import AppKit
 import Carbon.HIToolbox
 import UserNotifications
 
-// Personal OS capture endpoint.
-let API_URL = "https://personal-os-two-gold.vercel.app/api/capture/todo"
+// Kaizen smart-capture endpoint (auto-classifies → asset/todo/person/trip/interaction).
+let API_URL = "https://personal-os-two-gold.vercel.app/api/capture/smart/auto"
 let API_TOKEN = "nJpdojSLOrDa9q6rLgyDA5Sp9qA"
 
 // MARK: - Capture popup
@@ -40,7 +40,7 @@ final class CapturePopup: NSPanel, NSTextFieldDelegate {
 
         textField.frame = NSRect(x: 18, y: 22, width: 524, height: 30)
         textField.font = .systemFont(ofSize: 22, weight: .regular)
-        textField.placeholderString = "Add to inbox…"
+        textField.placeholderString = "Capture anything — todo, friend, place, link…"
         textField.isBezeled = false
         textField.isBordered = false
         textField.drawsBackground = false
@@ -101,26 +101,58 @@ final class CapturePopup: NSPanel, NSTextFieldDelegate {
         guard let url = URL(string: API_URL) else { return }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
-        req.timeoutInterval = 10
+        // Smart capture round-trips through Claude with web search, so it can
+        // take a few seconds — give it enough headroom.
+        req.timeoutInterval = 30
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(API_TOKEN)", forHTTPHeaderField: "Authorization")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["title": title])
+        // New endpoint accepts { text, url? }. If the user pasted a URL into
+        // the input, send it as the url field too so Claude can fetch context.
+        var body: [String: Any] = ["text": title]
+        if let pastedUrl = firstUrl(in: title) {
+            body["url"] = pastedUrl
+        }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        URLSession.shared.dataTask(with: req) { _, response, error in
+        // Show an interim notification so the user knows it's working —
+        // Sonnet + web search can take 5–12s. Updated by the response handler.
+        notify(title: "Capturing…", body: title)
+
+        URLSession.shared.dataTask(with: req) { data, response, error in
             DispatchQueue.main.async {
-                let ok: Bool
-                if let http = response as? HTTPURLResponse {
-                    ok = (200...299).contains(http.statusCode)
-                } else {
-                    ok = false
+                let http = response as? HTTPURLResponse
+                let ok = http.map { (200...299).contains($0.statusCode) } ?? false
+                if !ok {
+                    notify(
+                        title: "Capture failed",
+                        body: error?.localizedDescription ?? title
+                    )
+                    return
                 }
-                notify(
-                    title: ok ? "Added to Inbox" : "Quick Todo failed",
-                    body: error?.localizedDescription ?? title
-                )
+                // Pull the classified type out of the response if available.
+                var typeLabel = "saved"
+                if let data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    if let t = json["type"] as? String {
+                        if t == "asset", let kind = json["assetKind"] as? String {
+                            typeLabel = kind
+                        } else {
+                            typeLabel = t
+                        }
+                    }
+                }
+                notify(title: "Added · \(typeLabel)", body: title)
             }
         }.resume()
     }
+}
+
+// Cheap URL extractor — first http(s):// match in the text, if any.
+private func firstUrl(in text: String) -> String? {
+    guard let regex = try? NSRegularExpression(pattern: "https?://[^\\s]+") else { return nil }
+    let range = NSRange(text.startIndex..., in: text)
+    guard let match = regex.firstMatch(in: text, range: range) else { return nil }
+    guard let r = Range(match.range, in: text) else { return nil }
+    return String(text[r])
 }
 
 // MARK: - Notifications
