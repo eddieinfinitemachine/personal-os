@@ -157,10 +157,18 @@ async function handle(rawText: string | null | undefined, rawUrl: string | null 
     // When you save a media bookmark or a place/wishlist asset, also drop
     // a matching todo on the "Later" list so it shows up in your reading
     // queue alongside other reminders.
+    const PENDING_STATUSES = new Set([
+      "to-read",
+      "to-watch",
+      "to-listen",
+      "wishlist",
+      "in-progress",
+    ]);
     let companionTodoId: string | null = null;
     if (
       (proposal.assetKind === "media" || proposal.assetKind === "place") &&
-      status === "wishlist"
+      status &&
+      PENDING_STATUSES.has(status)
     ) {
       await ensureDefaultLists(userId);
       const list = await prisma.list.findFirst({

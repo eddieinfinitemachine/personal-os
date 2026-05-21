@@ -469,9 +469,12 @@ const ASSET_KIND_UI: Record<AssetKind, AssetKindUi> = {
     titleLabel: "Title",
     subtitleLabel: "Author / creator",
     statusOptions: [
-      { value: "wishlist", label: "Want to read/watch" },
-      { value: "reading", label: "Reading / watching" },
-      { value: "watched", label: "Read / watched" },
+      { value: "to-read", label: "To read" },
+      { value: "to-watch", label: "To watch" },
+      { value: "to-listen", label: "To listen" },
+      { value: "in-progress", label: "In progress" },
+      { value: "consumed", label: "Consumed" },
+      { value: "wishlist", label: "Wishlist (unsure)" },
     ],
   },
   place: {

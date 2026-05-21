@@ -171,7 +171,11 @@ Per-assetKind ENRICHMENT goes into a "details" object (we'll merge it into the r
 assetKind defaults & status semantics:
 - inventory: status defaults to "owned" (or "wishlist" if forward-looking).
 - investment: status defaults to "active". Use "exited" if sold, "wishlist" if "thinking about investing".
-- media: status from text — "watched"/"read" → "watched" or "read", "want to watch / reading" → "reading"/"wishlist", "want to" → "wishlist".
+- media: status reflects format-specific intent.
+  • Future-tense by format: book / essay / article → "to-read"; film / show / video → "to-watch"; podcast / album → "to-listen". Use the most specific one based on the "format" field in details.
+  • Past-tense / consumed: "watched" / "read" / "listened" / "finished" → "consumed".
+  • Mid-consumption: "reading", "watching" → "in-progress".
+  • If genuinely ambiguous (no format known and no past tense), fall back to "wishlist".
 - place: status "visited" if past tense / "loved" / "had dinner at", "wishlist" / "want to try" if forward-looking.
 - practice: status "active" by default (it's a habit they're adopting). Use "exited" for explicitly-abandoned practices.
 
