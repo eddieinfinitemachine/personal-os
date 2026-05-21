@@ -61,6 +61,31 @@ final class CapturePopup: NSPanel, NSTextFieldDelegate {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    // Forward ⌘V / ⌘C / ⌘X / ⌘A / ⌘Z to the focused field editor directly.
+    // Accessory-mode apps don't always route key equivalents through the
+    // main menu, so we intercept here instead of relying on Edit-menu items.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command),
+           let chars = event.charactersIgnoringModifiers?.lowercased(),
+           let editor = textField.currentEditor() {
+            switch chars {
+            case "v": editor.paste(nil); return true
+            case "c": editor.copy(nil); return true
+            case "x": editor.cut(nil); return true
+            case "a": editor.selectAll(nil); return true
+            case "z":
+                if event.modifierFlags.contains(.shift) {
+                    editor.undoManager?.redo()
+                } else {
+                    editor.undoManager?.undo()
+                }
+                return true
+            default: break
+            }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     func showAtCenter() {
         if let screen = NSScreen.main {
             let f = screen.visibleFrame

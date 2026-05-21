@@ -43,6 +43,22 @@ export async function GET(request: Request) {
   return handle(u.searchParams.get("text"), u.searchParams.get("url"));
 }
 
+// Pick the right action verb for a media companion-todo based on the format
+// Claude extracted into details. Falls back to a neutral "Read/watch" if
+// the format is unknown.
+function mediaVerb(
+  proposal: Extract<CaptureProposal, { type: "asset" }>,
+): string {
+  if (proposal.assetKind === "place") return "Try";
+  const format = ((proposal.details as Record<string, unknown> | undefined)
+    ?.format as string | undefined)?.toLowerCase();
+  if (!format) return "Read/watch";
+  if (format === "book" || format === "essay" || format === "article") return "Read";
+  if (format === "film" || format === "show" || format === "video") return "Watch";
+  if (format === "podcast" || format === "album") return "Listen";
+  return "Read/watch";
+}
+
 function isAuthorized(request: Request): boolean {
   const secret = process.env.CAPTURE_TOKEN;
   if (!secret) return true;
@@ -112,11 +128,12 @@ async function handle(rawText: string | null | undefined, rawUrl: string | null 
       place: "wishlist",
       practice: "active",
     };
+    const status = proposal.status ?? DEFAULT_STATUS[proposal.assetKind] ?? null;
     const asset = await prisma.asset.create({
       data: {
         userId,
         kind: proposal.assetKind,
-        status: proposal.status ?? DEFAULT_STATUS[proposal.assetKind] ?? null,
+        status,
         title: proposal.title,
         subtitle: proposal.subtitle ?? null,
         category: proposal.category ?? null,
@@ -136,7 +153,43 @@ async function handle(rawText: string | null | undefined, rawUrl: string | null 
         },
       },
     });
-    return NextResponse.json({ ok: true, type: "asset", assetKind: proposal.assetKind, id: asset.id });
+
+    // When you save a media bookmark or a place/wishlist asset, also drop
+    // a matching todo on the "Later" list so it shows up in your reading
+    // queue alongside other reminders.
+    let companionTodoId: string | null = null;
+    if (
+      (proposal.assetKind === "media" || proposal.assetKind === "place") &&
+      status === "wishlist"
+    ) {
+      await ensureDefaultLists(userId);
+      const list = await prisma.list.findFirst({
+        where: { userId, name: { equals: "Later", mode: "insensitive" } },
+      });
+      if (list) {
+        const verb = mediaVerb(proposal);
+        const todo = await prisma.todo.create({
+          data: {
+            userId,
+            listId: list.id,
+            projectId: proposal.projectId ?? null,
+            title: `${verb}: ${proposal.title}`,
+            notes: [proposal.url ?? rawUrl ?? null, proposal.notes ?? null]
+              .filter(Boolean)
+              .join("\n") || null,
+          },
+        });
+        companionTodoId = todo.id;
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      type: "asset",
+      assetKind: proposal.assetKind,
+      id: asset.id,
+      companionTodoId,
+    });
   }
 
   if (proposal.type === "todo") {
