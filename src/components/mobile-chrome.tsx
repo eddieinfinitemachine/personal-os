@@ -119,7 +119,7 @@ function MobileTopBar() {
   const { state, openDrawer } = useMobileChrome();
   return (
     <header
-      className="md:hidden fixed top-0 inset-x-0 z-30 bg-[var(--color-background)]/95 backdrop-blur border-b border-[var(--color-border)] pt-[env(safe-area-inset-top)]"
+      className="md:hidden print:hidden fixed top-0 inset-x-0 z-30 bg-[var(--color-background)]/95 backdrop-blur border-b border-[var(--color-border)] pt-[env(safe-area-inset-top)]"
       style={{
         transform: "translate3d(0,0,0)",
         WebkitTransform: "translate3d(0,0,0)",
@@ -156,7 +156,7 @@ function MobileTabBar() {
   const pathname = usePathname();
   return (
     <nav
-      className="md:hidden fixed inset-x-0 bottom-0 z-30 bg-[var(--color-background)]/95 backdrop-blur border-t border-[var(--color-border)] pb-[env(safe-area-inset-bottom)]"
+      className="md:hidden print:hidden fixed inset-x-0 bottom-0 z-30 bg-[var(--color-background)]/95 backdrop-blur border-t border-[var(--color-border)] pb-[env(safe-area-inset-bottom)]"
       style={{
         transform: "translate3d(0,0,0)",
         WebkitTransform: "translate3d(0,0,0)",

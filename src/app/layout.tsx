@@ -101,10 +101,10 @@ export default async function RootLayout({
           <CaptureDrawer />
           <MobileChromeProvider projects={mobileProjects} appName={appName}>
             <div className="flex min-h-screen">
-              <div className="hidden md:flex">
+              <div className="hidden md:flex print:hidden">
                 <Sidebar projects={projects} appName={appName} />
               </div>
-              <main className="flex-1 overflow-x-hidden pt-[calc(48px+env(safe-area-inset-top))] pb-[calc(56px+env(safe-area-inset-bottom))] md:pt-0 md:pb-0">
+              <main className="flex-1 overflow-x-hidden pt-[calc(48px+env(safe-area-inset-top))] pb-[calc(56px+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 print:pt-0 print:pb-0">
                 {children}
               </main>
             </div>
