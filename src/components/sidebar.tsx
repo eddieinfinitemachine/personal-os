@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BookOpen, Calendar, Camera, Car, ChevronDown, ChevronRight, Eye, EyeOff, Folder, Home, Lightbulb, MapPin, PanelLeftClose, PanelLeftOpen, Package, Pencil, Plane, Plus, Loader2, MoreHorizontal, Printer, Settings, Trash2, TrendingUp, User, Users } from "lucide-react";
+import { BookOpen, Calendar, Car, ChevronDown, ChevronRight, Eye, EyeOff, Folder, Home, Lightbulb, MapPin, PanelLeftClose, PanelLeftOpen, Package, Pencil, Plane, Plus, Loader2, MoreHorizontal, Printer, Settings, Trash2, TrendingUp, User, Users } from "lucide-react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
@@ -164,12 +164,6 @@ export function Sidebar({
           active={pathname === "/"}
         />
         <SidebarLink
-          href="/capture"
-          icon={<Camera className="size-4" />}
-          label="Capture"
-          active={pathname === "/capture"}
-        />
-        <SidebarLink
           href="/calendar"
           icon={<Calendar className="size-4" />}
           label="Calendar"
@@ -232,7 +226,7 @@ export function Sidebar({
         <SidebarLink
           href="/print/today"
           icon={<Printer className="size-4" />}
-          label="Daily print"
+          label="Print lists"
           active={pathname === "/print/today"}
         />
       </nav>
@@ -372,7 +366,8 @@ export function Sidebar({
       </div>
 
       <div className="mt-auto border-t border-[var(--color-border)]">
-        <div className="px-2 py-2">
+        <BuildInfo />
+        <div className="px-2 py-2 border-t border-[var(--color-border)]">
           <SidebarLink
             href="/settings"
             icon={<Settings className="size-4" />}
@@ -389,6 +384,40 @@ export function Sidebar({
       </div>
     </aside>
   );
+}
+
+function BuildInfo() {
+  const version = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
+  const buildTime = process.env.NEXT_PUBLIC_BUILD_TIME;
+  const [relative, setRelative] = useState<string>("");
+  const absolute = buildTime ? new Date(buildTime) : null;
+
+  useEffect(() => {
+    if (!absolute) return;
+    const tick = () => setRelative(formatRelative(absolute));
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
+  }, [absolute]);
+
+  return (
+    <div
+      className="px-4 py-2 text-[10px] uppercase tracking-wider text-[var(--color-muted-foreground)] flex items-center justify-between gap-2"
+      title={absolute ? absolute.toLocaleString() : undefined}
+    >
+      <span>v{version}</span>
+      {relative ? <span className="normal-case tracking-normal">Updated {relative}</span> : null}
+    </div>
+  );
+}
+
+function formatRelative(d: Date): string {
+  const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 86400 * 30) return `${Math.floor(diff / 86400)}d ago`;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function SidebarLink({
