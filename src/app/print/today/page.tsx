@@ -26,6 +26,7 @@ export default async function PrintListsPage() {
         title: true,
         dueDate: true,
         listId: true,
+        project: { select: { name: true } },
         subtasks: {
           select: { id: true, title: true },
           orderBy: [{ position: "asc" }, { createdAt: "asc" }],
@@ -118,6 +119,7 @@ function PrintRow({
     id: string;
     title: string;
     dueDate: Date | null;
+    project?: { name: string } | null;
     subtasks?: { id: string; title: string }[];
   };
 }) {
@@ -133,8 +135,13 @@ function PrintRow({
       />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-1.5">
-          <span>{todo.title}</span>
+          <span className="flex-1 min-w-0">{todo.title}</span>
           {due ? <span className="text-[10px] text-black/55">{due}</span> : null}
+          {todo.project?.name ? (
+            <span className="text-[10px] text-black/35 truncate max-w-[40%]">
+              {todo.project.name}
+            </span>
+          ) : null}
         </div>
         {todo.subtasks && todo.subtasks.length > 0 ? (
           <ul className="mt-[2px] space-y-[2px]">
