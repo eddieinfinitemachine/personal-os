@@ -57,16 +57,16 @@ export default async function PrintListsPage() {
   return (
     <>
       <style>{`
+        html, body { background: white !important; color: black !important; }
         @page { size: letter; margin: 0.4in; }
         @media print {
-          html, body { background: white !important; color: black !important; }
           .print-hide { display: none !important; }
           .avoid-break { break-inside: avoid; }
         }
         .lists-columns { column-count: 2; column-gap: 1.25rem; column-fill: balance; }
         @media (max-width: 640px) { .lists-columns { column-count: 1; } }
       `}</style>
-      <div className="mx-auto max-w-[7.7in] px-6 py-8 text-black sm:px-8 sm:py-10 print:px-0 print:py-0">
+      <div className="min-h-screen bg-white mx-auto max-w-[7.7in] px-6 py-8 text-black sm:px-8 sm:py-10 print:px-0 print:py-0">
         <header className="mb-4 flex items-baseline justify-between border-b border-black/30 pb-2">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-black/60">
