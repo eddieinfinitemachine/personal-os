@@ -290,9 +290,17 @@ export function ListTile({
     // Pending (just-added) todos render at the bottom so new reminders
     // append in the user's reading order. Server sorts by createdAt ASC
     // tiebreaker, so post-refresh order matches the optimistic order.
-    const merged = [...todos, ...extraTodos, ...pendingTodos].filter(
-      (t) => !hiddenIds.has(t.id)
-    );
+    // Dedup by id: the dedup useEffect that prunes pendingTodos/extraTodos
+    // runs after server refresh, but there are race windows (POST-then-refresh,
+    // cross-tile drag events) where the same id sits in two arrays for a
+    // render. Prefer the first occurrence so the server row wins.
+    const seen = new Set<string>();
+    const merged: TodoLike[] = [];
+    for (const t of [...todos, ...extraTodos, ...pendingTodos]) {
+      if (hiddenIds.has(t.id) || seen.has(t.id)) continue;
+      seen.add(t.id);
+      merged.push(t);
+    }
     if (todoOverrides.size === 0) return merged;
     return merged.map((t) => {
       const fieldOverride = todoOverrides.get(t.id);
