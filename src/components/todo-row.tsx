@@ -718,27 +718,8 @@ export function TodoRow({
               subtasks (show count + collapse) OR while the row is in edit
               mode (offer "+ Subtask" contextually). Stays muted so it doesn't
               compete with the title visually. */}
-          {!isSubtask && (hasSubs || editing) ? (
+          {!isSubtask && editing ? (
             <div className="md:hidden mt-1 flex items-center gap-3 text-[12px] text-[var(--color-muted-foreground)]/75">
-              {hasSubs ? (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSubsExpanded((v) => !v);
-                  }}
-                  className="inline-flex items-center gap-0.5 py-1 -my-1"
-                >
-                  {subsExpanded ? (
-                    <ChevronDown className="size-3" />
-                  ) : (
-                    <ChevronRight className="size-3" />
-                  )}
-                  <span className="tabular-nums">
-                    {subtasks.filter((s) => s.completedAt == null).length}/
-                    {subtasks.length}
-                  </span>
-                </button>
-              ) : null}
               {editing ? (
                 <button
                   // mousedown preventDefault stops the title input from
@@ -832,26 +813,6 @@ export function TodoRow({
             )}
             {!isSubtask ? (
               <>
-                {hasSubs ? (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSubsExpanded((v) => !v);
-                    }}
-                    className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 hover:bg-[var(--color-accent)]"
-                    title={subsExpanded ? "Collapse subtasks" : "Expand subtasks"}
-                  >
-                    {subsExpanded ? (
-                      <ChevronDown className="size-3" />
-                    ) : (
-                      <ChevronRight className="size-3" />
-                    )}
-                    <span>
-                      {subtasks.filter((s) => s.completedAt == null).length}/
-                      {subtasks.length}
-                    </span>
-                  </button>
-                ) : null}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -884,6 +845,26 @@ export function TodoRow({
             ) : null}
           </div>
         </div>
+        {!isSubtask && hasSubs ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setSubsExpanded((v) => !v);
+            }}
+            className="ml-auto self-center shrink-0 inline-flex items-center gap-0.5 rounded px-1.5 py-1 text-xs text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] transition"
+            title={subsExpanded ? "Collapse subtasks" : "Expand subtasks"}
+          >
+            {subsExpanded ? (
+              <ChevronDown className="size-3.5" />
+            ) : (
+              <ChevronRight className="size-3.5" />
+            )}
+            <span className="tabular-nums">
+              {subtasks.filter((s) => s.completedAt == null).length}/
+              {subtasks.length}
+            </span>
+          </button>
+        ) : null}
       </div>
       </div>
 

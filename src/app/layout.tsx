@@ -8,6 +8,7 @@ import { CaptureInbox } from "@/components/capture-inbox";
 import { CaptureDrawer } from "@/components/capture-drawer";
 import { themePreloadScript } from "@/components/theme-toggle";
 import { ServiceWorkerRegister } from "@/components/sw-register";
+import { Onboarding } from "@/components/onboarding";
 import { CaptureProvider } from "@/lib/capture-store";
 import { isPrivateHost } from "@/lib/hosts";
 import { prisma } from "@/lib/prisma";
@@ -93,6 +94,7 @@ export default async function RootLayout({
       </head>
       <body className="antialiased">
         <ServiceWorkerRegister />
+        <Onboarding />
         <CaptureProvider>
           <CommandPalette />
           <CaptureInbox />

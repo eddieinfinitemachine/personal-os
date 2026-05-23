@@ -3,21 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  BookOpen,
   Calendar,
-  Car,
   Folder,
   Heart,
   Home,
-  Lightbulb,
-  MapPin,
   Menu,
-  Package,
-  TrendingUp,
   User,
   Users,
   X,
 } from "lucide-react";
+import { AddTemplateButton, useEnabledTemplates } from "./sidebar-template-picker";
 import {
   createContext,
   useCallback,
@@ -204,20 +199,10 @@ function MobileTabBar({ isPrivate }: { isPrivate: boolean }) {
 const DRAWER_PRIMARY = [
   { href: "/", label: "Home", Icon: Home },
   { href: "/calendar", label: "Calendar", Icon: Calendar },
-  { href: "/personal", label: "Personal", Icon: User },
-  { href: "/friends", label: "Friends", Icon: Users },
-  { href: "/vehicles", label: "Vehicles", Icon: Car },
-  { href: "/investments", label: "Investments", Icon: TrendingUp },
-  { href: "/inventory", label: "Inventory", Icon: Package },
-  { href: "/media", label: "Media", Icon: BookOpen },
-  { href: "/places", label: "Places", Icon: MapPin },
-  { href: "/best-practices", label: "Best practices", Icon: Lightbulb },
 ];
 
 function MobileDrawer({ projects, appName, isPrivate }: { projects: MobileProject[]; appName: string; isPrivate: boolean }) {
-  const drawerPrimary = isPrivate
-    ? DRAWER_PRIMARY
-    : DRAWER_PRIMARY.filter((d) => d.href !== "/personal");
+  const { enabled, available, add } = useEnabledTemplates(isPrivate);
   const { drawerOpen, closeDrawer } = useMobileChrome();
   const pathname = usePathname();
   // Close on route change.
@@ -265,7 +250,7 @@ function MobileDrawer({ projects, appName, isPrivate }: { projects: MobileProjec
           </button>
         </div>
         <nav className="px-2 space-y-0.5">
-          {drawerPrimary.map((d) => {
+          {DRAWER_PRIMARY.map((d) => {
             const active = d.href === "/" ? pathname === "/" : pathname.startsWith(d.href);
             return (
               <Link
@@ -283,6 +268,25 @@ function MobileDrawer({ projects, appName, isPrivate }: { projects: MobileProjec
               </Link>
             );
           })}
+          {enabled.map((t) => {
+            const active = t.href === "/print/today" ? pathname === t.href : pathname.startsWith(t.href);
+            return (
+              <Link
+                key={t.slug}
+                href={t.href}
+                className={cn(
+                  "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm",
+                  active
+                    ? "bg-[var(--color-accent)] text-[var(--color-foreground)] font-medium"
+                    : "text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
+                )}
+              >
+                <t.Icon className="size-4" />
+                <span className="flex-1 truncate">{t.label}</span>
+              </Link>
+            );
+          })}
+          <AddTemplateButton available={available} onAdd={add} variant="drawer" />
         </nav>
         {projects.length > 0 ? (
           <div className="mt-4 px-2">

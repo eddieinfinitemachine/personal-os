@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BookOpen, Calendar, Car, ChevronDown, ChevronRight, Eye, EyeOff, Folder, Home, Lightbulb, MapPin, PanelLeftClose, PanelLeftOpen, Package, Pencil, Plane, Plus, Loader2, MoreHorizontal, Printer, Settings, Trash2, TrendingUp, User, Users } from "lucide-react";
+import { Calendar, ChevronDown, ChevronRight, Eye, EyeOff, Folder, Home, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Loader2, MoreHorizontal, Settings, Trash2 } from "lucide-react";
+import { AddTemplateButton, useEnabledTemplates } from "./sidebar-template-picker";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
@@ -158,82 +159,7 @@ export function Sidebar({
         </button>
       </div>
 
-      <nav className="px-2 pb-4 space-y-0.5">
-        <SidebarLink
-          href="/"
-          icon={<Home className="size-4" />}
-          label="Home"
-          active={pathname === "/"}
-        />
-        <SidebarLink
-          href="/calendar"
-          icon={<Calendar className="size-4" />}
-          label="Calendar"
-          active={pathname === "/calendar"}
-        />
-        {isPrivate ? (
-          <SidebarLink
-            href="/personal"
-            icon={<User className="size-4" />}
-            label="Personal"
-            active={pathname === "/personal"}
-          />
-        ) : null}
-        <SidebarLink
-          href="/friends"
-          icon={<Users className="size-4" />}
-          label="Friends"
-          active={pathname === "/friends"}
-        />
-        <SidebarLink
-          href="/vehicles"
-          icon={<Car className="size-4" />}
-          label="Vehicles"
-          active={pathname === "/vehicles"}
-        />
-        <SidebarLink
-          href="/trips"
-          icon={<Plane className="size-4" />}
-          label="Trips"
-          active={pathname === "/trips"}
-        />
-        <SidebarLink
-          href="/investments"
-          icon={<TrendingUp className="size-4" />}
-          label="Investments"
-          active={pathname === "/investments"}
-        />
-        <SidebarLink
-          href="/inventory"
-          icon={<Package className="size-4" />}
-          label="Inventory"
-          active={pathname === "/inventory"}
-        />
-        <SidebarLink
-          href="/media"
-          icon={<BookOpen className="size-4" />}
-          label="Media"
-          active={pathname === "/media"}
-        />
-        <SidebarLink
-          href="/places"
-          icon={<MapPin className="size-4" />}
-          label="Places"
-          active={pathname === "/places"}
-        />
-        <SidebarLink
-          href="/best-practices"
-          icon={<Lightbulb className="size-4" />}
-          label="Best practices"
-          active={pathname === "/best-practices"}
-        />
-        <SidebarLink
-          href="/print/today"
-          icon={<Printer className="size-4" />}
-          label="Print lists"
-          active={pathname === "/print/today"}
-        />
-      </nav>
+      <SidebarTemplatesNav pathname={pathname} isPrivate={isPrivate} />
 
       <div className="px-2 mt-4">
         <div className="px-2 mb-1.5 flex items-center justify-between">
@@ -422,6 +348,42 @@ function formatRelative(d: Date): string {
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 86400 * 30) return `${Math.floor(diff / 86400)}d ago`;
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function SidebarTemplatesNav({
+  pathname,
+  isPrivate,
+}: {
+  pathname: string;
+  isPrivate: boolean;
+}) {
+  const { enabled, available, add } = useEnabledTemplates(isPrivate);
+  return (
+    <nav className="px-2 pb-4 space-y-0.5">
+      <SidebarLink
+        href="/"
+        icon={<Home className="size-4" />}
+        label="Home"
+        active={pathname === "/"}
+      />
+      <SidebarLink
+        href="/calendar"
+        icon={<Calendar className="size-4" />}
+        label="Calendar"
+        active={pathname === "/calendar"}
+      />
+      {enabled.map((t) => (
+        <SidebarLink
+          key={t.slug}
+          href={t.href}
+          icon={<t.Icon className="size-4" />}
+          label={t.label}
+          active={t.href === "/print/today" ? pathname === t.href : pathname.startsWith(t.href)}
+        />
+      ))}
+      <AddTemplateButton available={available} onAdd={add} />
+    </nav>
+  );
 }
 
 function SidebarLink({
