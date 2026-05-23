@@ -17,9 +17,11 @@ type SidebarProject = {
 export function Sidebar({
   projects: initialProjects,
   appName = "EC",
+  isPrivate = false,
 }: {
   projects: SidebarProject[];
   appName?: string;
+  isPrivate?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -169,12 +171,14 @@ export function Sidebar({
           label="Calendar"
           active={pathname === "/calendar"}
         />
-        <SidebarLink
-          href="/personal"
-          icon={<User className="size-4" />}
-          label="Personal"
-          active={pathname === "/personal"}
-        />
+        {isPrivate ? (
+          <SidebarLink
+            href="/personal"
+            icon={<User className="size-4" />}
+            label="Personal"
+            active={pathname === "/personal"}
+          />
+        ) : null}
         <SidebarLink
           href="/friends"
           icon={<Users className="size-4" />}

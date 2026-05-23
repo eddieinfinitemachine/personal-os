@@ -8,15 +8,11 @@ import { CaptureInboxPill } from "@/components/capture-inbox";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists } from "@/lib/lists";
 import { getSession } from "@/lib/auth";
+import { isPrivateHost } from "@/lib/hosts";
 import type { TodoLike } from "@/components/todo-row";
 
 const PREVIEW_LIMIT = 12;
 const PROJECT_LIST_PREVIEW = 8;
-
-// Hostnames that should bypass the public landing page — they go straight to
-// the dashboard (or /login if not signed in). Use this for any private/founder
-// URL where you don't want the marketing surface.
-const PRIVATE_HOSTS = new Set(["internal.eddiecohen.com"]);
 
 export const dynamic = "force-dynamic";
 
@@ -24,9 +20,7 @@ export default async function HomePage() {
   const session = await getSession();
 
   if (!session) {
-    const host = (await headers()).get("host") ?? "";
-    const baseHost = host.split(":")[0].toLowerCase();
-    if (PRIVATE_HOSTS.has(baseHost)) redirect("/login");
+    if (isPrivateHost((await headers()).get("host"))) redirect("/login");
     return <KaizenLanding />;
   }
   const userId = session.userId;

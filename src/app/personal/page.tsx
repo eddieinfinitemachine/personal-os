@@ -1,5 +1,8 @@
+import { headers } from "next/headers";
+import { notFound } from "next/navigation";
 import { Baby, Cake, FileText, Hospital, MapPin, User, Users } from "lucide-react";
 import { PERSONAL } from "@/lib/personal";
+import { isPrivateHost } from "@/lib/hosts";
 import { AstrologyTile } from "@/components/astrology-tile";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +32,13 @@ function passportDaysLeft(): number {
   return Math.floor((exp.getTime() - now.getTime()) / 86400000);
 }
 
-export default function PersonalPage() {
+export default async function PersonalPage() {
+  // Personal record contains real-person identifying info hard-coded in
+  // src/lib/personal.ts and is only meaningful on the private host. On
+  // the public Kaizen deployment, 404 so signed-up tenants can't reach it.
+  const h = await headers();
+  if (!isPrivateHost(h.get("host"))) notFound();
+
   const { fullName, birth, parents, documents } = PERSONAL;
   const passportDays = passportDaysLeft();
 

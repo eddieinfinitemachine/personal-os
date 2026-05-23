@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { PERSONAL } from "@/lib/personal";
 import { getCurrentUserId } from "@/lib/auth";
+import { isPrivateHost } from "@/lib/hosts";
 
 export async function POST(request: Request) {
   const userId = await getCurrentUserId(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // PERSONAL is Eddie's birth data — only serve on the private host so a
+  // signed-up public tenant can't call this and get a reading derived from it.
+  if (!isPrivateHost(request.headers.get("host"))) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {

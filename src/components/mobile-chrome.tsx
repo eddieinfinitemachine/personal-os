@@ -53,10 +53,12 @@ export function MobileChromeProvider({
   children,
   projects,
   appName = "Kaizen",
+  isPrivate = false,
 }: {
   children: ReactNode;
   projects: MobileProject[];
   appName?: string;
+  isPrivate?: boolean;
 }) {
   const [title, setTitle] = useState(appName);
   const [right, setRight] = useState<ReactNode | null>(null);
@@ -78,9 +80,9 @@ export function MobileChromeProvider({
     <Ctx.Provider value={api}>
       {children}
       <MobileTopBar />
-      <MobileDrawer projects={projects} appName={appName} />
+      <MobileDrawer projects={projects} appName={appName} isPrivate={isPrivate} />
       <MobileFab />
-      <MobileTabBar />
+      <MobileTabBar isPrivate={isPrivate} />
     </Ctx.Provider>
   );
 }
@@ -145,15 +147,22 @@ function MobileTopBar() {
   );
 }
 
-const TAB_DESTINATIONS = [
+const TAB_DESTINATIONS_PRIVATE = [
   { href: "/", label: "Home", Icon: Home },
   { href: "/calendar", label: "Calendar", Icon: Calendar },
   { href: "/friends", label: "Friends", Icon: Users },
   { href: "/personal", label: "Personal", Icon: User },
 ];
 
-function MobileTabBar() {
+const TAB_DESTINATIONS_PUBLIC = [
+  { href: "/", label: "Home", Icon: Home },
+  { href: "/calendar", label: "Calendar", Icon: Calendar },
+  { href: "/friends", label: "Friends", Icon: Users },
+];
+
+function MobileTabBar({ isPrivate }: { isPrivate: boolean }) {
   const pathname = usePathname();
+  const tabs = isPrivate ? TAB_DESTINATIONS_PRIVATE : TAB_DESTINATIONS_PUBLIC;
   return (
     <nav
       className="md:hidden print:hidden fixed inset-x-0 bottom-0 z-30 bg-[var(--color-background)]/95 backdrop-blur border-t border-[var(--color-border)] pb-[env(safe-area-inset-bottom)]"
@@ -163,8 +172,11 @@ function MobileTabBar() {
         willChange: "transform",
       }}
     >
-      <ul className="h-14 grid grid-cols-4">
-        {TAB_DESTINATIONS.map((t) => {
+      <ul
+        className="h-14 grid"
+        style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0,1fr))` }}
+      >
+        {tabs.map((t) => {
           const active =
             t.href === "/" ? pathname === "/" : pathname.startsWith(t.href);
           return (
@@ -202,7 +214,10 @@ const DRAWER_PRIMARY = [
   { href: "/best-practices", label: "Best practices", Icon: Lightbulb },
 ];
 
-function MobileDrawer({ projects, appName }: { projects: MobileProject[]; appName: string }) {
+function MobileDrawer({ projects, appName, isPrivate }: { projects: MobileProject[]; appName: string; isPrivate: boolean }) {
+  const drawerPrimary = isPrivate
+    ? DRAWER_PRIMARY
+    : DRAWER_PRIMARY.filter((d) => d.href !== "/personal");
   const { drawerOpen, closeDrawer } = useMobileChrome();
   const pathname = usePathname();
   // Close on route change.
@@ -250,7 +265,7 @@ function MobileDrawer({ projects, appName }: { projects: MobileProject[]; appNam
           </button>
         </div>
         <nav className="px-2 space-y-0.5">
-          {DRAWER_PRIMARY.map((d) => {
+          {drawerPrimary.map((d) => {
             const active = d.href === "/" ? pathname === "/" : pathname.startsWith(d.href);
             return (
               <Link

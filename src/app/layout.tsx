@@ -9,6 +9,7 @@ import { CaptureDrawer } from "@/components/capture-drawer";
 import { themePreloadScript } from "@/components/theme-toggle";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import { CaptureProvider } from "@/lib/capture-store";
+import { isPrivateHost } from "@/lib/hosts";
 import { prisma } from "@/lib/prisma";
 
 // Per-request because the cache key would need to include userId; for a
@@ -40,9 +41,6 @@ export const metadata: Metadata = {
   },
 };
 
-// Hosts that get the private "EC" branding. Keep in sync with manifest.ts.
-const PRIVATE_HOSTS = new Set(["internal.eddiecohen.com"]);
-
 export const viewport: Viewport = {
   themeColor: "#000000",
   viewportFit: "cover",
@@ -60,8 +58,8 @@ export default async function RootLayout({
   const h = await headers();
   const pathname = h.get("x-pathname") ?? "";
   const userId = h.get("x-user-id");
-  const host = (h.get("host") ?? "").split(":")[0].toLowerCase();
-  const appName = PRIVATE_HOSTS.has(host) ? "EC" : "Kaizen";
+  const isPrivate = isPrivateHost(h.get("host"));
+  const appName = isPrivate ? "EC" : "Kaizen";
   const isAuthRoute =
     pathname === "/login" ||
     pathname.startsWith("/login/") ||
@@ -99,10 +97,10 @@ export default async function RootLayout({
           <CommandPalette />
           <CaptureInbox />
           <CaptureDrawer />
-          <MobileChromeProvider projects={mobileProjects} appName={appName}>
+          <MobileChromeProvider projects={mobileProjects} appName={appName} isPrivate={isPrivate}>
             <div className="flex min-h-screen">
               <div className="hidden md:flex print:hidden">
-                <Sidebar projects={projects} appName={appName} />
+                <Sidebar projects={projects} appName={appName} isPrivate={isPrivate} />
               </div>
               <main className="flex-1 overflow-x-hidden pt-[calc(48px+env(safe-area-inset-top))] pb-[calc(56px+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 print:pt-0 print:pb-0">
                 {children}
