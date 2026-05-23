@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
-import { PERSONAL } from "@/lib/personal";
 import { getCurrentUserId } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { isPrivateHost } from "@/lib/hosts";
+import { getPersonalRecord } from "@/lib/personal-record";
 
 export async function POST(request: Request) {
   const userId = await getCurrentUserId(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  // PERSONAL is Eddie's birth data — only serve on the private host so a
-  // signed-up public tenant can't call this and get a reading derived from it.
+  // Defense in depth: only serve on the private host. The DB lookup below
+  // would already 404 for any user without a PersonalRecord, but a tenant
+  // who manually creates one shouldn't get astrology either on public.
   if (!isPrivateHost(request.headers.get("host"))) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
@@ -17,12 +19,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "ANTHROPIC_API_KEY not set" }, { status: 500 });
   }
 
+  const record = await getPersonalRecord(prisma, userId);
+  if (!record) {
+    return NextResponse.json({ error: "no personal record" }, { status: 404 });
+  }
+
   const prompt = `Generate a fun, vivid, and accurate astrological natal chart reading for:
 
-Name: ${PERSONAL.fullName}
-Birth date: ${PERSONAL.birth.date}
-Birth time: ${PERSONAL.birth.time} ${PERSONAL.birth.hourMarker} (${PERSONAL.birth.timezone})
-Birth place: ${PERSONAL.birth.city} (${PERSONAL.birth.hospital}, ${PERSONAL.birth.borough})
+Name: ${record.fullName}
+Birth date: ${record.birth.date}
+Birth time: ${record.birth.time} ${record.birth.hourMarker} (${record.birth.timezone})
+Birth place: ${record.birth.city} (${record.birth.hospital}, ${record.birth.borough})
 
 Use traditional Western astrology with the tropical zodiac and Placidus houses.
 

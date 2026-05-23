@@ -1,8 +1,10 @@
 import { headers } from "next/headers";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Baby, Cake, FileText, Hospital, MapPin, User, Users } from "lucide-react";
-import { PERSONAL } from "@/lib/personal";
+import { getSession } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { isPrivateHost } from "@/lib/hosts";
+import { getPersonalRecord } from "@/lib/personal-record";
 import { AstrologyTile } from "@/components/astrology-tile";
 
 export const dynamic = "force-dynamic";
@@ -21,26 +23,40 @@ function age(dob: string): string {
   let years = now.getFullYear() - birth.getFullYear();
   const m = now.getMonth() - birth.getMonth();
   if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) years--;
-  // Days lived
   const days = Math.floor((now.getTime() - birth.getTime()) / 86400000);
   return `${years} years · ${days.toLocaleString()} days`;
 }
 
-function passportDaysLeft(): number {
-  const exp = new Date(PERSONAL.documents.passport.expires);
-  const now = new Date();
-  return Math.floor((exp.getTime() - now.getTime()) / 86400000);
-}
-
 export default async function PersonalPage() {
-  // Personal record contains real-person identifying info hard-coded in
-  // src/lib/personal.ts and is only meaningful on the private host. On
-  // the public Kaizen deployment, 404 so signed-up tenants can't reach it.
+  // Defense in depth: the page exists only on the private host. On the public
+  // multi-tenant Kaizen, /personal 404s before any DB lookup.
   const h = await headers();
   if (!isPrivateHost(h.get("host"))) notFound();
 
-  const { fullName, birth, parents, documents } = PERSONAL;
-  const passportDays = passportDaysLeft();
+  const session = await getSession();
+  if (!session) redirect("/login");
+
+  const record = await getPersonalRecord(prisma, session.userId);
+  if (!record) {
+    return (
+      <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6 max-w-5xl">
+        <header className="mb-6">
+          <h1 className="text-2xl font-semibold tracking-tight">Personal</h1>
+          <p className="text-sm text-[var(--color-muted-foreground)] mt-1">
+            You. The official record.
+          </p>
+        </header>
+        <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-6 text-sm text-[var(--color-muted-foreground)]">
+          No personal record on file for this account.
+        </div>
+      </div>
+    );
+  }
+
+  const { fullName, birth, parents, documents } = record;
+  const passportDays = Math.floor(
+    (new Date(documents.passport.expires).getTime() - Date.now()) / 86400000,
+  );
 
   return (
     <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6 max-w-5xl">
@@ -52,7 +68,6 @@ export default async function PersonalPage() {
       </header>
 
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
-        {/* Identity */}
         <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
           <h3 className="font-semibold mb-3 flex items-center gap-2">
             <User className="size-4" /> Identity
@@ -65,7 +80,6 @@ export default async function PersonalPage() {
           </div>
         </section>
 
-        {/* Birthplace */}
         <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
           <h3 className="font-semibold mb-3 flex items-center gap-2">
             <Hospital className="size-4" /> Birthplace
@@ -79,7 +93,6 @@ export default async function PersonalPage() {
           </div>
         </section>
 
-        {/* Family */}
         <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 lg:col-span-2">
           <h3 className="font-semibold mb-3 flex items-center gap-2">
             <Users className="size-4" /> Parents
@@ -93,7 +106,9 @@ export default async function PersonalPage() {
                 <Row label="Name" value={parents.mother.name} />
                 <Row label="DOB" value={`${fmt(parents.mother.dob)} (${age(parents.mother.dob).split(" ·")[0]})`} />
                 <Row label="From" value={parents.mother.birthplace} />
-                <Row label="Childhood home" value={parents.mother.residenceAtBirth} />
+                {parents.mother.residenceAtBirth ? (
+                  <Row label="Childhood home" value={parents.mother.residenceAtBirth} />
+                ) : null}
               </div>
             </div>
             <div>
@@ -109,7 +124,6 @@ export default async function PersonalPage() {
           </div>
         </section>
 
-        {/* Documents */}
         <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
           <h3 className="font-semibold mb-3 flex items-center gap-2">
             <FileText className="size-4" /> Passport
@@ -137,10 +151,8 @@ export default async function PersonalPage() {
           </div>
         </section>
 
-        {/* Astrology */}
         <AstrologyTile />
 
-        {/* Fun facts */}
         <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 lg:col-span-2">
           <h3 className="font-semibold mb-3 flex items-center gap-2">
             <Cake className="size-4" /> Fun facts
@@ -150,38 +162,35 @@ export default async function PersonalPage() {
             <Fact
               icon={<MapPin className="size-3.5" />}
               label="On"
-              value={new Date(birth.date).toLocaleDateString(undefined, {
-                weekday: "long",
-              })}
+              value={new Date(birth.date).toLocaleDateString(undefined, { weekday: "long" })}
             />
             <Fact
               icon={<Cake className="size-3.5" />}
               label="Days alive"
               value={Math.floor(
-                (Date.now() - new Date(birth.date).getTime()) / 86400000
+                (Date.now() - new Date(birth.date).getTime()) / 86400000,
               ).toLocaleString()}
             />
             <Fact
               label="Hours alive"
               value={Math.floor(
-                (Date.now() - new Date(birth.date).getTime()) / 3600000
+                (Date.now() - new Date(birth.date).getTime()) / 3600000,
               ).toLocaleString()}
             />
             <Fact
               label="Heartbeats (≈)"
               value={Math.floor(
-                ((Date.now() - new Date(birth.date).getTime()) / 60000) * 70
+                ((Date.now() - new Date(birth.date).getTime()) / 60000) * 70,
               ).toLocaleString()}
             />
             <Fact
               label="Next birthday"
               value={(() => {
                 const now = new Date();
-                const next = new Date(now.getFullYear(), 1, 7);
+                const birthDate = new Date(birth.date);
+                const next = new Date(now.getFullYear(), birthDate.getMonth(), birthDate.getDate());
                 if (next < now) next.setFullYear(now.getFullYear() + 1);
-                const days = Math.ceil(
-                  (next.getTime() - now.getTime()) / 86400000
-                );
+                const days = Math.ceil((next.getTime() - now.getTime()) / 86400000);
                 return `${days} days`;
               })()}
             />

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { PERSONAL } from "@/lib/personal";
+import { getPersonalRecord } from "@/lib/personal-record";
 
 // Seed Eddie's health dashboard from his Quest lab PDFs at
 // ~/Dropbox (Personal)/02_Personal/Health/Lab Results.
@@ -297,6 +297,14 @@ export async function POST() {
   if (!founder) return NextResponse.json({ error: "founder user missing" }, { status: 500 });
   const userId = founder.id;
 
+  const record = await getPersonalRecord(prisma, userId);
+  if (!record) {
+    return NextResponse.json(
+      { error: "founder PersonalRecord missing — run scripts/seed-personal-record.ts first" },
+      { status: 500 },
+    );
+  }
+
   let project = await prisma.project.findFirst({
     where: { userId, name: "Health", archived: false },
   });
@@ -322,9 +330,9 @@ export async function POST() {
   });
 
   const humanData = {
-    fullName: PERSONAL.fullName,
+    fullName: record.fullName,
     sex: "M",
-    birthDate: new Date(PERSONAL.birth.date),
+    birthDate: new Date(record.birth.date),
     primaryCarePhysician: "Joshua A. Emdur, D.O.",
     medicationsJson: SUPPLEMENTS,
     notes: HEALTH_NOTE,

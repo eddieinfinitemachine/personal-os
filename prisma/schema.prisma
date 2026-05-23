@@ -879,8 +879,22 @@ model User {
   assets                       Asset[]
   todos                        Todo[]
   interactions                 Interaction[]
+  personalRecord               PersonalRecord?
 
   @@index([email])
+}
+
+// Birth certificate / passport / parents — formerly hard-coded in
+// src/lib/personal.ts. Stored per-user in the DB so PII never lives in
+// source. Only the founder populates this today; other tenants see an
+// empty state on /personal.
+model PersonalRecord {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // Timestamped log of social interactions — replaces relying on
