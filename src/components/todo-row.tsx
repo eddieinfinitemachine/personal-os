@@ -156,15 +156,6 @@ export function TodoRow({
   // creating a duplicate. Ref short-circuits the second call.
   const submittingSubRef = useRef(false);
   const [detailOpen, setDetailOpen] = useState(false);
-  // Defer single-click → edit so an incoming double-click can open the
-  // detail modal instead. 220ms = standard browser dblclick threshold.
-  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const CLICK_DELAY_MS = 220;
-  useEffect(() => {
-    return () => {
-      if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
-    };
-  }, []);
 
   const linkifiedTitle = useMemo(
     () => linkify(displayTitle, (e) => e.stopPropagation()),
@@ -646,18 +637,14 @@ export function TodoRow({
             e.stopPropagation();
             if (touchEnv && justDraggedRef.current) return;
             if (completed || editing) return;
-            if (clickTimerRef.current) return;
-            clickTimerRef.current = setTimeout(() => {
-              clickTimerRef.current = null;
-              setEditing(true);
-            }, CLICK_DELAY_MS);
+            setEditing(true);
           }}
           onDoubleClick={(e) => {
+            // Let users select words inside the input by double-clicking
+            // it; only the wrapper-level double-click opens the modal.
+            if (e.target instanceof HTMLInputElement) return;
             e.stopPropagation();
-            if (clickTimerRef.current) {
-              clearTimeout(clickTimerRef.current);
-              clickTimerRef.current = null;
-            }
+            setEditing(false);
             setDetailOpen(true);
           }}
         >
@@ -676,7 +663,11 @@ export function TodoRow({
                   cancelEdit();
                 }
               }}
-              className="w-full bg-transparent text-[15px] leading-snug focus:outline-none"
+              className={cn(
+                "block w-full bg-transparent p-0 m-0 border-0 focus:outline-none focus:ring-0",
+                "text-[17px] leading-[22px] tracking-[-0.022em]",
+                "md:text-[15px] md:leading-snug md:tracking-normal",
+              )}
             />
           ) : (
             <div
