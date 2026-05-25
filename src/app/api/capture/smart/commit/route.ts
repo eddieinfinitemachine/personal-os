@@ -250,32 +250,59 @@ export async function POST(request: Request) {
   }
 
   // Upsert each person by (firstName + lastName), scoped to this user.
+  // Normalize hints once, then batch-lookup all in a single findMany.
+  const hints = proposal.personHints
+    .map((h) => ({
+      firstName: h.firstName?.trim() || "",
+      lastName: h.lastName?.trim() || null,
+    }))
+    .filter((h) => h.firstName);
+
   const personIds: string[] = [];
   const createdPersons: { id: string; firstName: string; lastName: string | null }[] = [];
-  for (const hint of proposal.personHints) {
-    const firstName = hint.firstName?.trim();
-    const lastName = hint.lastName?.trim() || null;
-    if (!firstName) continue;
 
-    const where: {
-      userId: string;
-      firstName: { equals: string; mode: "insensitive" };
-      lastName?: { equals: string; mode: "insensitive" } | null;
-    } = {
-      userId,
-      firstName: { equals: firstName, mode: "insensitive" },
-    };
-    if (lastName) where.lastName = { equals: lastName, mode: "insensitive" };
-    else where.lastName = null;
+  if (hints.length > 0) {
+    const existing = await prisma.person.findMany({
+      where: {
+        userId,
+        OR: hints.map((h) => ({
+          firstName: { equals: h.firstName, mode: "insensitive" as const },
+          lastName: h.lastName
+            ? { equals: h.lastName, mode: "insensitive" as const }
+            : null,
+        })),
+      },
+      select: { id: true, firstName: true, lastName: true },
+    });
 
-    let person = await prisma.person.findFirst({ where });
-    if (!person) {
-      person = await prisma.person.create({
-        data: { userId, firstName, lastName },
-      });
-      createdPersons.push({ id: person.id, firstName: person.firstName, lastName: person.lastName });
+    const key = (f: string, l: string | null) =>
+      `${f.toLowerCase()}::${l?.toLowerCase() ?? ""}`;
+    const existingMap = new Map(
+      existing.map((p) => [key(p.firstName, p.lastName), p]),
+    );
+
+    for (const h of hints) {
+      const found = existingMap.get(key(h.firstName, h.lastName));
+      if (found) {
+        personIds.push(found.id);
+      } else {
+        const created = await prisma.person.create({
+          data: { userId, firstName: h.firstName, lastName: h.lastName },
+        });
+        createdPersons.push({
+          id: created.id,
+          firstName: created.firstName,
+          lastName: created.lastName,
+        });
+        personIds.push(created.id);
+        // Cache the create so a duplicate hint in the same payload reuses it.
+        existingMap.set(key(h.firstName, h.lastName), {
+          id: created.id,
+          firstName: created.firstName,
+          lastName: created.lastName,
+        });
+      }
     }
-    personIds.push(person.id);
   }
 
   const interaction = await prisma.interaction.create({
@@ -294,24 +321,19 @@ export async function POST(request: Request) {
   });
 
   // Bump lastInteractionAt for each linked person (only if newer than current).
+  // Single statement — Postgres handles the "newer-than" predicate in WHERE.
   if (personIds.length > 0) {
-    const persons = await prisma.person.findMany({
-      where: { id: { in: personIds }, userId },
-      select: { id: true, lastInteractionAt: true },
+    await prisma.person.updateMany({
+      where: {
+        id: { in: personIds },
+        userId,
+        OR: [
+          { lastInteractionAt: null },
+          { lastInteractionAt: { lt: occurredAt } },
+        ],
+      },
+      data: { lastInteractionAt: occurredAt },
     });
-    await Promise.all(
-      persons.map((p) => {
-        const next =
-          !p.lastInteractionAt || p.lastInteractionAt < occurredAt
-            ? occurredAt
-            : p.lastInteractionAt;
-        if (p.lastInteractionAt && p.lastInteractionAt >= occurredAt) return null;
-        return prisma.person.update({
-          where: { id: p.id },
-          data: { lastInteractionAt: next },
-        });
-      }),
-    );
   }
 
   return NextResponse.json({ interaction, createdPersons });

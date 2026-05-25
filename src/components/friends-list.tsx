@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Check, Loader2, Pencil, Plus, Save, Star, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -502,10 +503,11 @@ function PersonRowItem({
           className="grid place-items-center size-10 rounded-full bg-[var(--color-accent)]/60 shrink-0 text-xs font-semibold"
         >
           {person.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <Image
               src={person.imageUrl}
               alt=""
+              width={40}
+              height={40}
               className="size-10 rounded-full object-cover"
             />
           ) : (

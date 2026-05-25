@@ -53,11 +53,13 @@ export async function PATCH(
     }
   }
 
-  const existing = await prisma.vehicle.findUnique({ where: { id } });
-  if (!existing || existing.userId !== userId) {
+  const result = await prisma.vehicle.updateMany({
+    where: { id, userId },
+    data: updates,
+  });
+  if (result.count === 0) {
     return NextResponse.json({ error: "vehicle not found" }, { status: 404 });
   }
-
-  const vehicle = await prisma.vehicle.update({ where: { id }, data: updates });
+  const vehicle = await prisma.vehicle.findUnique({ where: { id } });
   return NextResponse.json({ vehicle });
 }

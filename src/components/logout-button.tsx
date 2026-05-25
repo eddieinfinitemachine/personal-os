@@ -13,6 +13,15 @@ export function LogoutButton() {
     setSubmitting(true);
     try {
       await fetch("/api/auth/logout", { method: "POST" });
+      // Defense-in-depth: tell the service worker to purge any cached
+      // per-user data before the next sign-in. Runtime rules don't cache
+      // /api/* or HTML, but a stale SW from an old deploy might still hold
+      // user-scoped responses.
+      try {
+        navigator.serviceWorker?.controller?.postMessage({ type: "purge-caches" });
+      } catch {
+        /* ignore; logout still succeeded */
+      }
       router.replace("/");
       router.refresh();
     } catch {

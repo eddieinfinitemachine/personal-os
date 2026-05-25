@@ -32,7 +32,7 @@ model Trip {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([archived, startDate])
+  @@index([userId, archived, startDate])
   @@index([userId])
 }
 
@@ -752,7 +752,7 @@ model Person {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([archived, starred, lastInteractionAt])
+  @@index([userId, archived, starred, lastInteractionAt])
   @@index([userId])
 }
 
@@ -794,8 +794,6 @@ model Asset {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([kind, archived, position])
-
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -803,6 +801,7 @@ model Asset {
   project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@unique([kind, externalId])
+  @@index([userId, kind, archived, position])
   @@index([userId])
   @@index([projectId])
 }
@@ -816,6 +815,11 @@ model Todo {
   position    Int       @default(0)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  // Stable key for cron-generated todos (e.g. "vehicle:abc:service:oil-30d").
+  // Lets renewal-autopilot dedupe by key lookup instead of regex-scanning
+  // every open todo's notes field on every tick.
+  autopilotKey String?
 
   listId String
   list   List   @relation(fields: [listId], references: [id], onDelete: Cascade)
@@ -835,6 +839,7 @@ model Todo {
 
   @@index([parentId, completedAt, position])
   @@index([userId])
+  @@unique([userId, autopilotKey])
 }
 
 // ─── Auth ──────────────────────────────────────────────────────────

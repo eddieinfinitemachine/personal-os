@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
@@ -11,10 +12,25 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCapture, type Capture } from "@/lib/capture-store";
-import {
-  ProposalEditor,
-  type Project,
-} from "@/components/smart-capture-form";
+import type { Project } from "@/components/smart-capture-form";
+
+// The proposal editor pulls in the full smart-capture-form (~1.2k lines).
+// Defer it so the drawer chunk itself stays light — most drawer mounts are
+// just the queue list, the editor only renders for ready/saving cards.
+const ProposalEditor = dynamic(
+  () =>
+    import("@/components/smart-capture-form").then((m) => ({
+      default: m.ProposalEditor,
+    })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center gap-2 px-2 py-3 text-sm text-[var(--color-muted-foreground)]">
+        <Loader2 className="size-4 animate-spin" /> Loading editor…
+      </div>
+    ),
+  },
+);
 
 // Top-anchored drawer for the desktop background capture queue. Slides down
 // from the top. Each pending capture is a card; "ready" cards embed the same

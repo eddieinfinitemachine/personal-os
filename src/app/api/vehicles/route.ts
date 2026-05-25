@@ -67,6 +67,6 @@ export async function POST(request: Request) {
     },
   });
 
-  revalidateTag("sidebar-projects", "max");
+  revalidateTag(`sidebar-projects:${userId}`, "max");
   return NextResponse.json({ projectId: project.id, vehicleId: vehicle.id });
 }

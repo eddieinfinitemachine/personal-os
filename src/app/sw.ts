@@ -1,22 +1,28 @@
 // Service worker for personal-os PWA. Built by @serwist/next via `next build`.
 //
-// Strategy:
-//  - HTML routes: NetworkFirst with a short timeout, then fall back to cache,
-//    so a refresh always shows the latest if online but the app still launches
-//    when offline.
-//  - Static assets (Next.js hashed bundles, icons, fonts): CacheFirst with
-//    long retention.
-//  - GET API responses: NetworkFirst with cache fallback for read-only data.
-//  - POST/PATCH/DELETE: pass through, no cache. (These will fail offline; the
-//    UI surfaces the failure to the user.)
+// Multi-tenant safety: this app is multi-user. We must NOT cache HTML, RSC,
+// or `/api/*` responses — they're scoped to the logged-in user's cookie and
+// would leak across logins on shared devices (couple/family) or post-logout.
 //
-// Note: this file is consumed at build time by Serwist's webpack plugin —
-// avoid Node-only imports and keep everything portable to the SW runtime.
+// Strategy:
+//  - Hashed static assets (`/_next/static/`, hashed bundles): CacheFirst,
+//    long TTL. URL is cache-busted by Next on every build, so this is safe.
+//  - Other static media (favicons, fonts, public images): StaleWhileRevalidate.
+//  - Everything else (HTML, RSC, API, navigations, POST/PATCH/DELETE):
+//    NetworkOnly. App works only when online; multi-tenant correctness
+//    matters more than offline browsing.
+//  - Logout: client posts `{ type: "purge-caches" }` to the SW which deletes
+//    every runtime cache (best-effort; cookie clear still happens regardless).
 
 /// <reference lib="webworker" />
-import { defaultCache } from "@serwist/next/worker";
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
-import { Serwist } from "serwist";
+import {
+  Serwist,
+  CacheFirst,
+  StaleWhileRevalidate,
+  NetworkOnly,
+  ExpirationPlugin,
+} from "serwist";
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -31,7 +37,57 @@ const serwist = new Serwist({
   skipWaiting: true,
   clientsClaim: true,
   navigationPreload: true,
-  runtimeCaching: defaultCache,
+  runtimeCaching: [
+    // Hashed Next.js bundles — content-addressed, safe to cache aggressively.
+    {
+      matcher: ({ url }) => url.pathname.startsWith("/_next/static/"),
+      handler: new CacheFirst({
+        cacheName: "next-static",
+        plugins: [
+          new ExpirationPlugin({
+            maxEntries: 200,
+            maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+          }),
+        ],
+      }),
+    },
+    // App icons + manifest assets — public, fine to revalidate in background.
+    {
+      matcher: ({ url, request }) =>
+        request.destination === "image" &&
+        (url.pathname.startsWith("/icon") ||
+          url.pathname.startsWith("/apple-icon") ||
+          url.pathname === "/favicon.ico"),
+      handler: new StaleWhileRevalidate({
+        cacheName: "app-icons",
+        plugins: [
+          new ExpirationPlugin({
+            maxEntries: 20,
+            maxAgeSeconds: 60 * 60 * 24 * 30,
+          }),
+        ],
+      }),
+    },
+    // Everything else — including /api/*, HTML, RSC — bypasses the cache.
+    {
+      matcher: () => true,
+      handler: new NetworkOnly(),
+    },
+  ],
 });
 
 serwist.addEventListeners();
+
+// Logout hook: client posts `{ type: "purge-caches" }` to evict any cached
+// per-user data before the next sign-in (defense-in-depth — runtime rules
+// above shouldn't be caching any of it).
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "purge-caches") {
+    event.waitUntil(
+      (async () => {
+        const names = await caches.keys();
+        await Promise.all(names.map((n) => caches.delete(n)));
+      })(),
+    );
+  }
+});

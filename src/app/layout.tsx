@@ -3,29 +3,33 @@ import { headers } from "next/headers";
 import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
 import { MobileChromeProvider } from "@/components/mobile-chrome";
-import { CommandPalette } from "@/components/command-palette";
 import { CaptureInbox } from "@/components/capture-inbox";
-import { CaptureDrawer } from "@/components/capture-drawer";
+import { LayoutOverlays } from "@/components/layout-overlays";
 import { themePreloadScript } from "@/components/theme-toggle";
 import { ServiceWorkerRegister } from "@/components/sw-register";
-import { Onboarding } from "@/components/onboarding";
 import { CaptureProvider } from "@/lib/capture-store";
 import { isPrivateHost } from "@/lib/hosts";
 import { prisma } from "@/lib/prisma";
+import { unstable_cache } from "next/cache";
 
-// Per-request because the cache key would need to include userId; for a
-// friends-only deployment the small extra query is fine.
-async function getSidebarProjects(userId: string) {
-  return prisma.project.findMany({
-    where: { userId, archived: false },
-    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-    select: {
-      id: true,
-      name: true,
-      icon: true,
-      _count: { select: { todos: { where: { completedAt: null } } } },
-    },
-  });
+// Cached per-user, invalidated via `sidebar-projects:<userId>` tag on
+// project mutations (create/update/delete/reorder + vehicle add).
+function getSidebarProjects(userId: string) {
+  return unstable_cache(
+    () =>
+      prisma.project.findMany({
+        where: { userId, archived: false },
+        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+        select: {
+          id: true,
+          name: true,
+          icon: true,
+          _count: { select: { todos: { where: { completedAt: null } } } },
+        },
+      }),
+    ["sidebar-projects", userId],
+    { tags: [`sidebar-projects:${userId}`], revalidate: 3600 },
+  )();
 }
 
 // Static metadata defaults to the public brand. The dynamic per-host title
@@ -94,11 +98,9 @@ export default async function RootLayout({
       </head>
       <body className="antialiased">
         <ServiceWorkerRegister />
-        <Onboarding />
         <CaptureProvider>
-          <CommandPalette />
           <CaptureInbox />
-          <CaptureDrawer />
+          <LayoutOverlays />
           <MobileChromeProvider projects={mobileProjects} appName={appName} isPrivate={isPrivate}>
             <div className="flex min-h-screen">
               <div className="hidden md:flex print:hidden">

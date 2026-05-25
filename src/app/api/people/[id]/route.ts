@@ -10,10 +10,6 @@ export async function PATCH(
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await prisma.person.findUnique({ where: { id } });
-  if (!existing || existing.userId !== userId) {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
-  }
   const body = (await request.json()) as Record<string, unknown>;
   const data: Record<string, unknown> = {};
   for (const k of [
@@ -47,7 +43,14 @@ export async function PATCH(
     else if (typeof body[k] === "string") data[k] = new Date(body[k] as string);
   }
 
-  const person = await prisma.person.update({ where: { id }, data });
+  const result = await prisma.person.updateMany({
+    where: { id, userId },
+    data,
+  });
+  if (result.count === 0) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+  const person = await prisma.person.findUnique({ where: { id } });
   return NextResponse.json({ person });
 }
 
@@ -59,10 +62,9 @@ export async function DELETE(
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await prisma.person.findUnique({ where: { id } });
-  if (!existing || existing.userId !== userId) {
+  const result = await prisma.person.deleteMany({ where: { id, userId } });
+  if (result.count === 0) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
-  await prisma.person.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

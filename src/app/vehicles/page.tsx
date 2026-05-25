@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Car } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { AddVehicleButton } from "@/components/add-vehicle-button";
@@ -49,11 +50,13 @@ export default async function VehiclesPage() {
             >
               <div className="aspect-[4/3] bg-[var(--color-muted)] relative">
                 {heroPhoto ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <Image
                     src={heroPhoto.url}
                     alt={p.name}
-                    className="w-full h-full object-cover"
+                    fill
+                    sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                    className="object-cover"
+                    priority={projects.indexOf(p) === 0}
                   />
                 ) : (
                   <div className="w-full h-full grid place-items-center text-[var(--color-muted-foreground)]">

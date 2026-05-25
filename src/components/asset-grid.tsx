@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import NextImage from "next/image";
 import {
   ChevronDown,
   ChevronRight,
@@ -506,12 +507,15 @@ function CardView({
           className="group rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 hover:bg-[var(--color-accent)]/40 transition relative text-left"
         >
           {showImages && a.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={a.imageUrl}
-              alt=""
-              className="w-full h-28 object-cover rounded-lg mb-3"
-            />
+            <div className="relative w-full h-28 mb-3">
+              <NextImage
+                src={a.imageUrl}
+                alt=""
+                fill
+                sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                className="object-cover rounded-lg"
+              />
+            </div>
           ) : null}
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">

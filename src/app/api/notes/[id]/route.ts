@@ -10,10 +10,6 @@ export async function PATCH(
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await prisma.note.findUnique({ where: { id } });
-  if (!existing || existing.userId !== userId) {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
-  }
   const body = (await request.json()) as {
     title?: string | null;
     body?: string;
@@ -25,7 +21,14 @@ export async function PATCH(
   }
   if (body.body !== undefined) updates.body = body.body;
 
-  const note = await prisma.note.update({ where: { id }, data: updates });
+  const result = await prisma.note.updateMany({
+    where: { id, userId },
+    data: updates,
+  });
+  if (result.count === 0) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+  const note = await prisma.note.findUnique({ where: { id } });
   return NextResponse.json({ note });
 }
 
@@ -37,10 +40,9 @@ export async function DELETE(
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await prisma.note.findUnique({ where: { id } });
-  if (!existing || existing.userId !== userId) {
+  const result = await prisma.note.deleteMany({ where: { id, userId } });
+  if (result.count === 0) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
-  await prisma.note.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

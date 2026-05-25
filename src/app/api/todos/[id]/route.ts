@@ -65,10 +65,9 @@ export async function DELETE(
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await prisma.todo.findUnique({ where: { id } });
-  if (!existing || existing.userId !== userId) {
+  const result = await prisma.todo.deleteMany({ where: { id, userId } });
+  if (result.count === 0) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
-  await prisma.todo.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

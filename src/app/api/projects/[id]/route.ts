@@ -34,7 +34,7 @@ export async function PATCH(
       ...(body.position !== undefined && { position: body.position }),
     },
   });
-  revalidateTag("sidebar-projects", "max");
+  revalidateTag(`sidebar-projects:${userId}`, "max");
   return NextResponse.json({ project });
 }
 
@@ -51,6 +51,6 @@ export async function DELETE(
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
   await prisma.project.delete({ where: { id } });
-  revalidateTag("sidebar-projects", "max");
+  revalidateTag(`sidebar-projects:${userId}`, "max");
   return NextResponse.json({ ok: true });
 }
