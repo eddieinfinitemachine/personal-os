@@ -28,6 +28,10 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
   const [pendingByList, setPendingByList] = useState<Map<string, TodoLike[]>>(
     new Map()
   );
+  // Newly-added subtasks, keyed by parent todo id. Same pattern as ListTile.
+  const [pendingSubtasks, setPendingSubtasks] = useState<
+    Map<string, TodoLike[]>
+  >(new Map());
   const [dragOverList, setDragOverList] = useState<string | null>(null);
 
   // Listen for cross-tile move events so any column that owns the source
@@ -104,6 +108,27 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
       for (const [id] of prev) if (!allServerIds.has(id)) next.delete(id);
       return next.size === prev.size ? prev : next;
     });
+    // Drop optimistic subtasks once the server confirms them.
+    setPendingSubtasks((prev) => {
+      if (prev.size === 0) return prev;
+      const subsByParent = new Map<string, Set<string>>();
+      for (const g of data.byList) {
+        for (const t of g.todos) {
+          if (t.subtasks?.length) {
+            subsByParent.set(t.id, new Set(t.subtasks.map((s) => s.id)));
+          }
+        }
+      }
+      const next = new Map(prev);
+      for (const [parentId, optimistic] of prev) {
+        const confirmed = subsByParent.get(parentId) ?? new Set<string>();
+        const remaining = optimistic.filter((s) => !confirmed.has(s.id));
+        if (remaining.length === 0) next.delete(parentId);
+        else if (remaining.length !== optimistic.length)
+          next.set(parentId, remaining);
+      }
+      return next.size === prev.size ? prev : next;
+    });
     setPendingByList((prev) => {
       if (prev.size === 0) return prev;
       const next = new Map<string, TodoLike[]>();
@@ -142,12 +167,60 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
     startTransition(() => router.refresh());
   }
   async function addSubtask(parentId: string, title: string) {
-    await fetch("/api/todos", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, parentId }),
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const optimistic: TodoLike = {
+      id: tempId,
+      title: trimmed,
+      notes: null,
+      dueDate: null,
+      completedAt: null,
+      projectId: data.project.id,
+    };
+    setPendingSubtasks((prev) => {
+      const next = new Map(prev);
+      next.set(parentId, [...(next.get(parentId) ?? []), optimistic]);
+      return next;
     });
-    startTransition(() => router.refresh());
+    try {
+      const res = await fetch("/api/todos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: trimmed, parentId }),
+      });
+      if (res.ok) {
+        const { todo: real } = (await res.json()) as { todo: TodoLike };
+        setPendingSubtasks((prev) => {
+          const next = new Map(prev);
+          const cur = next.get(parentId);
+          if (cur) {
+            next.set(
+              parentId,
+              cur.map((s) => (s.id === tempId ? real : s)),
+            );
+          }
+          return next;
+        });
+        startTransition(() => router.refresh());
+      } else {
+        rollbackSubtask(parentId, tempId);
+      }
+    } catch {
+      rollbackSubtask(parentId, tempId);
+    }
+  }
+
+  function rollbackSubtask(parentId: string, tempId: string) {
+    setPendingSubtasks((prev) => {
+      const next = new Map(prev);
+      const cur = next.get(parentId);
+      if (!cur) return prev;
+      const filtered = cur.filter((s) => s.id !== tempId);
+      if (filtered.length === 0) next.delete(parentId);
+      else next.set(parentId, filtered);
+      return next;
+    });
   }
 
   function handleColumnDragOver(
@@ -319,9 +392,25 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
                 ) : (
                   <ul className="space-y-px -mx-1 min-h-[40px]">
                     {visible.map((t) => {
-                      const display = overrides.has(t.id)
+                      let display = overrides.has(t.id)
                         ? { ...t, completedAt: overrides.get(t.id) ?? null }
                         : t;
+                      const optimisticSubs = pendingSubtasks.get(t.id);
+                      if (optimisticSubs?.length) {
+                        const existing = display.subtasks ?? [];
+                        const existingIds = new Set(
+                          existing.map((s) => s.id),
+                        );
+                        const additions = optimisticSubs.filter(
+                          (s) => !existingIds.has(s.id),
+                        );
+                        if (additions.length) {
+                          display = {
+                            ...display,
+                            subtasks: [...existing, ...additions],
+                          };
+                        }
+                      }
                       return (
                         <TodoRow
                           key={t.id}

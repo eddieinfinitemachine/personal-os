@@ -56,6 +56,12 @@ export function ListTile({
   const [todoOverrides, setTodoOverrides] = useState<
     Map<string, Partial<TodoLike>>
   >(new Map());
+  // Newly-added subtasks, keyed by parent todo id. Merged into the parent's
+  // subtasks array in visibleTodos and deduped against server data so the
+  // optimistic row hides itself once the next refresh includes it.
+  const [pendingSubtasks, setPendingSubtasks] = useState<
+    Map<string, TodoLike[]>
+  >(new Map());
   const [isDragOver, setIsDragOver] = useState(false);
   const [extraTodos, setExtraTodos] = useState<TodoLike[]>([]);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -284,6 +290,25 @@ export function ListTile({
       }
       return next.size === prev.size ? prev : next;
     });
+    // Drop optimistic subtasks once the server confirms them on their parent.
+    setPendingSubtasks((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Map(prev);
+      const serverById = new Map(todos.map((t) => [t.id, t]));
+      for (const [parentId, optimistic] of prev) {
+        const parent = serverById.get(parentId);
+        if (!parent) {
+          next.delete(parentId);
+          continue;
+        }
+        const serverSubIds = new Set((parent.subtasks ?? []).map((s) => s.id));
+        const remaining = optimistic.filter((s) => !serverSubIds.has(s.id));
+        if (remaining.length === 0) next.delete(parentId);
+        else if (remaining.length !== optimistic.length)
+          next.set(parentId, remaining);
+      }
+      return next.size === prev.size ? prev : next;
+    });
   }, [todos]);
 
   const visibleTodos = useMemo<TodoLike[]>(() => {
@@ -301,12 +326,24 @@ export function ListTile({
       seen.add(t.id);
       merged.push(t);
     }
-    if (todoOverrides.size === 0) return merged;
+    if (todoOverrides.size === 0 && pendingSubtasks.size === 0) return merged;
     return merged.map((t) => {
       const fieldOverride = todoOverrides.get(t.id);
-      return fieldOverride ? { ...t, ...fieldOverride } : t;
+      const optimisticSubs = pendingSubtasks.get(t.id);
+      let next = fieldOverride ? { ...t, ...fieldOverride } : t;
+      if (optimisticSubs?.length) {
+        const existing = next.subtasks ?? [];
+        const existingIds = new Set(existing.map((s) => s.id));
+        const additions = optimisticSubs.filter(
+          (s) => !existingIds.has(s.id),
+        );
+        if (additions.length) {
+          next = { ...next, subtasks: [...existing, ...additions] };
+        }
+      }
+      return next;
     });
-  }, [todos, pendingTodos, extraTodos, hiddenIds, todoOverrides]);
+  }, [todos, pendingTodos, extraTodos, hiddenIds, todoOverrides, pendingSubtasks]);
 
   async function createTodo(rawTitle: string) {
     const trimmed = rawTitle.trim();
@@ -421,12 +458,65 @@ export function ListTile({
   }
 
   async function addSubtask(parentId: string, title: string) {
-    await fetch("/api/todos", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, parentId }),
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const optimistic: TodoLike = {
+      id: tempId,
+      title: trimmed,
+      notes: null,
+      dueDate: null,
+      completedAt: null,
+      projectId: null,
+    };
+    // Paint immediately.
+    setPendingSubtasks((prev) => {
+      const next = new Map(prev);
+      next.set(parentId, [...(next.get(parentId) ?? []), optimistic]);
+      return next;
     });
-    startTransition(() => router.refresh());
+    try {
+      const res = await fetch("/api/todos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: trimmed, parentId }),
+      });
+      if (res.ok) {
+        const { todo: real } = (await res.json()) as { todo: TodoLike };
+        // Swap temp id with real one so the dedupe useEffect can match
+        // against server data once it arrives.
+        setPendingSubtasks((prev) => {
+          const next = new Map(prev);
+          const cur = next.get(parentId);
+          if (cur) {
+            next.set(
+              parentId,
+              cur.map((s) => (s.id === tempId ? real : s)),
+            );
+          }
+          return next;
+        });
+        // Low-priority background sync so the next render naturally drops
+        // the optimistic entry (see dedupe useEffect).
+        startTransition(() => router.refresh());
+      } else {
+        rollbackSubtask(parentId, tempId);
+      }
+    } catch {
+      rollbackSubtask(parentId, tempId);
+    }
+  }
+
+  function rollbackSubtask(parentId: string, tempId: string) {
+    setPendingSubtasks((prev) => {
+      const next = new Map(prev);
+      const cur = next.get(parentId);
+      if (!cur) return prev;
+      const filtered = cur.filter((s) => s.id !== tempId);
+      if (filtered.length === 0) next.delete(parentId);
+      else next.set(parentId, filtered);
+      return next;
+    });
   }
 
   async function changeColor(color: string) {
