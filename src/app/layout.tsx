@@ -10,26 +10,21 @@ import { ServiceWorkerRegister } from "@/components/sw-register";
 import { CaptureProvider } from "@/lib/capture-store";
 import { isPrivateHost } from "@/lib/hosts";
 import { prisma } from "@/lib/prisma";
-import { unstable_cache } from "next/cache";
 
-// Cached per-user, invalidated via `sidebar-projects:<userId>` tag on
-// project mutations (create/update/delete/reorder + vehicle add).
-function getSidebarProjects(userId: string) {
-  return unstable_cache(
-    () =>
-      prisma.project.findMany({
-        where: { userId, archived: false },
-        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-        select: {
-          id: true,
-          name: true,
-          icon: true,
-          _count: { select: { todos: { where: { completedAt: null } } } },
-        },
-      }),
-    ["sidebar-projects", userId],
-    { tags: [`sidebar-projects:${userId}`], revalidate: 3600 },
-  )();
+// Per-request: small enough to not warrant a cache layer for a friends-only
+// deployment. Attempted unstable_cache wrap was rolled back after it
+// returned empty results on the deployed Next.js 16 build (cause TBD).
+async function getSidebarProjects(userId: string) {
+  return prisma.project.findMany({
+    where: { userId, archived: false },
+    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      icon: true,
+      _count: { select: { todos: { where: { completedAt: null } } } },
+    },
+  });
 }
 
 // Static metadata defaults to the public brand. The dynamic per-host title
