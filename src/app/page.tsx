@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists } from "@/lib/lists";
 import { getSession } from "@/lib/auth";
 import { isPrivateHost } from "@/lib/hosts";
+import { listAccessWhere } from "@/lib/list-access";
 import type { TodoLike } from "@/components/todo-row";
 
 const PREVIEW_LIMIT = 12;
@@ -31,15 +32,24 @@ export default async function HomePage() {
   // memory rather than firing N×M queries per (list, project) tile.
   const [lists, projects, allTodos] = await Promise.all([
     prisma.list.findMany({
-      where: { userId },
+      where: listAccessWhere(userId),
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+      },
     }),
     prisma.project.findMany({
       where: { userId, archived: false },
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
     }),
     prisma.todo.findMany({
-      where: { userId, completedAt: null, parentId: null },
+      // Scope by list membership rather than direct ownership so todos in
+      // shared lists appear (regardless of who created them).
+      where: {
+        completedAt: null,
+        parentId: null,
+        list: listAccessWhere(userId),
+      },
       orderBy: [
         { dueDate: "asc" },
         { position: "asc" },
@@ -86,8 +96,16 @@ export default async function HomePage() {
 
   const tiles: HomeTile[] = lists.map((list) => {
     const all = byList.get(list.id) ?? [];
+    const shared = list.userId !== userId;
     return {
-      list,
+      list: {
+        id: list.id,
+        name: list.name,
+        color: list.color,
+        isDefault: list.isDefault,
+        shared,
+        ownerName: shared ? list.user.name ?? list.user.email : null,
+      },
       todos: all.slice(0, PREVIEW_LIMIT).map(toLike),
       totalCount: all.length,
     };

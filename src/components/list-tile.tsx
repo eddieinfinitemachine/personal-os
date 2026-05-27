@@ -2,16 +2,22 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Check, ChevronDown, ChevronRight, MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, MoreHorizontal, Plus, Trash2, Users } from "lucide-react";
 import { LIST_PALETTE, palette } from "@/lib/lists";
 import { cn } from "@/lib/utils";
 import { TodoRow, type TodoLike } from "./todo-row";
+import { ListShareDialog } from "./list-share-dialog";
 
 export type ListInfo = {
   id: string;
   name: string;
   color: string;
   isDefault: boolean;
+  // Collaborative-list metadata. `shared` = true if the current user is a
+  // member but not the owner. `ownerName` is shown as a tiny subtitle on
+  // those tiles. Both default to safe values for owned lists.
+  shared?: boolean;
+  ownerName?: string | null;
 };
 
 export function ListTile({
@@ -47,6 +53,7 @@ export function ListTile({
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [, startTransition] = useTransition();
 
   // Optimistic state: adds, hides, and per-field overrides — applied to
@@ -887,6 +894,11 @@ export function ListTile({
               {projectLabel}
             </div>
           ) : null}
+          {list.shared && list.ownerName ? (
+            <div className="-mt-0.5 inline-flex items-center gap-1 text-xs text-[var(--color-muted-foreground)]">
+              <Users className="size-3" /> Shared by {list.ownerName}
+            </div>
+          ) : null}
         </div>
         <div className="flex items-center gap-0.5">
           <div className="relative">
@@ -924,7 +936,18 @@ export function ListTile({
                     );
                   })}
                 </div>
-                {!list.isDefault ? (
+                {!list.isDefault && !list.shared ? (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setShareOpen(true);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--color-accent)] border-t border-[var(--color-border)]"
+                  >
+                    <Users className="size-3.5" /> Share…
+                  </button>
+                ) : null}
+                {!list.isDefault && !list.shared ? (
                   <button
                     onClick={deleteList}
                     className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rose-500 hover:bg-[var(--color-accent)] border-t border-[var(--color-border)]"
@@ -937,6 +960,13 @@ export function ListTile({
           </div>
         </div>
       </div>
+      {shareOpen ? (
+        <ListShareDialog
+          listId={list.id}
+          listName={list.name}
+          onClose={() => setShareOpen(false)}
+        />
+      ) : null}
 
       <div className="flex-1 flex flex-col">
         {/* Mobile-only: New Reminder input at the TOP of the tile (pre-1c1f088 behavior).

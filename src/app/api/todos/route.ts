@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
+import { listAccessWhere } from "@/lib/list-access";
 
 export async function GET(request: Request) {
   const userId = await getCurrentUserId(request);
@@ -11,7 +12,8 @@ export async function GET(request: Request) {
   const projectId = url.searchParams.get("projectId");
   const includeCompleted = url.searchParams.get("includeCompleted") === "1";
 
-  const where: Record<string, unknown> = { userId };
+  // Auth via parent list membership, not direct ownership.
+  const where: Record<string, unknown> = { list: listAccessWhere(userId) };
   if (listId) where.listId = listId;
   if (projectId === "none") where.projectId = null;
   else if (projectId) where.projectId = projectId;
@@ -64,12 +66,14 @@ export async function POST(request: Request) {
   const title = body.title?.trim();
   if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
 
-  // Subtasks inherit list/project from their parent.
+  // Subtasks inherit list/project from their parent. Auth via parent's list
+  // membership so Shane (member, not owner) can add subtasks to Eddie's
+  // shared list. The Todo's userId stores the creator, not the list owner.
   if (body.parentId) {
-    const parent = await prisma.todo.findUnique({
-      where: { id: body.parentId },
+    const parent = await prisma.todo.findFirst({
+      where: { id: body.parentId, list: listAccessWhere(userId) },
     });
-    if (!parent || parent.userId !== userId) {
+    if (!parent) {
       return NextResponse.json({ error: "parent not found" }, { status: 404 });
     }
     const todo = await prisma.todo.create({
@@ -87,12 +91,15 @@ export async function POST(request: Request) {
   }
 
   if (!body.listId) return NextResponse.json({ error: "listId required" }, { status: 400 });
-  const list = await prisma.list.findUnique({ where: { id: body.listId } });
-  if (!list || list.userId !== userId) {
+  const list = await prisma.list.findFirst({
+    where: { id: body.listId, ...listAccessWhere(userId) },
+  });
+  if (!list) {
     return NextResponse.json({ error: "list not found" }, { status: 404 });
   }
 
-  // If projectId is provided, ensure it belongs to the user.
+  // If projectId is provided, ensure it belongs to the user. (Project
+  // sharing is out of scope; only owned projects can be assigned.)
   if (body.projectId) {
     const project = await prisma.project.findUnique({ where: { id: body.projectId } });
     if (!project || project.userId !== userId) {

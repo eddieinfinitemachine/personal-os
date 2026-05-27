@@ -2,16 +2,33 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists, isListColor } from "@/lib/lists";
 import { getCurrentUserId } from "@/lib/auth";
+import { listAccessWhere } from "@/lib/list-access";
 
 export async function GET(request: Request) {
   const userId = await getCurrentUserId(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   await ensureDefaultLists(userId);
-  const lists = await prisma.list.findMany({
-    where: { userId },
+  const rows = await prisma.list.findMany({
+    where: listAccessWhere(userId),
     orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+    include: {
+      // Hint for the UI: shared lists show a small chip + the owner's name.
+      user: { select: { id: true, name: true, email: true } },
+    },
   });
+  const lists = rows.map((l) => ({
+    id: l.id,
+    name: l.name,
+    color: l.color,
+    position: l.position,
+    isDefault: l.isDefault,
+    createdAt: l.createdAt,
+    updatedAt: l.updatedAt,
+    userId: l.userId,
+    shared: l.userId !== userId,
+    ownerName: l.userId === userId ? null : l.user.name ?? l.user.email,
+  }));
   return NextResponse.json({ lists });
 }
 

@@ -73,7 +73,8 @@ model List {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  todos Todo[]
+  todos   Todo[]
+  members ListMember[]
 
 
   userId String
@@ -81,6 +82,23 @@ model List {
 
   @@index([position])
   @@index([userId])
+}
+
+// Collaborative-list membership. Owners stay on List.userId; members on
+// non-default lists can view + edit todos via this join table. Default
+// lists (isDefault = true) are never shared — every account has its own.
+model ListMember {
+  id        String   @id @default(cuid())
+  listId    String
+  list      List     @relation(fields: [listId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String   @default("editor") // future: "viewer" | "admin"
+  createdAt DateTime @default(now())
+
+  @@unique([listId, userId])
+  @@index([userId])
+  @@index([listId])
 }
 
 model Project {
@@ -885,6 +903,7 @@ model User {
   todos                        Todo[]
   interactions                 Interaction[]
   personalRecord               PersonalRecord?
+  listMemberships              ListMember[]
 
   @@index([email])
 }

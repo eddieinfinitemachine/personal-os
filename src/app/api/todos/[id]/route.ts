@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
+import { listAccessWhere } from "@/lib/list-access";
 
 export async function PATCH(
   request: Request,
@@ -10,8 +11,13 @@ export async function PATCH(
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await prisma.todo.findUnique({ where: { id } });
-  if (!existing || existing.userId !== userId) {
+  // Auth via parent list membership — shared collaborators can edit too.
+  // Note: toggleComplete still needs the current completedAt value, so we
+  // do read the row, but the where clause scopes to accessible lists.
+  const existing = await prisma.todo.findFirst({
+    where: { id, list: listAccessWhere(userId) },
+  });
+  if (!existing) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
   const body = (await request.json()) as {
@@ -28,8 +34,11 @@ export async function PATCH(
   if (body.title !== undefined) updates.title = body.title;
   if (body.notes !== undefined) updates.notes = body.notes;
   if (body.listId !== undefined) {
-    const list = await prisma.list.findUnique({ where: { id: body.listId } });
-    if (!list || list.userId !== userId) {
+    // Target list must also be accessible to this user.
+    const list = await prisma.list.findFirst({
+      where: { id: body.listId, ...listAccessWhere(userId) },
+    });
+    if (!list) {
       return NextResponse.json({ error: "list not found" }, { status: 404 });
     }
     updates.listId = body.listId;
@@ -65,7 +74,9 @@ export async function DELETE(
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const result = await prisma.todo.deleteMany({ where: { id, userId } });
+  const result = await prisma.todo.deleteMany({
+    where: { id, list: listAccessWhere(userId) },
+  });
   if (result.count === 0) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }

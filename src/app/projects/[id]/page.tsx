@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ensureDefaultLists } from "@/lib/lists";
+import { listAccessWhere } from "@/lib/list-access";
 import { ListTile } from "@/components/list-tile";
 import { ProjectTabs, type ProjectTab } from "@/components/project-tabs";
 import { NotesPane } from "@/components/notes-pane";
@@ -112,7 +113,15 @@ async function TasksTab({ projectId, userId }: { projectId: string; userId: stri
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
     }),
     prisma.todo.findMany({
-      where: { userId, projectId, completedAt: null, parentId: null },
+      where: {
+        projectId,
+        completedAt: null,
+        parentId: null,
+        // Allow shared-list collaborators to see/edit todos on this project's
+        // tabs. Note: the project itself is still owned by `userId` (project
+        // sharing is a future scope).
+        list: listAccessWhere(userId),
+      },
       orderBy: [
         { dueDate: "asc" },
         { position: "asc" },
