@@ -24,6 +24,9 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
   const [collapsed, setCollapsed] = useState(false);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [overrides, setOverrides] = useState<Map<string, Date | null>>(new Map());
+  const [dueDateOverrides, setDueDateOverrides] = useState<
+    Map<string, Date | null>
+  >(new Map());
   // Optimistic adds when dropping a todo from another column/tile.
   const [pendingByList, setPendingByList] = useState<Map<string, TodoLike[]>>(
     new Map()
@@ -31,6 +34,10 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
   // Newly-added subtasks, keyed by parent todo id. Same pattern as ListTile.
   const [pendingSubtasks, setPendingSubtasks] = useState<
     Map<string, TodoLike[]>
+  >(new Map());
+  // Optimistic completedAt overrides for individual subtasks.
+  const [subtaskOverrides, setSubtaskOverrides] = useState<
+    Map<string, Date | null>
   >(new Map());
   const [dragOverList, setDragOverList] = useState<string | null>(null);
 
@@ -108,6 +115,12 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
       for (const [id] of prev) if (!allServerIds.has(id)) next.delete(id);
       return next.size === prev.size ? prev : next;
     });
+    setDueDateOverrides((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Map(prev);
+      for (const [id] of prev) if (!allServerIds.has(id)) next.delete(id);
+      return next.size === prev.size ? prev : next;
+    });
     // Drop optimistic subtasks once the server confirms them.
     setPendingSubtasks((prev) => {
       if (prev.size === 0) return prev;
@@ -126,6 +139,32 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
         if (remaining.length === 0) next.delete(parentId);
         else if (remaining.length !== optimistic.length)
           next.set(parentId, remaining);
+      }
+      return next.size === prev.size ? prev : next;
+    });
+    // Drop subtask toggle overrides once the server reflects them.
+    setSubtaskOverrides((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Map(prev);
+      for (const g of data.byList) {
+        for (const t of g.todos) {
+          for (const s of t.subtasks ?? []) {
+            if (!next.has(s.id)) continue;
+            const overrideVal = next.get(s.id) ?? null;
+            const serverVal = s.completedAt
+              ? new Date(s.completedAt as string | Date)
+              : null;
+            // Both null OR both non-null = considered matched (we don't
+            // compare exact ms, just truthy state which is what the UI cares
+            // about for a check mark).
+            if (
+              (overrideVal === null) === (serverVal === null) &&
+              (overrideVal === null || serverVal !== null)
+            ) {
+              next.delete(s.id);
+            }
+          }
+        }
       }
       return next.size === prev.size ? prev : next;
     });
@@ -158,14 +197,110 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
     });
   }
 
-  async function toggleSubtask(subtaskId: string) {
-    await fetch(`/api/todos/${subtaskId}`, {
+  function toggleSubtask(subtaskId: string) {
+    let currentCompletedAt: Date | string | null = null;
+    if (subtaskOverrides.has(subtaskId)) {
+      currentCompletedAt = subtaskOverrides.get(subtaskId) ?? null;
+    } else {
+      outer: for (const g of data.byList) {
+        for (const t of g.todos) {
+          for (const s of t.subtasks ?? []) {
+            if (s.id === subtaskId) {
+              currentCompletedAt = s.completedAt ?? null;
+              break outer;
+            }
+          }
+        }
+      }
+    }
+    const next: Date | null = currentCompletedAt ? null : new Date();
+    setSubtaskOverrides((prev) => {
+      const m = new Map(prev);
+      m.set(subtaskId, next);
+      return m;
+    });
+    fetch(`/api/todos/${subtaskId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ toggleComplete: true }),
-    });
-    startTransition(() => router.refresh());
+    })
+      .then((res) => {
+        if (res.ok) startTransition(() => router.refresh());
+        else
+          setSubtaskOverrides((prev) => {
+            const m = new Map(prev);
+            m.delete(subtaskId);
+            return m;
+          });
+      })
+      .catch(() =>
+        setSubtaskOverrides((prev) => {
+          const m = new Map(prev);
+          m.delete(subtaskId);
+          return m;
+        }),
+      );
   }
+  function saveDueDate(id: string, value: string | null) {
+    const nextDate: Date | null = value ? new Date(value) : null;
+    setDueDateOverrides((prev) => {
+      const m = new Map(prev);
+      m.set(id, nextDate);
+      return m;
+    });
+    fetch(`/api/todos/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dueDate: value }),
+    })
+      .then((res) => {
+        if (res.ok) startTransition(() => router.refresh());
+        else
+          setDueDateOverrides((prev) => {
+            if (!prev.has(id)) return prev;
+            const m = new Map(prev);
+            m.delete(id);
+            return m;
+          });
+      })
+      .catch(() =>
+        setDueDateOverrides((prev) => {
+          if (!prev.has(id)) return prev;
+          const m = new Map(prev);
+          m.delete(id);
+          return m;
+        }),
+      );
+  }
+
+  function deleteTodo(id: string) {
+    setHidden((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    fetch(`/api/todos/${id}`, { method: "DELETE" })
+      .then((res) => {
+        if (res.ok) startTransition(() => router.refresh());
+        else
+          setHidden((prev) => {
+            if (!prev.has(id)) return prev;
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+      })
+      .catch(() =>
+        setHidden((prev) => {
+          if (!prev.has(id)) return prev;
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        }),
+      );
+  }
+
   async function addSubtask(parentId: string, title: string) {
     const trimmed = title.trim();
     if (!trimmed) return;
@@ -395,6 +530,12 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
                       let display = overrides.has(t.id)
                         ? { ...t, completedAt: overrides.get(t.id) ?? null }
                         : t;
+                      if (dueDateOverrides.has(t.id)) {
+                        display = {
+                          ...display,
+                          dueDate: dueDateOverrides.get(t.id) ?? null,
+                        };
+                      }
                       const optimisticSubs = pendingSubtasks.get(t.id);
                       if (optimisticSubs?.length) {
                         const existing = display.subtasks ?? [];
@@ -411,6 +552,19 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
                           };
                         }
                       }
+                      if (display.subtasks?.length && subtaskOverrides.size) {
+                        let touched = false;
+                        const subs = display.subtasks.map((s) => {
+                          if (!subtaskOverrides.has(s.id)) return s;
+                          touched = true;
+                          return {
+                            ...s,
+                            completedAt:
+                              subtaskOverrides.get(s.id) ?? null,
+                          };
+                        });
+                        if (touched) display = { ...display, subtasks: subs };
+                      }
                       return (
                         <TodoRow
                           key={t.id}
@@ -421,6 +575,8 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
                           onToggle={() => toggleComplete(t.id)}
                           onToggleSubtask={toggleSubtask}
                           onAddSubtask={addSubtask}
+                          onSaveDueDate={saveDueDate}
+                          onDelete={deleteTodo}
                         />
                       );
                     })}

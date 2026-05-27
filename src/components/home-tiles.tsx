@@ -25,6 +25,29 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
     setTiles(initialTiles);
   }, [initialTiles]);
 
+  // Optimistic listing for newly-created lists. NewListButton dispatches
+  // this event after the create POST succeeds — we append a placeholder tile
+  // so the user sees the new list immediately. The subsequent refresh
+  // replaces it with the server snapshot.
+  useEffect(() => {
+    function onCreated(ev: Event) {
+      const e = ev as CustomEvent<{
+        list: { id: string; name: string; color: string; isDefault: boolean };
+      }>;
+      if (!e.detail?.list) return;
+      setTiles((prev) => {
+        if (prev.some((t) => t.list.id === e.detail.list.id)) return prev;
+        return [
+          ...prev,
+          { list: e.detail.list, todos: [], totalCount: 0 },
+        ];
+      });
+    }
+    window.addEventListener("personalos:list-created", onCreated);
+    return () =>
+      window.removeEventListener("personalos:list-created", onCreated);
+  }, []);
+
   const orderedIds = useMemo(() => tiles.map((t) => t.list.id), [tiles]);
 
   function moveTile(fromId: string, toId: string) {

@@ -62,6 +62,11 @@ export function ListTile({
   const [pendingSubtasks, setPendingSubtasks] = useState<
     Map<string, TodoLike[]>
   >(new Map());
+  // Optimistic subtask field overrides (e.g. toggleComplete). Applied per
+  // subtask id when rendering. Dropped via useEffect once server matches.
+  const [subtaskOverrides, setSubtaskOverrides] = useState<
+    Map<string, Partial<TodoLike>>
+  >(new Map());
   const [isDragOver, setIsDragOver] = useState(false);
   const [extraTodos, setExtraTodos] = useState<TodoLike[]>([]);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -309,6 +314,31 @@ export function ListTile({
       }
       return next.size === prev.size ? prev : next;
     });
+    // Drop subtask overrides once server data matches.
+    setSubtaskOverrides((prev) => {
+      if (prev.size === 0) return prev;
+      const serverSubs = new Map<string, TodoLike>();
+      for (const t of todos) {
+        for (const s of t.subtasks ?? []) serverSubs.set(s.id, s);
+      }
+      const next = new Map(prev);
+      for (const [id, override] of prev) {
+        const server = serverSubs.get(id);
+        if (!server) {
+          next.delete(id);
+          continue;
+        }
+        let matches = true;
+        for (const k of Object.keys(override) as (keyof TodoLike)[]) {
+          if (server[k] !== override[k]) {
+            matches = false;
+            break;
+          }
+        }
+        if (matches) next.delete(id);
+      }
+      return next.size === prev.size ? prev : next;
+    });
   }, [todos]);
 
   const visibleTodos = useMemo<TodoLike[]>(() => {
@@ -326,7 +356,12 @@ export function ListTile({
       seen.add(t.id);
       merged.push(t);
     }
-    if (todoOverrides.size === 0 && pendingSubtasks.size === 0) return merged;
+    if (
+      todoOverrides.size === 0 &&
+      pendingSubtasks.size === 0 &&
+      subtaskOverrides.size === 0
+    )
+      return merged;
     return merged.map((t) => {
       const fieldOverride = todoOverrides.get(t.id);
       const optimisticSubs = pendingSubtasks.get(t.id);
@@ -341,9 +376,27 @@ export function ListTile({
           next = { ...next, subtasks: [...existing, ...additions] };
         }
       }
+      if (next.subtasks?.length && subtaskOverrides.size > 0) {
+        let touched = false;
+        const subs = next.subtasks.map((s) => {
+          const ov = subtaskOverrides.get(s.id);
+          if (!ov) return s;
+          touched = true;
+          return { ...s, ...ov };
+        });
+        if (touched) next = { ...next, subtasks: subs };
+      }
       return next;
     });
-  }, [todos, pendingTodos, extraTodos, hiddenIds, todoOverrides, pendingSubtasks]);
+  }, [
+    todos,
+    pendingTodos,
+    extraTodos,
+    hiddenIds,
+    todoOverrides,
+    pendingSubtasks,
+    subtaskOverrides,
+  ]);
 
   async function createTodo(rawTitle: string) {
     const trimmed = rawTitle.trim();
@@ -448,13 +501,109 @@ export function ListTile({
       .catch(rollback);
   }
 
-  async function toggleSubtask(subtaskId: string) {
-    await fetch(`/api/todos/${subtaskId}`, {
+  function toggleSubtask(subtaskId: string) {
+    // Look up current completed state from server data + any in-flight
+    // override so a rapid double-toggle still flips.
+    let currentCompletedAt: Date | string | null = null;
+    const existingOv = subtaskOverrides.get(subtaskId);
+    if (existingOv && "completedAt" in existingOv) {
+      currentCompletedAt = existingOv.completedAt ?? null;
+    } else {
+      outer: for (const t of todos) {
+        for (const s of t.subtasks ?? []) {
+          if (s.id === subtaskId) {
+            currentCompletedAt = s.completedAt ?? null;
+            break outer;
+          }
+        }
+      }
+    }
+    const nextCompletedAt: Date | null = currentCompletedAt ? null : new Date();
+    setSubtaskOverrides((prev) => {
+      const next = new Map(prev);
+      next.set(subtaskId, { ...prev.get(subtaskId), completedAt: nextCompletedAt });
+      return next;
+    });
+    fetch(`/api/todos/${subtaskId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ toggleComplete: true }),
+    })
+      .then((res) => {
+        if (res.ok) startTransition(() => router.refresh());
+        else rollbackSubtaskToggle(subtaskId);
+      })
+      .catch(() => rollbackSubtaskToggle(subtaskId));
+  }
+
+  function saveDueDate(id: string, value: string | null) {
+    // Optimistic override on the todo. value is a YYYY-MM-DD string from the
+    // input element; Date conversion happens here so the UI can format it.
+    const nextDate: Date | null = value ? new Date(value) : null;
+    setTodoOverrides((prev) => {
+      const map = new Map(prev);
+      map.set(id, { ...prev.get(id), dueDate: nextDate });
+      return map;
     });
-    startTransition(() => router.refresh());
+    const rollback = () =>
+      setTodoOverrides((prev) => {
+        const map = new Map(prev);
+        const existing = prev.get(id);
+        if (!existing) return prev;
+        const { dueDate: _drop, ...rest } = existing;
+        if (Object.keys(rest).length === 0) map.delete(id);
+        else map.set(id, rest);
+        return map;
+      });
+    fetch(`/api/todos/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dueDate: value }),
+    })
+      .then((res) => {
+        if (res.ok) startTransition(() => router.refresh());
+        else rollback();
+      })
+      .catch(rollback);
+  }
+
+  function deleteTodo(id: string) {
+    setHiddenIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    fetch(`/api/todos/${id}`, { method: "DELETE" })
+      .then((res) => {
+        if (res.ok) startTransition(() => router.refresh());
+        else
+          setHiddenIds((prev) => {
+            if (!prev.has(id)) return prev;
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+      })
+      .catch(() =>
+        setHiddenIds((prev) => {
+          if (!prev.has(id)) return prev;
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        }),
+      );
+  }
+
+  function rollbackSubtaskToggle(subtaskId: string) {
+    setSubtaskOverrides((prev) => {
+      const next = new Map(prev);
+      const ov = next.get(subtaskId);
+      if (!ov) return prev;
+      const { completedAt: _ignored, ...rest } = ov;
+      if (Object.keys(rest).length === 0) next.delete(subtaskId);
+      else next.set(subtaskId, rest);
+      return next;
+    });
   }
 
   async function addSubtask(parentId: string, title: string) {
@@ -916,6 +1065,8 @@ export function ListTile({
                               onToggle={() => toggleComplete(todo.id)}
                               onToggleSubtask={toggleSubtask}
                               onAddSubtask={addSubtask}
+                              onSaveDueDate={saveDueDate}
+                              onDelete={deleteTodo}
                             />
                           ))}
                         </ul>
@@ -953,6 +1104,8 @@ export function ListTile({
                 onToggle={() => toggleComplete(todo.id)}
                 onToggleSubtask={toggleSubtask}
                 onAddSubtask={addSubtask}
+                onSaveDueDate={saveDueDate}
+                onDelete={deleteTodo}
               />
             ))}
             {totalCount > todos.length + extraTodos.length ? (

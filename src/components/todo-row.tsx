@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
@@ -41,6 +41,8 @@ export function TodoRow({
   onToggle,
   onToggleSubtask,
   onAddSubtask,
+  onSaveDueDate,
+  onDelete,
   listColor = "zinc",
   sourceListId,
   sourceProjectId = null,
@@ -51,6 +53,11 @@ export function TodoRow({
   onToggle?: () => void;
   onToggleSubtask?: (subtaskId: string) => void;
   onAddSubtask?: (parentId: string, title: string) => Promise<void> | void;
+  // Optimistic mutation callbacks. When provided, the parent owns the
+  // optimistic state and the row stays out of the network path. When absent,
+  // the row falls back to the local fetch + router.refresh() flow.
+  onSaveDueDate?: (id: string, value: string | null) => void;
+  onDelete?: (id: string) => void;
   listColor?: string;
   sourceListId?: string;
   sourceProjectId?: string | null;
@@ -58,6 +65,7 @@ export function TodoRow({
   isSubtask?: boolean;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const completed = todo.completedAt != null;
   const due = todo.dueDate ? new Date(todo.dueDate) : null;
   const isOverdue = due ? due.getTime() < Date.now() && !completed : false;
@@ -116,9 +124,9 @@ export function TodoRow({
       if (!res.ok) {
         setOptimisticTitle(null);
         setDraft(todo.title);
-        return;
       }
-      router.refresh();
+      // Skip router.refresh — the optimistic title is durable until the next
+      // natural refresh (navigation, parent mutation, etc.).
     } catch {
       setOptimisticTitle(null);
       setDraft(todo.title);
@@ -132,6 +140,10 @@ export function TodoRow({
 
   async function saveDueDate(value: string | null) {
     setEditingDate(false);
+    if (onSaveDueDate) {
+      onSaveDueDate(todo.id, value);
+      return;
+    }
     await fetch(`/api/todos/${todo.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -192,16 +204,36 @@ export function TodoRow({
   }, [ctx.isOpen, availableLists.length]);
 
   async function deleteSelf() {
+    if (onDelete) {
+      onDelete(todo.id);
+      return;
+    }
     await fetch(`/api/todos/${todo.id}`, { method: "DELETE" });
     router.refresh();
   }
   async function moveToList(listId: string) {
-    await fetch(`/api/todos/${todo.id}`, {
+    // Optimistic: tell the source tile to hide this todo immediately. The
+    // destination tile re-renders with server data on the background refresh.
+    if (sourceListId && sourceListId !== listId) {
+      window.dispatchEvent(
+        new CustomEvent("personalos:todo-moved", {
+          detail: {
+            todoId: todo.id,
+            fromListId: sourceListId,
+            fromProjectId: sourceProjectId,
+            toListId: listId,
+            toProjectId: sourceProjectId,
+          },
+        }),
+      );
+    }
+    fetch(`/api/todos/${todo.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ listId }),
+    }).then((res) => {
+      if (res.ok) startTransition(() => router.refresh());
     });
-    router.refresh();
   }
 
   // Project picker (mobile + desktop edit row). Rendered via portal at the
@@ -253,12 +285,27 @@ export function TodoRow({
   }
   async function moveToProject(projectId: string | null) {
     setProjectPickerOpen(false);
-    await fetch(`/api/todos/${todo.id}`, {
+    // Optimistic source-side hide via the existing move event.
+    if (sourceListId && sourceProjectId !== projectId) {
+      window.dispatchEvent(
+        new CustomEvent("personalos:todo-moved", {
+          detail: {
+            todoId: todo.id,
+            fromListId: sourceListId,
+            fromProjectId: sourceProjectId,
+            toListId: sourceListId,
+            toProjectId: projectId,
+          },
+        }),
+      );
+    }
+    fetch(`/api/todos/${todo.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId }),
+    }).then((res) => {
+      if (res.ok) startTransition(() => router.refresh());
     });
-    router.refresh();
   }
   const menu: AnyMenuEntry[] = [
     {

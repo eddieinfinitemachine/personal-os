@@ -35,18 +35,33 @@ export function NewListButton() {
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) return;
+    // Close the popover immediately. The optimistic tile dispatch below
+    // gives the home page a placeholder so the user sees the new list right
+    // away; server refresh runs in the background.
+    const chosenName = trimmed;
+    const chosenColor = color;
+    setName("");
+    setColor("emerald");
+    setOpen(false);
     setSubmitting(true);
-    const res = await fetch("/api/lists", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: trimmed, color }),
-    });
-    setSubmitting(false);
-    if (res.ok) {
-      setName("");
-      setColor("emerald");
-      setOpen(false);
+    try {
+      const res = await fetch("/api/lists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: chosenName, color: chosenColor }),
+      });
+      if (!res.ok) return;
+      const body = (await res.json().catch(() => null)) as
+        | { list: { id: string; name: string; color: string; isDefault: boolean } }
+        | null;
+      if (body?.list) {
+        window.dispatchEvent(
+          new CustomEvent("personalos:list-created", { detail: { list: body.list } }),
+        );
+      }
       startTransition(() => router.refresh());
+    } finally {
+      setSubmitting(false);
     }
   }
 
