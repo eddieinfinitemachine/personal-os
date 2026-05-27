@@ -123,6 +123,13 @@ export function Sidebar({
       const { project } = await res.json();
       setName("");
       setAdding(false);
+      // Invalidate the shared menu cache so the next "Move to project"
+      // picker open picks up this new project without waiting for a refresh.
+      window.dispatchEvent(
+        new CustomEvent("personalos:project-created", {
+          detail: { project },
+        }),
+      );
       startTransition(() => {
         router.push(`/projects/${project.id}`);
         router.refresh();

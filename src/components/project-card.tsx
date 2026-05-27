@@ -51,6 +51,8 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
         fromProjectId: string | null;
         toListId: string;
         toProjectId: string | null;
+        toProjectName?: string | null;
+        todo?: TodoLike;
       }>;
       if (!e.detail) return;
       const isSource =
@@ -64,6 +66,29 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
           if (prev.has(e.detail.todoId)) return prev;
           const next = new Set(prev);
           next.add(e.detail.todoId);
+          return next;
+        });
+      } else if (!isSource && isTarget && e.detail.todo) {
+        // The row is moving INTO this card. Insert into the target list
+        // optimistically so it appears before router.refresh lands.
+        setPendingByList((prev) => {
+          const next = new Map(prev);
+          const arr = next.get(e.detail.toListId) ?? [];
+          if (arr.some((t) => t.id === e.detail.todoId)) return prev;
+          next.set(e.detail.toListId, [
+            ...arr,
+            {
+              ...(e.detail.todo as TodoLike),
+              projectId: data.project.id,
+            },
+          ]);
+          return next;
+        });
+        // Clear any stale hide for this id (in case of fast double-moves).
+        setHidden((prev) => {
+          if (!prev.has(e.detail.todoId)) return prev;
+          const next = new Set(prev);
+          next.delete(e.detail.todoId);
           return next;
         });
       }
@@ -572,7 +597,7 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
                           listColor={g.list.color}
                           sourceListId={g.list.id}
                           sourceProjectId={data.project.id}
-                          onToggle={() => toggleComplete(t.id)}
+                          onToggle={toggleComplete}
                           onToggleSubtask={toggleSubtask}
                           onAddSubtask={addSubtask}
                           onSaveDueDate={saveDueDate}

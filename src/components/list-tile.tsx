@@ -223,6 +223,7 @@ export function ListTile({
         toListId: string;
         toProjectId: string | null;
         toProjectName?: string | null;
+        todo?: TodoLike;
       }>;
       if (!e.detail) return;
       const isInTileNow =
@@ -249,6 +250,28 @@ export function ListTile({
             projectId: e.detail.toProjectId,
             projectName: e.detail.toProjectName ?? null,
           });
+          return next;
+        });
+      } else if (!isInTileNow && willBeInTile && e.detail.todo) {
+        // The row is moving INTO this tile from elsewhere — insert it
+        // optimistically so the user sees it before router.refresh lands.
+        setExtraTodos((prev) => {
+          if (prev.some((t) => t.id === e.detail.todoId)) return prev;
+          return [
+            ...prev,
+            {
+              ...(e.detail.todo as TodoLike),
+              projectId: e.detail.toProjectId,
+              projectName: e.detail.toProjectName ?? null,
+            },
+          ];
+        });
+        // If this row was previously hidden in this tile (very unlikely but
+        // possible during fast double-moves), clear that hide.
+        setHiddenIds((prev) => {
+          if (!prev.has(e.detail.todoId)) return prev;
+          const next = new Set(prev);
+          next.delete(e.detail.todoId);
           return next;
         });
       }
@@ -1062,7 +1085,7 @@ export function ListTile({
                               sourceListId={list.id}
                               sourceProjectId={myProjectKey}
                               showProjectBadge={<></>}
-                              onToggle={() => toggleComplete(todo.id)}
+                              onToggle={toggleComplete}
                               onToggleSubtask={toggleSubtask}
                               onAddSubtask={addSubtask}
                               onSaveDueDate={saveDueDate}
@@ -1101,7 +1124,7 @@ export function ListTile({
                 listColor={list.color}
                 sourceListId={list.id}
                 sourceProjectId={myProjectKey}
-                onToggle={() => toggleComplete(todo.id)}
+                onToggle={toggleComplete}
                 onToggleSubtask={toggleSubtask}
                 onAddSubtask={addSubtask}
                 onSaveDueDate={saveDueDate}

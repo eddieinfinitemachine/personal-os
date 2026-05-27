@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { memo, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
@@ -18,6 +18,7 @@ import {
 import { palette } from "@/lib/lists";
 import { cn } from "@/lib/utils";
 import { linkify } from "@/lib/linkify";
+import { getLists, getProjects } from "@/lib/todo-menu-cache";
 import { TodoDetailModal } from "./todo-detail-modal";
 import {
   ContextMenuPopover,
@@ -36,7 +37,7 @@ export type TodoLike = {
   subtasks?: TodoLike[];
 };
 
-export function TodoRow({
+function TodoRowImpl({
   todo,
   onToggle,
   onToggleSubtask,
@@ -50,7 +51,7 @@ export function TodoRow({
   isSubtask,
 }: {
   todo: TodoLike;
-  onToggle?: () => void;
+  onToggle?: (id: string) => void;
   onToggleSubtask?: (subtaskId: string) => void;
   onAddSubtask?: (parentId: string, title: string) => Promise<void> | void;
   // Optimistic mutation callbacks. When provided, the parent owns the
@@ -197,9 +198,8 @@ export function TodoRow({
   >([]);
   useEffect(() => {
     if (!ctx.isOpen || availableLists.length > 0) return;
-    fetch("/api/lists")
-      .then((r) => r.json())
-      .then((d) => setAvailableLists(d.lists ?? []))
+    getLists()
+      .then((lists) => setAvailableLists(lists))
       .catch(() => {});
   }, [ctx.isOpen, availableLists.length]);
 
@@ -212,8 +212,10 @@ export function TodoRow({
     router.refresh();
   }
   async function moveToList(listId: string) {
-    // Optimistic: tell the source tile to hide this todo immediately. The
-    // destination tile re-renders with server data on the background refresh.
+    // Optimistic: source tile hides this todo via the event; the destination
+    // tile inserts it (new !isInTileNow && willBeInTile branch in the
+    // listener). Carrying the full todo + projectName means the destination
+    // can render the row before router.refresh lands.
     if (sourceListId && sourceListId !== listId) {
       window.dispatchEvent(
         new CustomEvent("personalos:todo-moved", {
@@ -223,6 +225,8 @@ export function TodoRow({
             fromProjectId: sourceProjectId,
             toListId: listId,
             toProjectId: sourceProjectId,
+            toProjectName: todo.projectName ?? null,
+            todo: { ...todo, completedAt: todo.completedAt ?? null },
           },
         }),
       );
@@ -251,9 +255,8 @@ export function TodoRow({
     (projectPickerOpen || ctx.isOpen) && availableProjects.length === 0;
   useEffect(() => {
     if (!projectPickerNeedsLoad) return;
-    fetch("/api/projects")
-      .then((r) => r.json())
-      .then((d) => setAvailableProjects(d.projects ?? []))
+    getProjects()
+      .then((projects) => setAvailableProjects(projects))
       .catch(() => {});
   }, [projectPickerNeedsLoad]);
   useEffect(() => {
@@ -285,8 +288,12 @@ export function TodoRow({
   }
   async function moveToProject(projectId: string | null) {
     setProjectPickerOpen(false);
-    // Optimistic source-side hide via the existing move event.
+    // Optimistic source-side hide + destination insert via the move event.
     if (sourceListId && sourceProjectId !== projectId) {
+      const toProjectName =
+        projectId === null
+          ? null
+          : availableProjects.find((p) => p.id === projectId)?.name ?? null;
       window.dispatchEvent(
         new CustomEvent("personalos:todo-moved", {
           detail: {
@@ -295,6 +302,13 @@ export function TodoRow({
             fromProjectId: sourceProjectId,
             toListId: sourceListId,
             toProjectId: projectId,
+            toProjectName,
+            todo: {
+              ...todo,
+              projectId,
+              projectName: toProjectName,
+              completedAt: todo.completedAt ?? null,
+            },
           },
         }),
       );
@@ -471,6 +485,12 @@ export function TodoRow({
           fromProjectId: sourceProjectId ?? null,
           toListId: targetListId,
           toProjectId: targetProjectId,
+          toProjectName:
+            targetProjectId === null
+              ? null
+              : availableProjects.find((p) => p.id === targetProjectId)
+                  ?.name ?? todo.projectName ?? null,
+          todo: { ...todo, completedAt: todo.completedAt ?? null },
         },
       })
     );
@@ -656,7 +676,7 @@ export function TodoRow({
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onToggle?.();
+            onToggle?.(todo.id);
           }}
           className={cn(
             "mt-0.5 grid size-6 md:size-[22px] shrink-0 place-items-center rounded-full border-2 transition-colors duration-200 relative before:absolute before:-inset-2.5 before:content-[''] md:before:hidden",
@@ -1031,3 +1051,78 @@ export function TodoRow({
     </li>
   );
 }
+
+// Memoize TodoRow so toggling one row (or any optimistic parent state change)
+// doesn't reconcile every sibling row in the tile. The comparator ignores
+// callback prop identity — parents pass top-of-scope functions (toggleComplete,
+// saveDueDate, deleteTodo, etc.) whose identities are stable across renders,
+// so we don't need a strict equality check on them.
+function subtaskSignature(subs: TodoLike["subtasks"]): string {
+  if (!subs || subs.length === 0) return "";
+  let out = "";
+  for (const s of subs) {
+    out +=
+      s.id +
+      "|" +
+      (s.completedAt
+        ? typeof s.completedAt === "string"
+          ? s.completedAt
+          : s.completedAt.toISOString()
+        : "") +
+      "|" +
+      s.title +
+      ";";
+  }
+  return out;
+}
+
+function sameDate(a: TodoLike["dueDate"], b: TodoLike["dueDate"]): boolean {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  const as = typeof a === "string" ? a : a.toISOString();
+  const bs = typeof b === "string" ? b : b.toISOString();
+  return as === bs;
+}
+
+function arePropsEqual(
+  prev: React.ComponentProps<typeof TodoRowImpl>,
+  next: React.ComponentProps<typeof TodoRowImpl>,
+): boolean {
+  if (prev.todo === next.todo) {
+    // Same reference — definitely equal.
+  } else {
+    const a = prev.todo;
+    const b = next.todo;
+    if (a.id !== b.id) return false;
+    if (a.title !== b.title) return false;
+    if (a.notes !== b.notes) return false;
+    if (a.projectId !== b.projectId) return false;
+    if (a.projectName !== b.projectName) return false;
+    if (
+      (a.completedAt == null) !== (b.completedAt == null) ||
+      (a.completedAt != null &&
+        b.completedAt != null &&
+        (typeof a.completedAt === "string"
+          ? a.completedAt
+          : a.completedAt.toISOString()) !==
+          (typeof b.completedAt === "string"
+            ? b.completedAt
+            : b.completedAt.toISOString()))
+    )
+      return false;
+    if (!sameDate(a.dueDate, b.dueDate)) return false;
+    if (subtaskSignature(a.subtasks) !== subtaskSignature(b.subtasks))
+      return false;
+  }
+  if (prev.listColor !== next.listColor) return false;
+  if (prev.sourceListId !== next.sourceListId) return false;
+  if (prev.sourceProjectId !== next.sourceProjectId) return false;
+  if (prev.isSubtask !== next.isSubtask) return false;
+  // showProjectBadge is a ReactNode; only compare presence (parents pass
+  // either undefined or an empty fragment, never per-row dynamic content).
+  if ((prev.showProjectBadge == null) !== (next.showProjectBadge == null))
+    return false;
+  return true;
+}
+
+export const TodoRow = memo(TodoRowImpl, arePropsEqual);
