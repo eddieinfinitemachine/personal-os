@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/sidebar";
 import { MobileChromeProvider } from "@/components/mobile-chrome";
 import { CaptureInbox } from "@/components/capture-inbox";
 import { LayoutOverlays } from "@/components/layout-overlays";
+import { SyncPollMount } from "@/components/sync-poll-mount";
 import { themePreloadScript } from "@/components/theme-toggle";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import { CaptureProvider } from "@/lib/capture-store";
@@ -109,6 +110,7 @@ export default async function RootLayout({
       </head>
       <body className="antialiased">
         <ServiceWorkerRegister />
+        <SyncPollMount />
         <CaptureProvider>
           <CaptureInbox />
           <LayoutOverlays />
