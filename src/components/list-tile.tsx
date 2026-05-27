@@ -1214,7 +1214,8 @@ export function ListTile({
                     }
                   }}
                   placeholder="New Reminder"
-                  className="flex-1 bg-transparent text-[15px] focus:outline-none placeholder:text-[var(--color-muted-foreground)]/70"
+                  className="flex-1 border-0 bg-transparent p-0 text-[15px] leading-snug focus:outline-none placeholder:text-[var(--color-muted-foreground)]/70"
+                  style={{ textIndent: 0 }}
                 />
               </div>
             </form>
