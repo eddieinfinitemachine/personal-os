@@ -52,6 +52,7 @@ export function invalidateProjects() {
 if (typeof window !== "undefined") {
   window.addEventListener("personalos:list-created", invalidateLists);
   window.addEventListener("personalos:list-changed", invalidateLists);
+  window.addEventListener("personalos:list-membership-changed", invalidateLists);
   window.addEventListener("personalos:project-created", invalidateProjects);
   window.addEventListener("personalos:project-changed", invalidateProjects);
 }
