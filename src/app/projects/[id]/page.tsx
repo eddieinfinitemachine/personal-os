@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
@@ -64,20 +65,37 @@ export default async function ProjectPage({
 
       <ProjectTabs active={tab} hasDashboard={hasDashboard} />
 
-      {tab === "dashboard" && hasDashboard ? (
-        project.kind === "vehicle" ? (
-          <VehicleDashboard projectId={id} />
-        ) : project.kind === "pet" ? (
-          <PetDashboard projectId={id} />
-        ) : project.kind === "human" ? (
-          <HumanDashboard projectId={id} />
-        ) : null
-      ) : null}
-      {tab === "tasks" ? <TasksTab projectId={id} userId={userId} /> : null}
-      {tab === "notes" ? <NotesTab projectId={id} userId={userId} /> : null}
-      {tab === "files" ? <FilesTab projectId={id} userId={userId} /> : null}
+      <Suspense fallback={<TabSkeleton />}>
+        {tab === "dashboard" && hasDashboard ? (
+          project.kind === "vehicle" ? (
+            <VehicleDashboard projectId={id} />
+          ) : project.kind === "pet" ? (
+            <PetDashboard projectId={id} />
+          ) : project.kind === "human" ? (
+            <HumanDashboard projectId={id} />
+          ) : null
+        ) : null}
+        {tab === "tasks" ? <TasksTab projectId={id} userId={userId} /> : null}
+        {tab === "notes" ? <NotesTab projectId={id} userId={userId} /> : null}
+        {tab === "files" ? <FilesTab projectId={id} userId={userId} /> : null}
+      </Suspense>
 
       <ProjectChat projectId={id} projectName={project.name} />
+    </div>
+  );
+}
+
+function TabSkeleton() {
+  return (
+    <div className="mt-4 animate-pulse rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
+      <div className="space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-10 w-full rounded-lg bg-[var(--color-muted)]"
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -86,24 +104,25 @@ async function TasksTab({ projectId, userId }: { projectId: string; userId: stri
   await ensureDefaultLists(userId);
 
   // Project pages always show only the three canonical lists (To Do, Monitor,
-  // Later). Custom lists belong to the personal/Home view.
-  const lists = await prisma.list.findMany({
-    where: { userId, isDefault: true },
-    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-  });
-
-  // Single fetch — bucket in memory.
-  const allTodos = await prisma.todo.findMany({
-    where: { userId, projectId, completedAt: null, parentId: null },
-    orderBy: [
-      { dueDate: "asc" },
-      { position: "asc" },
-      { createdAt: "asc" },
-    ],
-    include: {
-      subtasks: { orderBy: [{ position: "asc" }, { createdAt: "asc" }] },
-    },
-  });
+  // Later). Custom lists belong to the personal/Home view. The list +
+  // todo queries are independent — fire in parallel.
+  const [lists, allTodos] = await Promise.all([
+    prisma.list.findMany({
+      where: { userId, isDefault: true },
+      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+    }),
+    prisma.todo.findMany({
+      where: { userId, projectId, completedAt: null, parentId: null },
+      orderBy: [
+        { dueDate: "asc" },
+        { position: "asc" },
+        { createdAt: "asc" },
+      ],
+      include: {
+        subtasks: { orderBy: [{ position: "asc" }, { createdAt: "asc" }] },
+      },
+    }),
+  ]);
   const byList = new Map<string, typeof allTodos>();
   for (const t of allTodos) {
     (byList.get(t.listId) ?? byList.set(t.listId, []).get(t.listId))!.push(t);

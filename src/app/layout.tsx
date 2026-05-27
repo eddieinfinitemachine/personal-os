@@ -12,19 +12,35 @@ import { isPrivateHost } from "@/lib/hosts";
 import { prisma } from "@/lib/prisma";
 
 // Per-request: small enough to not warrant a cache layer for a friends-only
-// deployment. Attempted unstable_cache wrap was rolled back after it
-// returned empty results on the deployed Next.js 16 build (cause TBD).
+// deployment. The prior `_count.todos` shape emitted a correlated subquery
+// per project — fine for a few projects, but scales linearly. Replaced with
+// a single groupBy + in-memory merge so the sidebar issues two indexed reads
+// regardless of project count.
 async function getSidebarProjects(userId: string) {
-  return prisma.project.findMany({
-    where: { userId, archived: false },
-    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-    select: {
-      id: true,
-      name: true,
-      icon: true,
-      _count: { select: { todos: { where: { completedAt: null } } } },
-    },
-  });
+  const [projects, counts] = await Promise.all([
+    prisma.project.findMany({
+      where: { userId, archived: false },
+      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+      select: { id: true, name: true, icon: true },
+    }),
+    prisma.todo.groupBy({
+      by: ["projectId"],
+      where: {
+        userId,
+        completedAt: null,
+        projectId: { not: null },
+      },
+      _count: { _all: true },
+    }),
+  ]);
+  const countByProject = new Map<string, number>();
+  for (const c of counts) {
+    if (c.projectId) countByProject.set(c.projectId, c._count._all);
+  }
+  return projects.map((p) => ({
+    ...p,
+    _count: { todos: countByProject.get(p.id) ?? 0 },
+  }));
 }
 
 // Static metadata defaults to the public brand. The dynamic per-host title
