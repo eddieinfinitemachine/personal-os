@@ -914,7 +914,11 @@ export function ListTile({
             </button>
             {menuOpen ? (
               <div
-                className="absolute right-0 top-full z-10 mt-1 min-w-[200px] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] text-[var(--color-foreground)] shadow-lg"
+                className="absolute right-0 top-full z-10 mt-1 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg"
+                style={{
+                  minWidth: 200,
+                  color: "var(--color-foreground)",
+                }}
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center gap-1.5 p-2">
@@ -942,7 +946,8 @@ export function ListTile({
                       setMenuOpen(false);
                       setShareOpen(true);
                     }}
-                    className="flex w-full items-center gap-2 border-t border-[var(--color-border)] px-3 py-2 text-left text-sm text-[var(--color-foreground)] hover:bg-[var(--color-accent)]"
+                    className="flex w-full items-center gap-2 border-t border-[var(--color-border)] px-3 py-2 text-left text-sm hover:bg-[var(--color-accent)]"
+                    style={{ color: "var(--color-foreground)" }}
                   >
                     <Users className="size-3.5" /> Share…
                   </button>
@@ -950,7 +955,8 @@ export function ListTile({
                 {!list.isDefault && !list.shared ? (
                   <button
                     onClick={deleteList}
-                    className="flex w-full items-center gap-2 border-t border-[var(--color-border)] px-3 py-2 text-left text-sm text-rose-500 hover:bg-[var(--color-accent)]"
+                    className="flex w-full items-center gap-2 border-t border-[var(--color-border)] px-3 py-2 text-left text-sm hover:bg-[var(--color-accent)]"
+                    style={{ color: "rgb(244, 63, 94)" }}
                   >
                     <Trash2 className="size-3.5" /> Delete list
                   </button>
