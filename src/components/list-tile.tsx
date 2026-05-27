@@ -914,7 +914,7 @@ export function ListTile({
             </button>
             {menuOpen ? (
               <div
-                className="absolute right-0 top-full z-10 mt-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg"
+                className="absolute right-0 top-full z-10 mt-1 min-w-[200px] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] text-[var(--color-foreground)] shadow-lg"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center gap-1.5 p-2">
@@ -942,7 +942,7 @@ export function ListTile({
                       setMenuOpen(false);
                       setShareOpen(true);
                     }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--color-accent)] border-t border-[var(--color-border)]"
+                    className="flex w-full items-center gap-2 border-t border-[var(--color-border)] px-3 py-2 text-left text-sm text-[var(--color-foreground)] hover:bg-[var(--color-accent)]"
                   >
                     <Users className="size-3.5" /> Share…
                   </button>
@@ -950,7 +950,7 @@ export function ListTile({
                 {!list.isDefault && !list.shared ? (
                   <button
                     onClick={deleteList}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rose-500 hover:bg-[var(--color-accent)] border-t border-[var(--color-border)]"
+                    className="flex w-full items-center gap-2 border-t border-[var(--color-border)] px-3 py-2 text-left text-sm text-rose-500 hover:bg-[var(--color-accent)]"
                   >
                     <Trash2 className="size-3.5" /> Delete list
                   </button>
