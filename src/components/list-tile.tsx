@@ -914,10 +914,11 @@ export function ListTile({
             </button>
             {menuOpen ? (
               <div
-                className="absolute right-0 top-full z-10 mt-1 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg"
+                className="absolute right-0 top-full mt-1 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg"
                 style={{
                   minWidth: 200,
                   color: "var(--color-foreground)",
+                  zIndex: 60,
                 }}
                 onClick={(e) => e.stopPropagation()}
               >
