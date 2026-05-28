@@ -28,11 +28,15 @@ export async function POST(request: Request) {
   }
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   return handle({
-    title: str(body.title),
+    // `text` is accepted as an alias for `title` so this endpoint is a
+    // drop-in replacement for /capture/smart/auto's body — repoint a
+    // Shortcut here for "always a todo, never reclassified".
+    title: str(body.title) ?? str(body.text),
     list: str(body.list),
     project: str(body.project),
     notes: str(body.notes),
     dueDate: str(body.dueDate),
+    url: str(body.url),
   });
 }
 
@@ -42,11 +46,12 @@ export async function GET(request: Request) {
   }
   const url = new URL(request.url);
   return handle({
-    title: url.searchParams.get("title"),
+    title: url.searchParams.get("title") ?? url.searchParams.get("text"),
     list: url.searchParams.get("list"),
     project: url.searchParams.get("project"),
     notes: url.searchParams.get("notes"),
     dueDate: url.searchParams.get("dueDate"),
+    url: url.searchParams.get("url"),
   });
 }
 
@@ -71,10 +76,17 @@ async function handle(input: {
   project: string | null;
   notes: string | null;
   dueDate: string | null;
+  url?: string | null;
 }) {
   if (!input.title) {
     return NextResponse.json({ error: "title required" }, { status: 400 });
   }
+  // Fold an optional context URL into notes so the todo row linkifies it
+  // (matches how /capture/smart/auto handles a passed url).
+  const notes =
+    input.url && input.notes
+      ? `${input.notes}\n${input.url}`
+      : input.url ?? input.notes;
 
   const FOUNDER_EMAIL = process.env.FOUNDER_EMAIL ?? "emcohen@me.com";
   const founder = await prisma.user.findUnique({ where: { email: FOUNDER_EMAIL } });
@@ -118,7 +130,7 @@ async function handle(input: {
       title: input.title,
       listId: list.id,
       projectId,
-      notes: input.notes,
+      notes,
       dueDate: input.dueDate ? new Date(input.dueDate) : null,
     },
   });
