@@ -248,7 +248,22 @@ async function handle(rawText: string | null | undefined, rawUrl: string | null 
         birthday: proposal.birthday ? new Date(proposal.birthday) : null,
       },
     });
-    return NextResponse.json({ ok: true, type: "person", id: person.id });
+    const fullName = [proposal.firstName, proposal.lastName]
+      .filter(Boolean)
+      .join(" ");
+    // Companion todo: filed on the person's card AND surfaced as an
+    // actionable reminder on the To Do list.
+    const companionTodoId = await createCompanionTodo(
+      userId,
+      `Follow up with ${fullName}`,
+      proposal.notes ?? null,
+    );
+    return NextResponse.json({
+      ok: true,
+      type: "person",
+      id: person.id,
+      companionTodoId,
+    });
   }
 
   if (proposal.type === "trip") {
@@ -312,8 +327,40 @@ async function handle(rawText: string | null | undefined, rawUrl: string | null 
         data: { lastInteractionAt: occurredAt },
       });
     }
-    return NextResponse.json({ ok: true, type: "interaction", id: interaction.id });
+    // Companion todo: the note lives on the person's card, and a matching
+    // reminder lands on the To Do list so it's actionable.
+    const companionTodoId = await createCompanionTodo(
+      userId,
+      proposal.title,
+      proposal.notes ?? null,
+      proposal.projectId ?? null,
+    );
+    return NextResponse.json({
+      ok: true,
+      type: "interaction",
+      id: interaction.id,
+      companionTodoId,
+    });
   }
 
   return NextResponse.json({ error: "unknown proposal type" }, { status: 500 });
+}
+
+// Create a reminder on the "To Do" list to accompany a captured person /
+// interaction. Returns the new todo id, or null if the To Do list is missing.
+async function createCompanionTodo(
+  userId: string,
+  title: string,
+  notes: string | null,
+  projectId: string | null = null,
+): Promise<string | null> {
+  await ensureDefaultLists(userId);
+  const list = await prisma.list.findFirst({
+    where: { userId, name: { equals: "To Do", mode: "insensitive" } },
+  });
+  if (!list) return null;
+  const todo = await prisma.todo.create({
+    data: { userId, listId: list.id, projectId, title, notes },
+  });
+  return todo.id;
 }
