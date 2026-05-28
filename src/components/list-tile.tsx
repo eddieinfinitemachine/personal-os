@@ -21,6 +21,8 @@ export type ListInfo = {
   shared?: boolean;
   ownerName?: string | null;
   collaborative?: boolean;
+  // Owner's view: display names of everyone the list is shared with.
+  sharedWithNames?: string[];
 };
 
 export function ListTile({
@@ -883,6 +885,12 @@ export function ListTile({
             >
               {list.name}
             </h2>
+            {list.collaborative ? (
+              <Users
+                className={cn("size-4 shrink-0 self-center", p.text)}
+                aria-label="Shared list"
+              />
+            ) : null}
             <span
               className={cn(
                 "text-2xl font-bold tabular-nums shrink-0",
@@ -900,6 +908,13 @@ export function ListTile({
           {list.shared && list.ownerName ? (
             <div className="-mt-0.5 inline-flex items-center gap-1 text-xs text-[var(--color-muted-foreground)]">
               <Users className="size-3" /> Shared by {list.ownerName}
+            </div>
+          ) : list.collaborative && list.sharedWithNames?.length ? (
+            <div className="-mt-0.5 inline-flex items-center gap-1 text-xs text-[var(--color-muted-foreground)]">
+              <Users className="size-3" /> Shared with{" "}
+              {list.sharedWithNames.length <= 2
+                ? list.sharedWithNames.join(" & ")
+                : `${list.sharedWithNames[0]} +${list.sharedWithNames.length - 1}`}
             </div>
           ) : null}
         </div>

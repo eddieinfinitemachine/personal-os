@@ -36,6 +36,9 @@ export default async function HomePage() {
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
       include: {
         user: { select: { id: true, name: true, email: true } },
+        members: {
+          include: { user: { select: { name: true, email: true } } },
+        },
         _count: { select: { members: true } },
       },
     }),
@@ -118,6 +121,10 @@ export default async function HomePage() {
         shared,
         ownerName: shared ? list.user.name ?? list.user.email : null,
         collaborative,
+        // Owner's view: names of everyone the list is shared with.
+        sharedWithNames: shared
+          ? []
+          : list.members.map((m) => m.user.name ?? m.user.email),
       },
       todos: all.slice(0, PREVIEW_LIMIT).map(toLike),
       totalCount: all.length,
