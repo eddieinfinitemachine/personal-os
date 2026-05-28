@@ -15,9 +15,12 @@ export type ListInfo = {
   isDefault: boolean;
   // Collaborative-list metadata. `shared` = true if the current user is a
   // member but not the owner. `ownerName` is shown as a tiny subtitle on
-  // those tiles. Both default to safe values for owned lists.
+  // those tiles. `collaborative` = the list has members (either you shared
+  // it or it was shared with you) → rows show "added by …". All default to
+  // safe values for private, owned lists.
   shared?: boolean;
   ownerName?: string | null;
+  collaborative?: boolean;
 };
 
 export function ListTile({
@@ -1122,6 +1125,7 @@ export function ListTile({
                               sourceListId={list.id}
                               sourceProjectId={myProjectKey}
                               showProjectBadge={<></>}
+                              showCreator={list.collaborative}
                               onToggle={toggleComplete}
                               onToggleSubtask={toggleSubtask}
                               onAddSubtask={addSubtask}
@@ -1161,6 +1165,7 @@ export function ListTile({
                 listColor={list.color}
                 sourceListId={list.id}
                 sourceProjectId={myProjectKey}
+                showCreator={list.collaborative}
                 onToggle={toggleComplete}
                 onToggleSubtask={toggleSubtask}
                 onAddSubtask={addSubtask}

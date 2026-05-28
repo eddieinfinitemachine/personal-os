@@ -36,6 +36,7 @@ export default async function HomePage() {
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
       include: {
         user: { select: { id: true, name: true, email: true } },
+        _count: { select: { members: true } },
       },
     }),
     prisma.project.findMany({
@@ -57,12 +58,18 @@ export default async function HomePage() {
       ],
       include: {
         project: { select: { name: true } },
+        // Creator, surfaced as "added by …" on collaborative lists.
+        user: { select: { name: true, email: true } },
         subtasks: {
           orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+          include: { user: { select: { name: true, email: true } } },
         },
       },
     }),
   ]);
+
+  const creatorLabel = (u: { name: string | null; email: string } | null) =>
+    u ? u.name ?? u.email : null;
 
   const toLike = (t: (typeof allTodos)[number]): TodoLike => ({
     id: t.id,
@@ -72,6 +79,7 @@ export default async function HomePage() {
     completedAt: t.completedAt,
     projectId: t.projectId,
     projectName: t.project?.name ?? null,
+    creatorName: creatorLabel(t.user),
     subtasks: t.subtasks.map((s) => ({
       id: s.id,
       title: s.title,
@@ -79,6 +87,7 @@ export default async function HomePage() {
       dueDate: s.dueDate,
       completedAt: s.completedAt,
       projectId: s.projectId,
+      creatorName: creatorLabel(s.user),
     })),
   });
 
@@ -97,6 +106,9 @@ export default async function HomePage() {
   const tiles: HomeTile[] = lists.map((list) => {
     const all = byList.get(list.id) ?? [];
     const shared = list.userId !== userId;
+    // A list is collaborative if it has any members — true for both the
+    // owner's view (members > 0) and a member's view (they're in the set).
+    const collaborative = list._count.members > 0;
     return {
       list: {
         id: list.id,
@@ -105,6 +117,7 @@ export default async function HomePage() {
         isDefault: list.isDefault,
         shared,
         ownerName: shared ? list.user.name ?? list.user.email : null,
+        collaborative,
       },
       todos: all.slice(0, PREVIEW_LIMIT).map(toLike),
       totalCount: all.length,

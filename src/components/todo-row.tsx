@@ -34,6 +34,9 @@ export type TodoLike = {
   completedAt?: Date | string | null;
   projectId?: string | null;
   projectName?: string | null;
+  // Display name of whoever created the todo. Surfaced as "added by …" only
+  // on collaborative (shared) lists — see `showCreator`.
+  creatorName?: string | null;
   subtasks?: TodoLike[];
 };
 
@@ -48,6 +51,7 @@ function TodoRowImpl({
   sourceListId,
   sourceProjectId = null,
   showProjectBadge,
+  showCreator,
   isSubtask,
 }: {
   todo: TodoLike;
@@ -63,6 +67,8 @@ function TodoRowImpl({
   sourceListId?: string;
   sourceProjectId?: string | null;
   showProjectBadge?: React.ReactNode;
+  // When true (collaborative list), render the creator's name on the row.
+  showCreator?: boolean;
   isSubtask?: boolean;
 }) {
   const router = useRouter();
@@ -751,6 +757,11 @@ function TodoRowImpl({
               {todo.notes}
             </div>
           ) : null}
+          {showCreator && todo.creatorName ? (
+            <div className="text-[13px] leading-[16px] text-[var(--color-muted-foreground)] mt-0.5 md:text-xs">
+              added by {todo.creatorName}
+            </div>
+          ) : null}
           {/* Mobile-only date subtitle — Reminders-style "Mon, Jun 16" */}
           {due ? (
             <button
@@ -934,6 +945,7 @@ function TodoRowImpl({
               todo={s}
               listColor={listColor}
               isSubtask
+              showCreator={showCreator}
               onToggle={() => onToggleSubtask?.(s.id)}
             />
           ))}
@@ -1098,6 +1110,7 @@ function arePropsEqual(
     if (a.notes !== b.notes) return false;
     if (a.projectId !== b.projectId) return false;
     if (a.projectName !== b.projectName) return false;
+    if (a.creatorName !== b.creatorName) return false;
     if (
       (a.completedAt == null) !== (b.completedAt == null) ||
       (a.completedAt != null &&
@@ -1118,6 +1131,7 @@ function arePropsEqual(
   if (prev.sourceListId !== next.sourceListId) return false;
   if (prev.sourceProjectId !== next.sourceProjectId) return false;
   if (prev.isSubtask !== next.isSubtask) return false;
+  if (prev.showCreator !== next.showCreator) return false;
   // showProjectBadge is a ReactNode; only compare presence (parents pass
   // either undefined or an empty fragment, never per-row dynamic content).
   if ((prev.showProjectBadge == null) !== (next.showProjectBadge == null))
