@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "dev-secret-not-for-production",
-);
+function resolveJwtSecret(): Uint8Array {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    // Fail closed in production (see lib/auth.ts).
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("JWT_SECRET is required in production");
+    }
+    return new TextEncoder().encode("dev-secret-not-for-production");
+  }
+  return new TextEncoder().encode(secret);
+}
+
+const JWT_SECRET = resolveJwtSecret();
 const SESSION_COOKIE = "kaizen-session";
 
 // Public paths — landing/signup/login and the auth API.
@@ -44,8 +54,7 @@ export async function middleware(req: NextRequest) {
   // Bearer-token endpoints handle their own auth.
   if (
     pathname.startsWith("/api/cron/") ||
-    pathname.startsWith("/api/capture/") ||
-    pathname.startsWith("/api/admin/")
+    pathname.startsWith("/api/capture/")
   ) {
     return passthrough();
   }

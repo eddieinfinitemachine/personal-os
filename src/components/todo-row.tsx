@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { palette } from "@/lib/lists";
-import { cn } from "@/lib/utils";
+import { cn, formatCalendarDate, toDateInputValue, isCalendarDateOverdue } from "@/lib/utils";
 import { linkify } from "@/lib/linkify";
 import { getLists, getProjects } from "@/lib/todo-menu-cache";
 import { TodoDetailModal } from "./todo-detail-modal";
@@ -75,7 +75,7 @@ function TodoRowImpl({
   const [, startTransition] = useTransition();
   const completed = todo.completedAt != null;
   const due = todo.dueDate ? new Date(todo.dueDate) : null;
-  const isOverdue = due ? due.getTime() < Date.now() && !completed : false;
+  const isOverdue = due ? isCalendarDateOverdue(due) && !completed : false;
   const p = palette(listColor);
 
   const [editing, setEditing] = useState(false);
@@ -776,7 +776,7 @@ function TodoRowImpl({
                   : "text-[var(--color-muted-foreground)]"
               )}
             >
-              {due.toLocaleDateString(undefined, {
+              {formatCalendarDate(due, {
                 weekday: "short",
                 month: "short",
                 day: "numeric",
@@ -832,7 +832,7 @@ function TodoRowImpl({
               <input
                 ref={dateRef}
                 type="date"
-                defaultValue={due ? due.toISOString().slice(0, 10) : ""}
+                defaultValue={toDateInputValue(due)}
                 onBlur={(e) => saveDueDate(e.target.value || null)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter")
@@ -855,10 +855,7 @@ function TodoRowImpl({
                 title="Change due date"
               >
                 <Calendar className="size-3" />
-                {due.toLocaleDateString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                })}
+                {formatCalendarDate(due)}
                 <X
                   className="size-3 opacity-50 hover:opacity-100"
                   onClick={(e) => {

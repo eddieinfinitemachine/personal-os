@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
 
@@ -34,7 +33,6 @@ export async function PATCH(
       ...(body.position !== undefined && { position: body.position }),
     },
   });
-  revalidateTag(`sidebar-projects:${userId}`, "max");
   return NextResponse.json({ project });
 }
 
@@ -51,6 +49,5 @@ export async function DELETE(
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
   await prisma.project.delete({ where: { id } });
-  revalidateTag(`sidebar-projects:${userId}`, "max");
   return NextResponse.json({ ok: true });
 }

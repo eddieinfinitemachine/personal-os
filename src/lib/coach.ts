@@ -2,6 +2,8 @@
 // prompt and returns parsed action items. Used by both pet and vehicle
 // coaching routes.
 
+import { callClaudeJSON } from "@/lib/claude";
+
 export type CoachItem = {
   title: string;
   body?: string;
@@ -30,33 +32,11 @@ Output strict JSON, no prose, no markdown fences. Schema:
 export async function generateCoachItems(
   contextSummary: string
 ): Promise<CoachItem[]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
-
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1500,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: contextSummary }],
-    }),
+  const parsed = await callClaudeJSON<{ items?: CoachItem[] }>({
+    system: SYSTEM_PROMPT,
+    user: contextSummary,
+    maxTokens: 1500,
   });
-  if (!res.ok) {
-    throw new Error(`Claude error ${res.status}: ${await res.text()}`);
-  }
-  const data = (await res.json()) as {
-    content?: Array<{ type: string; text?: string }>;
-  };
-  const raw = data.content?.find((c) => c.type === "text")?.text ?? "";
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error("model did not return JSON");
-  const parsed = JSON.parse(match[0]) as { items?: CoachItem[] };
   if (!Array.isArray(parsed.items)) throw new Error("invalid response shape");
   return parsed.items
     .filter((i) => i && typeof i.title === "string" && i.title.trim().length > 0)

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
+import { callClaudeText } from "@/lib/claude";
 
 export async function POST(
   request: Request,
@@ -75,26 +76,7 @@ Keep total length under 350 words. Use tight, declarative prose. Do not hedge wi
 
   const userPrompt = `Pet profile:\n${profile}\n\nWrite the briefing now.`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1200,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    return NextResponse.json({ error: `Claude error (${res.status}): ${err}` }, { status: 502 });
-  }
-  const data = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
-  const note = data.content?.find((c) => c.type === "text")?.text?.trim() ?? "";
+  const note = await callClaudeText({ system: systemPrompt, user: userPrompt, maxTokens: 1200 });
   if (!note) {
     return NextResponse.json({ error: "empty response" }, { status: 502 });
   }

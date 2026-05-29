@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatCalendarDate } from "@/lib/utils";
 import {
   Bed,
   Calendar,
@@ -78,8 +79,10 @@ const STATUS_STYLES: Record<string, string> = {
 
 function fmtRange(start: string | null, end: string | null) {
   if (!start && !end) return null;
+  // Trip start/end are date-only (UTC midnight) — format in UTC so they don't
+  // slip a day in timezones west of UTC. See lib/utils formatCalendarDate.
   const toShort = (iso: string) =>
-    new Date(iso).toLocaleDateString(undefined, {
+    formatCalendarDate(iso, {
       month: "short",
       day: "numeric",
       year: "numeric",

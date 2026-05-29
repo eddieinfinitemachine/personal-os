@@ -3,6 +3,7 @@ import { getCurrentUserId } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isPrivateHost } from "@/lib/hosts";
 import { getPersonalRecord } from "@/lib/personal-record";
+import { callClaudeText } from "@/lib/claude";
 
 export async function POST(request: Request) {
   const userId = await getCurrentUserId(request);
@@ -53,24 +54,6 @@ Format as Markdown:
 
 Be confident with the calculations. Do not include disclaimers about astrology.`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1500,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    return NextResponse.json({ error: `Claude error (${res.status}): ${err}` }, { status: 502 });
-  }
-  const data = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
-  const note = data.content?.find((c) => c.type === "text")?.text?.trim() ?? "";
+  const note = await callClaudeText({ user: prompt, maxTokens: 1500 });
   return NextResponse.json({ note });
 }

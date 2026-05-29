@@ -1,11 +1,21 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "dev-secret-not-for-production",
-);
+function resolveJwtSecret(): Uint8Array {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    // Fail closed: a missing signing key in production would let anyone forge
+    // a session, so refuse to start rather than silently using a public default.
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("JWT_SECRET is required in production");
+    }
+    return new TextEncoder().encode("dev-secret-not-for-production");
+  }
+  return new TextEncoder().encode(secret);
+}
+
+const JWT_SECRET = resolveJwtSecret();
 
 export const SESSION_COOKIE = "kaizen-session";
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
@@ -69,12 +79,6 @@ export async function getCurrentUserId(req?: NextRequest | Request): Promise<str
   }
   const session = await getSession();
   return session?.userId ?? null;
-}
-
-export async function getCurrentUser(req?: NextRequest | Request) {
-  const userId = await getCurrentUserId(req);
-  if (!userId) return null;
-  return prisma.user.findUnique({ where: { id: userId } });
 }
 
 /**

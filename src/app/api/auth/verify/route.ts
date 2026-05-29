@@ -10,14 +10,17 @@ export async function GET(req: NextRequest) {
 
   const link = await prisma.magicLinkToken.findUnique({ where: { token } });
   if (!link) return redirectToLogin(req, "invalid");
-  if (link.usedAt) return redirectToLogin(req, "used");
   if (link.expiresAt < new Date()) return redirectToLogin(req, "expired");
 
-  // Mark token used immediately (single-use).
-  await prisma.magicLinkToken.update({
-    where: { id: link.id },
+  // Consume atomically: the guard on `usedAt: null` means only one of two
+  // concurrent verifications of the same token can win. A losing request
+  // (count === 0) sees the token as already used. This closes the
+  // check-then-update race a separate findUnique + update would leave open.
+  const consumed = await prisma.magicLinkToken.updateMany({
+    where: { id: link.id, usedAt: null },
     data: { usedAt: new Date() },
   });
+  if (consumed.count === 0) return redirectToLogin(req, "used");
 
   // Upsert user — first verification creates the account.
   const user = await prisma.user.upsert({

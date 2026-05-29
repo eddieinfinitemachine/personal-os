@@ -80,30 +80,15 @@ export function ListTile({
     Map<string, Partial<TodoLike>>
   >(new Map());
   const [isDragOver, setIsDragOver] = useState(false);
+  // Optimistic holding pen for rows dragged INTO this tile from another tile,
+  // so they appear before router.refresh lands. Reset whenever the server
+  // `todos` prop changes (the refresh now includes them). Tiles render every
+  // todo the server sends — there is no pagination — so this is the only
+  // source of "extra" rows.
   const [extraTodos, setExtraTodos] = useState<TodoLike[]>([]);
-  const [loadingMore, setLoadingMore] = useState(false);
-
-  // Reset the "show more" cache whenever the underlying todos prop changes
-  // (router.refresh) so we don't show stale extras after a server re-fetch.
   useEffect(() => {
     setExtraTodos([]);
   }, [todos]);
-
-  async function loadMore() {
-    if (loadingMore || extraTodos.length > 0) return;
-    setLoadingMore(true);
-    try {
-      const q = new URLSearchParams({ listId: list.id });
-      if (projectId) q.set("projectId", projectId);
-      const res = await fetch(`/api/todos?${q.toString()}`);
-      if (!res.ok) return;
-      const { todos: all } = (await res.json()) as { todos: TodoLike[] };
-      const seen = new Set(todos.map((t) => t.id));
-      setExtraTodos(all.filter((t) => !seen.has(t.id)));
-    } finally {
-      setLoadingMore(false);
-    }
-  }
 
   useEffect(() => {
     function handler(e: Event) {
@@ -508,13 +493,26 @@ export function ListTile({
   function toggleComplete(id: string) {
     const current = visibleTodos.find((t) => t.id === id);
     if (!current) return;
-    const next = current.completedAt ? null : new Date();
+    const completing = !current.completedAt;
+    const next = completing ? new Date() : null;
     setTodoOverrides((prev) => {
       const map = new Map(prev);
       map.set(id, { ...prev.get(id), completedAt: next });
       return map;
     });
-    const rollback = () =>
+    // These tiles only show incomplete todos, so completing one should make it
+    // leave the list immediately rather than linger as a checked row until the
+    // next refresh. Hide it optimistically; the post-refresh prune drops the
+    // hidden id once the server stops returning it.
+    if (completing) {
+      setHiddenIds((prev) => {
+        if (prev.has(id)) return prev;
+        const nextSet = new Set(prev);
+        nextSet.add(id);
+        return nextSet;
+      });
+    }
+    const rollback = () => {
       setTodoOverrides((prev) => {
         const map = new Map(prev);
         const existing = prev.get(id);
@@ -524,6 +522,15 @@ export function ListTile({
         else map.set(id, rest);
         return map;
       });
+      if (completing) {
+        setHiddenIds((prev) => {
+          if (!prev.has(id)) return prev;
+          const nextSet = new Set(prev);
+          nextSet.delete(id);
+          return nextSet;
+        });
+      }
+    };
     fetch(`/api/todos/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -1153,21 +1160,6 @@ export function ListTile({
                     </div>
                   );
                 })}
-                {totalCount > todos.length + extraTodos.length ? (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      loadMore();
-                    }}
-                    disabled={loadingMore}
-                    className="px-2 py-2 text-xs text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] transition"
-                  >
-                    {loadingMore
-                      ? "Loading…"
-                      : `+${totalCount - todos.length - extraTodos.length} more…`}
-                  </button>
-                ) : null}
               </div>
             );
           })()
@@ -1188,23 +1180,6 @@ export function ListTile({
                 onDelete={deleteTodo}
               />
             ))}
-            {totalCount > todos.length + extraTodos.length ? (
-              <li data-row className="-mx-1">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    loadMore();
-                  }}
-                  disabled={loadingMore}
-                  className="px-2 py-2 text-xs text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] transition"
-                >
-                  {loadingMore
-                    ? "Loading…"
-                    : `+${totalCount - todos.length - extraTodos.length} more…`}
-                </button>
-              </li>
-            ) : null}
           </ul>
         )}
 

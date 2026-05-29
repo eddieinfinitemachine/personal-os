@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { computeDue } from "@/lib/maintenance";
 import { getCurrentUserId } from "@/lib/auth";
+import { callClaudeText } from "@/lib/claude";
 
 type ChatTurn = { role: "user" | "assistant"; content: string };
 
@@ -229,29 +230,12 @@ export async function POST(
 === PROJECT STATE ===
 ${context}`;
 
-  const history = (body.history ?? []).slice(-20); // cap context window
-  const messages: ChatTurn[] = [...history, { role: "user", content: question }];
-
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1500,
-      system: systemPrompt,
-      messages,
-    }),
+  const history = Array.isArray(body.history) ? body.history : [];
+  const answer = await callClaudeText({
+    system: systemPrompt,
+    messages: [...history, { role: "user", content: question }],
+    maxTokens: 1500,
   });
-  if (!res.ok) {
-    const err = await res.text();
-    return NextResponse.json({ error: `Claude error (${res.status}): ${err}` }, { status: 502 });
-  }
-  const data = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
-  const answer = data.content?.find((c) => c.type === "text")?.text?.trim() ?? "";
   if (!answer) {
     return NextResponse.json({ error: "empty response" }, { status: 502 });
   }

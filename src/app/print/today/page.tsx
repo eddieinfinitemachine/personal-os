@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ensureDefaultLists, palette } from "@/lib/lists";
+import { formatCalendarDate } from "@/lib/utils";
 import { PrintButton } from "@/components/print-button";
 
 export const dynamic = "force-dynamic";
@@ -123,9 +124,7 @@ function PrintRow({
     subtasks?: { id: string; title: string }[];
   };
 }) {
-  const due = todo.dueDate
-    ? todo.dueDate.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-    : null;
+  const due = todo.dueDate ? formatCalendarDate(todo.dueDate) : null;
   return (
     <li className="flex items-start gap-1.5 text-[11.5px] leading-[1.35]">
       <span

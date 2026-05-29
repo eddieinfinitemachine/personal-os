@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
 import { isDropboxFolderUrl, listFolderByPath, listSharedFolder } from "@/lib/dropbox";
+import { getCurrentUserId } from "@/lib/auth";
+import { isFounderUser } from "@/lib/cron";
 
 export async function POST(request: Request) {
+  // Dropbox access uses a single shared service token with full root-namespace
+  // reach — gate it to the founder so other tenants can't enumerate it.
+  const userId = await getCurrentUserId(request);
+  if (!(await isFounderUser(userId))) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+
   const body = (await request.json()) as { url?: string; path?: string };
 
   try {

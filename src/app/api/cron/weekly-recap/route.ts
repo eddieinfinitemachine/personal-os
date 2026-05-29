@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureJournalProject, isAuthorizedCron } from "@/lib/cron";
+import { callClaudeText } from "@/lib/claude";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -164,31 +165,11 @@ export async function GET(request: Request) {
 
   const systemPrompt = `You are writing the user's weekly journal recap. Read the structured activity log below and produce a 3-paragraph narrative recap in first person ("I"). Be specific — reference actual todos, services, visits. Tone: calm, observational, slightly warm. End with one short forward-looking sentence about the coming week. No headings, no bullets. Plain prose. Markdown allowed for emphasis only.`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1200,
-      system: systemPrompt,
-      messages: [{ role: "user", content: lines.join("\n") }],
-    }),
+  const recap = await callClaudeText({
+    system: systemPrompt,
+    user: lines.join("\n"),
+    maxTokens: 1200,
   });
-  if (!res.ok) {
-    const err = await res.text();
-    return NextResponse.json(
-      { error: `Claude error (${res.status}): ${err}` },
-      { status: 502 }
-    );
-  }
-  const data = (await res.json()) as {
-    content?: Array<{ type: string; text?: string }>;
-  };
-  const recap = data.content?.find((c) => c.type === "text")?.text?.trim() ?? "";
   if (!recap) return NextResponse.json({ error: "empty recap" }, { status: 502 });
 
   const project = await ensureJournalProject(userId);

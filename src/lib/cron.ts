@@ -22,6 +22,18 @@ export async function getFounderUser(): Promise<{ id: string; email: string } | 
 }
 
 /**
+ * True if the given (session) userId is the founder. Used to gate
+ * founder-only integrations that rely on a single shared service token
+ * (e.g. the Dropbox root-namespace token), which must never be reachable
+ * by other tenants.
+ */
+export async function isFounderUser(userId: string | null): Promise<boolean> {
+  if (!userId) return false;
+  const founder = await getFounderUser();
+  return !!founder && founder.id === userId;
+}
+
+/**
  * Lookup-or-create the synthetic project that holds AI-generated journal
  * notes (weekly recaps, etc.). Idempotent. Scoped to the given user.
  */

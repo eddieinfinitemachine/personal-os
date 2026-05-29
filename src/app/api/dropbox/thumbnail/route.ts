@@ -1,6 +1,14 @@
 import { getThumbnail } from "@/lib/dropbox";
+import { getCurrentUserId } from "@/lib/auth";
+import { isFounderUser } from "@/lib/cron";
 
 export async function GET(request: Request) {
+  // Founder-only: see api/dropbox/list for rationale.
+  const userId = await getCurrentUserId(request);
+  if (!(await isFounderUser(userId))) {
+    return new Response("not found", { status: 404 });
+  }
+
   const url = new URL(request.url);
   const path = url.searchParams.get("path");
   const link = url.searchParams.get("link");

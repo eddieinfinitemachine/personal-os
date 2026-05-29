@@ -63,7 +63,7 @@ Required env (`.env`, gitignored — see `.env.example`):
 - `APP_URL` — `http://localhost:3000` in dev, `https://…` in prod
 - `ANTHROPIC_API_KEY` — Claude API
 - `CAPTURE_TOKEN` — bearer for `/api/capture/todo`
-- `FOUNDER_EMAIL` — user that bearer/cron/admin endpoints attach data to (default: `emcohen@me.com`)
+- `FOUNDER_EMAIL` — user that bearer/cron endpoints attach data to (default: `emcohen@me.com`)
 - `BLOB_READ_WRITE_TOKEN` — Vercel Blob (auto-populated when connected on Vercel)
 
 Optional:

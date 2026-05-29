@@ -81,9 +81,7 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
   if (!human) {
     return (
       <div className="rounded-2xl border border-dashed border-[var(--color-border)] p-8 text-center text-sm text-[var(--color-muted-foreground)]">
-        No human profile yet for this project. Hit{" "}
-        <code className="text-xs">POST /api/admin/seed-health</code> to seed
-        from cardio-coach.
+        No human profile yet for this project.
       </div>
     );
   }

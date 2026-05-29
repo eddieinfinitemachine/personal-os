@@ -207,19 +207,49 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
 
   function toggleComplete(id: string) {
     const isDone = overrides.has(id) ? overrides.get(id) != null : false;
-    const next = isDone ? null : new Date();
+    const completing = !isDone;
+    const next = completing ? new Date() : null;
     setOverrides((prev) => {
       const m = new Map(prev);
       m.set(id, next);
       return m;
     });
+    // Project lists only show incomplete todos, so a completed one should leave
+    // immediately. Hide it optimistically; the refresh prune drops the hidden
+    // id once the server stops returning it.
+    if (completing) {
+      setHidden((prev) => {
+        if (prev.has(id)) return prev;
+        const n = new Set(prev);
+        n.add(id);
+        return n;
+      });
+    }
+    const rollback = () => {
+      setOverrides((prev) => {
+        const m = new Map(prev);
+        m.delete(id);
+        return m;
+      });
+      if (completing) {
+        setHidden((prev) => {
+          if (!prev.has(id)) return prev;
+          const n = new Set(prev);
+          n.delete(id);
+          return n;
+        });
+      }
+    };
     fetch(`/api/todos/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ toggleComplete: true }),
-    }).then((res) => {
-      if (res.ok) startTransition(() => router.refresh());
-    });
+    })
+      .then((res) => {
+        if (res.ok) startTransition(() => router.refresh());
+        else rollback();
+      })
+      .catch(rollback);
   }
 
   function toggleSubtask(subtaskId: string) {

@@ -61,7 +61,8 @@ function mediaVerb(
 
 function isAuthorized(request: Request): boolean {
   const secret = process.env.CAPTURE_TOKEN;
-  if (!secret) return true;
+  // Fail closed in production (see capture/todo).
+  if (!secret) return process.env.NODE_ENV !== "production";
   const auth = request.headers.get("authorization");
   if (auth === `Bearer ${secret}`) return true;
   const url = new URL(request.url);
@@ -292,21 +293,51 @@ async function handle(rawText: string | null | undefined, rawUrl: string | null 
     if (isNaN(occurredAt.getTime())) {
       return NextResponse.json({ error: "invalid occurredAt" }, { status: 400 });
     }
+    // Resolve all person hints in ONE query instead of a findFirst per hint
+    // (the commit route already uses this batched shape). Misses are created,
+    // and the map is updated so duplicate hints in the same payload reuse them.
+    const hints = proposal.personHints
+      .map((h) => ({
+        firstName: h.firstName?.trim() ?? "",
+        lastName: h.lastName?.trim() || null,
+      }))
+      .filter((h) => h.firstName);
+
     const personIds: string[] = [];
-    for (const hint of proposal.personHints) {
-      const firstName = hint.firstName?.trim();
-      if (!firstName) continue;
-      const lastName = hint.lastName?.trim() || null;
-      const where: {
-        userId: string;
-        firstName: { equals: string; mode: "insensitive" };
-        lastName?: { equals: string; mode: "insensitive" } | null;
-      } = { userId, firstName: { equals: firstName, mode: "insensitive" } };
-      if (lastName) where.lastName = { equals: lastName, mode: "insensitive" };
-      else where.lastName = null;
-      let person = await prisma.person.findFirst({ where });
-      if (!person) person = await prisma.person.create({ data: { userId, firstName, lastName } });
-      personIds.push(person.id);
+    if (hints.length > 0) {
+      const existing = await prisma.person.findMany({
+        where: {
+          userId,
+          OR: hints.map((h) => ({
+            firstName: { equals: h.firstName, mode: "insensitive" as const },
+            lastName: h.lastName
+              ? { equals: h.lastName, mode: "insensitive" as const }
+              : null,
+          })),
+        },
+        select: { id: true, firstName: true, lastName: true },
+      });
+      const key = (f: string, l: string | null) =>
+        `${f.toLowerCase()}::${l?.toLowerCase() ?? ""}`;
+      const existingMap = new Map(
+        existing.map((p) => [key(p.firstName, p.lastName), p]),
+      );
+      for (const h of hints) {
+        const found = existingMap.get(key(h.firstName, h.lastName));
+        if (found) {
+          personIds.push(found.id);
+        } else {
+          const created = await prisma.person.create({
+            data: { userId, firstName: h.firstName, lastName: h.lastName },
+          });
+          personIds.push(created.id);
+          existingMap.set(key(h.firstName, h.lastName), {
+            id: created.id,
+            firstName: created.firstName,
+            lastName: created.lastName,
+          });
+        }
+      }
     }
     const interaction = await prisma.interaction.create({
       data: {

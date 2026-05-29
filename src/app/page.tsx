@@ -12,9 +12,6 @@ import { isPrivateHost } from "@/lib/hosts";
 import { listAccessWhere } from "@/lib/list-access";
 import type { TodoLike } from "@/components/todo-row";
 
-const PREVIEW_LIMIT = 12;
-const PROJECT_LIST_PREVIEW = 8;
-
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
@@ -126,7 +123,7 @@ export default async function HomePage() {
           ? []
           : list.members.map((m) => m.user.name ?? m.user.email),
       },
-      todos: all.slice(0, PREVIEW_LIMIT).map(toLike),
+      todos: all.map(toLike),
       totalCount: all.length,
     };
   });
@@ -139,7 +136,7 @@ export default async function HomePage() {
         const all = byProjList.get(`${project.id}:${list.id}`) ?? [];
         return {
           list: { id: list.id, name: list.name, color: list.color },
-          todos: all.slice(0, PROJECT_LIST_PREVIEW).map(toLike),
+          todos: all.map(toLike),
           totalCount: all.length,
         };
       });

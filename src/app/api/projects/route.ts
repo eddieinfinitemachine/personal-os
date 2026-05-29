@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
 
@@ -43,6 +42,5 @@ export async function POST(request: Request) {
       position,
     },
   });
-  revalidateTag(`sidebar-projects:${userId}`, "max");
   return NextResponse.json({ project });
 }

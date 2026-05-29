@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
+import { callClaudeJSON } from "@/lib/claude";
 
 type Parsed = {
   performedAt?: string;
@@ -80,51 +81,16 @@ Rules:
 - Never hallucinate ids. Only include ids from the list above.
 - If the user provided shop nicknames, expand to the full name when obvious from context (e.g. "Scuderia" → "J. Scuderia Automotive").`;
 
-  const messagesBody = {
-    model: "claude-sonnet-4-6",
-    max_tokens: 600,
-    system: systemPrompt,
-    messages: [{ role: "user", content: text }],
-  };
-
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify(messagesBody),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    return NextResponse.json(
-      { error: `Claude error (${res.status}): ${err}` },
-      { status: 502 }
-    );
-  }
-
-  const data = (await res.json()) as {
-    content?: Array<{ type: string; text?: string }>;
-  };
-  const raw = data.content?.find((c) => c.type === "text")?.text ?? "";
-
-  // Pull the first JSON object out of the response.
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) {
-    return NextResponse.json(
-      { error: "could not parse model output", raw },
-      { status: 502 }
-    );
-  }
-
   let parsed: Parsed;
   try {
-    parsed = JSON.parse(match[0]) as Parsed;
+    parsed = await callClaudeJSON<Parsed>({
+      system: systemPrompt,
+      user: text,
+      maxTokens: 600,
+    });
   } catch {
     return NextResponse.json(
-      { error: "invalid JSON from model", raw },
+      { error: "could not parse model output" },
       { status: 502 }
     );
   }

@@ -57,7 +57,9 @@ export async function GET(request: Request) {
 
 function isAuthorized(request: Request): boolean {
   const secret = process.env.CAPTURE_TOKEN;
-  if (!secret) return true;
+  // Fail closed in production: an unset token must NOT leave this public-write
+  // endpoint open. In dev, allow unsigned requests for hand-testing.
+  if (!secret) return process.env.NODE_ENV !== "production";
   const auth = request.headers.get("authorization");
   if (auth === `Bearer ${secret}`) return true;
   // Also accept ?token=… so Shortcuts can use a plain URL action.

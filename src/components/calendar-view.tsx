@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { palette } from "@/lib/lists";
-import { cn } from "@/lib/utils";
+import { cn, formatCalendarDate } from "@/lib/utils";
 
 type Event = {
   id: string;
@@ -55,9 +55,11 @@ export function CalendarView({
 
   const eventsByDay = new Map<number, Event[]>();
   for (const ev of events) {
+    // dueDate is anchored at UTC midnight — read its UTC calendar day so it
+    // lands on the cell the user actually picked, not one day earlier.
     const d = new Date(ev.dueDate);
-    if (d.getFullYear() === year && d.getMonth() === month) {
-      const day = d.getDate();
+    if (d.getUTCFullYear() === year && d.getUTCMonth() === month) {
+      const day = d.getUTCDate();
       const arr = eventsByDay.get(day) ?? [];
       arr.push(ev);
       eventsByDay.set(day, arr);
@@ -317,7 +319,6 @@ export function CalendarView({
           <ul className="space-y-2.5">
             {upcoming.map((ev) => {
               const p = palette(ev.listColor);
-              const d = new Date(ev.dueDate);
               return (
                 <li key={ev.id} className="flex items-start gap-2 text-sm">
                   <span
@@ -329,7 +330,7 @@ export function CalendarView({
                   <div className="min-w-0 flex-1">
                     <div className="truncate">{ev.title}</div>
                     <div className="text-[11px] text-[var(--color-muted-foreground)]">
-                      {d.toLocaleDateString(undefined, {
+                      {formatCalendarDate(ev.dueDate, {
                         weekday: "short",
                         month: "short",
                         day: "numeric",

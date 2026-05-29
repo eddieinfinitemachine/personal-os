@@ -140,7 +140,7 @@ async function TasksTab({ projectId, userId }: { projectId: string; userId: stri
     const all = byList.get(list.id) ?? [];
     return {
       list,
-      todos: all.slice(0, 20).map((t) => ({
+      todos: all.map((t) => ({
         id: t.id,
         title: t.title,
         notes: t.notes,

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Calendar, MapPin, Plane, Users } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatCalendarDate } from "@/lib/utils";
 
 export type TripRow = {
   id: string;
@@ -33,7 +33,7 @@ const STATUS_STYLES: Record<string, string> = {
 function fmtRange(start: string | null, end: string | null) {
   if (!start && !end) return null;
   const toShort = (iso: string) =>
-    new Date(iso).toLocaleDateString(undefined, {
+    formatCalendarDate(iso, {
       month: "short",
       day: "numeric",
       year: "numeric",
