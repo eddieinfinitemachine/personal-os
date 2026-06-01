@@ -13,7 +13,13 @@ function resolveJwtSecret(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
-const JWT_SECRET = resolveJwtSecret();
+// Lazy + memoized: Sensitive env vars aren't present during `next build`, so
+// resolving at import would throw the fail-closed error at build time. See
+// lib/auth.ts.
+let cachedJwtSecret: Uint8Array | null = null;
+function jwtSecret(): Uint8Array {
+  return (cachedJwtSecret ??= resolveJwtSecret());
+}
 const SESSION_COOKIE = "kaizen-session";
 
 // Public paths — landing/signup/login and the auth API.
@@ -64,7 +70,7 @@ export async function middleware(req: NextRequest) {
   let userId: string | null = null;
   if (token) {
     try {
-      const { payload } = await jwtVerify(token, JWT_SECRET);
+      const { payload } = await jwtVerify(token, jwtSecret());
       if (typeof payload.userId === "string") userId = payload.userId;
     } catch {
       // Invalid/expired — fall through.
