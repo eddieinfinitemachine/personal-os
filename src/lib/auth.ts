@@ -15,7 +15,15 @@ function resolveJwtSecret(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
-const JWT_SECRET = resolveJwtSecret();
+// Resolve lazily (and memoize) rather than at module load. On Vercel,
+// Sensitive env vars (JWT_SECRET) are injected at runtime only, not during
+// `next build`'s page-data collection — evaluating at import would throw the
+// fail-closed error at build time. Deferring to first use keeps the guard but
+// only trips it when a request actually needs to sign/verify a session.
+let cachedJwtSecret: Uint8Array | null = null;
+function jwtSecret(): Uint8Array {
+  return (cachedJwtSecret ??= resolveJwtSecret());
+}
 
 export const SESSION_COOKIE = "kaizen-session";
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
@@ -30,12 +38,12 @@ export async function signSession(user: { id: string; email: string }): Promise<
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_MAX_AGE}s`)
-    .sign(JWT_SECRET);
+    .sign(jwtSecret());
 }
 
 export async function verifySession(token: string): Promise<Session | null> {
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, jwtSecret());
     if (typeof payload.userId !== "string" || typeof payload.email !== "string") {
       return null;
     }
