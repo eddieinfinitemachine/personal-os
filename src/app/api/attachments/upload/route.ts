@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
+import { listAccessWhere } from "@/lib/list-access";
 
 // Per-user storage quota — keep tight while we're friends-only.
 const QUOTA_BYTES = 1024 * 1024 * 1024; // 1 GB
@@ -13,10 +14,17 @@ export async function POST(request: Request) {
 
   const form = await request.formData();
   const projectId = form.get("projectId");
+  const todoId = form.get("todoId");
   const file = form.get("file");
 
-  if (typeof projectId !== "string" || !projectId) {
-    return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  // An attachment belongs to exactly one owner — a project or a todo.
+  const hasProject = typeof projectId === "string" && projectId.length > 0;
+  const hasTodo = typeof todoId === "string" && todoId.length > 0;
+  if (hasProject === hasTodo) {
+    return NextResponse.json(
+      { error: "exactly one of projectId or todoId required" },
+      { status: 400 },
+    );
   }
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "file required" }, { status: 400 });
@@ -31,10 +39,24 @@ export async function POST(request: Request) {
     );
   }
 
-  // Ownership check.
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
-  if (!project || project.userId !== userId) {
-    return NextResponse.json({ error: "project not found" }, { status: 404 });
+  // Ownership check + blob path scope.
+  let scope: string;
+  if (hasProject) {
+    const project = await prisma.project.findUnique({ where: { id: projectId as string } });
+    if (!project || project.userId !== userId) {
+      return NextResponse.json({ error: "project not found" }, { status: 404 });
+    }
+    scope = `projects/${projectId}`;
+  } else {
+    // Authorize via parent list membership so shared-list collaborators can
+    // attach files to a todo too.
+    const todo = await prisma.todo.findFirst({
+      where: { id: todoId as string, list: listAccessWhere(userId) },
+    });
+    if (!todo) {
+      return NextResponse.json({ error: "todo not found" }, { status: 404 });
+    }
+    scope = `todos/${todoId}`;
   }
 
   // Quota check — sum of all files for this user.
@@ -58,7 +80,7 @@ export async function POST(request: Request) {
 
   // Upload to Vercel Blob. Path prefix scoped by user so listings/deletes are easy.
   const safeName = (file.name || "file").replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80);
-  const key = `users/${userId}/projects/${projectId}/${Date.now()}-${safeName}`;
+  const key = `users/${userId}/${scope}/${Date.now()}-${safeName}`;
 
   let blobUrl: string;
   try {
@@ -76,7 +98,8 @@ export async function POST(request: Request) {
   const attachment = await prisma.attachment.create({
     data: {
       userId,
-      projectId,
+      projectId: hasProject ? (projectId as string) : null,
+      todoId: hasTodo ? (todoId as string) : null,
       kind: "file",
       title: file.name || "Untitled",
       url: blobUrl,
