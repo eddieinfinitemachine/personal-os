@@ -91,6 +91,10 @@ function TodoRowImpl({
   const subInputRef = useRef<HTMLInputElement>(null);
   const subtasks = todo.subtasks ?? [];
   const hasSubs = subtasks.length > 0;
+  // Completed subtasks drop out of the inline list (mirroring how completed
+  // top-level todos leave these tiles). The full list — including completed
+  // ones — still flows to the detail modal so they can be un-checked there.
+  const visibleSubtasks = subtasks.filter((s) => s.completedAt == null);
 
   useEffect(() => {
     if (!editing) setDraft(todo.title);
@@ -934,9 +938,9 @@ function TodoRowImpl({
       </div>
       </div>
 
-      {!isSubtask && (hasSubs || addingSub) && subsExpanded ? (
+      {!isSubtask && (visibleSubtasks.length > 0 || addingSub) && subsExpanded ? (
         <ul className="ml-9 mt-px space-y-px border-l border-[var(--color-border)] pl-2">
-          {subtasks.map((s) => (
+          {visibleSubtasks.map((s) => (
             <TodoRow
               key={s.id}
               todo={s}
