@@ -726,14 +726,20 @@ model Attachment {
   size      Int?
   createdAt DateTime @default(now())
 
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  // Polymorphic owner: an attachment belongs to exactly one of a project or a
+  // todo. Both FKs are nullable; the API layer enforces "exactly one set".
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  todoId String?
+  todo   Todo?   @relation(fields: [todoId], references: [id], onDelete: Cascade)
 
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([projectId, createdAt])
+  @@index([todoId, createdAt])
   @@index([userId])
 }
 
@@ -848,6 +854,8 @@ model Todo {
   parentId String?
   parent   Todo?   @relation("TodoSubtasks", fields: [parentId], references: [id], onDelete: Cascade)
   subtasks Todo[]  @relation("TodoSubtasks")
+
+  attachments Attachment[]
 
   @@index([listId, completedAt, position])
   @@index([projectId, completedAt, position])

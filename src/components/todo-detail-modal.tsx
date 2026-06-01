@@ -2,20 +2,42 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, Trash2, X } from "lucide-react";
+import { Check, ExternalLink, Loader2, Paperclip, Trash2, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { haptic } from "@/lib/haptic";
 import { linkify } from "@/lib/linkify";
 
 // Things-style detail modal for a single todo. Double-click a todo to open.
 // Edits to notes auto-save on blur. Subtasks: add (Enter), toggle complete,
-// delete (X). Close with Esc, the X button, or click outside.
+// delete (X). Files: upload (attachment) or open/delete. Close with Esc, the X
+// button, or click outside.
 
 export type DetailSubtask = {
   id: string;
   title: string;
   completedAt: string | Date | null;
 };
+
+type DetailAttachment = {
+  id: string;
+  kind: string;
+  title: string;
+  url: string;
+  mimeType: string | null;
+  size: number | null;
+};
+
+function formatBytes(bytes: number | null): string {
+  if (!bytes || bytes <= 0) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  let n = bytes;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return `${n >= 10 || i === 0 ? Math.round(n) : n.toFixed(1)} ${units[i]}`;
+}
 
 export function TodoDetailModal({
   open,
@@ -38,7 +60,12 @@ export function TodoDetailModal({
   const [newSubtask, setNewSubtask] = useState("");
   const [addingPending, setAddingPending] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
+  const [attachments, setAttachments] = useState<DetailAttachment[]>([]);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const newSubRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   // Single refresh on close keeps the parent list in sync without
   // re-rendering after every optimistic op while the modal is open.
   const needsRefreshRef = useRef(false);
@@ -61,6 +88,29 @@ export function TodoDetailModal({
       setNewSubtask("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, todoId]);
+
+  // Load this todo's attachments when the modal opens (or the todo changes).
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setFileError(null);
+    setAttachments([]);
+    setLoadingFiles(true);
+    fetch(`/api/attachments?todoId=${encodeURIComponent(todoId)}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("load failed"))))
+      .then((body: { attachments: DetailAttachment[] }) => {
+        if (!cancelled) setAttachments(body.attachments ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setFileError("Couldn't load files.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingFiles(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [open, todoId]);
 
   useEffect(() => {
@@ -180,6 +230,50 @@ export function TodoDetailModal({
     }
   }
 
+  async function uploadFile(file: File) {
+    if (uploading) return;
+    setFileError(null);
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("todoId", todoId);
+      form.append("file", file);
+      const res = await fetch("/api/attachments/upload", {
+        method: "POST",
+        body: form,
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setFileError(body?.error || "Upload failed.");
+        return;
+      }
+      const body = (await res.json()) as { attachment: DetailAttachment };
+      setAttachments((prev) => [body.attachment, ...prev]);
+      haptic("tick");
+      needsRefreshRef.current = true;
+    } catch {
+      setFileError("Upload failed.");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function deleteAttachment(id: string) {
+    const before = attachments;
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+    try {
+      const res = await fetch(`/api/attachments/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        setAttachments(before);
+        return;
+      }
+      needsRefreshRef.current = true;
+    } catch {
+      setAttachments(before);
+    }
+  }
+
   if (!open) return null;
 
   return (
@@ -229,6 +323,77 @@ export function TodoDetailModal({
             rows={3}
             className="w-full resize-y rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm focus:border-[var(--color-ring)] focus:outline-none"
           />
+        </div>
+
+        {/* Files */}
+        <div className="border-b border-[var(--color-border)] px-5 py-4">
+          <div className="mb-2 flex items-baseline justify-between">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+              Files
+            </div>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="flex items-center gap-1 text-[11px] font-medium text-[var(--color-tint)] hover:opacity-80 disabled:opacity-50"
+            >
+              {uploading ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Upload className="size-3" />
+              )}
+              {uploading ? "uploading" : "Add file"}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadFile(file);
+              }}
+            />
+          </div>
+          {fileError ? (
+            <div className="mb-2 text-[12px] text-rose-500">{fileError}</div>
+          ) : null}
+          {loadingFiles ? (
+            <div className="flex items-center gap-1.5 py-1 text-[12px] text-[var(--color-muted-foreground)]">
+              <Loader2 className="size-3.5 animate-spin" /> loading…
+            </div>
+          ) : attachments.length === 0 ? (
+            <div className="py-1 text-[12px] text-[var(--color-muted-foreground)]/70">
+              No files yet.
+            </div>
+          ) : (
+            <ul className="space-y-1">
+              {attachments.map((a) => (
+                <li key={a.id} className="group flex items-center gap-2">
+                  <Paperclip className="size-3.5 shrink-0 text-[var(--color-muted-foreground)]" />
+                  <a
+                    href={a.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex min-w-0 flex-1 items-center gap-1.5 text-sm hover:text-[var(--color-tint)]"
+                  >
+                    <span className="truncate">{a.title}</span>
+                    {a.size ? (
+                      <span className="shrink-0 text-[11px] text-[var(--color-muted-foreground)]">
+                        {formatBytes(a.size)}
+                      </span>
+                    ) : null}
+                    <ExternalLink className="size-3 shrink-0 text-[var(--color-muted-foreground)]/50" />
+                  </a>
+                  <button
+                    onClick={() => deleteAttachment(a.id)}
+                    className="grid size-6 shrink-0 place-items-center rounded text-[var(--color-muted-foreground)]/40 opacity-0 transition hover:bg-rose-500/10 hover:text-rose-500 group-hover:opacity-100"
+                    aria-label="Delete file"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         {/* Subtasks */}
