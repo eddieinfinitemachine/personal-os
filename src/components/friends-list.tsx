@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, Pencil, Plus, Save, Star, Trash2, X } from "lucide-react";
+import { Check, Loader2, Pencil, Plus, Save, Sparkles, Star, Trash2, X } from "lucide-react";
+import { BulkAddPeople } from "./bulk-add-people";
 import { cn } from "@/lib/utils";
 import { haptic } from "@/lib/haptic";
 import {
@@ -48,6 +49,7 @@ export type PersonRow = {
 type Filter = {
   strength?: string[];
   circle?: string[];
+  city?: string[];
   bucket?: ("recent" | "30d" | "90d" | "1y" | "never")[];
   starred?: boolean;
   search?: string;
@@ -110,6 +112,7 @@ export function FriendsList({ initialPeople }: { initialPeople: PersonRow[] }) {
   const [views, setViews] = useState<SavedView[]>(DEFAULT_VIEWS);
   const [editing, setEditing] = useState<PersonRow | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [checkingIn, setCheckingIn] = useState<Set<string>>(new Set());
   type SortMode = "name" | "recent" | "overdue" | "added";
   const [sortMode, setSortMode] = useState<SortMode>(() => {
@@ -156,6 +159,18 @@ export function FriendsList({ initialPeople }: { initialPeople: PersonRow[] }) {
     for (const p of people) for (const c of p.circles) s.add(c);
     return [...s].sort();
   }, [people]);
+  // Cities ordered by how many people are in each (most-populated first), so
+  // the cities you actually filter by surface at the front of the row.
+  const allCities = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of people) {
+      const c = p.city?.trim();
+      if (c) counts.set(c, (counts.get(c) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([city]) => city);
+  }, [people]);
 
   const filtered = useMemo(() => {
     const result = people.filter((p) => {
@@ -164,6 +179,9 @@ export function FriendsList({ initialPeople }: { initialPeople: PersonRow[] }) {
         return false;
       if (filter.circle?.length) {
         if (!filter.circle.some((c) => p.circles.includes(c))) return false;
+      }
+      if (filter.city?.length) {
+        if (!filter.city.includes(p.city?.trim() ?? "")) return false;
       }
       if (filter.bucket?.length) {
         const b = bucketFor(daysSince(p.lastInteractionAt));
@@ -271,6 +289,7 @@ export function FriendsList({ initialPeople }: { initialPeople: PersonRow[] }) {
   const filterDirty =
     (filter.strength?.length ?? 0) +
       (filter.circle?.length ?? 0) +
+      (filter.city?.length ?? 0) +
       (filter.bucket?.length ?? 0) +
       (filter.search ? 1 : 0) >
     0;
@@ -348,6 +367,21 @@ export function FriendsList({ initialPeople }: { initialPeople: PersonRow[] }) {
             ))}
           </div>
         ) : null}
+        {allCities.length > 0 ? (
+          <div className="flex items-center gap-1.5 flex-wrap text-xs">
+            <span className="text-[var(--color-muted-foreground)]">City:</span>
+            {allCities.map((c) => (
+              <FilterChip
+                key={c}
+                label={c}
+                active={!!filter.city?.includes(c)}
+                onClick={() =>
+                  setFilter((f) => ({ ...f, city: toggle(f.city, c) }))
+                }
+              />
+            ))}
+          </div>
+        ) : null}
         <div className="flex items-center gap-1.5 flex-wrap text-xs">
           <span className="text-[var(--color-muted-foreground)]">Last seen:</span>
           {(
@@ -391,6 +425,12 @@ export function FriendsList({ initialPeople }: { initialPeople: PersonRow[] }) {
             </select>
           </label>
           <button
+            onClick={() => setBulkOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium min-h-[36px] hover:bg-[var(--color-accent)]"
+          >
+            <Sparkles className="size-4" /> Bulk add
+          </button>
+          <button
             onClick={() => setAddOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-foreground)] text-[var(--color-background)] px-3 py-1.5 text-sm font-medium min-h-[36px]"
           >
@@ -433,6 +473,18 @@ export function FriendsList({ initialPeople }: { initialPeople: PersonRow[] }) {
           setEditing(null);
           setAddOpen(false);
         }}
+      />
+
+      <BulkAddPeople
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        existingNames={
+          new Set(
+            people.map((p) =>
+              `${p.firstName} ${p.lastName ?? ""}`.trim().toLowerCase().replace(/\s+/g, " ")
+            )
+          )
+        }
       />
     </div>
   );

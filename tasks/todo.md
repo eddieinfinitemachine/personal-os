@@ -1,3 +1,39 @@
+# Bulk Add People — Friends (in progress)
+
+Goal: paste freeform text ("Met Sarah Chen at the AI dinner in SF, PM at Stripe,
+into climbing; also Jon her partner, photographer in Brooklyn") → structured
+Person rows → reviewed/edited → inserted in bulk.
+
+Decisions: skip WhatsApp for now (no API for personal WhatsApp — revisit via
+chat-export later); editable preview before insert; web-only (flag iOS port).
+
+## Tasks
+- [x] `POST /api/people/parse` — `{ text }` → `{ people: ParsedPerson[] }` via
+      `callClaudeJSON` (no DB writes). "context"→howWeMet/notes,
+      "location"→city/country, infer strength/interests/tags.
+- [x] `POST /api/people/bulk` — `{ people }` → createMany scoped to userId →
+      `{ created }`. Coerce birthday→Date, socialUrls→Json. Caps: 200/req.
+- [x] `BulkAddPeople` client modal — textarea → Parse → editable preview cards
+      (checkbox + editable key fields + duplicate flag) → "Add N" → bulk insert.
+- [x] Wire "Bulk add" button into `FriendsList` next to "Add person".
+- [x] Verify: `tsc --noEmit` clean.
+
+iOS port (not now): SwiftUI sheet w/ TextEditor → /people/parse → editable list
+→ save. Flagged for later.
+
+## Review
+Files: `src/app/api/people/parse/route.ts`, `src/app/api/people/bulk/route.ts`,
+`src/components/bulk-add-people.tsx`, edits to `src/components/friends-list.tsx`.
+- Reused existing `callClaudeJSON` (sonnet-4-6) + auth (`getCurrentUserId`) +
+  CSS-var styling — no new deps. Parse and insert are split so nothing is
+  written until the user confirms in the editable review step.
+- Duplicate detection is name-based against the loaded Friends list (client-side
+  warning only; doesn't block). Per-row include checkbox + delete.
+- Needs `ANTHROPIC_API_KEY` (already set in env). Untested against live API in
+  this session — verify one real paste end-to-end after deploy.
+
+---
+
 # Kaizen — Multi-tenant + File Upload (✅ SHIPPED 2026-05-19)
 
 ## Review
