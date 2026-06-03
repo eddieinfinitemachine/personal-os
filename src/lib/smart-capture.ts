@@ -239,8 +239,8 @@ For trip:
 - "notes": anything notable.
 
 For todo:
-- "title": short imperative — "Call dentist", "Renew passport", "Send invoice to Acme".
-- "notes": longer context if any.
+- "title": the user's task PRESERVED AS THEY WROTE IT. Do NOT reword, rephrase, expand, prepend an imperative verb, or otherwise "improve" it. If they typed "dave hiring memo", the title is "dave hiring memo" — NOT "Read Dave hiring memo". The ONLY edits allowed: trim surrounding whitespace, and strip a leading task lead-in if present ("todo:", "to do:", "remind me to", "I need to", "I have to" → drop just that prefix, keep the rest verbatim, e.g. "remind me to call dentist" → "call dentist"). Never change the words otherwise.
+- "notes": null by DEFAULT. Set it ONLY when the user themselves typed extra detail beyond the one-line task — verbatim, not paraphrased. NEVER fabricate, summarize, speculate about, or describe the capture. Specifically forbidden: meta-commentary like "User captured a reference to…", "likely a memo about…", or any guess at what the task means. When unsure, use null.
 - "dueDate": ISO if user said "tomorrow" / "Friday" / "by next week". Resolve against <TODAY>. Default null.
 - "listName": "To Do" by default. "Monitor" if user said "watch / monitor / keep an eye on". "Later" if "someday / eventually / no rush".
 - "projectId": match ACTIVE_PROJECTS like for asset (e.g. "todo: change Ferrari oil" → Ferrari project). Null otherwise.

@@ -14,6 +14,8 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 interface AuthFormProps {
   mode: "signup" | "login";
+  // Offer password sign-in (private single-operator host only).
+  allowPassword?: boolean;
 }
 
 export function AuthForm(props: AuthFormProps) {
@@ -24,12 +26,15 @@ export function AuthForm(props: AuthFormProps) {
   );
 }
 
-function AuthFormInner({ mode }: AuthFormProps) {
+function AuthFormInner({ mode, allowPassword = false }: AuthFormProps) {
   const search = useSearchParams();
   const errorParam = search.get("error");
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
+  // On the private host, default to password; let the user fall back to a link.
+  const [usePassword, setUsePassword] = useState(allowPassword);
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(
     errorParam ? ERROR_MESSAGES[errorParam] ?? "Something went wrong. Try again." : null,
   );
@@ -72,6 +77,33 @@ function AuthFormInner({ mode }: AuthFormProps) {
     }
   }
 
+  async function onPasswordSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!password || submitting) return;
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/auth/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setError(body.error ?? "Something went wrong. Try again.");
+        setSubmitting(false);
+        return;
+      }
+      // Honor the route the user was bounced from, else home.
+      const from = search.get("from");
+      window.location.assign(from && from.startsWith("/") ? from : "/");
+    } catch {
+      setError("Network error. Try again.");
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div className="grid min-h-screen place-items-center bg-[var(--color-background)] px-4 text-[var(--color-foreground)]">
       <div className="w-full max-w-sm">
@@ -83,6 +115,46 @@ function AuthFormInner({ mode }: AuthFormProps) {
 
         {sent ? (
           <SentState email={email} onChangeEmail={() => setSent(false)} />
+        ) : usePassword ? (
+          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-6">
+            <div className="mb-5 text-center">
+              <h1 className="text-xl font-semibold tracking-tight">{headline}</h1>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted-foreground)]">
+                Enter your password to sign in.
+              </p>
+            </div>
+
+            <form onSubmit={onPasswordSubmit} className="space-y-3">
+              <input
+                autoFocus
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password"
+                className="min-h-[44px] w-full rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2.5 text-sm focus:border-[var(--color-ring)] focus:outline-none"
+              />
+              {error ? <div className="text-sm text-rose-500">{error}</div> : null}
+              <button
+                type="submit"
+                disabled={submitting || !password}
+                className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-md bg-[var(--color-foreground)] px-3 py-2.5 text-sm font-medium text-[var(--color-background)] disabled:opacity-50"
+              >
+                {submitting ? <Loader2 className="size-4 animate-spin" /> : null}
+                Sign in
+              </button>
+            </form>
+
+            <button
+              onClick={() => {
+                setUsePassword(false);
+                setError(null);
+              }}
+              className="mt-4 block w-full text-center text-sm text-[var(--color-muted-foreground)] underline-offset-4 hover:underline"
+            >
+              Email me a link instead
+            </button>
+          </div>
         ) : (
           <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-6">
             <div className="mb-5 text-center">
@@ -113,6 +185,18 @@ function AuthFormInner({ mode }: AuthFormProps) {
                 {buttonLabel}
               </button>
             </form>
+
+            {allowPassword ? (
+              <button
+                onClick={() => {
+                  setUsePassword(true);
+                  setError(null);
+                }}
+                className="mt-4 block w-full text-center text-sm text-[var(--color-muted-foreground)] underline-offset-4 hover:underline"
+              >
+                Use a password instead
+              </button>
+            ) : null}
           </div>
         )}
 
