@@ -1097,15 +1097,11 @@ function TodoFields({
           />
         </Field>
         <Field label="List">
-          <select
-            value={proposal.listName ?? "To Do"}
-            onChange={(e) => patch({ listName: e.target.value })}
-            className={INPUT_CLASS}
+          <div
+            className={`${INPUT_CLASS} flex items-center text-[var(--color-muted-foreground)]`}
           >
-            <option value="To Do">To Do</option>
-            <option value="Monitor">Monitor</option>
-            <option value="Later">Later</option>
-          </select>
+            Inbox · sort it later
+          </div>
         </Field>
       </div>
       <Field label="Project">

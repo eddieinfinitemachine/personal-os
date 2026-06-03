@@ -1,9 +1,14 @@
 import { prisma } from "@/lib/prisma";
 
+// Smart Capture always files into this list so the user sorts captures
+// themselves rather than letting the AI pre-assign a list.
+export const CAPTURE_LIST_NAME = "Inbox";
+
 export const DEFAULT_LISTS = [
-  { name: "To Do", color: "blue", position: 0 },
-  { name: "Monitor", color: "orange", position: 1 },
-  { name: "Later", color: "violet", position: 2 },
+  { name: CAPTURE_LIST_NAME, color: "zinc", position: 0 },
+  { name: "To Do", color: "blue", position: 1 },
+  { name: "Monitor", color: "orange", position: 2 },
+  { name: "Later", color: "violet", position: 3 },
 ] as const;
 
 // Each list color resolves to a bundle of static Tailwind classes so the

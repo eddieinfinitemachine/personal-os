@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ensureDefaultLists } from "@/lib/lists";
+import { ensureDefaultLists, CAPTURE_LIST_NAME } from "@/lib/lists";
 import { parseCapture, type CaptureProposal } from "@/lib/smart-capture";
 
 export const dynamic = "force-dynamic";
@@ -203,12 +203,12 @@ async function handle(rawText: string | null | undefined, rawUrl: string | null 
 
   if (proposal.type === "todo") {
     await ensureDefaultLists(userId);
-    const listName = proposal.listName?.trim() || "To Do";
+    // Always file captures into Inbox; the user sorts them into lists later.
     const list = await prisma.list.findFirst({
-      where: { userId, name: { equals: listName, mode: "insensitive" } },
+      where: { userId, name: { equals: CAPTURE_LIST_NAME, mode: "insensitive" } },
     });
     if (!list) {
-      return NextResponse.json({ error: `list "${listName}" not found` }, { status: 404 });
+      return NextResponse.json({ error: `list "${CAPTURE_LIST_NAME}" not found` }, { status: 404 });
     }
     // If the original input had a URL, append it to notes so the todo row
     // linkifies it.

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
-import { ensureDefaultLists } from "@/lib/lists";
+import { ensureDefaultLists, CAPTURE_LIST_NAME } from "@/lib/lists";
 import type { CaptureProposal } from "@/lib/smart-capture";
 
 // Commit a (possibly user-edited) capture proposal to the DB.
@@ -89,9 +89,9 @@ export async function POST(request: Request) {
     let followupTodo: { id: string; title: string } | null = null;
     if (proposal.followupTodo?.title) {
       await ensureDefaultLists(userId);
-      const listName = proposal.followupTodo.listName?.trim() || "To Do";
+      // Follow-up todos also land in Inbox for the user to sort.
       const list = await prisma.list.findFirst({
-        where: { userId, name: { equals: listName, mode: "insensitive" } },
+        where: { userId, name: { equals: CAPTURE_LIST_NAME, mode: "insensitive" } },
       });
       if (list) {
         const todo = await prisma.todo.create({
@@ -217,16 +217,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ trip });
   }
 
-  // Todo path — create a new Todo on the named list (default "To Do").
+  // Todo path — always file into Inbox so the user sorts captures themselves,
+  // regardless of which list Claude proposed.
   if (proposal.type === "todo") {
     await ensureDefaultLists(userId);
-    const listName = proposal.listName?.trim() || "To Do";
     const list = await prisma.list.findFirst({
-      where: { userId, name: { equals: listName, mode: "insensitive" } },
+      where: { userId, name: { equals: CAPTURE_LIST_NAME, mode: "insensitive" } },
     });
     if (!list) {
       return NextResponse.json(
-        { error: `list "${listName}" not found` },
+        { error: `list "${CAPTURE_LIST_NAME}" not found` },
         { status: 404 },
       );
     }
