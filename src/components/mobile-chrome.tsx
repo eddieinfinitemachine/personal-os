@@ -8,6 +8,7 @@ import {
   Heart,
   Home,
   Menu,
+  Search,
   User,
   Users,
   X,
@@ -131,8 +132,15 @@ function MobileTopBar() {
         >
           <Menu className="size-5" />
         </button>
-        <div className="flex-1" />
-        {/* Title intentionally hidden — the page chrome speaks for itself. */}
+        {/* Universal search — opens the shared command palette (content + nav + capture). */}
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent("command-palette:open"))}
+          aria-label="Search"
+          className="flex-1 min-w-0 flex items-center gap-2 h-9 px-3 rounded-full bg-[var(--color-accent)]/60 text-[var(--color-muted-foreground)] text-sm"
+        >
+          <Search className="size-4 shrink-0" />
+          <span className="truncate">Search</span>
+        </button>
         <div className="flex items-center gap-1 justify-end">
           {state.right}
           <ThemeToggle compact />

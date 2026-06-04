@@ -6,18 +6,39 @@ import { useCapture } from "@/lib/capture-store";
 import {
   Calendar,
   Camera,
+  Car,
+  CheckCircle2,
+  FileText,
   Folder,
   Home,
   Lightbulb,
+  ListTodo,
   MapPin,
   Package,
+  PawPrint,
   Plane,
   Settings,
   Sparkles,
+  Star,
   TrendingUp,
   User,
   Users,
 } from "lucide-react";
+import type { SearchResult, SearchResultType } from "@/app/api/search/route";
+
+// Icon per universal-search result type (content search + ⌘K unified).
+const RESULT_ICONS: Record<SearchResultType, React.ReactNode> = {
+  todo: <CheckCircle2 className="size-4" />,
+  project: <Folder className="size-4" />,
+  list: <ListTodo className="size-4" />,
+  note: <FileText className="size-4" />,
+  person: <Users className="size-4" />,
+  trip: <Plane className="size-4" />,
+  vehicle: <Car className="size-4" />,
+  asset: <Package className="size-4" />,
+  recommendation: <Star className="size-4" />,
+  pet: <PawPrint className="size-4" />,
+};
 
 // Global ⌘K (Mac) / ⌃K (others) command palette.
 //
@@ -74,6 +95,7 @@ export function CommandPalette() {
   const [query, setQuery] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [results, setResults] = useState<SearchResult[]>([]);
 
   // Global hotkeys:
   //   ⌘K / ⌃K  → open/close palette
@@ -128,13 +150,41 @@ export function CommandPalette() {
   useEffect(() => {
     if (open) {
       setQuery("");
+      setResults([]);
       setActiveIdx(0);
       // Focus the input after the modal mounts.
       setTimeout(() => inputRef.current?.focus(), 30);
     }
   }, [open]);
 
+  // Lets the mobile top-bar search pill open this same overlay.
+  useEffect(() => {
+    const openHandler = () => setOpen(true);
+    window.addEventListener("command-palette:open", openHandler);
+    return () => window.removeEventListener("command-palette:open", openHandler);
+  }, []);
+
   const trimmed = query.trim();
+
+  // Debounced universal content search (reminders, projects, notes, people…).
+  // Abortable so stale responses never clobber the latest query.
+  useEffect(() => {
+    if (!open || trimmed.length < 2) {
+      setResults([]);
+      return;
+    }
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      fetch(`/api/search?q=${encodeURIComponent(trimmed)}`, { signal: ctrl.signal })
+        .then((r) => (r.ok ? r.json() : { results: [] }))
+        .then((d) => setResults(d.results ?? []))
+        .catch(() => {});
+    }, 200);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [trimmed, open]);
   const looksLikeCapture = trimmed.split(/\s+/).length >= 2 || trimmed.length > 12;
 
   const filteredNav = useMemo(
@@ -162,15 +212,16 @@ export function CommandPalette() {
       }
     : null;
 
+  // Content results first (most specific), then page nav, then the capture
+  // fallback last — so "no match → capture this" always remains reachable.
   const items: Array<
+    | { kind: "result"; result: SearchResult }
     | { kind: "nav"; cmd: NavCommand }
     | { kind: "capture"; label: string; hint: string }
   > = [
-    ...(captureCommand && looksLikeCapture
-      ? [{ kind: "capture" as const, label: captureCommand.label, hint: captureCommand.hint }]
-      : []),
+    ...results.map((result) => ({ kind: "result" as const, result })),
     ...filteredNav.map((c) => ({ kind: "nav" as const, cmd: c })),
-    ...(captureCommand && !looksLikeCapture
+    ...(captureCommand
       ? [{ kind: "capture" as const, label: captureCommand.label, hint: captureCommand.hint }]
       : []),
   ];
@@ -186,6 +237,8 @@ export function CommandPalette() {
     setOpen(false);
     if (item.kind === "nav") {
       router.push(item.cmd.href);
+    } else if (item.kind === "result") {
+      router.push(item.result.href);
     } else {
       // Background parse — no navigation. The inbox pill (top-right)
       // surfaces the in-flight + ready state.
@@ -217,7 +270,7 @@ export function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] sm:items-center sm:pt-4 bg-black/60 p-4 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === e.currentTarget) setOpen(false);
       }}
@@ -233,7 +286,7 @@ export function CommandPalette() {
               setActiveIdx(0);
             }}
             onKeyDown={onKey}
-            placeholder="Jump to anywhere, or describe something to capture…"
+            placeholder="Search everything, jump, or capture…"
             className="flex-1 bg-transparent text-base focus:outline-none placeholder:text-[var(--color-muted-foreground)]"
           />
           <div className="hidden sm:block text-[10px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
@@ -247,32 +300,48 @@ export function CommandPalette() {
               No matches.
             </li>
           ) : (
-            items.map((it, i) => (
-              <li key={it.kind === "nav" ? it.cmd.id : `cap-${i}`}>
-                <button
-                  onClick={() => pick(i)}
-                  onMouseMove={() => setActiveIdx(i)}
-                  className={
-                    "flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm " +
-                    (i === activeIdx
-                      ? "bg-[var(--color-accent)] text-[var(--color-foreground)]"
-                      : "text-[var(--color-foreground)] hover:bg-[var(--color-accent)]/60")
-                  }
-                >
-                  {it.kind === "nav" ? (
-                    <span className="text-[var(--color-muted-foreground)]">{it.cmd.icon}</span>
-                  ) : (
-                    <Camera className="size-4 text-[var(--color-tint)]" />
-                  )}
-                  <span className="flex-1 truncate">
-                    {it.kind === "nav" ? it.cmd.label : it.label}
-                  </span>
-                  <span className="text-xs text-[var(--color-muted-foreground)] truncate">
-                    {it.kind === "nav" ? it.cmd.hint ?? it.cmd.href : it.hint}
-                  </span>
-                </button>
-              </li>
-            ))
+            items.map((it, i) => {
+              const key =
+                it.kind === "nav"
+                  ? it.cmd.id
+                  : it.kind === "result"
+                    ? `r-${it.result.type}-${it.result.id}`
+                    : `cap-${i}`;
+              const icon =
+                it.kind === "nav"
+                  ? it.cmd.icon
+                  : it.kind === "result"
+                    ? RESULT_ICONS[it.result.type]
+                    : <Camera className="size-4 text-[var(--color-tint)]" />;
+              const label =
+                it.kind === "nav" ? it.cmd.label : it.kind === "result" ? it.result.label : it.label;
+              const hint =
+                it.kind === "nav"
+                  ? it.cmd.hint ?? it.cmd.href
+                  : it.kind === "result"
+                    ? it.result.sublabel ?? ""
+                    : it.hint;
+              return (
+                <li key={key}>
+                  <button
+                    onClick={() => pick(i)}
+                    onMouseMove={() => setActiveIdx(i)}
+                    className={
+                      "flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm " +
+                      (i === activeIdx
+                        ? "bg-[var(--color-accent)] text-[var(--color-foreground)]"
+                        : "text-[var(--color-foreground)] hover:bg-[var(--color-accent)]/60")
+                    }
+                  >
+                    <span className="text-[var(--color-muted-foreground)] shrink-0">{icon}</span>
+                    <span className="flex-1 truncate">{label}</span>
+                    <span className="text-xs text-[var(--color-muted-foreground)] truncate max-w-[40%]">
+                      {hint}
+                    </span>
+                  </button>
+                </li>
+              );
+            })
           )}
         </ul>
 
