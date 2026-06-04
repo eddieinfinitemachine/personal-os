@@ -1096,7 +1096,7 @@ function TodoFields({
             className={INPUT_CLASS}
           />
         </Field>
-        <Field label="List">
+        <Field label="Goes to">
           <div
             className={`${INPUT_CLASS} flex items-center text-[var(--color-muted-foreground)]`}
           >
@@ -1104,13 +1104,6 @@ function TodoFields({
           </div>
         </Field>
       </div>
-      <Field label="Project">
-        <ProjectSelect
-          value={proposal.projectId ?? null}
-          projects={projects}
-          onChange={(v) => patch({ projectId: v })}
-        />
-      </Field>
       <Field label="Notes">
         <textarea
           value={proposal.notes ?? ""}

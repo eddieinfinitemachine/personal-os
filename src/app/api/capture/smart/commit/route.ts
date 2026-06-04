@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
-import { ensureDefaultLists, CAPTURE_LIST_NAME } from "@/lib/lists";
+import { ensureDefaultLists, ensureInboxProject, CAPTURE_LIST_NAME } from "@/lib/lists";
 import type { CaptureProposal } from "@/lib/smart-capture";
 
 // Commit a (possibly user-edited) capture proposal to the DB.
@@ -89,7 +89,9 @@ export async function POST(request: Request) {
     let followupTodo: { id: string; title: string } | null = null;
     if (proposal.followupTodo?.title) {
       await ensureDefaultLists(userId);
-      // Follow-up todos also land in Inbox for the user to sort.
+      // Follow-up todos land in the Inbox project (To Do list) for the user
+      // to sort, regardless of the asset's project.
+      const inboxProjectId = await ensureInboxProject(userId);
       const list = await prisma.list.findFirst({
         where: { userId, name: { equals: CAPTURE_LIST_NAME, mode: "insensitive" } },
       });
@@ -98,7 +100,7 @@ export async function POST(request: Request) {
           data: {
             userId,
             listId: list.id,
-            projectId,
+            projectId: inboxProjectId,
             title: proposal.followupTodo.title,
           },
         });
@@ -217,10 +219,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ trip });
   }
 
-  // Todo path — always file into Inbox so the user sorts captures themselves,
-  // regardless of which list Claude proposed.
+  // Todo path — always file into the Inbox project (To Do list) so the user
+  // sorts captures into real projects themselves, regardless of what Claude
+  // proposed for project/list.
   if (proposal.type === "todo") {
     await ensureDefaultLists(userId);
+    const inboxProjectId = await ensureInboxProject(userId);
     const list = await prisma.list.findFirst({
       where: { userId, name: { equals: CAPTURE_LIST_NAME, mode: "insensitive" } },
     });
@@ -234,7 +238,7 @@ export async function POST(request: Request) {
       data: {
         userId,
         listId: list.id,
-        projectId,
+        projectId: inboxProjectId,
         title: proposal.title,
         notes: proposal.notes ?? null,
         dueDate: proposal.dueDate ? new Date(proposal.dueDate) : null,

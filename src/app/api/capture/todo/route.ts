@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ensureDefaultLists, CAPTURE_LIST_NAME } from "@/lib/lists";
+import { ensureDefaultLists, ensureInboxProject, CAPTURE_LIST_NAME } from "@/lib/lists";
 
 export const dynamic = "force-dynamic";
 
@@ -97,7 +97,7 @@ async function handle(input: {
 
   await ensureDefaultLists(userId);
 
-  // Default unsorted captures to Inbox; an explicit `list` still wins.
+  // Default unsorted captures to the To Do list; an explicit `list` still wins.
   const listName = input.list ?? CAPTURE_LIST_NAME;
   const list = await prisma.list.findFirst({
     where: { userId, name: { equals: listName, mode: "insensitive" } },
@@ -109,7 +109,9 @@ async function handle(input: {
     );
   }
 
-  let projectId: string | null = null;
+  // Default to the Inbox project so unsorted captures land there; an explicit
+  // `project` still wins.
+  let projectId: string | null = await ensureInboxProject(userId);
   if (input.project) {
     const proj = await prisma.project.findFirst({
       where: {

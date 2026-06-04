@@ -1,14 +1,15 @@
 import { prisma } from "@/lib/prisma";
 
-// Smart Capture always files into this list so the user sorts captures
-// themselves rather than letting the AI pre-assign a list.
-export const CAPTURE_LIST_NAME = "Inbox";
+// Smart Capture files todos into the "Inbox" PROJECT (on the To Do list) so the
+// user sorts captures into real projects themselves, rather than letting the AI
+// pre-assign a project/list.
+export const INBOX_PROJECT_NAME = "Inbox";
+export const CAPTURE_LIST_NAME = "To Do";
 
 export const DEFAULT_LISTS = [
-  { name: CAPTURE_LIST_NAME, color: "zinc", position: 0 },
-  { name: "To Do", color: "blue", position: 1 },
-  { name: "Monitor", color: "orange", position: 2 },
-  { name: "Later", color: "violet", position: 3 },
+  { name: "To Do", color: "blue", position: 0 },
+  { name: "Monitor", color: "orange", position: 1 },
+  { name: "Later", color: "violet", position: 2 },
 ] as const;
 
 // Each list color resolves to a bundle of static Tailwind classes so the
@@ -110,5 +111,43 @@ export async function ensureDefaultLists(userId: string): Promise<void> {
       });
     }
   }
+  // Migrate away the short-lived "Inbox" default *list* (captures now use the
+  // Inbox project instead): move any of its todos onto To Do + Inbox project,
+  // then delete the stray list so it stops showing as a top-level tile.
+  const legacyInboxList = await prisma.list.findFirst({
+    where: { userId, isDefault: true, name: "Inbox" },
+  });
+  if (legacyInboxList) {
+    const toDo = await prisma.list.findFirst({
+      where: { userId, isDefault: true, name: "To Do" },
+    });
+    if (toDo) {
+      const inboxProjectId = await ensureInboxProject(userId);
+      await prisma.todo.updateMany({
+        where: { listId: legacyInboxList.id },
+        data: { listId: toDo.id, projectId: inboxProjectId },
+      });
+      await prisma.list.delete({ where: { id: legacyInboxList.id } });
+    }
+  }
   ensuredForUser.add(userId);
+}
+
+// Idempotent: ensures the "Inbox" project exists for this user and returns its
+// id. Smart Capture files todos here so the user triages them into real
+// projects later. Per-user cache, same as ensureDefaultLists.
+const inboxProjectForUser = new Map<string, string>();
+export async function ensureInboxProject(userId: string): Promise<string> {
+  const cached = inboxProjectForUser.get(userId);
+  if (cached) return cached;
+  let project = await prisma.project.findFirst({
+    where: { userId, name: { equals: INBOX_PROJECT_NAME, mode: "insensitive" } },
+  });
+  if (!project) {
+    project = await prisma.project.create({
+      data: { userId, name: INBOX_PROJECT_NAME, icon: "Inbox", color: "neutral", position: 0 },
+    });
+  }
+  inboxProjectForUser.set(userId, project.id);
+  return project.id;
 }

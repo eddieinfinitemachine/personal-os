@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ensureDefaultLists, CAPTURE_LIST_NAME } from "@/lib/lists";
+import { ensureDefaultLists, ensureInboxProject, CAPTURE_LIST_NAME } from "@/lib/lists";
 import { parseCapture, type CaptureProposal } from "@/lib/smart-capture";
 
 export const dynamic = "force-dynamic";
@@ -203,7 +203,9 @@ async function handle(rawText: string | null | undefined, rawUrl: string | null 
 
   if (proposal.type === "todo") {
     await ensureDefaultLists(userId);
-    // Always file captures into Inbox; the user sorts them into lists later.
+    // Always file captures into the Inbox project (To Do list); the user sorts
+    // them into real projects later.
+    const inboxProjectId = await ensureInboxProject(userId);
     const list = await prisma.list.findFirst({
       where: { userId, name: { equals: CAPTURE_LIST_NAME, mode: "insensitive" } },
     });
@@ -219,7 +221,7 @@ async function handle(rawText: string | null | undefined, rawUrl: string | null 
       data: {
         userId,
         listId: list.id,
-        projectId: proposal.projectId ?? null,
+        projectId: inboxProjectId,
         title: proposal.title,
         notes: notes || null,
         dueDate: proposal.dueDate ? new Date(proposal.dueDate) : null,
