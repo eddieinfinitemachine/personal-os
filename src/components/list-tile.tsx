@@ -1059,7 +1059,12 @@ export function ListTile({
           (() => {
             const buckets = new Map<string, TodoLike[]>();
             for (const t of visibleTodos) {
-              const key = t.projectName ?? "__inbox__";
+              // Fold no-project todos AND the "Inbox" project into one Inbox
+              // bucket so there's a single Inbox group, not two.
+              const key =
+                !t.projectName || t.projectName.toLowerCase() === "inbox"
+                  ? "__inbox__"
+                  : t.projectName;
               const arr = buckets.get(key) ?? [];
               arr.push(t);
               buckets.set(key, arr);
@@ -1082,7 +1087,11 @@ export function ListTile({
               <div className="-mx-1">
                 {ordered.map((g) => {
                   const open = !collapsedGroups.has(g.key);
-                  const groupProjectId = g.todos[0]?.projectId ?? null;
+                  // Prefer a real project id within the group so the merged
+                  // Inbox bucket (no-project + Inbox-project todos) drops onto
+                  // the Inbox project, not "no project".
+                  const groupProjectId =
+                    g.todos.find((t) => t.projectId)?.projectId ?? null;
                   const isOver = overGroupKey === g.key;
                   return (
                     <div
