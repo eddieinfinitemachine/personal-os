@@ -6,16 +6,14 @@
     "Helvetica Neue", "Segoe UI", Roboto, system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
 
-  /* Light defaults — Apple system colors. */
+  /* Light defaults — Apple system colors. Neutral (zero-chroma) grays. */
   --color-background: oklch(1 0 0);
-  /* Grouped page bg (iOS systemGroupedBackground) — desktop only, see body rule. */
-  --color-background-grouped: oklch(0.972 0.003 247);
   --color-foreground: oklch(0.18 0 0);
   --color-muted: oklch(0.965 0 0);
-  --color-muted-foreground: oklch(0.45 0.005 264);
+  --color-muted-foreground: oklch(0.5 0 0);
   --color-border: oklch(0.9 0 0);
   --color-input: oklch(0.93 0 0);
-  --color-ring: oklch(0.6 0.22 256);
+  --color-ring: oklch(0.55 0.15 250);
   --color-card: oklch(1 0 0);
   --color-card-foreground: oklch(0.18 0 0);
   --color-accent: oklch(0.94 0 0);
@@ -24,17 +22,16 @@
   --color-tint: oklch(0.6 0.22 256);
 
   /* HIG label hierarchy — primary text is --color-foreground. */
-  --color-label-secondary: oklch(0.45 0.005 264);
-  --color-label-tertiary: oklch(0.62 0.005 264);
-  --color-label-quaternary: oklch(0.78 0.004 264);
-  /* Hairlines between rows (alpha so they stack on any surface). */
-  --color-separator: oklch(0.2 0 0 / 0.1);
-  /* Card edges — lighter than --color-border for floating cards. */
-  --color-card-border: oklch(0.2 0 0 / 0.07);
+  --color-label-secondary: oklch(0.5 0 0);
+  --color-label-tertiary: oklch(0.62 0 0);
+  --color-label-quaternary: oklch(0.78 0 0);
+  /* Hairlines + card edges — match --color-border (flat neutral scheme). */
+  --color-separator: oklch(0.9 0 0);
+  --color-card-border: oklch(0.9 0 0);
   /* Control fills: secondary buttons, chips, search pill. */
-  --color-fill: oklch(0.945 0.002 264);
-  --color-fill-secondary: oklch(0.965 0.002 264);
-  /* Popovers, menus, modals — one elevation step above cards. */
+  --color-fill: oklch(0.945 0 0);
+  --color-fill-secondary: oklch(0.965 0 0);
+  /* Popovers, menus, modals render on the card surface. */
   --color-elevated: oklch(1 0 0);
   --color-destructive: oklch(0.58 0.21 27);
   --color-success: oklch(0.6 0.16 150);
@@ -142,27 +139,26 @@
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --color-background: oklch(0 0 0);
-      --color-background-grouped: oklch(0 0 0);
       --color-foreground: oklch(0.97 0 0);
       --color-muted: oklch(0.16 0 0);
-      --color-muted-foreground: oklch(0.72 0.004 264);
+      --color-muted-foreground: oklch(0.62 0 0);
       --color-border: oklch(0.22 0 0);
       --color-input: oklch(0.22 0 0);
-      --color-ring: oklch(0.7 0.18 256);
-      --color-card: oklch(0.17 0.002 264);
+      --color-ring: oklch(0.6 0.18 256);
+      --color-card: oklch(0.13 0 0);
       --color-card-foreground: oklch(0.97 0 0);
-      --color-accent: oklch(1 0 0 / 0.08);
+      --color-accent: oklch(0.2 0 0);
       --color-accent-foreground: oklch(0.97 0 0);
       --color-tint: oklch(0.7 0.18 256);
 
-      --color-label-secondary: oklch(0.72 0.004 264);
-      --color-label-tertiary: oklch(0.55 0.004 264);
-      --color-label-quaternary: oklch(0.4 0.003 264);
-      --color-separator: oklch(1 0 0 / 0.09);
-      --color-card-border: oklch(1 0 0 / 0.1);
-      --color-fill: oklch(1 0 0 / 0.09);
-      --color-fill-secondary: oklch(1 0 0 / 0.06);
-      --color-elevated: oklch(0.22 0.003 264);
+      --color-label-secondary: oklch(0.62 0 0);
+      --color-label-tertiary: oklch(0.5 0 0);
+      --color-label-quaternary: oklch(0.38 0 0);
+      --color-separator: oklch(0.22 0 0);
+      --color-card-border: oklch(0.22 0 0);
+      --color-fill: oklch(0.2 0 0);
+      --color-fill-secondary: oklch(0.16 0 0);
+      --color-elevated: oklch(0.13 0 0);
       --color-destructive: oklch(0.66 0.19 25);
       --color-success: oklch(0.72 0.16 155);
       --color-warning: oklch(0.78 0.15 75);
@@ -176,27 +172,26 @@
 
   :root[data-theme="dark"] {
     --color-background: oklch(0 0 0);
-    --color-background-grouped: oklch(0 0 0);
     --color-foreground: oklch(0.97 0 0);
     --color-muted: oklch(0.16 0 0);
-    --color-muted-foreground: oklch(0.72 0.004 264);
+    --color-muted-foreground: oklch(0.62 0 0);
     --color-border: oklch(0.22 0 0);
     --color-input: oklch(0.22 0 0);
-    --color-ring: oklch(0.7 0.18 256);
-    --color-card: oklch(0.17 0.002 264);
+    --color-ring: oklch(0.6 0.18 256);
+    --color-card: oklch(0.13 0 0);
     --color-card-foreground: oklch(0.97 0 0);
-    --color-accent: oklch(1 0 0 / 0.08);
+    --color-accent: oklch(0.2 0 0);
     --color-accent-foreground: oklch(0.97 0 0);
     --color-tint: oklch(0.7 0.18 256);
 
-    --color-label-secondary: oklch(0.72 0.004 264);
-    --color-label-tertiary: oklch(0.55 0.004 264);
-    --color-label-quaternary: oklch(0.4 0.003 264);
-    --color-separator: oklch(1 0 0 / 0.09);
-    --color-card-border: oklch(1 0 0 / 0.1);
-    --color-fill: oklch(1 0 0 / 0.09);
-    --color-fill-secondary: oklch(1 0 0 / 0.06);
-    --color-elevated: oklch(0.22 0.003 264);
+    --color-label-secondary: oklch(0.62 0 0);
+    --color-label-tertiary: oklch(0.5 0 0);
+    --color-label-quaternary: oklch(0.38 0 0);
+    --color-separator: oklch(0.22 0 0);
+    --color-card-border: oklch(0.22 0 0);
+    --color-fill: oklch(0.2 0 0);
+    --color-fill-secondary: oklch(0.16 0 0);
+    --color-elevated: oklch(0.13 0 0);
     --color-destructive: oklch(0.66 0.19 25);
     --color-success: oklch(0.72 0.16 155);
     --color-warning: oklch(0.78 0.15 75);
@@ -219,14 +214,6 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
-  }
-
-  /* Desktop: grouped page background so cards float (iOS Settings style).
-     Mobile keeps the flat Reminders-style bg set further down. */
-  @media (min-width: 768px) {
-    body {
-      background: var(--color-background-grouped);
-    }
   }
 
   /* HIG: honor Reduce Motion. Near-zero (not none) so fill-mode end states

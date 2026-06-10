@@ -145,7 +145,7 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
                 className={cn(
                   "pressable shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium tabular-nums transition-colors",
                   active
-                    ? "bg-[var(--color-fill)] text-[var(--color-foreground)]"
+                    ? "bg-[var(--color-accent)] text-[var(--color-foreground)] ring-1 ring-[var(--color-foreground)]/10"
                     : "text-[var(--color-muted-foreground)]"
                 )}
               >

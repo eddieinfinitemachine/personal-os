@@ -151,7 +151,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="w-64 shrink-0 border-r border-[var(--color-separator)] bg-[var(--color-fill-secondary)] flex flex-col min-h-screen">
+    <aside className="w-64 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-muted)]/40 flex flex-col min-h-screen">
       <div className="px-4 py-5 flex items-center justify-between gap-2">
         <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
           {appName}
@@ -412,27 +412,14 @@ function SidebarLink({
       className={cn(
         "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition",
         active
-          ? "bg-[var(--color-tint)]/12 text-[var(--color-tint)] font-medium"
+          ? "bg-[var(--color-accent)] text-[var(--color-foreground)] font-medium"
           : "text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
       )}
     >
-      <span
-        className={cn(
-          active ? "text-[var(--color-tint)]" : "text-[var(--color-label-tertiary)]"
-        )}
-      >
-        {icon}
-      </span>
+      <span className="text-[var(--color-muted-foreground)]">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
       {count !== undefined && count > 0 ? (
-        <span
-          className={cn(
-            "text-xs tabular-nums",
-            active
-              ? "text-[var(--color-tint)]/80"
-              : "text-[var(--color-muted-foreground)]"
-          )}
-        >
+        <span className="text-xs text-[var(--color-muted-foreground)] tabular-nums">
           {count}
         </span>
       ) : null}
@@ -613,7 +600,7 @@ function ProjectSidebarRow({
       className={cn(
         "group/row relative flex items-center rounded-md transition",
         active
-          ? "bg-[var(--color-tint)]/12"
+          ? "bg-[var(--color-accent)]"
           : "hover:bg-[var(--color-accent)]",
         todoOver &&
           "ring-2 ring-[var(--color-ring)] bg-[var(--color-accent)]",
@@ -653,17 +640,12 @@ function ProjectSidebarRow({
           className={cn(
             "flex-1 flex items-center gap-2 px-2 py-1.5 text-sm",
             active
-              ? "text-[var(--color-tint)] font-medium"
+              ? "text-[var(--color-foreground)] font-medium"
               : "text-[var(--color-muted-foreground)] group-hover/row:text-[var(--color-foreground)]"
           )}
         >
           <Folder
-            className={cn(
-              "size-4",
-              active
-                ? "text-[var(--color-tint)]"
-                : "text-[var(--color-label-tertiary)]"
-            )}
+            className="size-4 text-[var(--color-muted-foreground)]"
             strokeWidth={1.75}
           />
           <span className="flex-1 truncate">{project.name}</span>

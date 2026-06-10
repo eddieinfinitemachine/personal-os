@@ -722,7 +722,7 @@ function TodoRowImpl({
             completed
               ? cn("text-white", p.fill, "border-transparent")
               : cn(
-                  "border-[var(--color-label-quaternary)] bg-transparent",
+                  "border-[var(--color-muted-foreground)]/40 bg-transparent",
                   p.hoverBorder,
                   "hover:scale-105"
                 )
@@ -823,7 +823,7 @@ function TodoRowImpl({
               className={cn(
                 "md:hidden block text-[13px] leading-[16px] mt-0.5 text-left tabular-nums",
                 isOverdue
-                  ? "text-[var(--color-destructive)] font-medium"
+                  ? "text-rose-500 font-medium"
                   : "text-[var(--color-muted-foreground)]"
               )}
             >
@@ -900,10 +900,8 @@ function TodoRowImpl({
                   setEditingDate(true);
                 }}
                 className={cn(
-                  "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-caption font-medium tabular-nums transition-colors",
-                  isOverdue
-                    ? "bg-[var(--color-destructive)]/12 text-[var(--color-destructive)] hover:bg-[var(--color-destructive)]/20"
-                    : "bg-[var(--color-fill)] text-[var(--color-label-secondary)] hover:bg-[var(--color-accent)]"
+                  "inline-flex items-center gap-1 rounded px-1 py-0.5 tabular-nums hover:bg-[var(--color-accent)]",
+                  isOverdue && "text-rose-500 font-medium"
                 )}
                 title="Change due date"
               >

@@ -97,7 +97,7 @@ export function CaptureDrawer() {
         data-state={overlayState}
         className="relative mx-auto mt-0 max-h-[80vh] w-full max-w-3xl overflow-y-auto rounded-b-2xl border-b border-x border-[var(--color-card-border)] bg-[var(--color-background)] shadow-modal"
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[var(--color-separator)] bg-[var(--color-background)]/80 px-5 py-3 backdrop-blur-xl backdrop-saturate-150">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-background)]/95 px-5 py-3 backdrop-blur">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
               Captures

@@ -989,7 +989,9 @@ export function ListTile({
                 aria-label="Shared list"
               />
             ) : null}
-            <span className="text-title font-semibold tabular-nums shrink-0 text-[var(--color-label-tertiary)]">
+            <span
+              className={cn("text-title font-bold tabular-nums shrink-0", p.text)}
+            >
               {totalCount + (visibleTodos.length - todos.length)}
             </span>
           </div>
