@@ -30,3 +30,10 @@ Append after every correction or non-obvious gotcha. Format:
 **Context**: After adding a third entity (CDPerson) and parallel test execution, ~15% of test runs failed with non-deterministic data corruption (lost relationships, save errors, ghost rows). Tried `.serialized` on suites, `NSInMemoryStoreType`, fresh-vs-cached `NSManagedObjectModel`, setup locks — all helped marginally but didn't eliminate flakiness.
 **Mistake / surprise**: `viewContext` is `mainQueueConcurrencyType` — it's only thread-safe when accessed from the main queue, OR via `performAndWait`. Direct calls to `context.fetch()` / `context.save()` from background tasks (which Swift Testing's parallel scheduler creates) is racy. The "shared model" red herring distracted from the real issue.
 **Rule**: Any store / repository that calls into a `viewContext` should be marked `@MainActor`. Mark `init(...)` as `nonisolated` so stores can be constructed in `Sendable` containers (`AppEnvironment`) and from non-isolated default-value closures (the `@Entry` macro). The compiler then enforces correct-thread access at every call site. Stores wrapping a *background* context can stay non-isolated, but should `performAndWait`.
+
+## Design polish: color is identity (2026-06-10)
+Shipped an Apple-HIG polish pass that changed both motion AND colors (grouped-gray bg,
+blue-tinted selection, hued grays). Eddie kept all the motion/typography but vetoed every
+color change: "i liked the previous color scheme." Kaizen's flat neutral monochrome look
+is intentional. Rule: polish this app via motion, type, spacing, and depth — never recolor
+surfaces or selection states without showing Eddie first.
