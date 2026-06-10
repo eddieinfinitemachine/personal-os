@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronRight,
   Folder,
+  MessageCircle,
   Pencil,
   Plus,
   Trash2,
@@ -37,6 +38,10 @@ export type TodoLike = {
   // Display name of whoever created the todo. Surfaced as "added by …" only
   // on collaborative (shared) lists — see `showCreator`.
   creatorName?: string | null;
+  // Comment thread counts. commentCount drives the bubble; unreadCommentCount
+  // (others' comments since you last opened the thread) drives the badge.
+  commentCount?: number;
+  unreadCommentCount?: number;
   subtasks?: TodoLike[];
 };
 
@@ -53,6 +58,7 @@ function TodoRowImpl({
   showProjectBadge,
   showCreator,
   isSubtask,
+  leaving,
 }: {
   todo: TodoLike;
   onToggle?: (id: string) => void;
@@ -70,6 +76,9 @@ function TodoRowImpl({
   // When true (collaborative list), render the creator's name on the row.
   showCreator?: boolean;
   isSubtask?: boolean;
+  // Completion choreography: the row is mid-collapse and about to be hidden
+  // by the parent (see list-tile.tsx leavingIds).
+  leaving?: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -160,7 +169,7 @@ function TodoRowImpl({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ dueDate: value }),
     });
-    router.refresh();
+    startTransition(() => router.refresh());
   }
 
   useEffect(() => {
@@ -659,13 +668,27 @@ function TodoRowImpl({
         // on subtasks (they have their own indented ul border) and on the
         // last row (handled by parent ul's last:border-b-0 if used).
         !isSubtask && "border-b border-[var(--color-border)]/50 last:border-b-0 md:border-b-0",
-        dragging && "opacity-40"
+        dragging && "opacity-40",
+        // Completion choreography: collapse via grid-template-rows so
+        // sibling rows reflow smoothly without JS height measurement.
+        // minmax(0,1fr) keeps the implicit column from growing to the
+        // min-content width of unbreakable content (long URLs).
+        "grid grid-cols-[minmax(0,1fr)] transition-[grid-template-rows,opacity] duration-[260ms] ease-out-quart",
+        leaving
+          ? "grid-rows-[0fr] opacity-0 border-b-transparent"
+          : "grid-rows-[1fr] opacity-100"
       )}
       draggable={draggable}
       onDragStart={onDragStart}
       onDragEnd={() => setDragging(false)}
       {...ctx.handlers}
     >
+      <div
+        className={cn(
+          "min-h-0 min-w-0",
+          leaving ? "overflow-hidden" : "overflow-hidden md:overflow-visible"
+        )}
+      >
       <div
         ref={swipeAreaRef}
         onPointerDown={onSwipePointerDown}
@@ -680,20 +703,26 @@ function TodoRowImpl({
               }
             : undefined
         }
-        className="relative z-10 bg-[var(--color-background)]"
+        className="relative z-10 bg-[var(--color-background)] md:bg-transparent"
       >
-      <div className="flex items-start gap-3 px-1 py-3 md:py-2.5 md:hover:bg-[var(--color-accent)]/40 rounded-lg transition">
+      <div
+        className={cn(
+          "flex items-start gap-3 px-1 py-3 md:py-2.5 md:hover:bg-[var(--color-accent)]/40 rounded-lg transition",
+          // Optimistic (just-added) rows settle in instead of popping.
+          todo.id.startsWith("temp-") && "animate-fade-in-up"
+        )}
+      >
         <button
           onClick={(e) => {
             e.stopPropagation();
             onToggle?.(todo.id);
           }}
           className={cn(
-            "mt-0.5 grid size-6 md:size-[22px] shrink-0 place-items-center rounded-full border-2 transition-colors duration-200 relative before:absolute before:-inset-2.5 before:content-[''] md:before:hidden",
+            "mt-0.5 grid size-6 md:size-[22px] shrink-0 place-items-center rounded-full border-2 md:border-[1.5px] transition-[color,background-color,border-color,transform] duration-200 active:scale-90 relative before:absolute before:-inset-2.5 before:content-[''] md:before:hidden",
             completed
               ? cn("text-white", p.fill, "border-transparent")
               : cn(
-                  "border-[var(--color-muted-foreground)]/40 bg-transparent",
+                  "border-[var(--color-label-quaternary)] bg-transparent",
                   p.hoverBorder,
                   "hover:scale-105"
                 )
@@ -702,10 +731,10 @@ function TodoRowImpl({
         >
           <Check
             className={cn(
-              "size-3.5 md:size-3 transition-transform duration-200",
-              completed ? "scale-100" : "scale-0"
+              "size-3.5 md:size-3",
+              completed ? "animate-check-pop" : "scale-0"
             )}
-            strokeWidth={3.5}
+            strokeWidth={3}
           />
         </button>
         <div
@@ -749,7 +778,7 @@ function TodoRowImpl({
           ) : (
             <div
               className={cn(
-                "text-[17px] leading-[22px] tracking-[-0.022em] md:text-[15px] md:leading-snug md:tracking-normal md:whitespace-normal break-words",
+                "text-[17px] leading-[22px] tracking-[-0.022em] md:text-[15px] md:leading-snug md:tracking-normal md:whitespace-normal break-words transition-[color,opacity] duration-300",
                 completed && "line-through text-[var(--color-muted-foreground)]"
               )}
             >
@@ -766,6 +795,24 @@ function TodoRowImpl({
               added by {todo.creatorName}
             </div>
           ) : null}
+          {todo.commentCount ? (
+            <div
+              className={cn(
+                "mt-0.5 inline-flex items-center gap-1 text-[13px] leading-[16px] md:text-xs",
+                todo.unreadCommentCount
+                  ? "font-medium text-[var(--color-tint)]"
+                  : "text-[var(--color-muted-foreground)]"
+              )}
+            >
+              <MessageCircle className="size-3.5" />
+              {todo.commentCount}
+              {todo.unreadCommentCount ? (
+                <span className="ml-0.5 rounded-full bg-[var(--color-tint)] px-1.5 py-px text-[10px] font-semibold leading-none text-white">
+                  {todo.unreadCommentCount} new
+                </span>
+              ) : null}
+            </div>
+          ) : null}
           {/* Mobile-only date subtitle — Reminders-style "Mon, Jun 16" */}
           {due ? (
             <button
@@ -774,9 +821,9 @@ function TodoRowImpl({
                 setEditingDate(true);
               }}
               className={cn(
-                "md:hidden block text-[13px] leading-[16px] mt-0.5 text-left",
+                "md:hidden block text-[13px] leading-[16px] mt-0.5 text-left tabular-nums",
                 isOverdue
-                  ? "text-rose-500 font-medium"
+                  ? "text-[var(--color-destructive)] font-medium"
                   : "text-[var(--color-muted-foreground)]"
               )}
             >
@@ -853,8 +900,10 @@ function TodoRowImpl({
                   setEditingDate(true);
                 }}
                 className={cn(
-                  "inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-[var(--color-accent)]",
-                  isOverdue && "text-rose-500 font-medium"
+                  "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-caption font-medium tabular-nums transition-colors",
+                  isOverdue
+                    ? "bg-[var(--color-destructive)]/12 text-[var(--color-destructive)] hover:bg-[var(--color-destructive)]/20"
+                    : "bg-[var(--color-fill)] text-[var(--color-label-secondary)] hover:bg-[var(--color-accent)]"
                 )}
                 title="Change due date"
               >
@@ -976,6 +1025,7 @@ function TodoRowImpl({
           ) : null}
         </ul>
       ) : null}
+      </div>
       <ContextMenuPopover pos={ctx.pos} items={menu} onClose={ctx.close} />
       {detailOpen ? (
         <TodoDetailModal
@@ -1001,7 +1051,7 @@ function TodoRowImpl({
                 left: projectPickerPos.left,
                 zIndex: 60,
               }}
-              className="w-48 max-h-64 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-xl"
+              className="animate-scale-in origin-top-left w-48 max-h-64 overflow-y-auto rounded-xl border border-[var(--color-card-border)] bg-[var(--color-elevated)] shadow-popover"
               onClick={(e) => e.stopPropagation()}
             >
               {todo.projectId ? (
@@ -1112,6 +1162,8 @@ function arePropsEqual(
     if (a.projectId !== b.projectId) return false;
     if (a.projectName !== b.projectName) return false;
     if (a.creatorName !== b.creatorName) return false;
+    if (a.commentCount !== b.commentCount) return false;
+    if (a.unreadCommentCount !== b.unreadCommentCount) return false;
     if (
       (a.completedAt == null) !== (b.completedAt == null) ||
       (a.completedAt != null &&
@@ -1133,6 +1185,7 @@ function arePropsEqual(
   if (prev.sourceProjectId !== next.sourceProjectId) return false;
   if (prev.isSubtask !== next.isSubtask) return false;
   if (prev.showCreator !== next.showCreator) return false;
+  if (prev.leaving !== next.leaving) return false;
   // showProjectBadge is a ReactNode; only compare presence (parents pass
   // either undefined or an empty fragment, never per-row dynamic content).
   if ((prev.showProjectBadge == null) !== (next.showProjectBadge == null))

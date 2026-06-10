@@ -108,10 +108,14 @@ export function MobileFab() {
         "grid place-items-center size-14 rounded-full",
         "bg-[var(--color-tint)] text-white",
         "shadow-[0_10px_24px_-6px_color-mix(in_oklab,var(--color-tint),transparent_30%),0_2px_6px_rgba(0,0,0,0.25)]",
-        "transition-transform duration-150 ease-out",
         "select-none touch-manipulation",
         "[-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none] [-webkit-user-select:none]",
-        pressing ? "scale-95" : "active:scale-90",
+        // While held, the FAB slowly sinks toward the long-press threshold
+        // (visual progress cue for the 500ms capture gesture), then springs
+        // back on release.
+        pressing
+          ? "scale-90 transition-transform duration-500 ease-out"
+          : "active:scale-90 transition-transform duration-150 ease-spring",
         !activeListId && "opacity-50",
       )}
     >

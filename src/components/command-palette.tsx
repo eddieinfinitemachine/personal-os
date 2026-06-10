@@ -275,7 +275,11 @@ export function CommandPalette() {
         if (e.target === e.currentTarget) setOpen(false);
       }}
     >
-      <div className="w-full max-w-xl rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-2xl overflow-hidden">
+      <div
+        data-overlay="scale"
+        data-state="open"
+        className="w-full max-w-xl rounded-2xl border border-[var(--color-card-border)] bg-[var(--color-elevated)] shadow-modal overflow-hidden"
+      >
         <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--color-border)]">
           <Sparkles className="size-4 text-[var(--color-muted-foreground)]" />
           <input

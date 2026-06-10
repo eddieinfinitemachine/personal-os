@@ -856,6 +856,8 @@ model Todo {
   subtasks Todo[]  @relation("TodoSubtasks")
 
   attachments Attachment[]
+  comments    Comment[]
+  commentReads CommentRead[]
 
   @@index([listId, completedAt, position])
   @@index([projectId, completedAt, position])
@@ -912,8 +914,41 @@ model User {
   interactions                 Interaction[]
   personalRecord               PersonalRecord?
   listMemberships              ListMember[]
+  comments                     Comment[]
+  commentReads                 CommentRead[]
 
   @@index([email])
+}
+
+// Threaded comments on a task. Visible to everyone who can access the todo's
+// list (owner + ListMembers), so collaborators on a shared list can discuss a
+// task. Flat chronological thread — no nested replies.
+model Comment {
+  id        String   @id @default(cuid())
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  todoId   String
+  todo     Todo   @relation(fields: [todoId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([todoId, createdAt])
+}
+
+// Per-(user, todo) read marker. Unread badge = comments on the todo authored by
+// someone else with createdAt newer than this user's lastReadAt.
+model CommentRead {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  todoId     String
+  todo       Todo     @relation(fields: [todoId], references: [id], onDelete: Cascade)
+  lastReadAt DateTime @default(now())
+
+  @@unique([userId, todoId])
+  @@index([userId])
 }
 
 // Birth certificate / passport / parents — formerly hard-coded in

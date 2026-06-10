@@ -30,7 +30,7 @@ export default async function SettingsPage() {
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
       <header className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <h1 className="text-large-title font-bold">Settings</h1>
         <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">
           Your account, your data.
         </p>

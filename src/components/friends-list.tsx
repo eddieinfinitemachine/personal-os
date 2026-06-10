@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, Pencil, Plus, Save, Sparkles, Star, Trash2, X } from "lucide-react";
+import { Check, Loader2, Pencil, Plus, Save, Sparkles, Star, Trash2, Users, X } from "lucide-react";
+import { EmptyState } from "./empty-state";
 import { BulkAddPeople } from "./bulk-add-people";
 import { cn } from "@/lib/utils";
 import { haptic } from "@/lib/haptic";
@@ -458,8 +459,12 @@ export function FriendsList({ initialPeople }: { initialPeople: PersonRow[] }) {
           />
         ))}
         {filtered.length === 0 ? (
-          <li className="px-3 py-8 text-center text-sm text-[var(--color-muted-foreground)]">
-            No one matches the current filter.
+          <li>
+            <EmptyState
+              icon={Users}
+              title="No one here"
+              hint="No one matches the current filter"
+            />
           </li>
         ) : null}
       </ul>

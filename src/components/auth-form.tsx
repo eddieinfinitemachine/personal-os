@@ -116,7 +116,7 @@ function AuthFormInner({ mode, allowPassword = false }: AuthFormProps) {
         {sent ? (
           <SentState email={email} onChangeEmail={() => setSent(false)} />
         ) : usePassword ? (
-          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-6">
+          <div className="rounded-2xl border border-[var(--color-card-border)] bg-[var(--color-card)] p-6 shadow-card">
             <div className="mb-5 text-center">
               <h1 className="text-xl font-semibold tracking-tight">{headline}</h1>
               <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted-foreground)]">
@@ -132,13 +132,13 @@ function AuthFormInner({ mode, allowPassword = false }: AuthFormProps) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
-                className="min-h-[44px] w-full rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2.5 text-sm focus:border-[var(--color-ring)] focus:outline-none"
+                className="min-h-[44px] w-full rounded-lg border border-[var(--color-separator)] bg-[var(--color-fill-secondary)] px-3 py-2.5 text-sm transition-colors focus:border-[var(--color-tint)] focus:bg-[var(--color-background)] focus:outline-none focus:ring-2 focus:ring-[var(--color-tint)]/25"
               />
-              {error ? <div className="text-sm text-rose-500">{error}</div> : null}
+              {error ? <div className="text-sm text-[var(--color-destructive)]">{error}</div> : null}
               <button
                 type="submit"
                 disabled={submitting || !password}
-                className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-md bg-[var(--color-foreground)] px-3 py-2.5 text-sm font-medium text-[var(--color-background)] disabled:opacity-50"
+                className="pressable inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--color-tint)] px-3 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
               >
                 {submitting ? <Loader2 className="size-4 animate-spin" /> : null}
                 Sign in
@@ -156,7 +156,7 @@ function AuthFormInner({ mode, allowPassword = false }: AuthFormProps) {
             </button>
           </div>
         ) : (
-          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-6">
+          <div className="rounded-2xl border border-[var(--color-card-border)] bg-[var(--color-card)] p-6 shadow-card">
             <div className="mb-5 text-center">
               <h1 className="text-xl font-semibold tracking-tight">{headline}</h1>
               <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted-foreground)]">
@@ -173,13 +173,13 @@ function AuthFormInner({ mode, allowPassword = false }: AuthFormProps) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="min-h-[44px] w-full rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2.5 text-sm focus:border-[var(--color-ring)] focus:outline-none"
+                className="min-h-[44px] w-full rounded-lg border border-[var(--color-separator)] bg-[var(--color-fill-secondary)] px-3 py-2.5 text-sm transition-colors focus:border-[var(--color-tint)] focus:bg-[var(--color-background)] focus:outline-none focus:ring-2 focus:ring-[var(--color-tint)]/25"
               />
-              {error ? <div className="text-sm text-rose-500">{error}</div> : null}
+              {error ? <div className="text-sm text-[var(--color-destructive)]">{error}</div> : null}
               <button
                 type="submit"
                 disabled={submitting || !email}
-                className="inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-md bg-[var(--color-foreground)] px-3 py-2.5 text-sm font-medium text-[var(--color-background)] disabled:opacity-50"
+                className="pressable inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--color-tint)] px-3 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
               >
                 {submitting ? <Loader2 className="size-4 animate-spin" /> : null}
                 {buttonLabel}

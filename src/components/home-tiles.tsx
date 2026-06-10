@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ListTile, type ListInfo } from "./list-tile";
 import { palette } from "@/lib/lists";
+import { haptic } from "@/lib/haptic";
 import { cn } from "@/lib/utils";
 import type { TodoLike } from "./todo-row";
 
@@ -136,12 +137,15 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
             return (
               <button
                 key={t.list.id}
-                onClick={() => scrollToIdx(i)}
+                onClick={() => {
+                  haptic("tick");
+                  scrollToIdx(i);
+                }}
                 aria-label={`Go to ${t.list.name}`}
                 className={cn(
-                  "shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium transition",
+                  "pressable shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium tabular-nums transition-colors",
                   active
-                    ? "bg-[var(--color-accent)] text-[var(--color-foreground)] ring-1 ring-[var(--color-foreground)]/10"
+                    ? "bg-[var(--color-fill)] text-[var(--color-foreground)]"
                     : "text-[var(--color-muted-foreground)]"
                 )}
               >

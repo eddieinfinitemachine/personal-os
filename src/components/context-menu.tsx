@@ -128,14 +128,14 @@ export function ContextMenuPopover({
     <div
       ref={ref}
       style={{ left, top }}
-      className="fixed z-[60] min-w-[200px] rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-2xl py-1"
+      className="animate-scale-in origin-top-left fixed z-[60] min-w-[200px] rounded-xl border border-[var(--color-card-border)] bg-[var(--color-elevated)] shadow-popover py-1"
     >
       {items.map((item, i) => {
         if ("separator" in item) {
           return (
             <div
               key={`sep-${i}`}
-              className="my-1 h-px bg-[var(--color-border)]"
+              className="my-1 h-px bg-[var(--color-separator)]"
             />
           );
         }
@@ -173,7 +173,7 @@ export function ContextMenuPopover({
               {isSub ? <span className="opacity-50">›</span> : null}
             </button>
             {isActive && m.submenu ? (
-              <div className="absolute left-full top-0 ml-1 min-w-[200px] rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-2xl py-1 max-h-[60vh] overflow-y-auto">
+              <div className="animate-scale-in origin-top-left absolute left-full top-0 ml-1 min-w-[200px] rounded-xl border border-[var(--color-card-border)] bg-[var(--color-elevated)] shadow-popover py-1 max-h-[60vh] overflow-y-auto">
                 {m.submenu.map((s) => (
                   <button
                     key={s.label}

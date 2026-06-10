@@ -39,7 +39,7 @@ export default async function TripsPage() {
     <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6">
       <header className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Trips</h1>
+          <h1 className="text-large-title font-bold">Trips</h1>
           <p className="text-sm text-[var(--color-muted-foreground)] mt-1">
             Where you&apos;re going. {trips.length} total.
           </p>

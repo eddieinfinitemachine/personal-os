@@ -27,7 +27,7 @@ export default async function HomePage() {
 
   // Single fetch for all open top-level todos plus their subtasks. Bucket in
   // memory rather than firing N×M queries per (list, project) tile.
-  const [lists, projects, allTodos] = await Promise.all([
+  const [lists, projects, allTodos, comments, commentReads] = await Promise.all([
     prisma.list.findMany({
       where: listAccessWhere(userId),
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
@@ -66,7 +66,32 @@ export default async function HomePage() {
         },
       },
     }),
+    // Comment counts + unread badges. Volume is low (a handful of shared
+    // lists), so we pull the rows and bucket in memory.
+    prisma.comment.findMany({
+      where: { todo: { list: listAccessWhere(userId) } },
+      select: { todoId: true, authorId: true, createdAt: true },
+    }),
+    prisma.commentRead.findMany({
+      where: { userId },
+      select: { todoId: true, lastReadAt: true },
+    }),
   ]);
+
+  // Per-todo comment stats: total count + unread (others' comments newer than
+  // this user's last read of that thread).
+  const lastReadByTodo = new Map(
+    commentReads.map((r) => [r.todoId, r.lastReadAt.getTime()]),
+  );
+  const commentStats = new Map<string, { count: number; unread: number }>();
+  for (const c of comments) {
+    const s = commentStats.get(c.todoId) ?? { count: 0, unread: 0 };
+    s.count++;
+    if (c.authorId !== userId && c.createdAt.getTime() > (lastReadByTodo.get(c.todoId) ?? 0)) {
+      s.unread++;
+    }
+    commentStats.set(c.todoId, s);
+  }
 
   const creatorLabel = (u: { name: string | null; email: string } | null) =>
     u ? u.name ?? u.email : null;
@@ -80,6 +105,8 @@ export default async function HomePage() {
     projectId: t.projectId,
     projectName: t.project?.name ?? null,
     creatorName: creatorLabel(t.user),
+    commentCount: commentStats.get(t.id)?.count ?? 0,
+    unreadCommentCount: commentStats.get(t.id)?.unread ?? 0,
     subtasks: t.subtasks.map((s) => ({
       id: s.id,
       title: s.title,
@@ -154,7 +181,7 @@ export default async function HomePage() {
     <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6">
       <header className="mb-6 hidden md:flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Home</h1>
+          <h1 className="text-large-title font-bold">Home</h1>
           <p className="text-sm text-[var(--color-muted-foreground)] mt-1">
             Compiled across everything. Drag tiles to reorder, drag tasks
             between lists.

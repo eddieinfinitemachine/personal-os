@@ -17,7 +17,7 @@ export default async function PlacesPage() {
   return (
     <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Places</h1>
+        <h1 className="text-large-title font-bold">Places</h1>
         <p className="text-sm text-[var(--color-muted-foreground)] mt-1">
           Restaurants, hotels, neighborhoods, hikes — visited and wishlist.
         </p>

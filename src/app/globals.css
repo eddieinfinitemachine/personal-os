@@ -8,12 +8,14 @@
 
   /* Light defaults — Apple system colors. */
   --color-background: oklch(1 0 0);
+  /* Grouped page bg (iOS systemGroupedBackground) — desktop only, see body rule. */
+  --color-background-grouped: oklch(0.972 0.003 247);
   --color-foreground: oklch(0.18 0 0);
   --color-muted: oklch(0.965 0 0);
-  --color-muted-foreground: oklch(0.5 0 0);
+  --color-muted-foreground: oklch(0.45 0.005 264);
   --color-border: oklch(0.9 0 0);
   --color-input: oklch(0.93 0 0);
-  --color-ring: oklch(0.55 0.15 250);
+  --color-ring: oklch(0.6 0.22 256);
   --color-card: oklch(1 0 0);
   --color-card-foreground: oklch(0.18 0 0);
   --color-accent: oklch(0.94 0 0);
@@ -21,7 +23,102 @@
   /* Apple system blue */
   --color-tint: oklch(0.6 0.22 256);
 
+  /* HIG label hierarchy — primary text is --color-foreground. */
+  --color-label-secondary: oklch(0.45 0.005 264);
+  --color-label-tertiary: oklch(0.62 0.005 264);
+  --color-label-quaternary: oklch(0.78 0.004 264);
+  /* Hairlines between rows (alpha so they stack on any surface). */
+  --color-separator: oklch(0.2 0 0 / 0.1);
+  /* Card edges — lighter than --color-border for floating cards. */
+  --color-card-border: oklch(0.2 0 0 / 0.07);
+  /* Control fills: secondary buttons, chips, search pill. */
+  --color-fill: oklch(0.945 0.002 264);
+  --color-fill-secondary: oklch(0.965 0.002 264);
+  /* Popovers, menus, modals — one elevation step above cards. */
+  --color-elevated: oklch(1 0 0);
+  --color-destructive: oklch(0.58 0.21 27);
+  --color-success: oklch(0.6 0.16 150);
+  --color-warning: oklch(0.7 0.15 70);
+
   --radius: 0.625rem;
+
+  /* Motion — Apple HIG-flavored curves. */
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1); /* Apple sheet/drawer */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1); /* snappy decel, default */
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1); /* overshoot pop */
+
+  --animate-fade-in-up: fade-in-up 0.3s var(--ease-out-quart) both;
+  --animate-scale-in: scale-in 0.2s var(--ease-out-quart) both;
+  --animate-check-pop: check-pop 0.35s var(--ease-bounce) both;
+
+  @keyframes fade-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @keyframes check-pop {
+    0% {
+      transform: scale(0.4);
+    }
+    60% {
+      transform: scale(1.15);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+  /* HIG type scale. Convention: LargeTitle = page h1, Title = card/list
+     headers, Headline = emphasized row text, Body = text-sm (15/17px),
+     Subhead = metadata, Footnote = text-xs, Caption = chips/badges. */
+  --text-large-title: 1.75rem;
+  --text-large-title--line-height: 2.125rem;
+  --text-large-title--letter-spacing: -0.022em;
+  --text-title: 1.25rem;
+  --text-title--line-height: 1.55rem;
+  --text-title--letter-spacing: -0.017em;
+  --text-headline: 0.9375rem;
+  --text-headline--line-height: 1.25rem;
+  --text-subhead: 0.8125rem;
+  --text-subhead--line-height: 1.125rem;
+  --text-caption: 0.6875rem;
+  --text-caption--line-height: 0.875rem;
+}
+
+@utility shadow-card {
+  box-shadow: var(--shadow-card);
+}
+@utility shadow-popover {
+  box-shadow: var(--shadow-popover);
+}
+@utility shadow-modal {
+  box-shadow: var(--shadow-modal);
+}
+
+/* Press feel for buttons/links — pair with hover styles per component.
+   Button conventions (apply, don't abstract):
+   - Primary:   rounded-lg bg-[var(--color-tint)] px-3.5 py-2 text-sm font-medium text-white hover:opacity-90 pressable
+   - Secondary: rounded-lg bg-[var(--color-fill)] px-3.5 py-2 text-sm font-medium text-[var(--color-foreground)] pressable
+   - Ghost:     rounded-lg px-2 py-1.5 text-sm font-medium text-[var(--color-tint)] hover:bg-[var(--color-fill)] pressable */
+@utility pressable {
+  transition: transform 0.15s var(--ease-out-quart), opacity 0.15s ease;
+  &:active {
+    transform: scale(0.97);
+  }
 }
 
 @layer base {
@@ -29,39 +126,84 @@
     color-scheme: light dark;
     --background: var(--color-background);
     --foreground: var(--color-foreground);
+
+    /* Layered Apple-style shadows. Kept out of @theme and exposed as the
+       explicit shadow-* utilities above so the dark-mode variable overrides
+       below apply at runtime. */
+    --shadow-card: 0 0 0 0.5px oklch(0 0 0 / 0.04),
+      0 1px 2px oklch(0 0 0 / 0.05), 0 4px 12px oklch(0 0 0 / 0.04);
+    --shadow-popover: 0 0 0 0.5px oklch(0 0 0 / 0.05),
+      0 4px 10px oklch(0 0 0 / 0.08), 0 12px 32px oklch(0 0 0 / 0.1);
+    --shadow-modal: 0 0 0 0.5px oklch(0 0 0 / 0.05),
+      0 8px 20px oklch(0 0 0 / 0.12), 0 24px 60px oklch(0 0 0 / 0.18);
   }
 
   /* Dark mode applied either by system preference or by explicit data-theme="dark". */
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --color-background: oklch(0 0 0);
+      --color-background-grouped: oklch(0 0 0);
       --color-foreground: oklch(0.97 0 0);
       --color-muted: oklch(0.16 0 0);
-      --color-muted-foreground: oklch(0.62 0 0);
+      --color-muted-foreground: oklch(0.72 0.004 264);
       --color-border: oklch(0.22 0 0);
       --color-input: oklch(0.22 0 0);
-      --color-ring: oklch(0.6 0.18 256);
-      --color-card: oklch(0.13 0 0);
+      --color-ring: oklch(0.7 0.18 256);
+      --color-card: oklch(0.17 0.002 264);
       --color-card-foreground: oklch(0.97 0 0);
-      --color-accent: oklch(0.2 0 0);
+      --color-accent: oklch(1 0 0 / 0.08);
       --color-accent-foreground: oklch(0.97 0 0);
       --color-tint: oklch(0.7 0.18 256);
+
+      --color-label-secondary: oklch(0.72 0.004 264);
+      --color-label-tertiary: oklch(0.55 0.004 264);
+      --color-label-quaternary: oklch(0.4 0.003 264);
+      --color-separator: oklch(1 0 0 / 0.09);
+      --color-card-border: oklch(1 0 0 / 0.1);
+      --color-fill: oklch(1 0 0 / 0.09);
+      --color-fill-secondary: oklch(1 0 0 / 0.06);
+      --color-elevated: oklch(0.22 0.003 264);
+      --color-destructive: oklch(0.66 0.19 25);
+      --color-success: oklch(0.72 0.16 155);
+      --color-warning: oklch(0.78 0.15 75);
+
+      /* Shadows barely read on black — keep a soft ambient drop only. */
+      --shadow-card: none;
+      --shadow-popover: 0 8px 24px oklch(0 0 0 / 0.6);
+      --shadow-modal: 0 16px 48px oklch(0 0 0 / 0.7);
     }
   }
 
   :root[data-theme="dark"] {
     --color-background: oklch(0 0 0);
+    --color-background-grouped: oklch(0 0 0);
     --color-foreground: oklch(0.97 0 0);
     --color-muted: oklch(0.16 0 0);
-    --color-muted-foreground: oklch(0.62 0 0);
+    --color-muted-foreground: oklch(0.72 0.004 264);
     --color-border: oklch(0.22 0 0);
     --color-input: oklch(0.22 0 0);
-    --color-ring: oklch(0.6 0.18 256);
-    --color-card: oklch(0.13 0 0);
+    --color-ring: oklch(0.7 0.18 256);
+    --color-card: oklch(0.17 0.002 264);
     --color-card-foreground: oklch(0.97 0 0);
-    --color-accent: oklch(0.2 0 0);
+    --color-accent: oklch(1 0 0 / 0.08);
     --color-accent-foreground: oklch(0.97 0 0);
     --color-tint: oklch(0.7 0.18 256);
+
+    --color-label-secondary: oklch(0.72 0.004 264);
+    --color-label-tertiary: oklch(0.55 0.004 264);
+    --color-label-quaternary: oklch(0.4 0.003 264);
+    --color-separator: oklch(1 0 0 / 0.09);
+    --color-card-border: oklch(1 0 0 / 0.1);
+    --color-fill: oklch(1 0 0 / 0.09);
+    --color-fill-secondary: oklch(1 0 0 / 0.06);
+    --color-elevated: oklch(0.22 0.003 264);
+    --color-destructive: oklch(0.66 0.19 25);
+    --color-success: oklch(0.72 0.16 155);
+    --color-warning: oklch(0.78 0.15 75);
+
+    --shadow-card: none;
+    --shadow-popover: 0 8px 24px oklch(0 0 0 / 0.6);
+    --shadow-modal: 0 16px 48px oklch(0 0 0 / 0.7);
   }
 
   * {
@@ -79,11 +221,36 @@
     text-rendering: optimizeLegibility;
   }
 
+  /* Desktop: grouped page background so cards float (iOS Settings style).
+     Mobile keeps the flat Reminders-style bg set further down. */
+  @media (min-width: 768px) {
+    body {
+      background: var(--color-background-grouped);
+    }
+  }
+
+  /* HIG: honor Reduce Motion. Near-zero (not none) so fill-mode end states
+     land and timeout-driven unmounts still resolve. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
   /* Apple-style focus ring — subtle, blue, only on keyboard. */
   :focus-visible {
     outline: 2px solid var(--color-tint);
     outline-offset: 2px;
     border-radius: 6px;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-tint) 25%, transparent);
   }
 
   /* Disable double-tap zoom on iOS for tap targets. */
@@ -96,6 +263,27 @@
   /* iOS-style smooth scroll on inner scrollers. */
   * {
     -webkit-overflow-scrolling: touch;
+  }
+
+  /* macOS-style overlay scrollbars on desktop. */
+  @media (min-width: 768px) {
+    ::-webkit-scrollbar {
+      width: 12px;
+      height: 12px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--color-label-quaternary);
+      border-radius: 9999px;
+      border: 3px solid transparent;
+      background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--color-label-quaternary) transparent;
+    }
   }
 
   /* Mobile: HIG-aligned body type. Flat Reminders-style page bg — pure white
@@ -152,5 +340,100 @@
       var(--color-tint) 10%,
       transparent
     ) !important;
+  }
+}
+
+@layer components {
+  /* Overlay motion system. Entrance via @starting-style (no-op pre
+     Safari 17.5 — overlays just appear), exit by holding the node mounted
+     with data-state="closed" for the transition duration
+     (see src/lib/use-overlay-transition.ts). */
+  [data-overlay] {
+    transition: opacity 0.25s var(--ease-out-quart),
+      transform 0.35s var(--ease-spring);
+  }
+  [data-overlay][data-state="closed"] {
+    opacity: 0;
+  }
+  @starting-style {
+    [data-overlay] {
+      opacity: 0;
+    }
+  }
+
+  /* Desktop dialog: scale + fade. */
+  [data-overlay="scale"][data-state="closed"] {
+    transform: scale(0.96);
+  }
+  @starting-style {
+    [data-overlay="scale"] {
+      transform: scale(0.96);
+    }
+  }
+
+  /* Bottom sheet (mobile). */
+  [data-overlay="sheet"][data-state="closed"] {
+    transform: translateY(100%);
+  }
+  @starting-style {
+    [data-overlay="sheet"] {
+      transform: translateY(100%);
+    }
+  }
+
+  /* Top-anchored drawer (capture inbox). */
+  [data-overlay="top-sheet"][data-state="closed"] {
+    transform: translateY(-12%);
+  }
+  @starting-style {
+    [data-overlay="top-sheet"] {
+      transform: translateY(-12%);
+    }
+  }
+
+  /* Responsive dialog: scale on desktop, bottom sheet on mobile. */
+  [data-overlay="modal"][data-state="closed"] {
+    transform: scale(0.96);
+  }
+  @starting-style {
+    [data-overlay="modal"] {
+      transform: scale(0.96);
+    }
+  }
+  @media (max-width: 767px) {
+    [data-overlay="modal"][data-state="closed"] {
+      transform: translateY(100%);
+    }
+    @starting-style {
+      [data-overlay="modal"] {
+        transform: translateY(100%);
+      }
+    }
+  }
+
+  [data-overlay="backdrop"] {
+    transition: opacity 0.25s ease;
+  }
+
+  /* Loading skeleton with a soft shimmer sweep. Keyframes live here (not
+     @theme) so they always ship — .skeleton references them directly and
+     Tailwind would otherwise tree-shake unused theme keyframes. */
+  @keyframes skeleton-shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+  .skeleton {
+    background: linear-gradient(
+      100deg,
+      var(--color-muted) 40%,
+      color-mix(in oklab, var(--color-muted), var(--color-foreground) 5%) 50%,
+      var(--color-muted) 60%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.8s linear infinite;
   }
 }

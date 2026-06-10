@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ExternalLink, Loader2, Paperclip, Trash2, Upload, X } from "lucide-react";
+import { Check, ExternalLink, Loader2, Paperclip, Send, Trash2, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { haptic } from "@/lib/haptic";
 import { linkify } from "@/lib/linkify";
+import { timeAgo } from "@/lib/time";
 
 // Things-style detail modal for a single todo. Double-click a todo to open.
 // Edits to notes auto-save on blur. Subtasks: add (Enter), toggle complete,
@@ -26,6 +27,22 @@ type DetailAttachment = {
   mimeType: string | null;
   size: number | null;
 };
+
+type DetailComment = {
+  id: string;
+  body: string;
+  createdAt: string;
+  author: { id: string; name: string | null; email: string };
+  mine: boolean;
+};
+
+function authorInitials(a: DetailComment["author"]): string {
+  const src = a.name?.trim() || a.email;
+  const parts = src.split(/\s+/).filter(Boolean);
+  const letters =
+    parts.length >= 2 ? parts[0][0] + parts[1][0] : src.slice(0, 2);
+  return letters.toUpperCase();
+}
 
 function formatBytes(bytes: number | null): string {
   if (!bytes || bytes <= 0) return "";
@@ -64,18 +81,33 @@ export function TodoDetailModal({
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [comments, setComments] = useState<DetailComment[] | null>(null);
+  const [newComment, setNewComment] = useState("");
+  const [postingComment, setPostingComment] = useState(false);
+  const [commentError, setCommentError] = useState<string | null>(null);
   const newSubRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Single refresh on close keeps the parent list in sync without
   // re-rendering after every optimistic op while the modal is open.
   const needsRefreshRef = useRef(false);
+  // Exit-animation latch — see closeModal.
+  const [closing, setClosing] = useState(false);
 
   function closeModal() {
-    if (needsRefreshRef.current) {
-      needsRefreshRef.current = false;
-      needsRefreshRef.current = true;
-    }
-    onClose();
+    // The parent unmounts us on onClose(), so the exit animation is driven
+    // here: flip to data-state="closed", let the transition play, then close.
+    if (closing) return;
+    setClosing(true);
+    window.setTimeout(() => {
+      // Sync the parent (server-rendered) list when something changed while
+      // the modal was open — notes, subtasks, files, or reading the comment
+      // thread (which clears the row's unread badge).
+      if (needsRefreshRef.current) {
+        needsRefreshRef.current = false;
+        router.refresh();
+      }
+      onClose();
+    }, 250);
   }
 
   // Re-hydrate only when the underlying todo identity changes. Without this,
@@ -111,6 +143,30 @@ export function TodoDetailModal({
     return () => {
       cancelled = true;
     };
+  }, [open, todoId]);
+
+  // Load the comment thread when the modal opens. The GET marks the thread
+  // read for the current user, so flag a parent refresh on close to clear the
+  // row's unread badge.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setComments(null);
+    setCommentError(null);
+    fetch(`/api/todos/${todoId}/comments`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("load failed"))))
+      .then((body: { comments: DetailComment[] }) => {
+        if (cancelled) return;
+        setComments(body.comments ?? []);
+        if ((body.comments ?? []).length > 0) needsRefreshRef.current = true;
+      })
+      .catch(() => {
+        if (!cancelled) setCommentError("Couldn't load comments.");
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, todoId]);
 
   useEffect(() => {
@@ -274,16 +330,79 @@ export function TodoDetailModal({
     }
   }
 
+  async function postComment() {
+    const text = newComment.trim();
+    if (!text || postingComment) return;
+    setPostingComment(true);
+    setCommentError(null);
+    // Optimistic — show immediately as my comment.
+    const tempId = `temp-${Date.now()}`;
+    const optimistic: DetailComment = {
+      id: tempId,
+      body: text,
+      createdAt: new Date().toISOString(),
+      author: { id: "me", name: "You", email: "" },
+      mine: true,
+    };
+    setComments((prev) => [...(prev ?? []), optimistic]);
+    setNewComment("");
+    try {
+      const res = await fetch(`/api/todos/${todoId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: text }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        setComments((prev) => (prev ?? []).filter((c) => c.id !== tempId));
+        setCommentError(b.error ?? "Couldn't post comment.");
+        return;
+      }
+      const { comment } = (await res.json()) as { comment: DetailComment };
+      setComments((prev) =>
+        (prev ?? []).map((c) => (c.id === tempId ? comment : c)),
+      );
+      haptic("tick");
+      needsRefreshRef.current = true;
+    } catch {
+      setComments((prev) => (prev ?? []).filter((c) => c.id !== tempId));
+      setCommentError("Couldn't post comment.");
+    } finally {
+      setPostingComment(false);
+    }
+  }
+
+  async function deleteComment(id: string) {
+    const before = comments;
+    setComments((prev) => (prev ?? []).filter((c) => c.id !== id));
+    try {
+      const res = await fetch(`/api/comments/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        setComments(before);
+        return;
+      }
+      needsRefreshRef.current = true;
+    } catch {
+      setComments(before);
+    }
+  }
+
   if (!open) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm"
+      data-overlay="backdrop"
+      data-state={closing ? "closed" : "open"}
+      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm max-md:items-end max-md:p-0"
       onClick={(e) => {
         if (e.target === e.currentTarget) closeModal();
       }}
     >
-      <div className="w-full max-w-xl rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-2xl">
+      <div
+        data-overlay="modal"
+        data-state={closing ? "closed" : "open"}
+        className="w-full max-w-xl rounded-2xl border border-[var(--color-card-border)] bg-[var(--color-elevated)] shadow-modal max-md:max-h-[85dvh] max-md:max-w-none max-md:overflow-y-auto max-md:rounded-b-none"
+      >
         {/* Header */}
         <div className="flex items-start justify-between gap-3 border-b border-[var(--color-border)] px-5 py-4">
           <div className="min-w-0 flex-1">
@@ -456,6 +575,84 @@ export function TodoDetailModal({
               ) : null}
             </li>
           </ul>
+        </div>
+
+        {/* Comments */}
+        <div className="border-t border-[var(--color-border)] px-5 py-4">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+            Comments
+          </div>
+          {commentError ? (
+            <div className="mb-2 text-[12px] text-rose-500">{commentError}</div>
+          ) : null}
+          {comments === null ? (
+            <div className="flex items-center gap-1.5 py-1 text-[12px] text-[var(--color-muted-foreground)]">
+              <Loader2 className="size-3.5 animate-spin" /> loading…
+            </div>
+          ) : comments.length === 0 ? (
+            <div className="py-1 text-[12px] text-[var(--color-muted-foreground)]/70">
+              No comments yet.
+            </div>
+          ) : (
+            <ul className="space-y-3">
+              {comments.map((c) => (
+                <li key={c.id} className="group flex gap-2.5">
+                  <div className="grid size-7 shrink-0 place-items-center rounded-full bg-[var(--color-accent)] text-[10px] font-semibold text-[var(--color-muted-foreground)]">
+                    {authorInitials(c.author)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2">
+                      <span className="truncate text-[13px] font-medium">
+                        {c.mine ? "You" : c.author.name ?? c.author.email}
+                      </span>
+                      <span className="shrink-0 text-[11px] text-[var(--color-muted-foreground)]">
+                        {timeAgo(c.createdAt)}
+                      </span>
+                      {c.mine && !c.id.startsWith("temp-") ? (
+                        <button
+                          onClick={() => deleteComment(c.id)}
+                          className="ml-auto grid size-5 shrink-0 place-items-center rounded text-[var(--color-muted-foreground)]/40 opacity-0 transition hover:bg-rose-500/10 hover:text-rose-500 group-hover:opacity-100"
+                          aria-label="Delete comment"
+                        >
+                          <Trash2 className="size-3" />
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="whitespace-pre-wrap break-words text-sm">
+                      {linkify(c.body)}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {/* Composer */}
+          <div className="mt-3 flex items-center gap-2">
+            <input
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  postComment();
+                }
+              }}
+              placeholder="Write a comment…"
+              className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm focus:border-[var(--color-ring)] focus:outline-none"
+            />
+            <button
+              onClick={postComment}
+              disabled={!newComment.trim() || postingComment}
+              className="grid size-9 shrink-0 place-items-center rounded-md bg-[var(--color-foreground)] text-[var(--color-background)] disabled:opacity-40"
+              aria-label="Post comment"
+            >
+              {postingComment ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Send className="size-4" />
+              )}
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-[var(--color-border)] px-5 py-3">

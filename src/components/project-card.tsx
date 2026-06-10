@@ -512,7 +512,7 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
   }
 
   return (
-    <div className="rounded-2xl bg-[var(--color-card)] border border-[var(--color-border)] px-4 pt-3 pb-3 transition">
+    <div className="rounded-2xl bg-[var(--color-card)] border border-[var(--color-card-border)] shadow-card px-4 pt-3 pb-3 transition">
       <div className="flex items-center justify-between gap-2">
         <button
           onClick={toggle}

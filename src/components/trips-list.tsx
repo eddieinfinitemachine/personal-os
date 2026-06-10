@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Calendar, MapPin, Plane, Users } from "lucide-react";
 import { cn, formatCalendarDate } from "@/lib/utils";
+import { EmptyState } from "./empty-state";
 
 export type TripRow = {
   id: string;
@@ -80,13 +81,12 @@ export function TripsList({ initialTrips }: { initialTrips: TripRow[] }) {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-[var(--color-border)] p-10 text-center text-sm text-[var(--color-muted-foreground)]">
-          No trips yet. Tap{" "}
-          <span className="font-medium text-[var(--color-foreground)]">
-            Add trip
-          </span>{" "}
-          to plan one.
-        </div>
+        <EmptyState
+          icon={Plane}
+          title="No trips yet"
+          hint="Tap Add trip to plan one"
+          className="rounded-2xl border border-dashed border-[var(--color-border)]"
+        />
       ) : (
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((t) => {

@@ -270,3 +270,42 @@ Removed the now-dead `loadMore`/`loadingMore` + both "+N more" buttons from list
 `extraTodos` solely as the optimistic holding pen for drag-in-from-another-tile.
 
 Both verified: `pnpm typecheck` + `pnpm build` green.
+
+---
+
+## HIG Design Polish Pass (2026-06-10)
+
+Apple-HIG-guided polish: snappy motion, materials/depth, type hierarchy. Zero new deps —
+all CSS (custom easing tokens, keyframes, @starting-style). Plan: ~/.claude/plans/parsed-knitting-sedgewick.md
+
+### Done
+- [x] **Tokens** (`globals.css`): motion (`--ease-spring/out-quart/bounce`, check-pop/fade-in-up/scale-in
+  keyframes), HIG label levels (secondary/tertiary/quaternary), separator/card-border/fill/elevated +
+  destructive/success/warning colors (white-alpha in dark), layered `shadow-card/popover/modal`
+  (var()-referenced so dark overrides work), HIG type scale (`text-large-title/title/headline/subhead/caption`),
+  `pressable` utility, `prefers-reduced-motion` kill switch, grouped desktop bg, thin scrollbars, ::selection.
+- [x] **Completion choreography** (list-tile + todo-row): check pops (bounce overshoot) + `haptic("success")`
+  → strikethrough eases → 600ms linger → 260ms grid-rows collapse → hidden. Interruptible (re-tap cancels).
+  Refresh deferred 950ms so server data doesn't unmount mid-animation. "All done" moment when a tile
+  empties via completion. New `temp-` rows fade-in-up.
+- [x] **Overlays**: `use-overlay-transition.ts` hook + data-overlay CSS system. Todo modal: scale+fade desktop,
+  bottom-sheet on mobile, animated exit. Capture drawer slide+fade. Nav drawer 300ms ease-spring + blur
+  material. Context menu / project picker / list menu scale-in on `--color-elevated` + shadow-popover.
+- [x] **Materials**: top/tab bars `bg/80 backdrop-blur-xl saturate-150`, separators, sidebar fill-secondary.
+- [x] **Type/components**: page h1s → text-large-title bold (14 pages), tile titles → text-title, counts →
+  tertiary gray tabular (iOS Reminders style), tinted sidebar/drawer selection, tab bar sliding pill +
+  tint active + haptic, FAB long-press sink, refined checkbox (quaternary border, 1.5px desktop), due
+  chips (fill bg, destructive overdue), auth form (tint primary button, fill inputs, focus ring),
+  shimmer skeletons (4 loading.tsx), EmptyState component (trips + friends).
+
+### Fixes found during browser verification
+- todo-row swipe-area painted `bg-background` over lifted dark cards → `md:bg-transparent`.
+- li grid collapse broke long-URL wrapping (implicit column min-content) → `grid-cols-[minmax(0,1fr)]` + `min-w-0`.
+
+### Verified
+- `tsc --noEmit` + `next build` green; compiled CSS contains all custom utilities/keyframes.
+- Browser (agent-browser, desktop 1440 + iPhone 390, light + dark): grouped bg + floating cards,
+  dark elevation ladder, completion animation sampled at t+100/400/750/900 (linger → collapse → gone),
+  mobile flat bg + blurred bars + tab pill intact.
+- NOT yet manually verified: drag-and-drop todo rows (desktop HTML5 + mobile long-press) after the
+  li wrapper change — exercise on next real use; fallback is opacity-fade only (see plan).

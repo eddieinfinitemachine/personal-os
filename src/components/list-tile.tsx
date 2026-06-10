@@ -1,9 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Check, ChevronDown, ChevronRight, MoreHorizontal, Plus, Trash2, Users } from "lucide-react";
 import { LIST_PALETTE, palette } from "@/lib/lists";
+import { haptic } from "@/lib/haptic";
 import { cn } from "@/lib/utils";
 import { TodoRow, type TodoLike } from "./todo-row";
 import { ListShareDialog } from "./list-share-dialog";
@@ -65,6 +66,32 @@ export function ListTile({
   // visibleTodos so the UI updates without waiting on router.refresh().
   const [pendingTodos, setPendingTodos] = useState<TodoLike[]>([]);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  // Completion choreography: a completed row lingers (checkmark pops,
+  // strikethrough eases in), then collapses, then joins hiddenIds. Rows in
+  // leavingIds are mounted but mid-collapse. Timers are tracked per id so
+  // un-completing during the linger cancels the removal (interruptible).
+  const [leavingIds, setLeavingIds] = useState<Set<string>>(new Set());
+  const hideTimersRef = useRef<Map<string, number[]>>(new Map());
+  // "All done" moment: shown when the tile empties through a completion in
+  // this session (not when it's empty on first render or after deletes).
+  const [justCleared, setJustCleared] = useState(false);
+  const lastActionWasCompleteRef = useRef(false);
+
+  function clearHideTimers(id: string) {
+    const timers = hideTimersRef.current.get(id);
+    if (timers) {
+      for (const t of timers) window.clearTimeout(t);
+      hideTimersRef.current.delete(id);
+    }
+  }
+  useEffect(() => {
+    const timersByTodo = hideTimersRef.current;
+    return () => {
+      for (const timers of timersByTodo.values())
+        for (const t of timers) window.clearTimeout(t);
+      timersByTodo.clear();
+    };
+  }, []);
   const [todoOverrides, setTodoOverrides] = useState<
     Map<string, Partial<TodoLike>>
   >(new Map());
@@ -418,6 +445,19 @@ export function ListTile({
     subtaskOverrides,
   ]);
 
+  // "All done" appears when the tile transitions to empty and the most recent
+  // action was a completion; anything reappearing dismisses it.
+  const prevVisibleCountRef = useRef(visibleTodos.length);
+  useEffect(() => {
+    const prevCount = prevVisibleCountRef.current;
+    prevVisibleCountRef.current = visibleTodos.length;
+    if (visibleTodos.length > 0) {
+      setJustCleared(false);
+      return;
+    }
+    if (prevCount > 0 && lastActionWasCompleteRef.current) setJustCleared(true);
+  }, [visibleTodos.length]);
+
   async function createTodo(rawTitle: string) {
     const trimmed = rawTitle.trim();
     if (!trimmed) return;
@@ -500,15 +540,46 @@ export function ListTile({
       map.set(id, { ...prev.get(id), completedAt: next });
       return map;
     });
-    // These tiles only show incomplete todos, so completing one should make it
-    // leave the list immediately rather than linger as a checked row until the
-    // next refresh. Hide it optimistically; the post-refresh prune drops the
-    // hidden id once the server stops returning it.
+    // These tiles only show incomplete todos, so a completed row leaves the
+    // list — but not instantly. HIG choreography: checkmark pops + haptic,
+    // strikethrough eases in, the row lingers 600ms, collapses 260ms, then
+    // joins hiddenIds (the post-refresh prune drops the id once the server
+    // stops returning it). Re-tapping during the linger cancels removal.
     if (completing) {
-      setHiddenIds((prev) => {
-        if (prev.has(id)) return prev;
+      lastActionWasCompleteRef.current = true;
+      haptic("success");
+      const lingerTimer = window.setTimeout(() => {
+        setLeavingIds((prev) => new Set(prev).add(id));
+        const collapseTimer = window.setTimeout(() => {
+          setHiddenIds((prev) => {
+            if (prev.has(id)) return prev;
+            const nextSet = new Set(prev);
+            nextSet.add(id);
+            return nextSet;
+          });
+          setLeavingIds((prev) => {
+            const nextSet = new Set(prev);
+            nextSet.delete(id);
+            return nextSet;
+          });
+          hideTimersRef.current.delete(id);
+        }, 260);
+        hideTimersRef.current.set(id, [collapseTimer]);
+      }, 600);
+      hideTimersRef.current.set(id, [lingerTimer]);
+    } else {
+      // Un-completing (possibly mid-linger): cancel any pending removal.
+      clearHideTimers(id);
+      setLeavingIds((prev) => {
+        if (!prev.has(id)) return prev;
         const nextSet = new Set(prev);
-        nextSet.add(id);
+        nextSet.delete(id);
+        return nextSet;
+      });
+      setHiddenIds((prev) => {
+        if (!prev.has(id)) return prev;
+        const nextSet = new Set(prev);
+        nextSet.delete(id);
         return nextSet;
       });
     }
@@ -523,6 +594,13 @@ export function ListTile({
         return map;
       });
       if (completing) {
+        clearHideTimers(id);
+        setLeavingIds((prev) => {
+          if (!prev.has(id)) return prev;
+          const nextSet = new Set(prev);
+          nextSet.delete(id);
+          return nextSet;
+        });
         setHiddenIds((prev) => {
           if (!prev.has(id)) return prev;
           const nextSet = new Set(prev);
@@ -537,8 +615,20 @@ export function ListTile({
       body: JSON.stringify({ toggleComplete: true }),
     })
       .then((res) => {
-        if (res.ok) startTransition(() => router.refresh());
-        else rollback();
+        if (!res.ok) {
+          rollback();
+          return;
+        }
+        if (completing) {
+          // Hold the refresh until the leave animation has played, so the
+          // server-rendered list doesn't unmount the row mid-collapse.
+          window.setTimeout(
+            () => startTransition(() => router.refresh()),
+            950,
+          );
+        } else {
+          startTransition(() => router.refresh());
+        }
       })
       .catch(rollback);
   }
@@ -610,6 +700,7 @@ export function ListTile({
   }
 
   function deleteTodo(id: string) {
+    lastActionWasCompleteRef.current = false;
     setHiddenIds((prev) => {
       const next = new Set(prev);
       next.add(id);
@@ -863,7 +954,7 @@ export function ListTile({
       data-droptarget-list={list.id}
       data-droptarget-project={myProjectKey ?? ""}
       className={cn(
-        "group/tile flex flex-col transition relative md:rounded-2xl md:bg-[var(--color-card)] md:px-4 md:pt-4 md:pb-2 md:ring-2 md:ring-transparent md:border md:border-[var(--color-border)]",
+        "group/tile flex flex-col transition relative md:rounded-2xl md:bg-[var(--color-card)] md:px-4 md:pt-4 md:pb-2 md:ring-2 md:ring-transparent md:border md:border-[var(--color-card-border)] md:shadow-card",
         list.isDefault && "md:min-h-[420px]",
         !adding && "md:cursor-pointer",
         isDragOver &&
@@ -886,7 +977,7 @@ export function ListTile({
           <div className="flex md:items-baseline md:gap-3 min-w-0">
             <h2
               className={cn(
-                "text-2xl font-bold tracking-tight truncate",
+                "text-title font-bold truncate",
                 p.text
               )}
             >
@@ -898,12 +989,7 @@ export function ListTile({
                 aria-label="Shared list"
               />
             ) : null}
-            <span
-              className={cn(
-                "text-2xl font-bold tabular-nums shrink-0",
-                p.text
-              )}
-            >
+            <span className="text-title font-semibold tabular-nums shrink-0 text-[var(--color-label-tertiary)]">
               {totalCount + (visibleTodos.length - todos.length)}
             </span>
           </div>
@@ -939,7 +1025,7 @@ export function ListTile({
             </button>
             {menuOpen ? (
               <div
-                className="absolute right-0 top-full mt-1 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg"
+                className="animate-scale-in origin-top-right absolute right-0 top-full mt-1 overflow-hidden rounded-xl border border-[var(--color-card-border)] bg-[var(--color-elevated)] shadow-popover"
                 style={{
                   minWidth: 200,
                   color: "var(--color-foreground)",
@@ -1038,7 +1124,7 @@ export function ListTile({
                 startAdding();
               }}
               className={cn(
-                "flex items-center gap-2.5 px-0 py-3 text-[17px] font-normal transition hover:opacity-80 text-left",
+                "pressable flex items-center gap-2.5 px-0 py-3 text-[17px] font-normal hover:opacity-80 text-left",
                 p.text
               )}
             >
@@ -1157,6 +1243,7 @@ export function ListTile({
                               sourceProjectId={myProjectKey}
                               showProjectBadge={<></>}
                               showCreator={list.collaborative}
+                              leaving={leavingIds.has(todo.id)}
                               onToggle={toggleComplete}
                               onToggleSubtask={toggleSubtask}
                               onAddSubtask={addSubtask}
@@ -1182,6 +1269,7 @@ export function ListTile({
                 sourceListId={list.id}
                 sourceProjectId={myProjectKey}
                 showCreator={list.collaborative}
+                leaving={leavingIds.has(todo.id)}
                 onToggle={toggleComplete}
                 onToggleSubtask={toggleSubtask}
                 onAddSubtask={addSubtask}
@@ -1191,6 +1279,23 @@ export function ListTile({
             ))}
           </ul>
         )}
+
+        {/* Quiet celebration when the user completes the last todo. */}
+        {visibleTodos.length === 0 && justCleared ? (
+          <div className="animate-fade-in-up flex items-center gap-2.5 px-2 py-6">
+            <span
+              className={cn(
+                "animate-check-pop grid size-6 shrink-0 place-items-center rounded-full text-white",
+                p.fill
+              )}
+            >
+              <Check className="size-3.5" strokeWidth={3} />
+            </span>
+            <span className="text-[15px] text-[var(--color-muted-foreground)]">
+              All done
+            </span>
+          </div>
+        ) : null}
 
         {/* Desktop-only: original in-place add at the bottom. The mobile
             equivalent is rendered at the top of the tile (above). */}
@@ -1230,7 +1335,7 @@ export function ListTile({
                 startAdding();
               }}
               className={cn(
-                "flex items-center gap-2 px-2 py-2 mt-1 text-sm font-medium transition hover:opacity-80 text-left",
+                "pressable flex items-center gap-2 px-2 py-2 mt-1 text-sm font-medium hover:opacity-80 text-left",
                 p.text
               )}
             >

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCapture, type Capture } from "@/lib/capture-store";
+import { useOverlayTransition } from "@/lib/use-overlay-transition";
 import type { Project } from "@/components/smart-capture-form";
 
 // The proposal editor pulls in the full smart-capture-form (~1.2k lines).
@@ -40,6 +41,8 @@ export function CaptureDrawer() {
     useCapture();
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
+  // Keeps the drawer mounted through the slide-up exit animation.
+  const { mounted, state: overlayState } = useOverlayTransition(drawerOpen);
 
   // Fetch active projects once when the drawer opens — needed by the
   // ProposalEditor for the project dropdown.
@@ -74,7 +77,7 @@ export function CaptureDrawer() {
     if (drawerOpen && captures.length === 0) setDrawerOpen(false);
   }, [drawerOpen, captures.length, setDrawerOpen]);
 
-  if (!drawerOpen) return null;
+  if (!mounted) return null;
 
   return (
     <div
@@ -83,10 +86,18 @@ export function CaptureDrawer() {
         if (e.target === e.currentTarget) setDrawerOpen(false);
       }}
     >
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div
+        data-overlay="backdrop"
+        data-state={overlayState}
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+      />
 
-      <div className="relative mx-auto mt-0 max-h-[80vh] w-full max-w-3xl overflow-y-auto rounded-b-2xl border-b border-x border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl">
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-background)]/95 px-5 py-3 backdrop-blur">
+      <div
+        data-overlay="top-sheet"
+        data-state={overlayState}
+        className="relative mx-auto mt-0 max-h-[80vh] w-full max-w-3xl overflow-y-auto rounded-b-2xl border-b border-x border-[var(--color-card-border)] bg-[var(--color-background)] shadow-modal"
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[var(--color-separator)] bg-[var(--color-background)]/80 px-5 py-3 backdrop-blur-xl backdrop-saturate-150">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
               Captures
