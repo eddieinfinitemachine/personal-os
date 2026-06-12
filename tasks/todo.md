@@ -309,3 +309,21 @@ all CSS (custom easing tokens, keyframes, @starting-style). Plan: ~/.claude/plan
   mobile flat bg + blurred bars + tab pill intact.
 - NOT yet manually verified: drag-and-drop todo rows (desktop HTML5 + mobile long-press) after the
   li wrapper change — exercise on next real use; fallback is opacity-fade only (see plan).
+
+---
+
+## Shared-list add notifications (2026-06-12)
+
+- [x] `src/lib/notify.ts` — `notifySharedListAdd()`: loads list owner+members, emails all
+  participants except the creator; 5-min in-memory burst suppression per
+  recipient+list+creator (multi-line paste → one email); never throws.
+- [x] `src/lib/email.ts` — `sendSharedListAddEmail()` + Kaizen-styled HTML template
+  (subject: `{Creator} added "{title}" to {List}`, links to APP_URL).
+- [x] `src/app/api/todos/route.ts` — both create branches (top-level + subtask) call it via
+  `after()` (post-response, zero added latency).
+- Capture/cron creation paths deliberately not hooked: they file into default lists, which
+  can't be shared (members API rejects `isDefault`).
+- Verified by dry run with Resend disabled: private list → no attempt; EC/Shane →
+  exactly one intended send to the member; repeat add suppressed; creation 200 throughout.
+- Follow-up candidates: iPhone PWA web push (needs sw push handler + VAPID +
+  PushSubscription table = schema approval), per-user mute setting, digest mode.
