@@ -40,6 +40,88 @@ export async function sendMagicLinkEmail(
   }
 }
 
+/**
+ * Notify a shared-list participant that someone added a new todo.
+ * Caller (src/lib/notify.ts) handles recipient selection and error swallowing.
+ */
+export async function sendSharedListAddEmail(
+  email: string,
+  {
+    creatorName,
+    todoTitle,
+    listName,
+  }: { creatorName: string; todoTitle: string; listName: string },
+): Promise<void> {
+  const link = APP_URL_FALLBACK;
+  const { error } = await getResend().emails.send({
+    from: FROM_EMAIL,
+    to: email,
+    subject: `${creatorName} added "${todoTitle}" to ${listName}`,
+    html: renderSharedListAddHtml({ creatorName, todoTitle, listName, link }),
+    text: `${creatorName} added a new to-do to ${listName}:\n\n  ${todoTitle}\n\nOpen Kaizen to see the list (and anything else they've added since):\n${link}\n\nYou're getting this because the list "${listName}" is shared with you.`,
+  });
+  if (error) {
+    throw new Error(`Resend send failed: ${error.name} — ${error.message}`);
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function renderSharedListAddHtml({
+  creatorName,
+  todoTitle,
+  listName,
+  link,
+}: {
+  creatorName: string;
+  todoTitle: string;
+  listName: string;
+  link: string;
+}): string {
+  const creator = escapeHtml(creatorName);
+  const title = escapeHtml(todoTitle);
+  const list = escapeHtml(listName);
+  return `<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;color:#e5e5e5;">
+    <div style="max-width:480px;margin:0 auto;padding:48px 24px;">
+      <div style="text-align:center;margin-bottom:40px;">
+        <div style="font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:#737373;">Kaizen</div>
+        <div style="margin-top:8px;font-size:22px;font-weight:600;letter-spacing:-0.01em;color:#fafafa;">${creator} added a to&#8209;do</div>
+      </div>
+
+      <div style="background:#171717;border:1px solid #262626;border-radius:12px;padding:20px;margin:0 0 24px;">
+        <div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#737373;margin-bottom:6px;">${list}</div>
+        <div style="font-size:16px;font-weight:600;color:#fafafa;">${title}</div>
+      </div>
+
+      <div style="text-align:center;margin:32px 0;">
+        <a href="${link}"
+           style="display:inline-block;background:#fafafa;color:#0a0a0a;font-size:15px;font-weight:600;padding:14px 32px;border-radius:10px;text-decoration:none;">
+          Open Kaizen
+        </a>
+      </div>
+
+      <p style="font-size:13px;line-height:1.6;color:#737373;margin:24px 0 0;text-align:center;">
+        Opening the app shows the full list, including anything else added since this email.
+      </p>
+
+      <hr style="border:none;border-top:1px solid #262626;margin:40px 0 24px;"/>
+
+      <p style="font-size:12px;line-height:1.6;color:#525252;margin:0;">
+        You're getting this because the list &ldquo;${list}&rdquo; is shared with you.
+      </p>
+    </div>
+  </body>
+</html>`;
+}
+
 function renderMagicLinkHtml(link: string): string {
   return `<!doctype html>
 <html>

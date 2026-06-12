@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
 import { listAccessWhere } from "@/lib/list-access";
+import { notifySharedListAdd } from "@/lib/notify";
 
 export async function GET(request: Request) {
   const userId = await getCurrentUserId(request);
@@ -87,6 +88,10 @@ export async function POST(request: Request) {
         dueDate: body.dueDate ? new Date(body.dueDate) : null,
       },
     });
+    // Post-response: email the other participants if this list is shared.
+    after(() =>
+      notifySharedListAdd({ todoId: todo.id, listId: todo.listId, creatorId: userId }),
+    );
     return NextResponse.json({ todo });
   }
 
@@ -117,5 +122,9 @@ export async function POST(request: Request) {
       projectId: body.projectId ?? null,
     },
   });
+  // Post-response: email the other participants if this list is shared.
+  after(() =>
+    notifySharedListAdd({ todoId: todo.id, listId: todo.listId, creatorId: userId }),
+  );
   return NextResponse.json({ todo });
 }
