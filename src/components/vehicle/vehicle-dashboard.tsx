@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   CalendarClock,
   Car,
   Check,
@@ -18,6 +17,7 @@ import {
 } from "@/lib/maintenance";
 import { cn } from "@/lib/utils";
 import { MileageEditor } from "./mileage-editor";
+import { ServicingSummary } from "./servicing-summary";
 import { AddServiceRecord } from "./add-service-record";
 import { LogDrive } from "./log-drive";
 import { PhotoGallery } from "../photo-gallery";
@@ -71,14 +71,11 @@ export async function VehicleDashboard({ projectId }: { projectId: string }) {
     );
   }
 
-  // Compute status for every service item
+  // Compute status for every service item (used by the maintenance grid).
   const itemsWithStatus = vehicle.serviceItems.map((item) => ({
     item,
     due: computeDue(item, vehicle.currentMileage),
   }));
-  const alerts = itemsWithStatus.filter(
-    ({ due }) => due.status === "overdue" || due.status === "due-soon"
-  );
 
   const fluids = asArray<FluidSpec>(vehicle.fluidSpecs);
   const parts = asArray<PartNumber>(vehicle.partNumbers);
@@ -130,22 +127,22 @@ export async function VehicleDashboard({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      {/* Alerts */}
-      {alerts.length > 0 ? (
-        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle className="size-4 text-rose-500" />
-            <h3 className="font-semibold text-rose-500">
-              {alerts.length} maintenance {alerts.length === 1 ? "item" : "items"} need attention
-            </h3>
-          </div>
-          <ul className="grid gap-2 sm:grid-cols-2">
-            {alerts.map(({ item, due }) => (
-              <AlertCard key={item.id} name={item.name} due={due} unit={vehicle.mileageUnit} />
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      {/* Servicing — update odometer & see what's due by distance */}
+      <ServicingSummary
+        variant="full"
+        vehicleId={vehicle.id}
+        vehicleName={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+        unit={vehicle.mileageUnit}
+        currentMileage={vehicle.currentMileage}
+        items={vehicle.serviceItems.map((i) => ({
+          id: i.id,
+          name: i.name,
+          intervalMonths: i.intervalMonths,
+          intervalMileage: i.intervalMileage,
+          lastPerformedAt: i.lastPerformedAt ? i.lastPerformedAt.toISOString() : null,
+          lastPerformedMileage: i.lastPerformedMileage,
+        }))}
+      />
 
       <CoachingPanel
         generateUrl={`/api/vehicles/${vehicle.id}/coach`}
@@ -499,32 +496,6 @@ function StatusPill({ status }: { status: DueStatus }) {
       {status === "ok" ? <Check className="size-2.5" /> : null}
       {label}
     </span>
-  );
-}
-
-function AlertCard({
-  name,
-  due,
-  unit,
-}: {
-  name: string;
-  due: { status: DueStatus; daysFromNow: number | null; milesFromNow: number | null };
-  unit: string;
-}) {
-  const c = statusColor(due.status);
-  return (
-    <li className={cn("rounded-lg p-3", c.bg)}>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="font-medium text-sm">{name}</span>
-        <span className={cn("text-xs tabular-nums", c.text)}>
-          {due.daysFromNow !== null
-            ? formatRelativeDays(due.daysFromNow)
-            : due.milesFromNow !== null
-              ? formatRelativeMiles(due.milesFromNow, unit)
-              : ""}
-        </span>
-      </div>
-    </li>
   );
 }
 

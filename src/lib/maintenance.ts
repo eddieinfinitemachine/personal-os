@@ -15,8 +15,8 @@ export type DueInfo = {
   milesFromNow: number | null;
 };
 
-const DUE_SOON_DAYS = 30;
-const DUE_SOON_MILEAGE = 1000;
+export const DUE_SOON_DAYS = 30;
+export const DUE_SOON_MILEAGE = 1000;
 
 function addMonths(d: Date, months: number): Date {
   const r = new Date(d);

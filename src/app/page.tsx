@@ -5,6 +5,7 @@ import { NewListButton } from "@/components/new-list-button";
 import { ProjectCard, type ProjectCardData } from "@/components/project-card";
 import { KaizenLanding } from "@/components/kaizen-landing";
 import { CaptureInboxPill } from "@/components/capture-inbox";
+import { ServicingSummary } from "@/components/vehicle/servicing-summary";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists } from "@/lib/lists";
 import { getSession } from "@/lib/auth";
@@ -27,7 +28,8 @@ export default async function HomePage() {
 
   // Single fetch for all open top-level todos plus their subtasks. Bucket in
   // memory rather than firing N×M queries per (list, project) tile.
-  const [lists, projects, allTodos, comments, commentReads] = await Promise.all([
+  const [lists, projects, allTodos, comments, commentReads, serviceVehicles] =
+    await Promise.all([
     prisma.list.findMany({
       where: listAccessWhere(userId),
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
@@ -75,6 +77,16 @@ export default async function HomePage() {
     prisma.commentRead.findMany({
       where: { userId },
       select: { todoId: true, lastReadAt: true },
+    }),
+    // Vehicles where distance-based servicing is meaningful (≥1 mileage
+    // interval) — surfaced as a compact "update odometer / what's due" widget.
+    // Users with no such vehicle get an empty list and no widget.
+    prisma.vehicle.findMany({
+      where: { userId, serviceItems: { some: { intervalMileage: { not: null } } } },
+      include: {
+        project: { select: { name: true } },
+        serviceItems: { orderBy: { position: "asc" } },
+      },
     }),
   ]);
 
@@ -192,6 +204,30 @@ export default async function HomePage() {
           <NewListButton />
         </div>
       </header>
+
+      {serviceVehicles.length > 0 ? (
+        <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {serviceVehicles.map((v) => (
+            <ServicingSummary
+              key={v.id}
+              variant="compact"
+              vehicleId={v.id}
+              vehicleName={v.project?.name ?? `${v.year} ${v.make} ${v.model}`}
+              unit={v.mileageUnit}
+              currentMileage={v.currentMileage}
+              items={v.serviceItems.map((i) => ({
+                id: i.id,
+                name: i.name,
+                intervalMonths: i.intervalMonths,
+                intervalMileage: i.intervalMileage,
+                lastPerformedAt: i.lastPerformedAt ? i.lastPerformedAt.toISOString() : null,
+                lastPerformedMileage: i.lastPerformedMileage,
+              }))}
+            />
+          ))}
+        </div>
+      ) : null}
+
       <HomeTiles tiles={tiles} />
 
       {projectCards.length > 0 ? (
