@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ensureDefaultLists, palette } from "@/lib/lists";
 import { formatCalendarDate } from "@/lib/utils";
+import { initials } from "@/lib/initials";
 import { PrintButton } from "@/components/print-button";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,12 @@ export default async function PrintListsPage() {
   const userId = session.userId;
 
   await ensureDefaultLists(userId);
+
+  const me = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true },
+  });
+  const appName = (me && initials(me.name, me.email)) || "Personal OS";
 
   const [lists, todos] = await Promise.all([
     prisma.list.findMany({
@@ -71,7 +78,7 @@ export default async function PrintListsPage() {
         <header className="mb-4 flex items-baseline justify-between border-b border-black/30 pb-2">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-black/60">
-              EC · Lists
+              {appName} · Lists
             </div>
             <h1 className="mt-0.5 text-xl font-semibold tracking-tight">{dateLabel}</h1>
           </div>

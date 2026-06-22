@@ -11,6 +11,7 @@ import { ServiceWorkerRegister } from "@/components/sw-register";
 import { CaptureProvider } from "@/lib/capture-store";
 import { isPrivateHost } from "@/lib/hosts";
 import { prisma } from "@/lib/prisma";
+import { initials } from "@/lib/initials";
 
 // Per-request: small enough to not warrant a cache layer for a friends-only
 // deployment. The prior `_count.todos` shape emitted a correlated subquery
@@ -44,16 +45,19 @@ async function getSidebarProjects(userId: string) {
   }));
 }
 
-// Static metadata defaults to the public brand. The dynamic per-host title
-// (incl. "EC" for the private host) is set per-page where it matters; the
-// manifest itself is host-aware via app/manifest.ts.
+// Static metadata uses the generic product name. The installed-app name is
+// personalized to the signed-in person's initials via app/manifest.ts (which
+// reads the session through the credentialed manifest <link> below).
 export const metadata: Metadata = {
-  title: "EC",
+  title: "Personal OS",
   description: "Tasks, projects, people, trips, possessions — your life, organized.",
-  manifest: "/manifest.webmanifest",
+  // The manifest <link> is injected manually (see <head> below) with
+  // crossOrigin="use-credentials" so the install request carries the session
+  // cookie — that lets app/manifest.ts name the installed app after the
+  // signed-in person's initials.
   appleWebApp: {
     capable: true,
-    title: "EC",
+    title: "Personal OS",
     statusBarStyle: "black-translucent",
   },
 };
@@ -76,7 +80,6 @@ export default async function RootLayout({
   const pathname = h.get("x-pathname") ?? "";
   const userId = h.get("x-user-id");
   const isPrivate = isPrivateHost(h.get("host"));
-  const appName = "EC";
   const isAuthRoute =
     pathname === "/login" ||
     pathname.startsWith("/login/") ||
@@ -91,6 +94,7 @@ export default async function RootLayout({
     return (
       <html lang="en">
         <head>
+          <link rel="manifest" href="/manifest.webmanifest" crossOrigin="use-credentials" />
           <script dangerouslySetInnerHTML={{ __html: themePreloadScript }} />
         </head>
         <body className="antialiased">{children}</body>
@@ -101,11 +105,22 @@ export default async function RootLayout({
   // userId is guaranteed here because !isBare means middleware found a valid session.
   const projects = userId ? await getSidebarProjects(userId) : [];
 
+  // The signed-in person's installed copy is branded with their initials; the
+  // generic product name "Personal OS" is the fallback. See lib/initials.ts.
+  const me = userId
+    ? await prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true, email: true },
+      })
+    : null;
+  const appName = (me && initials(me.name, me.email)) || "Personal OS";
+
   const mobileProjects = projects.map((p) => ({ id: p.id, name: p.name }));
 
   return (
     <html lang="en">
       <head>
+        <link rel="manifest" href="/manifest.webmanifest" crossOrigin="use-credentials" />
         <script dangerouslySetInnerHTML={{ __html: themePreloadScript }} />
       </head>
       <body className="antialiased">

@@ -10,7 +10,7 @@ function getResend(): Resend {
   return _resend;
 }
 
-const FROM_EMAIL = process.env.EMAIL_FROM ?? "EC <onboarding@resend.dev>";
+const FROM_EMAIL = process.env.EMAIL_FROM ?? "Personal OS <onboarding@resend.dev>";
 const APP_URL_FALLBACK =
   process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
@@ -30,9 +30,9 @@ export async function sendMagicLinkEmail(
   const { error } = await getResend().emails.send({
     from: FROM_EMAIL,
     to: email,
-    subject: "Sign in to EC",
+    subject: "Sign in to Personal OS",
     html: renderMagicLinkHtml(link),
-    text: `Sign in to EC by opening this link (expires in 15 minutes):\n\n${link}\n\nIf you didn't request this, you can safely ignore it.`,
+    text: `Sign in to Personal OS by opening this link (expires in 15 minutes):\n\n${link}\n\nIf you didn't request this, you can safely ignore it.`,
   });
   if (error) {
     // Resend SDK v6 returns errors in the response rather than throwing.
@@ -58,7 +58,7 @@ export async function sendSharedListAddEmail(
     to: email,
     subject: `${creatorName} added "${todoTitle}" to ${listName}`,
     html: renderSharedListAddHtml({ creatorName, todoTitle, listName, link }),
-    text: `${creatorName} added a new to-do to ${listName}:\n\n  ${todoTitle}\n\nOpen EC to see the list (and anything else they've added since):\n${link}\n\nYou're getting this because the list "${listName}" is shared with you.`,
+    text: `${creatorName} added a new to-do to ${listName}:\n\n  ${todoTitle}\n\nOpen Personal OS to see the list (and anything else they've added since):\n${link}\n\nYou're getting this because the list "${listName}" is shared with you.`,
   });
   if (error) {
     throw new Error(`Resend send failed: ${error.name} — ${error.message}`);
@@ -92,7 +92,7 @@ function renderSharedListAddHtml({
   <body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;color:#e5e5e5;">
     <div style="max-width:480px;margin:0 auto;padding:48px 24px;">
       <div style="text-align:center;margin-bottom:40px;">
-        <div style="font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:#737373;">EC</div>
+        <div style="font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:#737373;">Personal OS</div>
         <div style="margin-top:8px;font-size:22px;font-weight:600;letter-spacing:-0.01em;color:#fafafa;">${creator} added a to&#8209;do</div>
       </div>
 
@@ -104,7 +104,7 @@ function renderSharedListAddHtml({
       <div style="text-align:center;margin:32px 0;">
         <a href="${link}"
            style="display:inline-block;background:#fafafa;color:#0a0a0a;font-size:15px;font-weight:600;padding:14px 32px;border-radius:10px;text-decoration:none;">
-          Open EC
+          Open Personal OS
         </a>
       </div>
 
@@ -128,7 +128,7 @@ function renderMagicLinkHtml(link: string): string {
   <body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif;color:#e5e5e5;">
     <div style="max-width:480px;margin:0 auto;padding:48px 24px;">
       <div style="text-align:center;margin-bottom:40px;">
-        <div style="font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:#737373;">EC</div>
+        <div style="font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:#737373;">Personal OS</div>
         <div style="margin-top:8px;font-size:22px;font-weight:600;letter-spacing:-0.01em;color:#fafafa;">Sign in to your account</div>
       </div>
 
@@ -139,7 +139,7 @@ function renderMagicLinkHtml(link: string): string {
       <div style="text-align:center;margin:32px 0;">
         <a href="${link}"
            style="display:inline-block;background:#fafafa;color:#0a0a0a;font-size:15px;font-weight:600;padding:14px 32px;border-radius:10px;text-decoration:none;">
-          Sign in to EC
+          Sign in to Personal OS
         </a>
       </div>
 

@@ -49,7 +49,7 @@ export type MobileProject = { id: string; name: string };
 export function MobileChromeProvider({
   children,
   projects,
-  appName = "EC",
+  appName = "Personal OS",
   isPrivate = false,
 }: {
   children: ReactNode;
