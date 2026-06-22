@@ -235,6 +235,9 @@ ${context}`;
     system: systemPrompt,
     messages: [...history, { role: "user", content: question }],
     maxTokens: 1500,
+    // The interactive project assistant runs on Opus for sharper reasoning;
+    // background AI (capture, coach, parsing) stays on the Sonnet default.
+    model: "claude-opus-4-8",
   });
   if (!answer) {
     return NextResponse.json({ error: "empty response" }, { status: 502 });
