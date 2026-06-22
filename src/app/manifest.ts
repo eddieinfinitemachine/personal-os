@@ -6,8 +6,8 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
   const isPrivate = isPrivateHost((await headers()).get("host"));
 
   return {
-    name: isPrivate ? "EC" : "Kaizen",
-    short_name: isPrivate ? "EC" : "Kaizen",
+    name: "Personal OS",
+    short_name: "Personal OS",
     description: isPrivate
       ? "Personal dashboard."
       : "Tasks, projects, people, trips — your life, organized.",

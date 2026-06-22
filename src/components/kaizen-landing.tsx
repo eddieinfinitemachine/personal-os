@@ -44,7 +44,7 @@ function Nav() {
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5 sm:px-8">
         <Link href="/" className="flex items-center gap-2">
           <KaizenMark />
-          <span className="text-sm font-semibold tracking-tight">Kaizen</span>
+          <span className="text-sm font-semibold tracking-tight">Personal OS</span>
         </Link>
         <nav className="hidden items-center gap-7 text-sm text-[var(--color-muted-foreground)] sm:flex">
           <a href="#capture" className="hover:text-[var(--color-foreground)]">
@@ -102,7 +102,7 @@ function Hero() {
             every day.
           </h1>
           <p className="mt-6 max-w-xl text-balance text-lg leading-relaxed text-[var(--color-muted-foreground)]">
-            Kaizen is the calm operating system for your personal life. One
+            Personal OS is the calm operating system for your personal life. One
             place for tasks, projects, people, trips, possessions, and the
             books and ideas you keep returning to.
           </p>
@@ -187,7 +187,7 @@ function AppMockup() {
           <span className="size-2.5 rounded-full bg-[#28c840]" />
           <div className="ml-3 flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-background)]/40 px-2 py-0.5 text-[10px] text-[var(--color-muted-foreground)]">
             <Search className="size-2.5" />
-            kaizen.app
+            personal-os.app
           </div>
         </div>
         <div className="grid grid-cols-[160px_1fr]">
@@ -540,7 +540,7 @@ function Surfaces() {
           <SurfaceCard
             title="iOS"
             shortcut="One tap"
-            body="Add the Kaizen Shortcut to your Home Screen, Lock Screen, or Action Button for one-tap capture. Or share-sheet any link, selection, or photo from any app."
+            body="Add the Personal OS Shortcut to your Home Screen, Lock Screen, or Action Button for one-tap capture. Or share-sheet any link, selection, or photo from any app."
             visual={<PhoneVisual />}
           />
         </div>
@@ -627,7 +627,7 @@ function ChromeVisual() {
       </div>
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-[10px]">
         <KaizenMark />
-        <span>Save to Kaizen</span>
+        <span>Save to Personal OS</span>
       </div>
     </div>
   );
@@ -845,7 +845,7 @@ function Footer() {
       <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-4 px-5 py-10 text-xs text-[var(--color-muted-foreground)] sm:flex-row sm:items-center sm:px-8">
         <div className="flex items-center gap-2">
           <KaizenMark />
-          <span>Kaizen · 改善 · A little better, every day.</span>
+          <span>Personal OS · A little better, every day.</span>
         </div>
         <div className="flex items-center gap-5">
           <Link href="/login" className="hover:text-[var(--color-foreground)]">

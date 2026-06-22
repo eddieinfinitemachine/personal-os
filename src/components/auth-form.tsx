@@ -109,7 +109,7 @@ function AuthFormInner({ mode, allowPassword = false }: AuthFormProps) {
       <div className="w-full max-w-sm">
         <Link href="/" className="mb-10 block text-center">
           <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--color-muted-foreground)]">
-            Kaizen
+            Personal OS
           </div>
         </Link>
 

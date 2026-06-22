@@ -48,12 +48,12 @@ async function getSidebarProjects(userId: string) {
 // (incl. "EC" for the private host) is set per-page where it matters; the
 // manifest itself is host-aware via app/manifest.ts.
 export const metadata: Metadata = {
-  title: "Kaizen — A little better, every day.",
+  title: "Personal OS — A little better, every day.",
   description: "Tasks, projects, people, trips, possessions — your life, organized.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    title: "Kaizen",
+    title: "Personal OS",
     statusBarStyle: "black-translucent",
   },
 };
@@ -76,7 +76,7 @@ export default async function RootLayout({
   const pathname = h.get("x-pathname") ?? "";
   const userId = h.get("x-user-id");
   const isPrivate = isPrivateHost(h.get("host"));
-  const appName = isPrivate ? "EC" : "Kaizen";
+  const appName = "Personal OS";
   const isAuthRoute =
     pathname === "/login" ||
     pathname.startsWith("/login/") ||
