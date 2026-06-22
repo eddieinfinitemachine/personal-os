@@ -284,13 +284,12 @@ export async function parseCapture(input: ParseInput): Promise<CaptureProposal> 
     });
   }
 
-  // Sonnet 4.6 + Anthropic's web_search server tool. Sonnet handles tool use
-  // more reliably than Haiku, and web_search lets it actually look up real
-  // information about a person, current market prices, place reviews, etc.
+  // Opus 4.8 + Anthropic's web_search server tool. web_search lets it look up
+  // real information about a person, current market prices, place reviews, etc.
   // Anthropic runs the search behind the scenes — we just declare the tool.
   // max_uses caps total searches per request to keep latency + cost bounded.
   const body = JSON.stringify({
-    model: "claude-sonnet-4-6",
+    model: "claude-opus-4-8",
     max_tokens: 4000,
     system: SYSTEM_PROMPT.replace(/<TODAY>/g, input.today),
     messages: [{ role: "user", content: userContent }],

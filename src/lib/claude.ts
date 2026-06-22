@@ -4,7 +4,8 @@
 // response validation — this only owns the transport and the boilerplate.
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+// Default model for all Kaizen AI (capture, coach, project assistant, parsing).
+const DEFAULT_MODEL = "claude-opus-4-8";
 
 export interface ClaudeMessage {
   role: "user" | "assistant";
