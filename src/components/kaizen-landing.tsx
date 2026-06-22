@@ -44,7 +44,7 @@ function Nav() {
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5 sm:px-8">
         <Link href="/" className="flex items-center gap-2">
           <KaizenMark />
-          <span className="text-sm font-semibold tracking-tight">Personal OS</span>
+          <span className="text-sm font-semibold tracking-tight">EC</span>
         </Link>
         <nav className="hidden items-center gap-7 text-sm text-[var(--color-muted-foreground)] sm:flex">
           <a href="#capture" className="hover:text-[var(--color-foreground)]">
@@ -78,8 +78,8 @@ function Nav() {
 
 function KaizenMark() {
   return (
-    <div className="flex h-6 w-6 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-card)] font-display text-[10px]">
-      改
+    <div className="flex h-6 w-6 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-card)] font-display text-[9px] font-bold tracking-tight">
+      EC
     </div>
   );
 }
@@ -94,17 +94,17 @@ function Hero() {
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1 text-[11px] text-[var(--color-muted-foreground)]">
             <Sparkles className="size-3" />
-            Quiet AI for the rest of your life
+            A personal project, shared
           </div>
           <h1 className="mt-5 text-balance text-5xl font-semibold tracking-tight sm:text-6xl lg:text-7xl">
-            A little better,
+            I made this
             <br />
-            every day.
+            for myself.
           </h1>
           <p className="mt-6 max-w-xl text-balance text-lg leading-relaxed text-[var(--color-muted-foreground)]">
-            Personal OS is the calm operating system for your personal life. One
-            place for tasks, projects, people, trips, possessions, and the
-            books and ideas you keep returning to.
+            EC is the tool I built to run my own life — tasks, projects, people,
+            trips, possessions, and the ideas I keep returning to, all in one
+            calm place. I&rsquo;m putting it out here in case you enjoy it too.
           </p>
           <p className="mt-3 max-w-xl text-balance text-base leading-relaxed text-[var(--color-muted-foreground)]">
             Type a sentence — anywhere, from any device. It files itself.
@@ -187,7 +187,7 @@ function AppMockup() {
           <span className="size-2.5 rounded-full bg-[#28c840]" />
           <div className="ml-3 flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-background)]/40 px-2 py-0.5 text-[10px] text-[var(--color-muted-foreground)]">
             <Search className="size-2.5" />
-            personal-os.app
+            ec.app
           </div>
         </div>
         <div className="grid grid-cols-[160px_1fr]">
@@ -540,7 +540,7 @@ function Surfaces() {
           <SurfaceCard
             title="iOS"
             shortcut="One tap"
-            body="Add the Personal OS Shortcut to your Home Screen, Lock Screen, or Action Button for one-tap capture. Or share-sheet any link, selection, or photo from any app."
+            body="Add the EC Shortcut to your Home Screen, Lock Screen, or Action Button for one-tap capture. Or share-sheet any link, selection, or photo from any app."
             visual={<PhoneVisual />}
           />
         </div>
@@ -627,7 +627,7 @@ function ChromeVisual() {
       </div>
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-[10px]">
         <KaizenMark />
-        <span>Save to Personal OS</span>
+        <span>Save to EC</span>
       </div>
     </div>
   );
@@ -637,8 +637,8 @@ function PhoneVisual() {
   return (
     <div className="flex h-20 w-10 flex-col items-center justify-end rounded-[8px] border-2 border-[var(--color-border)] bg-[var(--color-background)] p-1 shadow-md">
       <div className="mb-0.5 size-4 rounded-sm bg-[var(--color-foreground)]/80">
-        <div className="grid h-full place-items-center font-display text-[7px] text-[var(--color-background)]">
-          改
+        <div className="grid h-full place-items-center font-display text-[6px] font-bold text-[var(--color-background)]">
+          EC
         </div>
       </div>
       <div className="text-[7px] leading-tight text-[var(--color-muted-foreground)]">
@@ -811,12 +811,13 @@ function Closer() {
     <section className="border-t border-[var(--color-border)]/60">
       <div className="mx-auto max-w-3xl px-5 py-24 text-center sm:px-8 sm:py-32">
         <h2 className="text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
-          A calmer place
+          Made for my life.
           <br />
-          for your life.
+          Maybe yours too.
         </h2>
         <p className="mx-auto mt-5 max-w-xl text-balance text-base leading-relaxed text-[var(--color-muted-foreground)] sm:text-lg">
-          One account, one keychain, the whole of you. Free while it's small.
+          I built it for one person — me. It&rsquo;s free while it&rsquo;s small,
+          and you&rsquo;re welcome to it.
         </p>
         <div className="mt-9 flex justify-center gap-3">
           <Link
@@ -845,7 +846,7 @@ function Footer() {
       <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-4 px-5 py-10 text-xs text-[var(--color-muted-foreground)] sm:flex-row sm:items-center sm:px-8">
         <div className="flex items-center gap-2">
           <KaizenMark />
-          <span>Personal OS · A little better, every day.</span>
+          <span>EC · made by one person, shared with you.</span>
         </div>
         <div className="flex items-center gap-5">
           <Link href="/login" className="hover:text-[var(--color-foreground)]">

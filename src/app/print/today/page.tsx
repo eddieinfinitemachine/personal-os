@@ -71,7 +71,7 @@ export default async function PrintListsPage() {
         <header className="mb-4 flex items-baseline justify-between border-b border-black/30 pb-2">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-black/60">
-              Personal OS · Lists
+              EC · Lists
             </div>
             <h1 className="mt-0.5 text-xl font-semibold tracking-tight">{dateLabel}</h1>
           </div>

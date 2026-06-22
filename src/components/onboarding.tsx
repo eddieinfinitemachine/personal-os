@@ -15,7 +15,7 @@ type Step = {
 const STEPS: Step[] = [
   {
     icon: Sparkles,
-    title: "Welcome to Personal OS",
+    title: "Welcome to EC",
     body: "Tasks, projects, and the parts of your life worth tracking — all in one place. Two minutes to learn the basics.",
   },
   {

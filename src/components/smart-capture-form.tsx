@@ -289,7 +289,7 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
             <Camera className="mx-auto mb-2 size-7 text-[var(--color-muted-foreground)]" />
             <div className="text-sm font-medium">Take photo or upload</div>
             <div className="mt-0.5 text-xs text-[var(--color-muted-foreground)]">
-              Camera or library — optional. Personal OS reads the image too.
+              Camera or library — optional. EC reads the image too.
             </div>
           </div>
         </label>
