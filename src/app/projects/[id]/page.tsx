@@ -2,7 +2,8 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { ensureDefaultLists } from "@/lib/lists";
+import { ensureDefaultLists, INBOX_PROJECT_NAME } from "@/lib/lists";
+import { TriageLauncher } from "@/components/triage-mode";
 import { listAccessWhere } from "@/lib/list-access";
 import { ListTile } from "@/components/list-tile";
 import { ProjectTabs, type ProjectTab } from "@/components/project-tabs";
@@ -45,23 +46,28 @@ export default async function ProjectPage({
 
   return (
     <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6">
-      <header className="mb-4">
-        <h1 className="text-large-title font-bold">{project.name}</h1>
-        <p className="text-sm text-[var(--color-muted-foreground)] mt-1">
-          {project.kind === "vehicle"
-            ? "Vehicle"
-            : project.kind === "pet"
-              ? "Pet"
-              : project.kind === "human"
-                ? "Health"
-                : "Project"}{" "}
-          • created{" "}
-          {new Date(project.createdAt).toLocaleDateString(undefined, {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          })}
-        </p>
+      <header className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-large-title font-bold">{project.name}</h1>
+          <p className="text-sm text-[var(--color-muted-foreground)] mt-1">
+            {project.kind === "vehicle"
+              ? "Vehicle"
+              : project.kind === "pet"
+                ? "Pet"
+                : project.kind === "human"
+                  ? "Health"
+                  : "Project"}{" "}
+            • created{" "}
+            {new Date(project.createdAt).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </p>
+        </div>
+        {project.name === INBOX_PROJECT_NAME ? (
+          <TriageLauncher projectId={id} />
+        ) : null}
       </header>
 
       <ProjectTabs active={tab} hasDashboard={hasDashboard} />

@@ -39,6 +39,8 @@ export async function GET(request: Request) {
     notes: t.notes,
     dueDate: t.dueDate,
     completedAt: t.completedAt,
+    createdAt: t.createdAt,
+    listId: t.listId,
     projectId: t.projectId,
     projectName: t.project?.name ?? null,
     subtasks: t.subtasks.map((s) => ({
