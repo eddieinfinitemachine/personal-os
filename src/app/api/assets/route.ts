@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
 
@@ -50,6 +51,14 @@ export async function POST(request: Request) {
     acquiredAt:
       typeof body.acquiredAt === "string" ? new Date(body.acquiredAt) : null,
     notes: typeof body.notes === "string" ? body.notes : null,
+    detailsJson:
+      body.details && typeof body.details === "object" && !Array.isArray(body.details)
+        ? (Object.fromEntries(
+            Object.entries(body.details as Record<string, unknown>).filter(
+              ([, v]) => v !== null && v !== ""
+            )
+          ) as Prisma.InputJsonValue)
+        : undefined,
   };
 
   const asset = await prisma.asset.create({

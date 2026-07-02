@@ -28,8 +28,8 @@ export default async function MediaPage() {
         emptyHint="Drop something you've read, watched, or want to."
         fields={[
           { key: "subtitle", label: "Author / director / recommended by" },
-          { key: "category", label: "Type", placeholder: "book · film · album · podcast" },
-          { key: "status", label: "Status", placeholder: "tbr · reading · done · loved" },
+          { key: "category", label: "Type", suggestions: ["book", "film", "album", "podcast"] },
+          { key: "status", label: "Status", suggestions: ["tbr", "reading", "done", "loved"] },
           { key: "rating", label: "Rating (1-5)", type: "number" },
           { key: "imageUrl", label: "Cover image URL", type: "url", full: true },
           { key: "url", label: "Link", type: "url", full: true },

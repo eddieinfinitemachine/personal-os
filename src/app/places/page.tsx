@@ -24,15 +24,17 @@ export default async function PlacesPage() {
       </header>
       <AssetGrid
         kind="place"
+        autoEnrich="place"
         initialAssets={assets}
         emptyHint="Save somewhere you went or want to go."
         fields={[
+          { key: "url", label: "Link", type: "url", full: true, placeholder: "paste a Google Maps link to auto-fill" },
           { key: "subtitle", label: "Type / cuisine / recommended by" },
-          { key: "category", label: "Category", placeholder: "restaurant · hotel · hike · bar" },
+          { key: "category", label: "Category", suggestions: ["restaurant", "hotel", "hike", "bar", "cafe", "shop"] },
           { key: "location", label: "City / neighborhood", placeholder: "Brooklyn · Tokyo · Big Sur" },
-          { key: "status", label: "Status", placeholder: "visited · wishlist · favorite" },
+          { key: "status", label: "Status", suggestions: ["visited", "wishlist", "favorite"] },
           { key: "rating", label: "Rating (1-5)", type: "number" },
-          { key: "url", label: "Link", type: "url", full: true },
+          { key: "staff", label: "Staff / who to ask for", detail: true },
           { key: "notes", label: "What to order / why it's good", type: "textarea", full: true },
         ]}
       />

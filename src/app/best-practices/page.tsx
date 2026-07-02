@@ -28,7 +28,7 @@ export default async function BestPracticesPage() {
         emptyHint="Save a principle or framework you don't want to forget."
         fields={[
           { key: "subtitle", label: "Source", placeholder: "Naval · Charlie Munger · personal" },
-          { key: "category", label: "Domain", placeholder: "leadership · health · product · money" },
+          { key: "category", label: "Domain", suggestions: ["leadership", "health", "product", "money"] },
           { key: "url", label: "Reference link", type: "url", full: true },
           { key: "notes", label: "The actual practice", type: "textarea", full: true },
         ]}

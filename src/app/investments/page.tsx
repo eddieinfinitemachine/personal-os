@@ -30,8 +30,8 @@ export default async function InvestmentsPage() {
         emptyHint="Track your first position. Drop in name, category (venture/public/crypto), cost basis, and current value."
         fields={[
           { key: "subtitle", label: "Vehicle / round", placeholder: "Series A · SAFE · 100 shares" },
-          { key: "category", label: "Category", placeholder: "venture · public · crypto · real-estate" },
-          { key: "status", label: "Status", placeholder: "active · exited" },
+          { key: "category", label: "Category", suggestions: ["venture", "public", "crypto", "real-estate"] },
+          { key: "status", label: "Status", suggestions: ["active", "exited"] },
           { key: "costBasis", label: "Cost basis ($)", type: "number" },
           { key: "currentValue", label: "Current value ($)", type: "number" },
           { key: "acquiredAt", label: "Date", type: "date" },

@@ -7,11 +7,31 @@ import type { AssetRow } from "./asset-grid";
 import { haptic } from "@/lib/haptic";
 
 export type EditorField = {
-  key: keyof AssetRow;
+  key: keyof AssetRow | (string & {});
   label: string;
   type?: "text" | "textarea" | "number" | "url" | "date";
   placeholder?: string;
+  suggestions?: string[]; // closed vocab → rendered as one-tap chips
+  detail?: boolean; // stored in detailsJson[key] instead of a column
   full?: boolean; // span both columns
+};
+
+export function detailStr(a: AssetRow, key: string): string | null {
+  const d = a.detailsJson;
+  if (!d || typeof d !== "object" || Array.isArray(d)) return null;
+  const v = (d as Record<string, unknown>)[key];
+  return typeof v === "string" && v.trim() ? v : null;
+}
+
+const MAPS_URL_RE =
+  /^https?:\/\/(maps\.app\.goo\.gl|goo\.gl|(www\.|maps\.)?google\.[a-z.]{2,6})\//i;
+
+type PlaceHit = {
+  title: string;
+  subtitle: string;
+  location: string | null;
+  category: string | null;
+  url: string;
 };
 
 export function AssetEditor({
@@ -19,12 +39,14 @@ export function AssetEditor({
   asset,
   kind,
   fields,
+  autoEnrich,
   onClose,
 }: {
   open: boolean;
   asset: AssetRow | null; // null = creating new
   kind: string;
   fields: EditorField[];
+  autoEnrich?: "place"; // Google Maps link in `url` fills empty fields
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -33,6 +55,14 @@ export function AssetEditor({
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [enriched, setEnriched] = useState(false);
+  const enrichedUrlRef = useRef<string | null>(null);
+  const [hits, setHits] = useState<PlaceHit[]>([]);
+  const [hitsOpen, setHitsOpen] = useState(false);
+  const [hitIdx, setHitIdx] = useState(0);
+  const [searchingPlaces, setSearchingPlaces] = useState(false);
+  const suppressSearchRef = useRef<string | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
   // Hydrate the draft when opened.
@@ -41,7 +71,9 @@ export function AssetEditor({
     const next: Record<string, string> = {};
     if (asset) {
       for (const f of fields) {
-        const v = asset[f.key];
+        const v = f.detail
+          ? detailStr(asset, f.key as string)
+          : asset[f.key as keyof AssetRow];
         if (v == null) continue;
         if (f.type === "date") {
           const d = v instanceof Date ? v : new Date(v as string);
@@ -54,8 +86,100 @@ export function AssetEditor({
       next.title = asset.title;
     }
     setDraft(next);
+    enrichedUrlRef.current = null;
+    setEnriched(false);
+    // Don't pop the search dropdown for a title we hydrated ourselves.
+    suppressSearchRef.current = next.title ?? null;
+    setHits([]);
+    setHitsOpen(false);
     setTimeout(() => titleRef.current?.focus(), 30);
   }, [open, asset, fields]);
+
+  // Search places by name as the title is typed (Places page only).
+  const draftTitle = draft.title;
+  useEffect(() => {
+    if (autoEnrich !== "place" || !open) return;
+    const q = draftTitle?.trim() ?? "";
+    if (q.length < 3 || suppressSearchRef.current === q) {
+      setHits([]);
+      setHitsOpen(false);
+      return;
+    }
+    const t = setTimeout(async () => {
+      setSearchingPlaces(true);
+      try {
+        const res = await fetch(
+          `/api/assets/search-place?q=${encodeURIComponent(q)}`
+        );
+        if (!res.ok) return;
+        const { results } = (await res.json()) as { results: PlaceHit[] };
+        setHits(results);
+        setHitIdx(0);
+        setHitsOpen(results.length > 0);
+      } catch {
+        // Search is best-effort; typing a title by hand always works.
+      } finally {
+        setSearchingPlaces(false);
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [draftTitle, open, autoEnrich]);
+
+  function pickHit(h: PlaceHit) {
+    suppressSearchRef.current = h.title;
+    enrichedUrlRef.current = h.url; // the picked hit already carries its data
+    setDraft((d) => ({
+      ...d,
+      title: h.title,
+      location: h.location ?? d.location ?? "",
+      category: h.category ?? d.category ?? "",
+      url: h.url,
+    }));
+    setHits([]);
+    setHitsOpen(false);
+    haptic("tick");
+  }
+
+  // Auto-enrich from a pasted Google Maps link: fill fields the user hasn't
+  // typed into; never overwrite their input.
+  const draftUrl = draft.url;
+  useEffect(() => {
+    if (autoEnrich !== "place" || !open) return;
+    const u = draftUrl?.trim();
+    if (!u || !MAPS_URL_RE.test(u) || enrichedUrlRef.current === u) return;
+    const t = setTimeout(async () => {
+      enrichedUrlRef.current = u;
+      setEnriching(true);
+      setEnriched(false);
+      try {
+        const res = await fetch("/api/assets/enrich-place", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: u }),
+        });
+        if (!res.ok) return;
+        const got = (await res.json()) as {
+          title?: string | null;
+          location?: string | null;
+          category?: string | null;
+        };
+        setDraft((d) => {
+          const next = { ...d };
+          if (!next.title?.trim() && got.title) next.title = got.title;
+          if (!next.location?.trim() && got.location) next.location = got.location;
+          if (!next.category?.trim() && got.category) next.category = got.category;
+          return next;
+        });
+        setEnriched(true);
+        haptic("success");
+      } catch {
+        // Enrichment is best-effort; the form still works by hand.
+      } finally {
+        setEnriching(false);
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [draftUrl, open, autoEnrich]);
 
   // Esc to close.
   useEffect(() => {
@@ -78,8 +202,14 @@ export function AssetEditor({
     setSaving(true);
     setError(null);
     const payload: Record<string, unknown> = { kind, title };
+    const details: Record<string, unknown> = {};
     for (const f of fields) {
       const raw = draft[f.key as string];
+      if (f.detail) {
+        const trimmed = raw?.trim();
+        details[f.key as string] = trimmed ? trimmed : null;
+        continue;
+      }
       if (f.type === "number") {
         if (raw === undefined || raw === "") payload[f.key as string] = null;
         else
@@ -87,9 +217,11 @@ export function AssetEditor({
       } else if (f.type === "date") {
         payload[f.key as string] = raw ? raw : null;
       } else {
-        payload[f.key as string] = raw === undefined ? null : raw;
+        const trimmed = raw?.trim();
+        payload[f.key as string] = trimmed ? trimmed : null;
       }
     }
+    if (Object.keys(details).length) payload.details = details;
     try {
       const res = asset
         ? await fetch(`/api/assets/${asset.id}`, {
@@ -170,7 +302,7 @@ export function AssetEditor({
         </div>
 
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 p-5">
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-2 relative">
             <label className="block text-xs font-medium text-[var(--color-muted-foreground)] mb-1">
               Title
             </label>
@@ -181,10 +313,66 @@ export function AssetEditor({
                 setDraft((d) => ({ ...d, title: e.target.value }))
               }
               onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save();
+                if (hitsOpen && hits.length) {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setHitIdx((i) => Math.min(i + 1, hits.length - 1));
+                    return;
+                  }
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setHitIdx((i) => Math.max(i - 1, 0));
+                    return;
+                  }
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    pickHit(hits[hitIdx]);
+                    return;
+                  }
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    setHitsOpen(false);
+                    return;
+                  }
+                }
+                if (e.key === "Enter") save();
               }}
+              onBlur={() => setTimeout(() => setHitsOpen(false), 150)}
+              placeholder={
+                autoEnrich === "place" ? "search a place name…" : undefined
+              }
               className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2.5 py-1.5 text-sm focus:border-[var(--color-ring)] focus:outline-none"
             />
+            {autoEnrich === "place" && searchingPlaces ? (
+              <Loader2 className="absolute right-2.5 top-[30px] size-3.5 animate-spin text-[var(--color-muted-foreground)]" />
+            ) : null}
+            {hitsOpen && hits.length ? (
+              <ul className="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg">
+                {hits.map((h, i) => (
+                  <li key={`${h.title}-${i}`}>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        pickHit(h);
+                      }}
+                      onMouseEnter={() => setHitIdx(i)}
+                      className={
+                        "block w-full px-2.5 py-1.5 text-left " +
+                        (i === hitIdx ? "bg-[var(--color-accent)]/60" : "")
+                      }
+                    >
+                      <div className="text-sm">{h.title}</div>
+                      {h.subtitle ? (
+                        <div className="text-xs text-[var(--color-muted-foreground)] truncate">
+                          {h.subtitle}
+                        </div>
+                      ) : null}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
 
           {fields.map((f) => (
@@ -229,11 +417,51 @@ export function AssetEditor({
                   }
                   placeholder={f.placeholder}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save();
+                    if (e.key === "Enter") save();
                   }}
                   className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2.5 py-1.5 text-sm focus:border-[var(--color-ring)] focus:outline-none"
                 />
               )}
+              {autoEnrich === "place" && f.key === "url" && (enriching || enriched) ? (
+                <div className="mt-1 flex items-center gap-1 text-xs text-[var(--color-muted-foreground)]">
+                  {enriching ? (
+                    <>
+                      <Loader2 className="size-3 animate-spin" /> Looking up
+                      place…
+                    </>
+                  ) : (
+                    "✓ Filled from Google Maps"
+                  )}
+                </div>
+              ) : null}
+              {f.suggestions?.length ? (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {f.suggestions.map((s) => {
+                    const active = draft[f.key as string] === s;
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => {
+                          haptic("tick");
+                          setDraft((d) => ({
+                            ...d,
+                            [f.key as string]: active ? "" : s,
+                          }));
+                        }}
+                        className={
+                          "rounded-md px-2 py-1 text-xs transition " +
+                          (active
+                            ? "bg-[var(--color-foreground)] text-[var(--color-background)]"
+                            : "bg-[var(--color-accent)]/60 text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]")
+                        }
+                      >
+                        {s}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>
           ))}
         </div>

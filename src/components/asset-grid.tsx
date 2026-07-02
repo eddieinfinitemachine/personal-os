@@ -13,7 +13,7 @@ import {
   Table2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AssetEditor, type EditorField } from "./asset-editor";
+import { AssetEditor, detailStr, type EditorField } from "./asset-editor";
 
 export type AssetRow = {
   id: string;
@@ -32,6 +32,7 @@ export type AssetRow = {
   rating: number | null;
   acquiredAt: Date | string | null;
   notes: string | null;
+  detailsJson?: unknown;
 };
 
 type View = "cards" | "table";
@@ -43,12 +44,14 @@ export function AssetGrid({
   fields,
   showMoneyTotal,
   emptyHint,
+  autoEnrich,
 }: {
   kind: string;
   initialAssets: AssetRow[];
   fields: EditorField[];
   showMoneyTotal?: boolean;
   emptyHint?: string;
+  autoEnrich?: "place";
 }) {
   const [editing, setEditing] = useState<AssetRow | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -92,6 +95,25 @@ export function AssetGrid({
   const totalCost = showMoneyTotal
     ? initialAssets.reduce((sum, a) => sum + (a.costBasis ?? 0), 0)
     : 0;
+
+  // Chips should offer values already in use, not just the static defaults —
+  // otherwise an existing vocabulary ("Paris", "art") can't be re-selected.
+  const editorFields = useMemo(() => {
+    return fields.map((f) => {
+      if (!f.suggestions || f.detail) return f;
+      const seen = new Set(f.suggestions.map((s) => s.toLowerCase()));
+      const merged = [...f.suggestions];
+      for (const a of initialAssets) {
+        const v = a[f.key as keyof AssetRow];
+        if (typeof v !== "string") continue;
+        const t = v.trim();
+        if (!t || seen.has(t.toLowerCase())) continue;
+        seen.add(t.toLowerCase());
+        merged.push(t);
+      }
+      return { ...f, suggestions: merged.slice(0, 12) };
+    });
+  }, [fields, initialAssets]);
 
   // Build groups.
   const groups = useMemo(() => {
@@ -299,7 +321,8 @@ export function AssetGrid({
         open={!!editing || addOpen}
         asset={editing}
         kind={kind}
-        fields={fields}
+        fields={editorFields}
+        autoEnrich={autoEnrich}
         onClose={() => {
           setEditing(null);
           setAddOpen(false);
@@ -407,6 +430,9 @@ function TableView({
                 </td>
                 <td className="px-3 py-2 align-top text-[var(--color-muted-foreground)] hidden md:table-cell">
                   {a.subtitle ?? a.location ?? "—"}
+                  {detailStr(a, "staff") ? (
+                    <span className="text-xs"> · ask for {detailStr(a, "staff")}</span>
+                  ) : null}
                 </td>
                 <td className="px-3 py-2 align-top hidden md:table-cell">
                   {a.category ? (
@@ -592,6 +618,11 @@ function CardView({
                 {a.location}
               </div>
             ) : null}
+            {detailStr(a, "staff") ? (
+              <div className="text-xs text-[var(--color-muted-foreground)]">
+                Ask for {detailStr(a, "staff")}
+              </div>
+            ) : null}
             {a.status ? (
               <div className="text-xs">
                 <span
@@ -659,6 +690,11 @@ function MobileList({
                 <div className="flex items-center gap-1.5 mt-0.5 text-xs text-[var(--color-muted-foreground)]">
                   {a.subtitle ? (
                     <span className="truncate">{a.subtitle}</span>
+                  ) : null}
+                  {detailStr(a, "staff") ? (
+                    <span className="truncate shrink-0">
+                      · ask for {detailStr(a, "staff")}
+                    </span>
                   ) : null}
                   {ret != null ? (
                     <span

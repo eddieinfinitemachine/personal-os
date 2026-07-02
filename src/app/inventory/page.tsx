@@ -28,8 +28,8 @@ export default async function InventoryPage() {
         emptyHint="Log what you own — handy for insurance, sell-day prep, and remembering what's in storage."
         fields={[
           { key: "subtitle", label: "Brand / model" },
-          { key: "category", label: "Category", placeholder: "watches · cameras · audio · tools" },
-          { key: "status", label: "Status", placeholder: "owned · loaned · stored · sold" },
+          { key: "category", label: "Category", suggestions: ["watches", "cameras", "audio", "tools"] },
+          { key: "status", label: "Status", suggestions: ["owned", "loaned", "stored", "sold"] },
           { key: "location", label: "Where", placeholder: "apartment · storage" },
           { key: "costBasis", label: "Purchase price ($)", type: "number" },
           { key: "currentValue", label: "Estimated value ($)", type: "number" },

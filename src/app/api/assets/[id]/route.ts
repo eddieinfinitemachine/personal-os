@@ -35,6 +35,18 @@ export async function PATCH(
   if (body.acquiredAt !== undefined) {
     data.acquiredAt = body.acquiredAt ? new Date(body.acquiredAt as string) : null;
   }
+  if (body.details && typeof body.details === "object" && !Array.isArray(body.details)) {
+    const base =
+      existing.detailsJson && typeof existing.detailsJson === "object" && !Array.isArray(existing.detailsJson)
+        ? (existing.detailsJson as Record<string, unknown>)
+        : {};
+    const merged: Record<string, unknown> = { ...base };
+    for (const [k, v] of Object.entries(body.details as Record<string, unknown>)) {
+      if (v === null || v === "") delete merged[k];
+      else merged[k] = v;
+    }
+    data.detailsJson = merged;
+  }
   const asset = await prisma.asset.update({ where: { id }, data });
   return NextResponse.json({ asset });
 }
