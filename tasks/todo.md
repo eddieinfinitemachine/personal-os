@@ -327,3 +327,85 @@ all CSS (custom easing tokens, keyframes, @starting-style). Plan: ~/.claude/plan
   exactly one intended send to the member; repeat add suppressed; creation 200 throughout.
 - Follow-up candidates: iPhone PWA web push (needs sw push handler + VAPID +
   PushSubscription table = schema approval), per-user mute setting, digest mode.
+
+---
+
+## Asset editor: suggestion chips + Enter-to-submit (2026-07-02)
+
+- [x] `asset-editor.tsx`: `EditorField.suggestions` → one-tap chips under the input
+  (toggle on/off, active = solid foreground); plain Enter now saves from any
+  single-line input (was ⌘-Enter only); blank text fields save as null (no more
+  "" groups).
+- [x] Pages: places/investments/inventory/media/best-practices — status+category
+  placeholders ("visited · wishlist · favorite" etc.) converted to `suggestions`.
+- Verified: tsc + build green; headless browser (minted dev JWT) — chips fill the
+  field, Create lands the row grouped under VISITED w/ RESTAURANT tag + stars;
+  test row deleted after.
+
+## Places: staff field + smarter chips (2026-07-02, follow-up)
+
+- [x] `detailsJson`-backed editor fields: `EditorField.detail` flag + `detailStr()` helper;
+  POST stores `body.details` (nulls stripped), PATCH merges into existing detailsJson
+  (null/"" deletes the key). No schema change — Json column already existed.
+- [x] Places: "Staff / who to ask for" field (fills the empty cell next to Rating);
+  shown in table Detail cell ("· ask for X"), cards ("Ask for X"), and mobile list.
+- [x] Chips now merge values already used in the data (case-insensitive dedupe, cap 12)
+  so an existing vocabulary (Paris, art, …) is re-selectable.
+- Verified: tsc + build green; API round-trip (create w/ staff, edit, clear) + headless
+  browser (field hydrates, chips highlight active values, row shows "ask for Karsah").
+  Test row deleted.
+
+## Places: Google Maps enrichment (2026-07-02, follow-up 2)
+
+- [x] `POST /api/assets/enrich-place` — keyless: expands maps.app.goo.gl/goo.gl
+  short links (redirect-follow, google-hosts-only SSRF guard, consent.google
+  `continue=` unwrap), parses name + coords from the URL (`/maps/place/`,
+  `!3d!4d` marker, `@viewport`, dropped-pin `/maps/search/lat,+lng`, `?q=`),
+  reverse-geocodes via Nominatim (`accept-language=en`) for neighborhood+city,
+  bounded name-search fallback recovers venue type when the coordinate lands
+  on the building. OSM type → app category mapping (restaurant/cafe/bar/hotel/
+  hike/shop).
+- [x] Editor: `autoEnrich="place"` (AssetGrid pass-through, Places only) —
+  debounced watch on the Link field; fills ONLY empty title/location/category;
+  "Looking up place… / ✓ Filled from Google Maps" status line. Link field moved
+  to top of Places form with advertising placeholder.
+- Verified: tsc+build green; endpoint tested w/ full URL, viewport URL, 2 real
+  short links (venue + dropped pin), hostile host rejected; UI paste→autofill
+  seen in headless browser. No Google API key needed.
+
+## Places: search-as-you-type place picker (2026-07-02, follow-up 3)
+
+- [x] `GET /api/assets/search-place?q=` — Nominatim name search (limit 6,
+  dedupe, accept-language=en); returns title/subtitle(address)/location/
+  category + constructed Google Maps link per hit.
+- [x] Shared helpers extracted to `src/lib/place-enrich.ts` (composeLocation,
+  mapCategory, UA) — used by both enrich-place and search-place.
+- [x] Editor: Places Title field is now a search combobox — 500ms debounce ≥3
+  chars, dropdown w/ name + address, ArrowUp/Down + Enter to pick, Esc closes
+  dropdown w/o closing modal, mousedown-pick beats blur; picking fills title/
+  location/category/url (enrich suppressed for the picked URL); hydrated titles
+  don't trigger search on edit-open.
+- Verified: tsc+build green; API disambiguates (Lucali Brooklyn vs Glasgow;
+  "Uzuki Brooklyn" → Greenpoint restaurant); headless UI: type → dropdown →
+  Enter → title/link/category-chip/city all filled, modal stays open.
+
+## Inbox triage mode (2026-07-02, from ideation doc idea #2)
+
+- [x] `src/components/triage-mode.tsx` — TriageLauncher (Triage button on Inbox
+  project header + `t` shortcut) → full-screen TriageMode overlay: one capture
+  at a time, j/k or arrows nav, p=file-to-project (fuzzy picker), l=move-list,
+  d=due date (Today/Tomorrow/Next week/Clear + date input, stays in queue),
+  e=complete, #=delete, u=undo, Esc close. Actions auto-advance; optimistic
+  queue w/ rollback on failed save; undo stack (patch-revert; delete→recreate,
+  attachments/subtasks don't survive recreate). Mobile: swipe l/r nav + wrap
+  action row. Overlay uses house data-overlay/useOverlayTransition idiom.
+- [x] Guards: e.repeat ignored (held key can't machine-gun the queue);
+  busyRef serializes mutations (one in flight, action keys no-op meanwhile).
+- [x] `GET /api/todos` now returns `createdAt` + `listId` (was dropped by the
+  mapper — "captured Invalid Date" bug + undo needs listId). Additive.
+- [x] Mounted in projects/[id]/page.tsx only when project.name === Inbox.
+- Verified end-to-end vs SERVER STATE (not just UI): complete/undo/file/date/
+  delete+undo-recreate each confirmed by API reads; mobile 390px layout checked.
+- ⚠️ Test-harness note: agent-browser `press` floods 10k+ keydowns (repeat=false)
+  after first use per daemon — key verification done via JS-dispatched
+  KeyboardEvents instead. Not an app bug; real keyboards send repeat=true.
