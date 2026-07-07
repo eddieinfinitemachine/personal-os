@@ -30,14 +30,27 @@ export function KeyboardListNav() {
   const lastActionRef = useRef<LastAction | null>(null);
   const busyRef = useRef(false);
 
-  const rows = () =>
-    Array.from(document.querySelectorAll<HTMLElement>("[data-kbd-todo]"));
+  const rows = () => {
+    // The same todo can render twice (list tile + By-Project card); keep the
+    // first occurrence so j/k visits each todo once.
+    const seen = new Set<string>();
+    const out: HTMLElement[] = [];
+    for (const el of document.querySelectorAll<HTMLElement>("[data-kbd-todo]")) {
+      const id = el.dataset.kbdTodo!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push(el);
+    }
+    return out;
+  };
 
   const setActive = useCallback((id: string | null) => {
-    for (const el of rows()) {
-      if (el.dataset.kbdTodo === id) {
+    let scrolled = false;
+    for (const el of document.querySelectorAll<HTMLElement>("[data-kbd-todo]")) {
+      if (el.dataset.kbdTodo === id && !scrolled) {
         el.dataset.kbdActive = "true";
         el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        scrolled = true;
       } else {
         delete el.dataset.kbdActive;
       }
@@ -117,8 +130,22 @@ export function KeyboardListNav() {
   const complete = useCallback(() => {
     const id = activeIdRef.current;
     if (!id) return;
-    patch(id, { completedAt: new Date().toISOString() }, { kind: "complete", todoId: id });
-  }, [patch]);
+    // Click the row's own checkbox so the native completion choreography
+    // plays (circle fills, row lingers, then collapses) instead of the row
+    // just vanishing on refresh.
+    const row = document.querySelector<HTMLElement>(`[data-kbd-todo="${id}"]`);
+    const checkbox = row?.querySelector<HTMLButtonElement>(
+      'button[title="Mark complete"]'
+    );
+    if (checkbox) {
+      lastActionRef.current = { kind: "complete", todoId: id };
+      move(1);
+      checkbox.click();
+      haptic("tick");
+    } else {
+      patch(id, { completedAt: new Date().toISOString() }, { kind: "complete", todoId: id });
+    }
+  }, [patch, move]);
 
   const undo = useCallback(() => {
     const a = lastActionRef.current;
