@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists, ensureInboxProject, CAPTURE_LIST_NAME } from "@/lib/lists";
 import { parseCapture, type CaptureProposal } from "@/lib/smart-capture";
+import { parseAliasToken } from "@/lib/alias";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -81,6 +82,33 @@ async function handle(rawText: string | null | undefined, rawUrl: string | null 
     return NextResponse.json({ error: "founder user missing" }, { status: 500 });
   }
   const userId = founder.id;
+
+  // Deterministic "@name" routing: skip Claude entirely and file the todo
+  // (verbatim minus the token) straight onto the matching person-list.
+  const aliasHit = parseAliasToken(text);
+  if (aliasHit) {
+    const list = await prisma.list.findFirst({
+      where: {
+        userId,
+        OR: [
+          { name: { equals: `EC/${aliasHit.token}`, mode: "insensitive" } },
+          { name: { equals: aliasHit.token, mode: "insensitive" } },
+        ],
+      },
+    });
+    if (list) {
+      const todo = await prisma.todo.create({
+        data: {
+          userId,
+          listId: list.id,
+          projectId: null,
+          title: aliasHit.rest,
+          notes: rawUrl ?? null,
+        },
+      });
+      return NextResponse.json({ ok: true, type: "todo", todo, routedByAlias: true });
+    }
+  }
 
   const projects = await prisma.project.findMany({
     where: { userId, archived: false },

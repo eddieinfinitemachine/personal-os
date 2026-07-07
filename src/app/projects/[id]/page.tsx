@@ -66,7 +66,24 @@ export default async function ProjectPage({
           </p>
         </div>
         {project.name === INBOX_PROJECT_NAME ? (
-          <TriageLauncher projectId={id} />
+          <div className="flex items-center gap-2">
+            <TriageLauncher
+              mode="stale"
+              staleCount={await prisma.todo.count({
+                where: {
+                  completedAt: null,
+                  parentId: null,
+                  createdAt: { lt: new Date(Date.now() - 14 * 864e5) },
+                  OR: [
+                    { snoozedUntil: null },
+                    { snoozedUntil: { lte: new Date() } },
+                  ],
+                  list: listAccessWhere(userId),
+                },
+              })}
+            />
+            <TriageLauncher projectId={id} />
+          </div>
         ) : null}
       </header>
 
@@ -123,6 +140,8 @@ async function TasksTab({ projectId, userId }: { projectId: string; userId: stri
         projectId,
         completedAt: null,
         parentId: null,
+        // Snoozed todos stay hidden until their resurface time passes.
+        OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: new Date() } }],
         // Allow shared-list collaborators to see/edit todos on this project's
         // tabs. Note: the project itself is still owned by `userId` (project
         // sharing is a future scope).
@@ -152,6 +171,8 @@ async function TasksTab({ projectId, userId }: { projectId: string; userId: stri
         notes: t.notes,
         dueDate: t.dueDate,
         completedAt: t.completedAt,
+        createdAt: t.createdAt,
+        snoozedUntil: t.snoozedUntil,
         projectId: t.projectId,
         subtasks: t.subtasks.map((s) => ({
           id: s.id,

@@ -15,7 +15,8 @@ export type SearchResultType =
   | "vehicle"
   | "asset"
   | "recommendation"
-  | "pet";
+  | "pet"
+  | "lab";
 
 export type SearchResult = {
   id: string;
@@ -52,7 +53,7 @@ export async function GET(request: Request) {
 
   const contains = { contains: q, mode: "insensitive" as const };
 
-  const [todos, projects, lists, notes, people, trips, vehicles, assets, recs, pets] =
+  const [todos, projects, lists, notes, people, trips, vehicles, assets, recs, pets, labs] =
     await Promise.all([
       prisma.todo.findMany({
         where: { list: listAccessWhere(userId), completedAt: null, parentId: null, title: contains },
@@ -118,6 +119,24 @@ export async function GET(request: Request) {
         orderBy: { updatedAt: "desc" },
         take: PER_TYPE,
       }),
+      // Labs are an imported archive with no browse habit — retrieval on
+      // demand ("cholesterol" → the rows) is their access pattern.
+      prisma.labResult.findMany({
+        where: {
+          human: { userId },
+          OR: [{ marker: contains }, { panel: contains }],
+        },
+        select: {
+          id: true,
+          marker: true,
+          panel: true,
+          value: true,
+          unit: true,
+          drawnAt: true,
+        },
+        orderBy: { drawnAt: "desc" },
+        take: PER_TYPE,
+      }),
     ]);
 
   const results: SearchResult[] = [
@@ -149,6 +168,13 @@ export async function GET(request: Request) {
     ...assets.map((a) => ({ id: a.id, type: "asset" as const, label: a.title, sublabel: a.subtitle ?? a.kind, href: assetHref(a.kind) })),
     ...recs.map((r) => ({ id: r.id, type: "recommendation" as const, label: r.title, sublabel: "Recommendation", href: "/media" })),
     ...pets.map((p) => ({ id: p.id, type: "pet" as const, label: p.name, sublabel: "Pet", href: "/personal" })),
+    ...labs.map((l) => ({
+      id: l.id,
+      type: "lab" as const,
+      label: `${l.marker} ${l.value} ${l.unit}`,
+      sublabel: `${l.panel} · ${l.drawnAt.toISOString().slice(0, 10)}`,
+      href: "/personal",
+    })),
   ];
 
   return NextResponse.json({ results: results.slice(0, 24) });

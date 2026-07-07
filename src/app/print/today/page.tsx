@@ -19,7 +19,7 @@ export default async function PrintListsPage() {
     where: { id: userId },
     select: { name: true, email: true },
   });
-  const appName = (me && initials(me.name, me.email)) || "Personal OS";
+  const appName = (me && initials(me.name, me.email)) || "EC";
 
   const [lists, todos] = await Promise.all([
     prisma.list.findMany({
@@ -27,7 +27,7 @@ export default async function PrintListsPage() {
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
     }),
     prisma.todo.findMany({
-      where: { userId, completedAt: null, parentId: null },
+      where: { userId, completedAt: null, parentId: null, OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: new Date() } }] },
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
       select: {
         id: true,

@@ -44,7 +44,7 @@ function Nav() {
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5 sm:px-8">
         <Link href="/" className="flex items-center gap-2">
           <KaizenMark />
-          <span className="text-sm font-semibold tracking-tight">Personal OS</span>
+          <span className="text-sm font-semibold tracking-tight">EC</span>
         </Link>
         <nav className="hidden items-center gap-7 text-sm text-[var(--color-muted-foreground)] sm:flex">
           <a href="#capture" className="hover:text-[var(--color-foreground)]">
@@ -628,7 +628,7 @@ function ChromeVisual() {
       </div>
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-[10px]">
         <KaizenMark />
-        <span>Save to Personal OS</span>
+        <span>Save to EC</span>
       </div>
     </div>
   );
@@ -847,7 +847,7 @@ function Footer() {
       <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-4 px-5 py-10 text-xs text-[var(--color-muted-foreground)] sm:flex-row sm:items-center sm:px-8">
         <div className="flex items-center gap-2">
           <KaizenMark />
-          <span>Personal OS · made by one person, shared with you.</span>
+          <span>EC · made by one person, shared with you.</span>
         </div>
         <div className="flex items-center gap-5">
           <Link href="/login" className="hover:text-[var(--color-foreground)]">

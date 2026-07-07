@@ -7,6 +7,7 @@ import {
   type CapturePhoto,
   type CaptureProposal,
 } from "@/lib/smart-capture";
+import { parseAliasToken } from "@/lib/alias";
 
 // Same per-user storage caps as the regular attachments upload route.
 const QUOTA_BYTES = 1024 * 1024 * 1024; // 1 GB
@@ -76,6 +77,33 @@ export async function POST(request: Request) {
       mediaType: photo.type || "image/jpeg",
       base64: buf.toString("base64"),
     };
+  }
+
+  // Deterministic "@name" routing beats AI classification entirely: a capture
+  // like "@shane follow up on container email" is a todo for the EC/Shane
+  // list, verbatim minus the token. No Claude call, no reclassification risk.
+  const aliasHit = parseAliasToken(text.trim());
+  if (aliasHit && !photoForClaude) {
+    const list = await prisma.list.findFirst({
+      where: {
+        userId,
+        OR: [
+          { name: { equals: `EC/${aliasHit.token}`, mode: "insensitive" } },
+          { name: { equals: aliasHit.token, mode: "insensitive" } },
+        ],
+      },
+    });
+    if (list) {
+      const proposal: CaptureProposal = {
+        type: "todo",
+        title: aliasHit.rest,
+        listName: list.name,
+        projectId: null,
+        routedByAlias: true,
+      };
+      return NextResponse.json({ proposal });
+    }
+    // Unknown token: fall through to normal parsing, text untouched.
   }
 
   const activeProjects = await prisma.project.findMany({

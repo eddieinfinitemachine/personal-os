@@ -7,6 +7,8 @@ import {
   Folder,
   Heart,
   Home,
+  Inbox as InboxIcon,
+  Lightbulb,
   Menu,
   Search,
   User,
@@ -49,7 +51,7 @@ export type MobileProject = { id: string; name: string };
 export function MobileChromeProvider({
   children,
   projects,
-  appName = "Personal OS",
+  appName = "EC",
   isPrivate = false,
 }: {
   children: ReactNode;
@@ -151,11 +153,13 @@ function MobileTopBar() {
   );
 }
 
+// Tab slots follow measured usage: Inbox (daily triage) and Practices earn
+// spots; Friends/Personal stay reachable via search and the command palette.
 const TAB_DESTINATIONS_PRIVATE = [
   { href: "/", label: "Home", Icon: Home },
+  { href: "/inbox", label: "Inbox", Icon: InboxIcon },
   { href: "/calendar", label: "Calendar", Icon: Calendar },
-  { href: "/friends", label: "Friends", Icon: Users },
-  { href: "/personal", label: "Personal", Icon: User },
+  { href: "/best-practices", label: "Practices", Icon: Lightbulb },
 ];
 
 const TAB_DESTINATIONS_PUBLIC = [

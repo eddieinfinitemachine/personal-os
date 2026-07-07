@@ -103,6 +103,9 @@ export type TodoProposal = {
   dueDate?: string | null;     // ISO YYYY-MM-DD
   listName?: string | null;    // "To Do" | "Monitor" | "Later" | custom
   projectId?: string | null;
+  // Set ONLY by the deterministic "@name" token parser (never by Claude).
+  // The one case where commit honors listName: user-directed routing.
+  routedByAlias?: boolean;
 };
 
 export type CaptureProposal =

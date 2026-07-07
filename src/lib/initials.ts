@@ -1,6 +1,6 @@
 // Best-effort initials for the personalized app name. The product is a generic
-// "Personal OS"; a signed-in person's installed copy is branded with their
-// initials instead. Callers fall back to "Personal OS" when this returns "".
+// "EC"; a signed-in person's installed copy is branded with their
+// initials instead. Callers fall back to "EC" when this returns "".
 export function initials(name?: string | null, email?: string | null): string {
   const n = (name ?? "").trim();
   if (n) {

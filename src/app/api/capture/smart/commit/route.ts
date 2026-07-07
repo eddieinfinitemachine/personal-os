@@ -221,16 +221,24 @@ export async function POST(request: Request) {
 
   // Todo path — always file into the Inbox project (To Do list) so the user
   // sorts captures into real projects themselves, regardless of what Claude
-  // proposed for project/list.
+  // proposed for project/list. Exception: a deterministic "@name" token
+  // (routedByAlias) is user-directed routing, so its listName is honored and
+  // the todo skips the Inbox project like hand-placed person-list items.
   if (proposal.type === "todo") {
     await ensureDefaultLists(userId);
-    const inboxProjectId = await ensureInboxProject(userId);
+    let listName = CAPTURE_LIST_NAME;
+    let projectId: string | null = null;
+    if (proposal.routedByAlias && proposal.listName) {
+      listName = proposal.listName;
+    } else {
+      projectId = await ensureInboxProject(userId);
+    }
     const list = await prisma.list.findFirst({
-      where: { userId, name: { equals: CAPTURE_LIST_NAME, mode: "insensitive" } },
+      where: { userId, name: { equals: listName, mode: "insensitive" } },
     });
     if (!list) {
       return NextResponse.json(
-        { error: `list "${CAPTURE_LIST_NAME}" not found` },
+        { error: `list "${listName}" not found` },
         { status: 404 },
       );
     }
@@ -238,7 +246,7 @@ export async function POST(request: Request) {
       data: {
         userId,
         listId: list.id,
-        projectId: inboxProjectId,
+        projectId,
         title: proposal.title,
         notes: proposal.notes ?? null,
         dueDate: proposal.dueDate ? new Date(proposal.dueDate) : null,

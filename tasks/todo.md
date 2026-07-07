@@ -409,3 +409,33 @@ all CSS (custom easing tokens, keyframes, @starting-style). Plan: ~/.claude/plan
 - ⚠️ Test-harness note: agent-browser `press` floods 10k+ keydowns (repeat=false)
   after first use per daemon — key verification done via JS-dispatched
   KeyboardEvents instead. Not an app bug; real keyboards send repeat=true.
+
+## feat/usage-grounded-v1 branch (2026-07-07) — all five ideation items
+
+- [x] Names route everywhere: `src/lib/alias.ts`; @token pre-parse in
+  capture/todo + smart/parse (returns routedByAlias proposal, skips Claude) +
+  smart/auto; commit honors listName ONLY for routedByAlias; triage detects
+  aliases in titles → `a` one-key filing chip.
+- [x] Context strip: GET /api/todos/context?id= (±12h neighbors, done struck
+  through) rendered in triage card + "· 41d ago" age.
+- [x] Decay v2 (⚠️ SCHEMA: Todo.droppedAt/isReference/snoozedUntil): drop and
+  reference also set completedAt (all open filters exclude for free); snooze
+  read-filters on /api/todos + home + project TasksTab + print/today; triage
+  keys x/r/s + snooze picker; Sweep launcher (stale=1 queue, 14d, oldest
+  first) + count badge; age chips (14d+) + resurfaced chip in todo rows.
+- [x] 1:1 Agenda (⚠️ SCHEMA: Todo.lastDiscussedAt/discussCount): agenda-mode.tsx
+  meeting runner on EC/* list headers — d/e/n/j/k, raised-N× badges,
+  new-since-last-1:1 + carryover dividers, quick-add, copy recap
+  (clipboard + execCommand fallback). PATCH {discussed:true} increments.
+- [x] Usage-diet: /inbox redirect route; mobile tabs → Home/Inbox/Calendar/
+  Practices (private host); home attention strip (N to triage · M stale);
+  labs searchable in ⌘K.
+- [x] KILLED during build: Restaurant-BP→Places merge — dry-run showed those
+  entries are principles for running a restaurant, not venues. Script removed.
+- Verified end-to-end on scratch Postgres (initdb, db push, seeded): both
+  capture endpoints, parse→commit alias path, drop/reference/snooze/undo +
+  stale queue + resurface via API; browser: triage card w/ context strip +
+  alias chip + a-key filing (server-confirmed), sweep button, home strip,
+  age/resurfaced chips, agenda full flow, /inbox redirect, private mobile tabs.
+- ⚠️ MERGE REQUIRES: `npm run db:push` against prod (3 nullable columns +
+  2 with defaults on Todo — additive, backwards-compatible) BEFORE deploying.
