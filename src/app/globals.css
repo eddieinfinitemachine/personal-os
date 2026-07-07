@@ -424,3 +424,10 @@
     animation: skeleton-shimmer 1.8s linear infinite;
   }
 }
+
+/* Keyboard list-navigation highlight (Home): the focused row. */
+[data-kbd-active="true"] {
+  box-shadow: inset 2.5px 0 0 var(--color-foreground);
+  background: color-mix(in oklab, var(--color-accent) 40%, transparent);
+  border-radius: 8px;
+}

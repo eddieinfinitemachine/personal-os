@@ -664,6 +664,8 @@ function TodoRowImpl({
 
   return (
     <li
+      data-kbd-todo={isSubtask || todo.completedAt ? undefined : todo.id}
+      data-kbd-list={isSubtask || todo.completedAt ? undefined : sourceListId}
       className={cn(
         "group relative overflow-hidden md:overflow-visible",
         // Mobile-only hairline between rows (iOS Reminders feel). Suppressed

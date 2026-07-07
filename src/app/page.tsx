@@ -6,6 +6,7 @@ import { ProjectCard, type ProjectCardData } from "@/components/project-card";
 import { KaizenLanding } from "@/components/kaizen-landing";
 import { CaptureInboxPill } from "@/components/capture-inbox";
 import { TriageLauncher } from "@/components/triage-mode";
+import { KeyboardListNav } from "@/components/keyboard-nav";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists, INBOX_PROJECT_NAME } from "@/lib/lists";
 import { getSession } from "@/lib/auth";
@@ -221,6 +222,7 @@ export default async function HomePage() {
           </div>
         );
       })()}
+      <KeyboardListNav />
       <HomeTiles tiles={tiles} />
 
       {projectCards.length > 0 ? (

@@ -720,7 +720,7 @@ function ActionBtn({
   );
 }
 
-function FuzzyPicker({
+export function FuzzyPicker({
   title,
   options,
   onPick,
