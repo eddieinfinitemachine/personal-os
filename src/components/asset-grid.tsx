@@ -51,7 +51,7 @@ export function AssetGrid({
   fields: EditorField[];
   showMoneyTotal?: boolean;
   emptyHint?: string;
-  autoEnrich?: "place";
+  autoEnrich?: "place" | "media";
 }) {
   const [editing, setEditing] = useState<AssetRow | null>(null);
   const [addOpen, setAddOpen] = useState(false);

@@ -46,7 +46,7 @@ export function AssetEditor({
   asset: AssetRow | null; // null = creating new
   kind: string;
   fields: EditorField[];
-  autoEnrich?: "place"; // Google Maps link in `url` fills empty fields
+  autoEnrich?: "place" | "media"; // link in `url` fills empty fields
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -144,30 +144,33 @@ export function AssetEditor({
   // typed into; never overwrite their input.
   const draftUrl = draft.url;
   useEffect(() => {
-    if (autoEnrich !== "place" || !open) return;
+    if (!autoEnrich || !open) return;
     const u = draftUrl?.trim();
-    if (!u || !MAPS_URL_RE.test(u) || enrichedUrlRef.current === u) return;
+    const matches =
+      autoEnrich === "place" ? MAPS_URL_RE.test(u ?? "") : /^https?:\/\/\S+$/i.test(u ?? "");
+    if (!u || !matches || enrichedUrlRef.current === u) return;
     const t = setTimeout(async () => {
       enrichedUrlRef.current = u;
       setEnriching(true);
       setEnriched(false);
       try {
-        const res = await fetch("/api/assets/enrich-place", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: u }),
-        });
+        const res = await fetch(
+          autoEnrich === "place"
+            ? "/api/assets/enrich-place"
+            : "/api/assets/enrich-media",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: u }),
+          }
+        );
         if (!res.ok) return;
-        const got = (await res.json()) as {
-          title?: string | null;
-          location?: string | null;
-          category?: string | null;
-        };
+        const got = (await res.json()) as Record<string, string | null>;
         setDraft((d) => {
           const next = { ...d };
-          if (!next.title?.trim() && got.title) next.title = got.title;
-          if (!next.location?.trim() && got.location) next.location = got.location;
-          if (!next.category?.trim() && got.category) next.category = got.category;
+          for (const key of ["title", "location", "category", "subtitle", "imageUrl"]) {
+            if (!next[key]?.trim() && got[key]) next[key] = got[key]!;
+          }
           return next;
         });
         setEnriched(true);
@@ -422,7 +425,7 @@ export function AssetEditor({
                   className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2.5 py-1.5 text-sm focus:border-[var(--color-ring)] focus:outline-none"
                 />
               )}
-              {autoEnrich === "place" && f.key === "url" && (enriching || enriched) ? (
+              {autoEnrich && f.key === "url" && (enriching || enriched) ? (
                 <div className="mt-1 flex items-center gap-1 text-xs text-[var(--color-muted-foreground)]">
                   {enriching ? (
                     <>
@@ -430,7 +433,7 @@ export function AssetEditor({
                       place…
                     </>
                   ) : (
-                    "✓ Filled from Google Maps"
+                    autoEnrich === "place" ? "✓ Filled from Google Maps" : "✓ Filled from link"
                   )}
                 </div>
               ) : null}

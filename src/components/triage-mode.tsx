@@ -45,10 +45,12 @@ export function TriageLauncher({
   projectId,
   mode = "inbox",
   staleCount,
+  count,
 }: {
   projectId?: string;
   mode?: "inbox" | "stale";
   staleCount?: number;
+  count?: number;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -88,6 +90,11 @@ export function TriageLauncher({
         {mode === "inbox" ? (
           <>
             <Zap className="size-4" /> Triage
+            {count ? (
+              <span className="rounded bg-[var(--color-background)]/20 px-1.5 text-xs tabular-nums">
+                {count}
+              </span>
+            ) : null}
           </>
         ) : (
           <>

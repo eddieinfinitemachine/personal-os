@@ -24,15 +24,16 @@ export default async function MediaPage() {
       </header>
       <AssetGrid
         kind="media"
+        autoEnrich="media"
         initialAssets={assets}
         emptyHint="Drop something you've read, watched, or want to."
         fields={[
+          { key: "url", label: "Link", type: "url", full: true, placeholder: "paste a link to auto-fill (YouTube, articles, …)" },
           { key: "subtitle", label: "Author / director / recommended by" },
           { key: "category", label: "Type", suggestions: ["book", "film", "album", "podcast"] },
           { key: "status", label: "Status", suggestions: ["tbr", "reading", "done", "loved"] },
           { key: "rating", label: "Rating (1-5)", type: "number" },
           { key: "imageUrl", label: "Cover image URL", type: "url", full: true },
-          { key: "url", label: "Link", type: "url", full: true },
           { key: "notes", label: "Note / takeaway", type: "textarea", full: true },
         ]}
       />

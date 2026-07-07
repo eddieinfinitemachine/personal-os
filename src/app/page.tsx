@@ -5,8 +5,7 @@ import { NewListButton } from "@/components/new-list-button";
 import { ProjectCard, type ProjectCardData } from "@/components/project-card";
 import { KaizenLanding } from "@/components/kaizen-landing";
 import { CaptureInboxPill } from "@/components/capture-inbox";
-import Link from "next/link";
-import { Zap } from "lucide-react";
+import { TriageLauncher } from "@/components/triage-mode";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists, INBOX_PROJECT_NAME } from "@/lib/lists";
 import { getSession } from "@/lib/auth";
@@ -199,8 +198,9 @@ export default async function HomePage() {
         </div>
       </header>
       {(() => {
-        // Attention strip: unfiled captures + stale open todos, both one tap
-        // from their keyboard flows. Derived from the rows already fetched.
+        // Attention row: two buttons that drop straight into the keyboard
+        // triage flows (j/k to move, single keys to file/complete/drop —
+        // email-style). Counts derive from rows already fetched.
         const inboxProject = projects.find(
           (p) => p.name === INBOX_PROJECT_NAME
         );
@@ -213,27 +213,12 @@ export default async function HomePage() {
         ).length;
         if (!inboxCount && !staleCount) return null;
         return (
-          <Link
-            href="/inbox"
-            className="mb-4 flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-2.5 text-sm hover:bg-[var(--color-accent)]/40 transition"
-          >
-            <Zap className="size-4 text-[var(--color-muted-foreground)]" />
-            {inboxCount ? (
-              <span>
-                <span className="font-semibold tabular-nums">{inboxCount}</span>{" "}
-                to triage
-              </span>
+          <div className="mb-4 flex items-center gap-2">
+            {inboxCount && inboxProject ? (
+              <TriageLauncher projectId={inboxProject.id} count={inboxCount} />
             ) : null}
-            {inboxCount && staleCount ? (
-              <span className="text-[var(--color-muted-foreground)]">·</span>
-            ) : null}
-            {staleCount ? (
-              <span>
-                <span className="font-semibold tabular-nums">{staleCount}</span>{" "}
-                stale (14d+)
-              </span>
-            ) : null}
-          </Link>
+            <TriageLauncher mode="stale" staleCount={staleCount} />
+          </div>
         );
       })()}
       <HomeTiles tiles={tiles} />
