@@ -6,6 +6,7 @@ import { useCapture } from "@/lib/capture-store";
 import {
   Calendar,
   Camera,
+  Heart,
   Car,
   CheckCircle2,
   FileText,
@@ -28,6 +29,7 @@ import type { SearchResult, SearchResultType } from "@/app/api/search/route";
 
 // Icon per universal-search result type (content search + ⌘K unified).
 const RESULT_ICONS: Record<SearchResultType, React.ReactNode> = {
+  lab: <Heart className="size-4" />,
   todo: <CheckCircle2 className="size-4" />,
   project: <Folder className="size-4" />,
   list: <ListTodo className="size-4" />,

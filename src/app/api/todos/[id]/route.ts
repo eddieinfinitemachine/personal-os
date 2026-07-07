@@ -28,6 +28,10 @@ export async function PATCH(
     dueDate?: string | null;
     completedAt?: string | null;
     toggleComplete?: boolean;
+    drop?: boolean;
+    reference?: boolean;
+    snoozedUntil?: string | null;
+    discussed?: boolean;
   };
 
   const updates: Record<string, unknown> = {};
@@ -60,6 +64,32 @@ export async function PATCH(
   }
   if (body.toggleComplete) {
     updates.completedAt = existing.completedAt ? null : new Date();
+  }
+  // Decay actions. Dropped/Reference also set completedAt so every open-list
+  // filter excludes them without changes; clearing restores the open state.
+  if (body.drop === true) {
+    updates.droppedAt = new Date();
+    updates.completedAt = new Date();
+  } else if (body.drop === false) {
+    updates.droppedAt = null;
+    updates.completedAt = null;
+  }
+  if (body.reference === true) {
+    updates.isReference = true;
+    updates.completedAt = new Date();
+  } else if (body.reference === false) {
+    updates.isReference = false;
+    updates.completedAt = null;
+  }
+  if (body.snoozedUntil !== undefined) {
+    updates.snoozedUntil = body.snoozedUntil
+      ? new Date(body.snoozedUntil)
+      : null;
+  }
+  // 1:1 agenda mode: stamp a discussion without completing the item.
+  if (body.discussed === true) {
+    updates.lastDiscussedAt = new Date();
+    updates.discussCount = { increment: 1 };
   }
 
   const todo = await prisma.todo.update({ where: { id }, data: updates });

@@ -12,22 +12,35 @@ export async function GET(request: Request) {
   const listId = url.searchParams.get("listId");
   const projectId = url.searchParams.get("projectId");
   const includeCompleted = url.searchParams.get("includeCompleted") === "1";
+  // stale=1: the sweep queue — open todos older than 14d across all lists,
+  // oldest first. Snoozed-into-the-future items are excluded (deliberate).
+  const stale = url.searchParams.get("stale") === "1";
 
   // Auth via parent list membership, not direct ownership.
   const where: Record<string, unknown> = { list: listAccessWhere(userId) };
   if (listId) where.listId = listId;
   if (projectId === "none") where.projectId = null;
   else if (projectId) where.projectId = projectId;
-  if (!includeCompleted) where.completedAt = null;
+  if (!includeCompleted) {
+    where.completedAt = null;
+    // Snoozed todos stay hidden until their resurface time passes.
+    where.OR = [{ snoozedUntil: null }, { snoozedUntil: { lte: new Date() } }];
+  }
+  if (stale) {
+    where.completedAt = null;
+    where.createdAt = { lt: new Date(Date.now() - 14 * 864e5) };
+  }
 
   const rows = await prisma.todo.findMany({
     where: { ...where, parentId: null },
-    orderBy: [
-      { completedAt: "asc" },
-      { dueDate: "asc" },
-      { position: "asc" },
-      { createdAt: "asc" },
-    ],
+    orderBy: stale
+      ? [{ createdAt: "asc" }]
+      : [
+          { completedAt: "asc" },
+          { dueDate: "asc" },
+          { position: "asc" },
+          { createdAt: "asc" },
+        ],
     include: {
       project: { select: { name: true } },
       subtasks: { orderBy: [{ position: "asc" }, { createdAt: "asc" }] },
@@ -43,6 +56,11 @@ export async function GET(request: Request) {
     listId: t.listId,
     projectId: t.projectId,
     projectName: t.project?.name ?? null,
+    droppedAt: t.droppedAt,
+    isReference: t.isReference,
+    snoozedUntil: t.snoozedUntil,
+    lastDiscussedAt: t.lastDiscussedAt,
+    discussCount: t.discussCount,
     subtasks: t.subtasks.map((s) => ({
       id: s.id,
       title: s.title,

@@ -8,6 +8,7 @@ import { haptic } from "@/lib/haptic";
 import { cn } from "@/lib/utils";
 import { TodoRow, type TodoLike } from "./todo-row";
 import { ListShareDialog } from "./list-share-dialog";
+import { AgendaLauncher } from "./agenda-mode";
 
 export type ListInfo = {
   id: string;
@@ -1014,6 +1015,9 @@ export function ListTile({
           ) : null}
         </div>
         <div className="flex items-center gap-0.5">
+          {/^EC\//i.test(list.name) ? (
+            <AgendaLauncher listId={list.id} listName={list.name} />
+          ) : null}
           <div className="relative">
             <button
               onClick={(e) => {

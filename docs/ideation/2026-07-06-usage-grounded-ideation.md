@@ -162,9 +162,13 @@ Sequenced by dependency and effort — each step ships alone:
 5. **Usage-diet home/nav** (M) — home rebuilt on the four earners, Archive
    drawer, palette indexing for demoted sections. Do last: by then the new
    surfaces (triage/1:1) define what home should feature.
-   Quick-win rider: merge 11 Restaurant BPs into Places (one-off script,
-   explicit confirm).
+   Quick-win rider: ~~merge 11 Restaurant BPs into Places~~ — KILLED during
+   build: a dry-run revealed those entries are principles for RUNNING a
+   restaurant ("pay at beginning of meal", "no menu"), not venue notes.
+   They belong in best-practices. The content-level check beat the
+   category-level assumption.
 
 ## Session Log
 - 2026-07-06: Loop iteration 1 — usage profile measured (row counts, recency, todo habits, list/project distribution, git themes); 3 framed subagents → 21 raw → 5 survivors + 2 bonus.
 - 2026-07-06: Loop iteration 2 — content analysis (title patterns, completion-speed percentiles, stale-cohort forensics, BP categories); 2 framed subagents → 12 raw → ranking revised to v2 (names-routing promoted to #1, decay tuned to 14d + Reference state, context strip added, Places/BP merge quick-win).
+- 2026-07-07: All five features built on feat/usage-grounded-v1 and verified on a scratch DB; Restaurant-BP→Places merge killed after dry-run showed the category means "how to run a restaurant", not venues.

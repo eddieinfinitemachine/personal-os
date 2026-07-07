@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists, ensureInboxProject, CAPTURE_LIST_NAME } from "@/lib/lists";
+import { parseAliasToken } from "@/lib/alias";
 
 export const dynamic = "force-dynamic";
 
@@ -97,8 +98,31 @@ async function handle(input: {
 
   await ensureDefaultLists(userId);
 
+  // Deterministic "@name" routing: "@shane …" files to EC/Shane, verbatim
+  // minus the token, no Inbox project. An explicit `list` param still wins.
+  let aliasListName: string | null = null;
+  let title = input.title;
+  if (!input.list) {
+    const aliasHit = parseAliasToken(input.title);
+    if (aliasHit) {
+      const aliasList = await prisma.list.findFirst({
+        where: {
+          userId,
+          OR: [
+            { name: { equals: `EC/${aliasHit.token}`, mode: "insensitive" } },
+            { name: { equals: aliasHit.token, mode: "insensitive" } },
+          ],
+        },
+      });
+      if (aliasList) {
+        aliasListName = aliasList.name;
+        title = aliasHit.rest;
+      }
+    }
+  }
+
   // Default unsorted captures to the To Do list; an explicit `list` still wins.
-  const listName = input.list ?? CAPTURE_LIST_NAME;
+  const listName = input.list ?? aliasListName ?? CAPTURE_LIST_NAME;
   const list = await prisma.list.findFirst({
     where: { userId, name: { equals: listName, mode: "insensitive" } },
   });
@@ -110,8 +134,9 @@ async function handle(input: {
   }
 
   // Default to the Inbox project so unsorted captures land there; an explicit
-  // `project` still wins.
-  let projectId: string | null = await ensureInboxProject(userId);
+  // `project` still wins. Alias-routed todos skip the Inbox project like
+  // hand-placed person-list items.
+  let projectId: string | null = aliasListName ? null : await ensureInboxProject(userId);
   if (input.project) {
     const proj = await prisma.project.findFirst({
       where: {
@@ -132,7 +157,7 @@ async function handle(input: {
   const todo = await prisma.todo.create({
     data: {
       userId,
-      title: input.title,
+      title,
       listId: list.id,
       projectId,
       notes,

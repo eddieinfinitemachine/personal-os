@@ -845,6 +845,20 @@ model Todo {
   // every open todo's notes field on every tick.
   autopilotKey String?
 
+  // Decay states. Dropped ("decided not to do") and Reference ("not a task")
+  // also set completedAt so every open-list filter excludes them for free;
+  // droppedAt / isReference distinguish them from real completions.
+  droppedAt    DateTime?
+  isReference  Boolean   @default(false)
+  // Snoozed todos are hidden from list reads until this passes, then
+  // resurface with a chip. Relative options only — never a date picker.
+  snoozedUntil DateTime?
+
+  // 1:1 agenda mode (person-lists): when this item was last marked
+  // "discussed", and how many meetings it has survived.
+  lastDiscussedAt DateTime?
+  discussCount    Int       @default(0)
+
   listId String
   list   List   @relation(fields: [listId], references: [id], onDelete: Cascade)
 

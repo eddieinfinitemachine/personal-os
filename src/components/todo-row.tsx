@@ -42,6 +42,8 @@ export type TodoLike = {
   // (others' comments since you last opened the thread) drives the badge.
   commentCount?: number;
   unreadCommentCount?: number;
+  createdAt?: Date | string | null;
+  snoozedUntil?: Date | string | null;
   subtasks?: TodoLike[];
 };
 
@@ -879,6 +881,32 @@ function TodoRowImpl({
           ) : null}
           {/* Desktop-only chip row: date pill, subtask count, add-subtask, project picker. */}
           <div className="mt-1 hidden md:flex items-center gap-2 text-xs text-[var(--color-muted-foreground)]">
+            {(() => {
+              // Age chip: decay made visible. Only past the two-week cliff.
+              if (todo.completedAt || !todo.createdAt) return null;
+              const days = Math.floor(
+                (Date.now() - new Date(todo.createdAt).getTime()) / 864e5
+              );
+              if (days < 14) return null;
+              return (
+                <span
+                  className="rounded px-1 py-0.5 tabular-nums bg-[var(--color-accent)]/60"
+                  title={`Open for ${days} days`}
+                >
+                  {days >= 28 ? `${Math.floor(days / 7)}w` : `${days}d`}
+                </span>
+              );
+            })()}
+            {todo.snoozedUntil &&
+            new Date(todo.snoozedUntil).getTime() <= Date.now() &&
+            !todo.completedAt ? (
+              <span
+                className="rounded px-1 py-0.5 bg-[var(--color-accent)]/60"
+                title="Snoozed item back on the list"
+              >
+                resurfaced
+              </span>
+            ) : null}
             {editingDate ? (
               <input
                 ref={dateRef}
