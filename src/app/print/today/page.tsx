@@ -19,7 +19,7 @@ export default async function PrintListsPage() {
     where: { id: userId },
     select: { name: true, email: true },
   });
-  const appName = (me && initials(me.name, me.email)) || "Personal OS";
+  const appName = (me && initials(me.name, me.email)) || "EC";
 
   const [lists, todos] = await Promise.all([
     prisma.list.findMany({

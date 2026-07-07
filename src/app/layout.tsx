@@ -49,7 +49,7 @@ async function getSidebarProjects(userId: string) {
 // personalized to the signed-in person's initials via app/manifest.ts (which
 // reads the session through the credentialed manifest <link> below).
 export const metadata: Metadata = {
-  title: "Personal OS",
+  title: "EC",
   description: "Tasks, projects, people, trips, possessions — your life, organized.",
   // The manifest <link> is injected manually (see <head> below) with
   // crossOrigin="use-credentials" so the install request carries the session
@@ -57,7 +57,7 @@ export const metadata: Metadata = {
   // signed-in person's initials.
   appleWebApp: {
     capable: true,
-    title: "Personal OS",
+    title: "EC",
     statusBarStyle: "black-translucent",
   },
 };
@@ -106,14 +106,14 @@ export default async function RootLayout({
   const projects = userId ? await getSidebarProjects(userId) : [];
 
   // The signed-in person's installed copy is branded with their initials; the
-  // generic product name "Personal OS" is the fallback. See lib/initials.ts.
+  // generic product name "EC" is the fallback. See lib/initials.ts.
   const me = userId
     ? await prisma.user.findUnique({
         where: { id: userId },
         select: { name: true, email: true },
       })
     : null;
-  const appName = (me && initials(me.name, me.email)) || "Personal OS";
+  const appName = (me && initials(me.name, me.email)) || "EC";
 
   const mobileProjects = projects.map((p) => ({ id: p.id, name: p.name }));
 

@@ -17,7 +17,7 @@ type SidebarProject = {
 
 export function Sidebar({
   projects: initialProjects,
-  appName = "Personal OS",
+  appName = "EC",
   isPrivate = false,
 }: {
   projects: SidebarProject[];

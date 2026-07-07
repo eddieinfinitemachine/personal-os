@@ -8,7 +8,7 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
   // <link rel="manifest" crossOrigin="use-credentials"> in layout.tsx ensures
   // the install request carries the session cookie so getSession() resolves
   // here. Logged-out installs get the generic product name.
-  let appName = "Personal OS";
+  let appName = "EC";
   const session = await getSession();
   if (session) {
     const me = await prisma.user.findUnique({

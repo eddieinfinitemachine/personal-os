@@ -51,7 +51,7 @@ export type MobileProject = { id: string; name: string };
 export function MobileChromeProvider({
   children,
   projects,
-  appName = "Personal OS",
+  appName = "EC",
   isPrivate = false,
 }: {
   children: ReactNode;
