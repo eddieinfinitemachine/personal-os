@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import {
   Check,
   Copy,
+  Link2,
   Loader2,
   MessageSquare,
   Plus,
+  Save,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -76,6 +78,10 @@ function AgendaMode({
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [notesUrl, setNotesUrl] = useState<string | null>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const linkRef = useRef<HTMLInputElement>(null);
   const addRef = useRef<HTMLInputElement>(null);
   const busyRef = useRef(false);
   // Session ledger for the recap.
@@ -193,6 +199,12 @@ function AgendaMode({
     async (title: string) => {
       const trimmed = title.trim();
       if (!trimmed) return;
+      // A pasted Granola (or any notes) link is the meeting's notes, not a todo.
+      if (/^https?:\/\/\S+$/.test(trimmed) && /granola/i.test(trimmed)) {
+        setNotesUrl(trimmed);
+        haptic("tick");
+        return;
+      }
       setError(null);
       try {
         const res = await fetch("/api/todos", {
@@ -214,6 +226,7 @@ function AgendaMode({
 
   const recapText = useCallback(() => {
     const lines: string[] = [`${listName} — 1:1 ${new Date().toLocaleDateString()}`];
+    if (notesUrl) lines.push(`Notes: ${notesUrl}`);
     if (discussedTitles.length)
       lines.push("", "Discussed:", ...discussedTitles.map((t) => `- ${t}`));
     if (closedTitles.length)
@@ -224,7 +237,7 @@ function AgendaMode({
     if (open.length)
       lines.push("", "Still open:", ...open.map((t) => `- ${t.title}`));
     return lines.join("\n");
-  }, [listName, discussedTitles, closedTitles, addedTitles, ordered]);
+  }, [listName, discussedTitles, closedTitles, addedTitles, ordered, notesUrl]);
 
   // Keyboard: d discussed · e done · j/k nav · n quick-add · Esc close.
   useEffect(() => {
@@ -287,13 +300,70 @@ function AgendaMode({
             {discussedTitles.length + closedTitles.length} covered
           </span>
         </div>
-        <button
-          onClick={close}
-          className="rounded p-1.5 hover:bg-[var(--color-accent)]"
-          title="End (Esc)"
-        >
-          <X className="size-4" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          {linkOpen ? (
+            <input
+              ref={linkRef}
+              defaultValue={notesUrl ?? ""}
+              placeholder="Paste Granola link…"
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") {
+                  const v = (e.target as HTMLInputElement).value.trim();
+                  setNotesUrl(v || null);
+                  setLinkOpen(false);
+                  if (v) haptic("tick");
+                } else if (e.key === "Escape") setLinkOpen(false);
+              }}
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                setNotesUrl(v || null);
+                setLinkOpen(false);
+              }}
+              className="w-64 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2.5 py-1.5 text-xs focus:border-[var(--color-ring)] focus:outline-none"
+            />
+          ) : notesUrl ? (
+            <span className="inline-flex items-center gap-1">
+              <a
+                href={notesUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded-md bg-[var(--color-accent)]/60 px-2 py-1 text-xs hover:bg-[var(--color-accent)]"
+                title={notesUrl}
+              >
+                <Link2 className="size-3" /> notes
+              </a>
+              <button
+                onClick={() => {
+                  setLinkOpen(true);
+                  setTimeout(() => linkRef.current?.focus(), 30);
+                }}
+                className="rounded p-1 text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]"
+                title="Change link"
+              >
+                <Plus className="size-3 rotate-45" />
+              </button>
+            </span>
+          ) : (
+            <button
+              onClick={() => {
+                setLinkOpen(true);
+                setTimeout(() => linkRef.current?.focus(), 30);
+              }}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
+              title="Attach meeting notes (Granola link)"
+            >
+              <Link2 className="size-3" /> Granola
+            </button>
+          )}
+          <button
+            onClick={close}
+            className="rounded p-1.5 hover:bg-[var(--color-accent)]"
+            title="End (Esc)"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pb-4">
@@ -404,6 +474,30 @@ function AgendaMode({
             }}
           />
           <AgendaBtn
+            icon={Save}
+            label={saved ? "Saved" : "Save recap"}
+            k=""
+            onClick={async () => {
+              try {
+                const res = await fetch("/api/agenda/recap", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    listName,
+                    recap: recapText(),
+                    notesUrl,
+                  }),
+                });
+                if (!res.ok) throw new Error();
+                setSaved(true);
+                haptic("success");
+                setTimeout(() => setSaved(false), 2000);
+              } catch {
+                setError("Couldn't save the recap.");
+              }
+            }}
+          />
+          <AgendaBtn
             icon={Copy}
             label={copied ? "Copied" : "Copy recap"}
             k=""
@@ -436,7 +530,7 @@ function AgendaMode({
           />
         </div>
         <p className="mt-3 hidden md:block text-center text-xs text-[var(--color-muted-foreground)]">
-          d discussed · e done · n add · j / k move
+          d discussed · e done · n add (paste a Granola link to attach it) · j / k move
         </p>
       </div>
     </div>
