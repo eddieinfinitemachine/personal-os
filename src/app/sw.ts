@@ -91,3 +91,48 @@ self.addEventListener("message", (event) => {
     );
   }
 });
+
+// ── Web push ────────────────────────────────────────────────────────────
+// Payload shape: { title, body?, url?, tag? } — see src/lib/push.ts.
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+  let payload: { title?: string; body?: string; url?: string; tag?: string };
+  try {
+    payload = event.data.json();
+  } catch {
+    payload = { title: event.data.text() };
+  }
+  event.waitUntil(
+    self.registration.showNotification(payload.title ?? "EC", {
+      body: payload.body,
+      tag: payload.tag,
+      icon: "/icon.png",
+      badge: "/icon.png",
+      data: { url: payload.url ?? "/" },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data as { url?: string })?.url ?? "/";
+  event.waitUntil(
+    (async () => {
+      const all = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+      // Focus an existing window if one is open, else open a new one.
+      for (const client of all) {
+        if ("focus" in client) {
+          await (client as WindowClient).focus();
+          if ("navigate" in client) {
+            await (client as WindowClient).navigate(url).catch(() => {});
+          }
+          return;
+        }
+      }
+      await self.clients.openWindow(url);
+    })(),
+  );
+});

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { sendSharedListAddEmail } from "@/lib/email";
+import { sendPushToUser } from "@/lib/push";
 
 // Suppress email bursts (e.g. a multi-line paste creates one todo per line,
 // one POST each). Keyed per recipient+list+creator; the first email's copy
@@ -73,6 +74,13 @@ export async function notifySharedListAdd({
             todoTitle: todo.title,
             listName: list.name,
           });
+          // Best-effort push alongside the email (no-op without subscriptions).
+          await sendPushToUser(u.id, {
+            title: `${creatorName} → ${list.name}`,
+            body: todo.title,
+            url: "/",
+            tag: `shared-${listId}`,
+          }).catch(() => {});
         } catch (err) {
           console.error(
             `[notify] shared-list email to ${u.email} failed (list "${list.name}", todo "${todo.title}"):`,

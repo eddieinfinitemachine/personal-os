@@ -895,6 +895,7 @@ model User {
 
 
   // auto-generated back-references
+  pushSubscriptions            PushSubscription[]
   trips                        Trip[]
   tripItems                    TripItem[]
   lists                        List[]
@@ -1001,6 +1002,21 @@ model Interaction {
 
   @@index([userId, occurredAt])
   @@index([projectId])
+}
+
+// Web-push subscriptions (one per installed device/browser). Additive table;
+// rows die naturally when a push returns 404/410 and we prune them.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model MagicLinkToken {

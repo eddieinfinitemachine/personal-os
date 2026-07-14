@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { LogoutButton } from "@/components/logout-button";
+import { PushSettings } from "@/components/push-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,13 @@ export default async function SettingsPage() {
             <Row label="Joined" value={user.createdAt.toLocaleDateString()} />
             <Row label="Last seen" value={user.lastSeenAt.toLocaleDateString()} />
           </div>
+        </section>
+
+        <section>
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+            Notifications
+          </h2>
+          <PushSettings />
         </section>
 
         <section>
