@@ -104,7 +104,7 @@ export function MobileFab() {
       aria-label="New reminder (long-press for capture)"
       disabled={!activeListId}
       className={cn(
-        "md:hidden fixed right-4 bottom-[calc(56px+env(safe-area-inset-bottom)+18px)] z-30",
+        "md:hidden fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+18px)] z-30",
         "grid place-items-center size-14 rounded-full",
         "bg-[var(--color-tint)] text-white",
         "shadow-[0_10px_24px_-6px_color-mix(in_oklab,var(--color-tint),transparent_30%),0_2px_6px_rgba(0,0,0,0.25)]",

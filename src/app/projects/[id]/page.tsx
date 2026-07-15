@@ -2,8 +2,7 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { ensureDefaultLists, INBOX_PROJECT_NAME } from "@/lib/lists";
-import { TriageLauncher } from "@/components/triage-mode";
+import { ensureDefaultLists } from "@/lib/lists";
 import { KeyboardListNav } from "@/components/keyboard-nav";
 import { listAccessWhere } from "@/lib/list-access";
 import { ListTile } from "@/components/list-tile";
@@ -66,26 +65,6 @@ export default async function ProjectPage({
             })}
           </p>
         </div>
-        {project.name === INBOX_PROJECT_NAME ? (
-          <div className="flex items-center gap-2">
-            <TriageLauncher
-              mode="stale"
-              staleCount={await prisma.todo.count({
-                where: {
-                  completedAt: null,
-                  parentId: null,
-                  createdAt: { lt: new Date(Date.now() - 14 * 864e5) },
-                  OR: [
-                    { snoozedUntil: null },
-                    { snoozedUntil: { lte: new Date() } },
-                  ],
-                  list: listAccessWhere(userId),
-                },
-              })}
-            />
-            <TriageLauncher projectId={id} />
-          </div>
-        ) : null}
       </header>
 
       <ProjectTabs active={tab} hasDashboard={hasDashboard} />

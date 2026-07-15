@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { haptic } from "@/lib/haptic";
-import { FuzzyPicker } from "./triage-mode";
+import { FuzzyPicker } from "./fuzzy-picker";
 
 // Email-style keyboard navigation over the todo rows on the page:
 //   j / k  — move the highlight through every visible open todo

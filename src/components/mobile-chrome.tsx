@@ -5,13 +5,12 @@ import { usePathname } from "next/navigation";
 import {
   Calendar,
   Folder,
-  Heart,
   Home,
   Inbox as InboxIcon,
   Lightbulb,
   Menu,
   Search,
-  User,
+  Settings as SettingsIcon,
   Users,
   X,
 } from "lucide-react";
@@ -26,7 +25,6 @@ import {
   type ReactNode,
 } from "react";
 import { cn } from "@/lib/utils";
-import { haptic } from "@/lib/haptic";
 import { ThemeToggle } from "./theme-toggle";
 import { MobileFab } from "./mobile-fab";
 
@@ -81,7 +79,6 @@ export function MobileChromeProvider({
       <MobileTopBar />
       <MobileDrawer projects={projects} appName={appName} isPrivate={isPrivate} />
       <MobileFab />
-      <MobileTabBar isPrivate={isPrivate} />
     </Ctx.Provider>
   );
 }
@@ -153,66 +150,21 @@ function MobileTopBar() {
   );
 }
 
-// Tab slots follow measured usage: Inbox (daily triage) and Practices earn
-// spots; Friends/Personal stay reachable via search and the command palette.
-const TAB_DESTINATIONS_PRIVATE = [
+// The drawer is the sole mobile nav (no bottom tab bar), so it carries the
+// full primary destinations including Settings.
+const DRAWER_PRIMARY_PRIVATE = [
   { href: "/", label: "Home", Icon: Home },
   { href: "/inbox", label: "Inbox", Icon: InboxIcon },
   { href: "/calendar", label: "Calendar", Icon: Calendar },
   { href: "/best-practices", label: "Practices", Icon: Lightbulb },
+  { href: "/settings", label: "Settings", Icon: SettingsIcon },
 ];
 
-const TAB_DESTINATIONS_PUBLIC = [
+const DRAWER_PRIMARY_PUBLIC = [
   { href: "/", label: "Home", Icon: Home },
   { href: "/calendar", label: "Calendar", Icon: Calendar },
   { href: "/friends", label: "Friends", Icon: Users },
-];
-
-function MobileTabBar({ isPrivate }: { isPrivate: boolean }) {
-  const pathname = usePathname();
-  const tabs = isPrivate ? TAB_DESTINATIONS_PRIVATE : TAB_DESTINATIONS_PUBLIC;
-  return (
-    <nav
-      className="md:hidden print:hidden fixed inset-x-0 bottom-0 z-30 bg-[var(--color-background)]/95 backdrop-blur border-t border-[var(--color-border)] pb-[env(safe-area-inset-bottom)]"
-      style={{
-        transform: "translate3d(0,0,0)",
-        WebkitTransform: "translate3d(0,0,0)",
-        willChange: "transform",
-      }}
-    >
-      <ul
-        className="h-14 grid"
-        style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0,1fr))` }}
-      >
-        {tabs.map((t) => {
-          const active =
-            t.href === "/" ? pathname === "/" : pathname.startsWith(t.href);
-          return (
-            <li key={t.href}>
-              <Link
-                href={t.href}
-                onClick={() => haptic("tick")}
-                className={cn(
-                  "h-full flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium tracking-wide transition-colors duration-200",
-                  active
-                    ? "text-[var(--color-foreground)]"
-                    : "text-[var(--color-muted-foreground)]"
-                )}
-              >
-                <t.Icon className="size-5" strokeWidth={active ? 2 : 1.75} />
-                <span>{t.label}</span>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
-  );
-}
-
-const DRAWER_PRIMARY = [
-  { href: "/", label: "Home", Icon: Home },
-  { href: "/calendar", label: "Calendar", Icon: Calendar },
+  { href: "/settings", label: "Settings", Icon: SettingsIcon },
 ];
 
 function MobileDrawer({ projects, appName, isPrivate }: { projects: MobileProject[]; appName: string; isPrivate: boolean }) {
@@ -264,7 +216,7 @@ function MobileDrawer({ projects, appName, isPrivate }: { projects: MobileProjec
           </button>
         </div>
         <nav className="px-2 space-y-0.5">
-          {DRAWER_PRIMARY.map((d) => {
+          {(isPrivate ? DRAWER_PRIMARY_PRIVATE : DRAWER_PRIMARY_PUBLIC).map((d) => {
             const active = d.href === "/" ? pathname === "/" : pathname.startsWith(d.href);
             return (
               <Link

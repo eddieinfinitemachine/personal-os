@@ -5,10 +5,9 @@ import { NewListButton } from "@/components/new-list-button";
 import { ProjectCard, type ProjectCardData } from "@/components/project-card";
 import { KaizenLanding } from "@/components/kaizen-landing";
 import { CaptureInboxPill } from "@/components/capture-inbox";
-import { TriageLauncher } from "@/components/triage-mode";
 import { KeyboardListNav } from "@/components/keyboard-nav";
 import { prisma } from "@/lib/prisma";
-import { ensureDefaultLists, INBOX_PROJECT_NAME } from "@/lib/lists";
+import { ensureDefaultLists } from "@/lib/lists";
 import { getSession } from "@/lib/auth";
 import { isPrivateHost } from "@/lib/hosts";
 import { listAccessWhere } from "@/lib/list-access";
@@ -200,30 +199,6 @@ export default async function HomePage() {
           <NewListButton />
         </div>
       </header>
-      {(() => {
-        // Attention row: two buttons that drop straight into the keyboard
-        // triage flows (j/k to move, single keys to file/complete/drop —
-        // email-style). Counts derive from rows already fetched.
-        const inboxProject = projects.find(
-          (p) => p.name === INBOX_PROJECT_NAME
-        );
-        const inboxCount = inboxProject
-          ? allTodos.filter((t) => t.projectId === inboxProject.id).length
-          : 0;
-        const cutoff = Date.now() - 14 * 864e5;
-        const staleCount = allTodos.filter(
-          (t) => t.createdAt.getTime() < cutoff
-        ).length;
-        if (!inboxCount && !staleCount) return null;
-        return (
-          <div className="mb-4 flex items-center gap-2">
-            {inboxCount && inboxProject ? (
-              <TriageLauncher projectId={inboxProject.id} count={inboxCount} />
-            ) : null}
-            <TriageLauncher mode="stale" staleCount={staleCount} />
-          </div>
-        );
-      })()}
       <KeyboardListNav />
       <HomeTiles tiles={tiles} />
 
