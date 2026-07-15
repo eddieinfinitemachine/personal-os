@@ -13,6 +13,7 @@ import { CaptureProvider } from "@/lib/capture-store";
 import { isPrivateHost } from "@/lib/hosts";
 import { prisma } from "@/lib/prisma";
 import { initials } from "@/lib/initials";
+import { listAccessWhere } from "@/lib/list-access";
 
 // Per-request: small enough to not warrant a cache layer for a friends-only
 // deployment. The prior `_count.todos` shape emitted a correlated subquery
@@ -118,6 +119,16 @@ export default async function RootLayout({
 
   const mobileProjects = projects.map((p) => ({ id: p.id, name: p.name }));
 
+  // The mobile drawer's main job: pull up the lists (same order as Home's
+  // pager, so a tap lands on the matching tile via /#list-<id>).
+  const mobileLists = userId
+    ? await prisma.list.findMany({
+        where: listAccessWhere(userId),
+        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+        select: { id: true, name: true, color: true },
+      })
+    : [];
+
   return (
     <html lang="en">
       <head>
@@ -131,7 +142,7 @@ export default async function RootLayout({
         <CaptureProvider>
           <CaptureInbox />
           <LayoutOverlays />
-          <MobileChromeProvider projects={mobileProjects} appName={appName} isPrivate={isPrivate}>
+          <MobileChromeProvider projects={mobileProjects} lists={mobileLists} appName={appName} isPrivate={isPrivate}>
             <div className="flex min-h-screen">
               <div className="hidden md:flex print:hidden">
                 <Sidebar projects={projects} appName={appName} isPrivate={isPrivate} />

@@ -99,6 +99,25 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
     t.scrollTo({ left: i * t.clientWidth, behavior: "smooth" });
   }
 
+  // Mobile drawer "Lists" taps: the drawer stores the target list id and
+  // fires this event. Handled here (not via URL hash) because Next's Link
+  // pushState never fires hashchange, and sessionStorage survives the
+  // cross-page case where Home mounts after the tap.
+  useEffect(() => {
+    const go = () => {
+      const id = sessionStorage.getItem("personalos:goto-list");
+      if (!id) return;
+      const idx = tiles.findIndex((t) => t.list.id === id);
+      if (idx < 0) return;
+      sessionStorage.removeItem("personalos:goto-list");
+      scrollToIdx(idx);
+    };
+    go();
+    window.addEventListener("personalos:goto-list", go);
+    return () => window.removeEventListener("personalos:goto-list", go);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tiles]);
+
   // Broadcast the currently visible pager list so MobileFab can target its
   // inline add input. Re-emit on demand so a late-mounting MobileFab can ask.
   useEffect(() => {

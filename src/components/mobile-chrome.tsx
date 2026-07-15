@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Calendar,
   Folder,
@@ -22,6 +22,7 @@ import {
   type ReactNode,
 } from "react";
 import { cn } from "@/lib/utils";
+import { palette } from "@/lib/lists";
 import { ThemeToggle } from "./theme-toggle";
 import { MobileFab } from "./mobile-fab";
 
@@ -42,15 +43,18 @@ type ChromeApi = {
 const Ctx = createContext<ChromeApi | null>(null);
 
 export type MobileProject = { id: string; name: string };
+export type MobileList = { id: string; name: string; color: string };
 
 export function MobileChromeProvider({
   children,
   projects,
+  lists = [],
   appName = "EC",
   isPrivate = false,
 }: {
   children: ReactNode;
   projects: MobileProject[];
+  lists?: MobileList[];
   appName?: string;
   isPrivate?: boolean;
 }) {
@@ -74,7 +78,7 @@ export function MobileChromeProvider({
     <Ctx.Provider value={api}>
       {children}
       <MobileTopBar />
-      <MobileDrawer projects={projects} appName={appName} isPrivate={isPrivate} />
+      <MobileDrawer projects={projects} lists={lists} appName={appName} isPrivate={isPrivate} />
       <MobileFab />
     </Ctx.Provider>
   );
@@ -156,10 +160,11 @@ const DRAWER_PRIMARY = [
   { href: "/settings", label: "Settings", Icon: SettingsIcon },
 ];
 
-function MobileDrawer({ projects, appName, isPrivate }: { projects: MobileProject[]; appName: string; isPrivate: boolean }) {
+function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: MobileProject[]; lists: MobileList[]; appName: string; isPrivate: boolean }) {
   const { enabled, available, add } = useEnabledTemplates(isPrivate);
   const { drawerOpen, closeDrawer } = useMobileChrome();
   const pathname = usePathname();
+  const router = useRouter();
   // Close on route change.
   useEffect(() => {
     closeDrawer();
@@ -243,6 +248,36 @@ function MobileDrawer({ projects, appName, isPrivate }: { projects: MobileProjec
           })}
           <AddTemplateButton available={available} onAdd={add} variant="drawer" />
         </nav>
+        {lists.length > 0 ? (
+          <div className="mt-4 px-2">
+            <div className="px-3 mb-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+              Lists
+            </div>
+            <div className="space-y-0.5">
+              {lists.map((l) => (
+                <button
+                  key={l.id}
+                  onClick={() => {
+                    closeDrawer();
+                    sessionStorage.setItem("personalos:goto-list", l.id);
+                    if (pathname === "/") {
+                      window.dispatchEvent(new Event("personalos:goto-list"));
+                    } else {
+                      router.push("/");
+                    }
+                  }}
+                  className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] active:bg-[var(--color-accent)]"
+                >
+                  <span
+                    aria-hidden
+                    className={cn("size-2.5 rounded-full", palette(l.color).dot)}
+                  />
+                  <span className="flex-1 truncate text-left">{l.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {projects.length > 0 ? (
           <div className="mt-4 px-2">
             <div className="px-3 mb-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
