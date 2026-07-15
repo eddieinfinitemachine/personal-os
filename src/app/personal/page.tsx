@@ -29,7 +29,7 @@ function age(dob: string): string {
 
 export default async function PersonalPage() {
   // Defense in depth: the page exists only on the private host. On the public
-  // multi-tenant Kaizen, /personal 404s before any DB lookup.
+  // multi-tenant EC, /personal 404s before any DB lookup.
   const h = await headers();
   if (!isPrivateHost(h.get("host"))) notFound();
 

@@ -1,6 +1,6 @@
 // Hosts where the private "EC" branding + Eddie-only data (Personal page,
 // founder-only crons, etc.) are exposed. Anywhere else is the public
-// multi-tenant Kaizen.
+// multi-tenant EC.
 export const PRIVATE_HOSTS = new Set(["internal.eddiecohen.com"]);
 
 export function isPrivateHost(host: string | null | undefined): boolean {

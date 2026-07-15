@@ -6,7 +6,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { isPrivateHost } from "@/lib/hosts";
 
 // Password sign-in for the private single-operator host (internal.eddiecohen.com).
-// Public multi-tenant Kaizen stays magic-link only. The shared password lives in
+// Public multi-tenant EC stays magic-link only. The shared password lives in
 // INTERNAL_PASSWORD; the account it signs into is FOUNDER_EMAIL (same account the
 // bearer-token / cron endpoints attach data to).
 
@@ -19,7 +19,7 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  // Gate strictly to private hosts — never expose password auth on public Kaizen.
+  // Gate strictly to private hosts — never expose password auth on public EC.
   if (!isPrivateHost(req.headers.get("host"))) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }

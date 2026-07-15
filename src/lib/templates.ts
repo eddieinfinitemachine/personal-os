@@ -19,6 +19,7 @@ import {
 
 export type TemplateSlug =
   | "reader"
+  | "highlights"
   | "personal"
   | "friends"
   | "vehicles"
@@ -46,6 +47,13 @@ export const TEMPLATES: SidebarTemplate[] = [
     label: "Read later",
     description: "Links, tweets, and articles saved from the share sheet — with a reader view and highlights.",
     Icon: BookOpen,
+  },
+  {
+    slug: "highlights",
+    href: "/highlights",
+    label: "Highlights",
+    description: "Every passage you've highlighted while reading, in one place.",
+    Icon: Lightbulb,
   },
   {
     slug: "personal",

@@ -34,7 +34,8 @@ export async function POST(request: Request) {
     url?: string;
     text?: string; // Shortcuts sometimes hand over the URL as plain text
   };
-  const raw = (body.url ?? body.text ?? "").trim();
+  const qsUrl = new URL(request.url).searchParams.get("url");
+  const raw = (body.url ?? body.text ?? qsUrl ?? "").trim();
   const match = raw.match(/https?:\/\/\S+/);
   if (!match) return NextResponse.json({ error: "url required" }, { status: 400 });
   const url = match[0];
