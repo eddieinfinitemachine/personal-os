@@ -134,10 +134,13 @@ export function KeyboardListNav() {
   const complete = useCallback(() => {
     const id = activeIdRef.current;
     if (!id) return;
-    // Click the row's own checkbox so the native completion choreography
-    // plays (circle fills, row lingers, then collapses) instead of the row
-    // just vanishing on refresh.
-    const row = document.querySelector<HTMLElement>(`[data-kbd-todo="${id}"]`);
+    // Click the VISIBLE row's own checkbox so the native completion
+    // choreography plays instantly (the first DOM match is a hidden mobile
+    // clone whose checkbox updates a different component's state — clicking
+    // it made completion feel delayed).
+    const row = [
+      ...document.querySelectorAll<HTMLElement>(`[data-kbd-todo="${id}"]`),
+    ].find((el) => el.getClientRects().length > 0);
     const checkbox = row?.querySelector<HTMLButtonElement>(
       'button[title="Mark complete"]'
     );
@@ -242,9 +245,11 @@ export function KeyboardListNav() {
           const todoId = activeIdRef.current;
           setPicker(null);
           if (!todoId) return;
-          const row = document.querySelector<HTMLElement>(
-            `[data-kbd-todo="${todoId}"]`
-          );
+          const row = [
+            ...document.querySelectorAll<HTMLElement>(
+              `[data-kbd-todo="${todoId}"]`
+            ),
+          ].find((el) => el.getClientRects().length > 0);
           if (picker === "list") {
             const prevListId = row?.dataset.kbdList ?? "";
             patch(
