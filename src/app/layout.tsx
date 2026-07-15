@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
 import { MobileChromeProvider } from "@/components/mobile-chrome";
+import { VersionWatcher } from "@/components/version-watcher";
 import { CaptureInbox } from "@/components/capture-inbox";
 import { LayoutOverlays } from "@/components/layout-overlays";
 import { SyncPollMount } from "@/components/sync-poll-mount";
@@ -124,6 +125,7 @@ export default async function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themePreloadScript }} />
       </head>
       <body className="antialiased">
+        <VersionWatcher />
         <ServiceWorkerRegister />
         <SyncPollMount />
         <CaptureProvider>
