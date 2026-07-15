@@ -62,6 +62,18 @@ export function KeyboardListNav() {
     activeIdRef.current = id;
   }, []);
 
+  // Clicking a row selects it, so j/k continue from where the mouse was.
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      const row = (e.target as HTMLElement).closest?.<HTMLElement>("[data-kbd-todo]");
+      if (!row || row.getClientRects().length === 0) return;
+      const id = row.dataset.kbdTodo!;
+      if (id !== activeIdRef.current) setActive(id);
+    }
+    document.addEventListener("click", onClick, { capture: true });
+    return () => document.removeEventListener("click", onClick, { capture: true });
+  }, [setActive]);
+
   // Re-apply the highlight after router.refresh() re-renders the rows.
   useEffect(() => {
     const obs = new MutationObserver(() => {
@@ -79,12 +91,10 @@ export function KeyboardListNav() {
       const all = rows();
       if (!all.length) return;
       const idx = all.findIndex((el) => el.dataset.kbdTodo === activeIdRef.current);
+      // No live selection → always start at the top of the first list,
+      // regardless of direction.
       const next =
-        idx === -1
-          ? dir === 1
-            ? 0
-            : all.length - 1
-          : Math.min(Math.max(idx + dir, 0), all.length - 1);
+        idx === -1 ? 0 : Math.min(Math.max(idx + dir, 0), all.length - 1);
       setActive(all[next].dataset.kbdTodo ?? null);
     },
     [setActive]
