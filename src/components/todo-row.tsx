@@ -216,6 +216,7 @@ function TodoRowImpl({
 
   // Right-click / long-press context menu.
   const ctx = useContextMenu();
+  const rootRef = useRef<HTMLLIElement>(null);
   const [availableLists, setAvailableLists] = useState<
     { id: string; name: string; color: string }[]
   >([]);
@@ -690,8 +691,26 @@ function TodoRowImpl({
     setDragging(true);
   }
 
+  // Keyboard nav dispatches moves here so they ride the same optimistic
+  // path as drag-and-drop (instant hide + destination insert). Only the
+  // visible instance of the row responds; hidden mobile clones ignore it.
+  useEffect(() => {
+    function onKbdMove(e: Event) {
+      const d = (e as CustomEvent).detail as
+        | { todoId: string; kind: "list" | "project"; targetId: string | null }
+        | undefined;
+      if (!d || d.todoId !== todo.id) return;
+      if (!rootRef.current || rootRef.current.getClientRects().length === 0) return;
+      if (d.kind === "list" && d.targetId) void moveToList(d.targetId);
+      else if (d.kind === "project") void moveToProject(d.targetId);
+    }
+    window.addEventListener("personalos:kbd-move", onKbdMove);
+    return () => window.removeEventListener("personalos:kbd-move", onKbdMove);
+  });
+
   return (
     <li
+      ref={rootRef}
       data-kbd-todo={isSubtask || todo.completedAt ? undefined : todo.id}
       data-kbd-list={isSubtask || todo.completedAt ? undefined : sourceListId}
       className={cn(

@@ -159,8 +159,14 @@ export function KeyboardListNav() {
     if (!a) return;
     lastActionRef.current = null;
     if (a.kind === "complete") patch(a.todoId, { completedAt: null }, null);
-    else if (a.kind === "list") patch(a.todoId, { listId: a.prevListId }, null);
-    else patch(a.todoId, { projectId: a.prevProjectId }, null);
+    else if (a.kind === "list") {
+      window.dispatchEvent(
+        new CustomEvent("personalos:kbd-move", {
+          detail: { todoId: a.todoId, kind: "list", targetId: a.prevListId },
+        })
+      );
+      haptic("tick");
+    } else patch(a.todoId, { projectId: a.prevProjectId }, null);
   }, [patch]);
 
   useEffect(() => {
@@ -250,18 +256,23 @@ export function KeyboardListNav() {
               `[data-kbd-todo="${todoId}"]`
             ),
           ].find((el) => el.getClientRects().length > 0);
-          if (picker === "list") {
-            const prevListId = row?.dataset.kbdList ?? "";
-            patch(
-              todoId,
-              { listId: targetId },
-              prevListId
-                ? { kind: "list", todoId, prevListId }
-                : null
-            );
-          } else {
-            patch(todoId, { projectId: targetId }, null);
+          const prevListId = row?.dataset.kbdList ?? "";
+          // Ride the row's own optimistic move (instant, same as drag) —
+          // the row PATCHes the server itself.
+          move(1);
+          window.dispatchEvent(
+            new CustomEvent("personalos:kbd-move", {
+              detail: {
+                todoId,
+                kind: picker,
+                targetId,
+              },
+            })
+          );
+          if (picker === "list" && prevListId) {
+            lastActionRef.current = { kind: "list", todoId, prevListId };
           }
+          haptic("tick");
         }}
         onClose={() => setPicker(null)}
       />
