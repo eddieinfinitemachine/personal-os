@@ -36,6 +36,11 @@ export function KeyboardListNav() {
   const [copied, setCopied] = useState<number | null>(null);
 
   const applySelection = useCallback((ids: Set<string>) => {
+    // Sweep stale marks first — a row can lose data-kbd-todo (completed,
+    // re-rendered) while still carrying the selected attribute.
+    for (const el of document.querySelectorAll<HTMLElement>("[data-kbd-selected]")) {
+      if (!ids.has(el.dataset.kbdTodo ?? "")) delete el.dataset.kbdSelected;
+    }
     for (const el of document.querySelectorAll<HTMLElement>("[data-kbd-todo]")) {
       if (ids.has(el.dataset.kbdTodo!) && el.getClientRects().length > 0) {
         el.dataset.kbdSelected = "true";
@@ -125,6 +130,12 @@ export function KeyboardListNav() {
       haptic("success");
       setCopied(ordered.length);
       setTimeout(() => setCopied(null), 1600);
+      // Copy is the end of the gesture — drop the selection.
+      setSelectedIds(new Set());
+      for (const el of document.querySelectorAll<HTMLElement>("[data-kbd-selected]")) {
+        delete el.dataset.kbdSelected;
+      }
+      anchorRef.current = null;
     }
   }, []);
 
