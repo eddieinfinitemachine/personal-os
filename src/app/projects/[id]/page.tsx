@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ensureDefaultLists, INBOX_PROJECT_NAME } from "@/lib/lists";
 import { TriageLauncher } from "@/components/triage-mode";
+import { KeyboardListNav } from "@/components/keyboard-nav";
 import { listAccessWhere } from "@/lib/list-access";
 import { ListTile } from "@/components/list-tile";
 import { ProjectTabs, type ProjectTab } from "@/components/project-tabs";
@@ -154,6 +155,7 @@ async function TasksTab({ projectId, userId }: { projectId: string; userId: stri
       ],
       include: {
         subtasks: { orderBy: [{ position: "asc" }, { createdAt: "asc" }] },
+        _count: { select: { attachments: true } },
       },
     }),
   ]);
@@ -173,6 +175,7 @@ async function TasksTab({ projectId, userId }: { projectId: string; userId: stri
         completedAt: t.completedAt,
         createdAt: t.createdAt,
         snoozedUntil: t.snoozedUntil,
+        attachmentCount: t._count.attachments,
         projectId: t.projectId,
         subtasks: t.subtasks.map((s) => ({
           id: s.id,
@@ -189,6 +192,7 @@ async function TasksTab({ projectId, userId }: { projectId: string; userId: stri
 
   return (
     <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
+      <KeyboardListNav />
       {grouped.map((g) => (
         <ListTile
           key={g.list.id}

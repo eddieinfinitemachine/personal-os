@@ -62,6 +62,7 @@ export default async function HomePage() {
       ],
       include: {
         project: { select: { name: true } },
+        _count: { select: { attachments: true } },
         // Creator, surfaced as "added by …" on collaborative lists.
         user: { select: { name: true, email: true } },
         subtasks: {
@@ -112,6 +113,7 @@ export default async function HomePage() {
     projectName: t.project?.name ?? null,
     creatorName: creatorLabel(t.user),
     commentCount: commentStats.get(t.id)?.count ?? 0,
+    attachmentCount: t._count.attachments,
     unreadCommentCount: commentStats.get(t.id)?.unread ?? 0,
     subtasks: t.subtasks.map((s) => ({
       id: s.id,

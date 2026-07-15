@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { SaveUrlBar } from "@/components/reader/save-url-bar";
 import { ReaderListActions } from "@/components/reader/list-actions";
+import { ReaderKeyboardNav } from "@/components/reader/reader-keyboard-nav";
 import { Highlighter } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -60,11 +61,15 @@ export default async function ReaderPage({
         </div>
       ) : (
         <ul className="max-w-3xl space-y-2">
+          <ReaderKeyboardNav archivedView={archived} />
           {items.map((item) => {
             const minutes = Math.max(1, Math.round(item.wordCount / 230));
             return (
               <li key={item.id}>
-                <div className="group flex items-start gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-3 hover:bg-[var(--color-accent)]/30 transition">
+                <div
+                  data-kbd-reader={item.id}
+                  className="group flex items-start gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-3 hover:bg-[var(--color-accent)]/30 transition"
+                >
                   <Link href={`/reader/${item.id}`} className="min-w-0 flex-1">
                     <div className="font-medium leading-snug break-words">
                       {item.title}

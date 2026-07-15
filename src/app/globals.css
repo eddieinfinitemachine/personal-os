@@ -425,9 +425,10 @@
   }
 }
 
-/* Keyboard list-navigation highlight (Home): the focused row. */
+/* Keyboard list-navigation highlight: the focused row. Derived from the
+   foreground color so it reads in light AND dark themes. */
 [data-kbd-active="true"] {
-  background: color-mix(in oklab, var(--color-accent) 45%, transparent);
+  background: color-mix(in oklab, var(--color-foreground) 8%, transparent);
   border-radius: 8px;
 }
 

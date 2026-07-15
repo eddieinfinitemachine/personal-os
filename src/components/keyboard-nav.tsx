@@ -205,8 +205,10 @@ export function KeyboardListNav() {
           break;
       }
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Capture phase: real keypresses reach us before any in-page handler
+    // can stop propagation (inputs/overlays are still respected above).
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () => window.removeEventListener("keydown", onKey, { capture: true });
   }, [picker, move, complete, undo, ensureOptions, setActive]);
 
   if (!picker) return null;

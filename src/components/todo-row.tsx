@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Folder,
   MessageCircle,
+  Paperclip,
   Pencil,
   Plus,
   Trash2,
@@ -42,6 +43,7 @@ export type TodoLike = {
   // (others' comments since you last opened the thread) drives the badge.
   commentCount?: number;
   unreadCommentCount?: number;
+  attachmentCount?: number;
   createdAt?: Date | string | null;
   snoozedUntil?: Date | string | null;
   subtasks?: TodoLike[];
@@ -799,6 +801,12 @@ function TodoRowImpl({
               added by {todo.creatorName}
             </div>
           ) : null}
+          {todo.attachmentCount ? (
+            <div className="mt-0.5 mr-2 inline-flex items-center gap-1 text-[13px] leading-[16px] md:text-xs text-[var(--color-muted-foreground)]">
+              <Paperclip className="size-3.5" />
+              {todo.attachmentCount}
+            </div>
+          ) : null}
           {todo.commentCount ? (
             <div
               className={cn(
@@ -1191,6 +1199,7 @@ function arePropsEqual(
     if (a.projectName !== b.projectName) return false;
     if (a.creatorName !== b.creatorName) return false;
     if (a.commentCount !== b.commentCount) return false;
+    if (a.attachmentCount !== b.attachmentCount) return false;
     if (a.unreadCommentCount !== b.unreadCommentCount) return false;
     if (
       (a.completedAt == null) !== (b.completedAt == null) ||
