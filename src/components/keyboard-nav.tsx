@@ -31,11 +31,14 @@ export function KeyboardListNav() {
   const busyRef = useRef(false);
 
   const rows = () => {
-    // The same todo can render twice (list tile + By-Project card); keep the
-    // first occurrence so j/k visits each todo once.
+    // The same todo renders multiple times (hidden mobile layout, tile,
+    // By-Project card). Only VISIBLE instances count — the hidden mobile
+    // clone comes first in the DOM and highlighting it shows nothing
+    // (that bug cost three rounds of debugging; check pixels, not DOM).
     const seen = new Set<string>();
     const out: HTMLElement[] = [];
     for (const el of document.querySelectorAll<HTMLElement>("[data-kbd-todo]")) {
+      if (el.getClientRects().length === 0) continue; // display:none ancestor
       const id = el.dataset.kbdTodo!;
       if (seen.has(id)) continue;
       seen.add(id);
@@ -45,12 +48,13 @@ export function KeyboardListNav() {
   };
 
   const setActive = useCallback((id: string | null) => {
-    let scrolled = false;
+    let marked = false;
     for (const el of document.querySelectorAll<HTMLElement>("[data-kbd-todo]")) {
-      if (el.dataset.kbdTodo === id && !scrolled) {
+      const visible = el.getClientRects().length > 0;
+      if (el.dataset.kbdTodo === id && visible && !marked) {
         el.dataset.kbdActive = "true";
         el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        scrolled = true;
+        marked = true;
       } else {
         delete el.dataset.kbdActive;
       }

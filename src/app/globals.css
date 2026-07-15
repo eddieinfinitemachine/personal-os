@@ -428,8 +428,9 @@
 /* Keyboard list-navigation highlight: the focused row. Derived from the
    foreground color so it reads in light AND dark themes. */
 [data-kbd-active="true"] {
-  background: color-mix(in oklab, var(--color-foreground) 8%, transparent);
-  border-radius: 8px;
+  background: color-mix(in oklab, var(--color-foreground) 10%, transparent);
+  box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--color-foreground) 40%, transparent);
+  border-radius: 10px;
 }
 
 /* Reader-mode article typography (Safari-reader feel, monochrome). */

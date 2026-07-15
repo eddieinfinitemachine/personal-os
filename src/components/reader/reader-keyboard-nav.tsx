@@ -20,7 +20,9 @@ export function ReaderKeyboardNav({ archivedView }: { archivedView: boolean }) {
   const busyRef = useRef(false);
 
   const rows = () =>
-    Array.from(document.querySelectorAll<HTMLElement>("[data-kbd-reader]"));
+    Array.from(document.querySelectorAll<HTMLElement>("[data-kbd-reader]")).filter(
+      (el) => el.getClientRects().length > 0
+    );
 
   const setActive = useCallback((id: string | null) => {
     for (const el of rows()) {
