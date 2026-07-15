@@ -896,6 +896,8 @@ model User {
 
   // auto-generated back-references
   pushSubscriptions            PushSubscription[]
+  readerItems                  ReaderItem[]
+  highlights                   Highlight[]
   trips                        Trip[]
   tripItems                    TripItem[]
   lists                        List[]
@@ -1002,6 +1004,42 @@ model Interaction {
 
   @@index([userId, occurredAt])
   @@index([projectId])
+}
+
+// Read-later: articles/tweets saved from the share sheet or in-app, stored
+// as sanitized reader-mode HTML with user highlights.
+model ReaderItem {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url         String
+  title       String
+  byline      String?
+  siteName    String?
+  excerpt     String?
+  imageUrl    String?
+  contentHtml String    @default("") // sanitized reader-mode HTML
+  wordCount   Int       @default(0)
+  savedAt     DateTime  @default(now())
+  readAt      DateTime?
+  archivedAt  DateTime?
+  highlights  Highlight[]
+
+  @@index([userId, archivedAt, savedAt])
+}
+
+model Highlight {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemId    String
+  item      ReaderItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  text      String
+  note      String?
+  createdAt DateTime   @default(now())
+
+  @@index([itemId])
+  @@index([userId, createdAt])
 }
 
 // Web-push subscriptions (one per installed device/browser). Additive table;

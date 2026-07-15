@@ -72,6 +72,7 @@ const NAV_COMMANDS: NavCommand[] = [
   { id: "trips", label: "Trips", href: "/trips", icon: <Plane className="size-4" /> },
   { id: "investments", label: "Investments", href: "/investments", icon: <TrendingUp className="size-4" /> },
   { id: "inventory", label: "Inventory", href: "/inventory", icon: <Package className="size-4" /> },
+  { id: "reader", label: "Read later", href: "/reader", icon: <Lightbulb className="size-4" /> },
   { id: "media", label: "Media", href: "/media", icon: <Lightbulb className="size-4" /> },
   { id: "places", label: "Places", href: "/places", icon: <MapPin className="size-4" /> },
   { id: "best-practices", label: "Best practices", href: "/best-practices", icon: <Lightbulb className="size-4" /> },

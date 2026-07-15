@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 export type TemplateSlug =
+  | "reader"
   | "personal"
   | "friends"
   | "vehicles"
@@ -39,6 +40,13 @@ export type SidebarTemplate = {
 };
 
 export const TEMPLATES: SidebarTemplate[] = [
+  {
+    slug: "reader",
+    href: "/reader",
+    label: "Read later",
+    description: "Links, tweets, and articles saved from the share sheet — with a reader view and highlights.",
+    Icon: BookOpen,
+  },
   {
     slug: "personal",
     href: "/personal",

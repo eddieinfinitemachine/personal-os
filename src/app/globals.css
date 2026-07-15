@@ -430,3 +430,58 @@
   background: color-mix(in oklab, var(--color-accent) 45%, transparent);
   border-radius: 8px;
 }
+
+/* Reader-mode article typography (Safari-reader feel, monochrome). */
+.reader-prose {
+  font-size: 1.0625rem;
+  line-height: 1.75;
+  color: var(--color-foreground);
+}
+.reader-prose > * + * { margin-top: 1.1em; }
+.reader-prose h1, .reader-prose h2, .reader-prose h3 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  margin-top: 1.8em;
+}
+.reader-prose h1 { font-size: 1.5em; }
+.reader-prose h2 { font-size: 1.25em; }
+.reader-prose h3 { font-size: 1.1em; }
+.reader-prose p { margin-top: 1.1em; }
+.reader-prose a { text-decoration: underline; text-underline-offset: 2px; }
+.reader-prose img, .reader-prose video, .reader-prose figure {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  margin: 1.4em auto;
+}
+.reader-prose figcaption {
+  font-size: 0.8em;
+  color: var(--color-muted-foreground);
+  text-align: center;
+  margin-top: -0.8em;
+}
+.reader-prose blockquote {
+  border-left: 2px solid var(--color-border);
+  padding-left: 1em;
+  color: var(--color-muted-foreground);
+}
+.reader-prose pre {
+  overflow-x: auto;
+  background: var(--color-accent);
+  border-radius: 10px;
+  padding: 1em;
+  font-size: 0.85em;
+}
+.reader-prose code { font-size: 0.9em; }
+.reader-prose ul, .reader-prose ol { padding-left: 1.4em; }
+.reader-prose li { margin-top: 0.4em; }
+.reader-prose li > ul, .reader-prose li > ol { margin-top: 0.4em; }
+.reader-prose hr { border-color: var(--color-border); margin: 2em 0; }
+.reader-prose mark[data-hl] {
+  background: color-mix(in oklab, var(--color-foreground) 14%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  cursor: pointer;
+}

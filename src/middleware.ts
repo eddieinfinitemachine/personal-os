@@ -60,7 +60,10 @@ export async function middleware(req: NextRequest) {
   // Bearer-token endpoints handle their own auth.
   if (
     pathname.startsWith("/api/cron/") ||
-    pathname.startsWith("/api/capture/")
+    pathname.startsWith("/api/capture/") ||
+    // Read-later save from the iOS share-sheet Shortcut (route checks
+    // CAPTURE_TOKEN or session itself; GET stays behind the session).
+    (pathname === "/api/reader" && req.method === "POST")
   ) {
     return passthrough();
   }
