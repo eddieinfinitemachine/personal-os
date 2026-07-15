@@ -830,6 +830,9 @@ export function ListTile({
 
   function handleTileClick(e: React.MouseEvent<HTMLDivElement>) {
     if (adding) return;
+    // Desktop: clicking a tile no longer opens the composer — it hijacked
+    // focus and swallowed j/k. Use ⌘N (or the + New Reminder button).
+    if (window.matchMedia("(min-width: 768px)").matches) return;
     const target = e.target as HTMLElement;
     if (target.closest("button, a, input, form, li")) return;
     startAdding();

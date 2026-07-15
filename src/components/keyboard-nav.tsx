@@ -158,7 +158,23 @@ export function KeyboardListNav() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.repeat) return;
+      // ⌘N: open the New Reminder composer — on the highlighted row's list,
+      // else the first visible list tile. (Replaces desktop click-to-compose.)
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "n") {
+        const active = document.querySelector<HTMLElement>("[data-kbd-active=true]");
+        const listId =
+          active?.dataset.kbdList ??
+          document.querySelector<HTMLElement>("[data-kbd-todo]")?.dataset.kbdList;
+        if (listId) {
+          e.preventDefault();
+          window.dispatchEvent(
+            new CustomEvent("personalos:start-add-todo", { detail: { listId } })
+          );
+        }
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (picker) return; // picker owns the keyboard
       const el = e.target as HTMLElement;
       if (

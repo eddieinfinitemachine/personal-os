@@ -300,6 +300,32 @@ function TodoRowImpl({
       document.removeEventListener("touchstart", onDown);
     };
   }, [projectPickerOpen]);
+  const [listPickerOpen, setListPickerOpen] = useState(false);
+  const [listPickerPos, setListPickerPos] = useState<{ top: number; left: number } | null>(null);
+  useEffect(() => {
+    if (!listPickerOpen) return;
+    function onDown(e: Event) {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest("[data-list-picker]")) return;
+      if (t?.closest("[data-list-picker-popover]")) return;
+      setListPickerOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("touchstart", onDown);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+    };
+  }, [listPickerOpen]);
+  function openListPicker(anchorRect: DOMRect) {
+    const POP_W = 192;
+    const left = Math.min(anchorRect.left, window.innerWidth - POP_W - 8);
+    setListPickerPos({ top: anchorRect.bottom + 4, left });
+    setListPickerOpen(true);
+    if (availableLists.length === 0) {
+      getLists().then((lists) => setAvailableLists(lists)).catch(() => {});
+    }
+  }
   function openProjectPicker(anchorRect: DOMRect) {
     const POP_W = 192; // matches w-48
     const left = Math.min(
@@ -996,6 +1022,20 @@ function TodoRowImpl({
                     {todo.projectName ?? "Project"}
                   </span>
                 </button>
+                <button
+                  data-list-picker
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openListPicker(
+                      (e.currentTarget as HTMLElement).getBoundingClientRect()
+                    );
+                  }}
+                  className="inline-flex items-center gap-1 rounded px-1 py-0.5 opacity-0 md:group-hover:opacity-60 md:hover:opacity-100 hover:bg-[var(--color-accent)] transition"
+                  title="Move to list"
+                >
+                  <ArrowRight className="size-3" />
+                  <span>Move to</span>
+                </button>
               </>
             ) : null}
           </div>
@@ -1110,6 +1150,42 @@ function TodoRowImpl({
                   </button>
                 ))}
               {availableProjects.length === 0 ? (
+                <div className="px-3 py-2 text-[13px] text-[var(--color-muted-foreground)]">
+                  Loading…
+                </div>
+              ) : null}
+            </div>,
+            document.body
+          )
+        : null}
+      {listPickerOpen && listPickerPos && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              data-list-picker-popover
+              style={{
+                position: "fixed",
+                top: listPickerPos.top,
+                left: listPickerPos.left,
+                zIndex: 60,
+              }}
+              className="animate-scale-in origin-top-left w-48 max-h-64 overflow-y-auto rounded-xl border border-[var(--color-card-border)] bg-[var(--color-elevated)] shadow-popover"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {availableLists
+                .filter((l) => l.id !== sourceListId)
+                .map((l) => (
+                  <button
+                    key={l.id}
+                    onClick={() => {
+                      setListPickerOpen(false);
+                      void moveToList(l.id);
+                    }}
+                    className="block w-full text-left px-3 py-2 text-[13px] text-[var(--color-foreground)] hover:bg-[var(--color-accent)]"
+                  >
+                    {l.name}
+                  </button>
+                ))}
+              {availableLists.length === 0 ? (
                 <div className="px-3 py-2 text-[13px] text-[var(--color-muted-foreground)]">
                   Loading…
                 </div>
