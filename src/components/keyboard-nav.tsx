@@ -30,6 +30,7 @@ export function KeyboardListNav() {
   const lastActionRef = useRef<LastAction | null>(null);
   const busyRef = useRef(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const anchorRef = useRef<string | null>(null);
   const selectedRef = useRef(selectedIds);
   selectedRef.current = selectedIds;
   const [copied, setCopied] = useState<number | null>(null);
@@ -60,7 +61,30 @@ export function KeyboardListNav() {
   const clearSelection = useCallback(() => {
     setSelectedIds(new Set());
     applySelection(new Set());
+    anchorRef.current = null;
   }, [applySelection]);
+
+  // Shift-click range: everything between the anchor and the clicked row,
+  // inclusive, in on-screen order.
+  const rangeSelect = useCallback(
+    (fromId: string, toId: string) => {
+      const order = rows().map((el) => el.dataset.kbdTodo!);
+      const a = order.indexOf(fromId);
+      const b = order.indexOf(toId);
+      if (a === -1 || b === -1) return;
+      const [lo, hi] = a <= b ? [a, b] : [b, a];
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (let i = lo; i <= hi; i++) next.add(order[i]);
+        applySelection(next);
+        return next;
+      });
+      // Shift-click also spawns a browser text selection — clear it so ⌘C
+      // copies the tasks, not stray page text.
+      window.getSelection()?.removeAllRanges();
+    },
+    [applySelection]
+  );
 
   const copySelection = useCallback(async () => {
     const ids = selectedRef.current;
@@ -142,18 +166,37 @@ export function KeyboardListNav() {
       const row = (e.target as HTMLElement).closest?.<HTMLElement>("[data-kbd-todo]");
       if (!row || row.getClientRects().length === 0) return;
       const id = row.dataset.kbdTodo!;
-      if (e.metaKey || e.shiftKey) {
+      if (e.shiftKey) {
         e.preventDefault();
         e.stopPropagation();
-        toggleSelected(id);
+        const from = anchorRef.current ?? activeIdRef.current ?? id;
+        rangeSelect(from, id);
         setActive(id);
         return;
       }
+      if (e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSelected(id);
+        anchorRef.current = id;
+        setActive(id);
+        return;
+      }
+      anchorRef.current = id;
       if (id !== activeIdRef.current) setActive(id);
     }
+    // Suppress the browser's shift-click text selection over rows.
+    function onMouseDown(e: MouseEvent) {
+      if (!e.shiftKey) return;
+      if ((e.target as HTMLElement).closest?.("[data-kbd-todo]")) e.preventDefault();
+    }
     document.addEventListener("click", onClick, { capture: true });
-    return () => document.removeEventListener("click", onClick, { capture: true });
-  }, [setActive, toggleSelected]);
+    document.addEventListener("mousedown", onMouseDown, { capture: true });
+    return () => {
+      document.removeEventListener("click", onClick, { capture: true });
+      document.removeEventListener("mousedown", onMouseDown, { capture: true });
+    };
+  }, [setActive, toggleSelected, rangeSelect]);
 
   // Re-apply the highlight after router.refresh() re-renders the rows.
   useEffect(() => {
@@ -332,7 +375,10 @@ export function KeyboardListNav() {
           if (e.shiftKey && activeIdRef.current) toggleSelectedInclude(activeIdRef.current);
           break;
         case "v":
-          if (activeIdRef.current) toggleSelected(activeIdRef.current);
+          if (activeIdRef.current) {
+            toggleSelected(activeIdRef.current);
+            anchorRef.current = activeIdRef.current;
+          }
           break;
         case "c":
           void copySelection();
