@@ -29,6 +29,80 @@ export function KeyboardListNav() {
   const activeIdRef = useRef<string | null>(null);
   const lastActionRef = useRef<LastAction | null>(null);
   const busyRef = useRef(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const selectedRef = useRef(selectedIds);
+  selectedRef.current = selectedIds;
+  const [copied, setCopied] = useState<number | null>(null);
+
+  const applySelection = useCallback((ids: Set<string>) => {
+    for (const el of document.querySelectorAll<HTMLElement>("[data-kbd-todo]")) {
+      if (ids.has(el.dataset.kbdTodo!) && el.getClientRects().length > 0) {
+        el.dataset.kbdSelected = "true";
+      } else {
+        delete el.dataset.kbdSelected;
+      }
+    }
+  }, []);
+
+  const toggleSelected = useCallback(
+    (id: string) => {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        applySelection(next);
+        return next;
+      });
+    },
+    [applySelection]
+  );
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    applySelection(new Set());
+  }, [applySelection]);
+
+  const copySelection = useCallback(async () => {
+    const ids = selectedRef.current;
+    const targets =
+      ids.size > 0
+        ? [...ids]
+        : activeIdRef.current
+          ? [activeIdRef.current]
+          : [];
+    if (targets.length === 0) return;
+    // Preserve on-screen order.
+    const ordered: string[] = [];
+    const seen = new Set<string>();
+    for (const el of document.querySelectorAll<HTMLElement>("[data-kbd-todo]")) {
+      const id = el.dataset.kbdTodo!;
+      if (!targets.includes(id) || seen.has(id)) continue;
+      if (el.getClientRects().length === 0) continue;
+      seen.add(id);
+      ordered.push(el.dataset.kbdTitle ?? "");
+    }
+    const text = ordered.filter(Boolean).map((t) => `- ${t}`).join("\n");
+    if (!text) return;
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand("copy");
+      ta.remove();
+    }
+    if (ok) {
+      haptic("success");
+      setCopied(ordered.length);
+      setTimeout(() => setCopied(null), 1600);
+    }
+  }, []);
 
   const rows = () => {
     // The same todo renders multiple times (hidden mobile layout, tile,
@@ -68,11 +142,18 @@ export function KeyboardListNav() {
       const row = (e.target as HTMLElement).closest?.<HTMLElement>("[data-kbd-todo]");
       if (!row || row.getClientRects().length === 0) return;
       const id = row.dataset.kbdTodo!;
+      if (e.metaKey || e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSelected(id);
+        setActive(id);
+        return;
+      }
       if (id !== activeIdRef.current) setActive(id);
     }
     document.addEventListener("click", onClick, { capture: true });
     return () => document.removeEventListener("click", onClick, { capture: true });
-  }, [setActive]);
+  }, [setActive, toggleSelected]);
 
   // Re-apply the highlight after router.refresh() re-renders the rows.
   useEffect(() => {
@@ -197,6 +278,17 @@ export function KeyboardListNav() {
         }
         return;
       }
+      // ⌘C with an active multi-selection (and no text selected on the page).
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.key.toLowerCase() === "c" &&
+        selectedRef.current.size > 0 &&
+        (window.getSelection()?.isCollapsed ?? true)
+      ) {
+        e.preventDefault();
+        void copySelection();
+        return;
+      }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (picker) return; // picker owns the keyboard
       const el = e.target as HTMLElement;
@@ -210,16 +302,40 @@ export function KeyboardListNav() {
       // A full-screen overlay (triage, 1:1, capture drawer) owns the keys.
       if (document.querySelector("[data-overlay]")) return;
 
-      switch (e.key) {
+      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      switch (key) {
         case "j":
         case "ArrowDown":
           e.preventDefault();
+          // Shift extends the selection through the rows it passes.
+          if (e.shiftKey && activeIdRef.current) {
+            setSelectedIds((prev) => {
+              const next = new Set(prev).add(activeIdRef.current!);
+              applySelection(next);
+              return next;
+            });
+          }
           move(1);
+          if (e.shiftKey && activeIdRef.current) toggleSelectedInclude(activeIdRef.current);
           break;
         case "k":
         case "ArrowUp":
           e.preventDefault();
+          if (e.shiftKey && activeIdRef.current) {
+            setSelectedIds((prev) => {
+              const next = new Set(prev).add(activeIdRef.current!);
+              applySelection(next);
+              return next;
+            });
+          }
           move(-1);
+          if (e.shiftKey && activeIdRef.current) toggleSelectedInclude(activeIdRef.current);
+          break;
+        case "v":
+          if (activeIdRef.current) toggleSelected(activeIdRef.current);
+          break;
+        case "c":
+          void copySelection();
           break;
         case "l":
           if (activeIdRef.current) {
@@ -240,20 +356,41 @@ export function KeyboardListNav() {
           undo();
           break;
         case "Escape":
-          setActive(null);
+          if (selectedRef.current.size > 0) clearSelection();
+          else setActive(null);
           break;
       }
+    }
+    function toggleSelectedInclude(id: string) {
+      setSelectedIds((prev) => {
+        if (prev.has(id)) return prev;
+        const next = new Set(prev).add(id);
+        applySelection(next);
+        return next;
+      });
     }
     // Capture phase: real keypresses reach us before any in-page handler
     // can stop propagation (inputs/overlays are still respected above).
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [picker, move, complete, undo, ensureOptions, setActive]);
+  }, [picker, move, complete, undo, ensureOptions, setActive, toggleSelected, clearSelection, copySelection, applySelection]);
 
-  if (!picker) return null;
+  const pill =
+    copied != null ? (
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-full bg-[var(--color-foreground)] text-[var(--color-background)] px-3.5 py-1.5 text-xs font-medium shadow-lg">
+        Copied {copied} task{copied === 1 ? "" : "s"}
+      </div>
+    ) : selectedIds.size > 0 ? (
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-full bg-[var(--color-foreground)] text-[var(--color-background)] px-3.5 py-1.5 text-xs font-medium shadow-lg">
+        {selectedIds.size} selected · c copy · Esc clear
+      </div>
+    ) : null;
+
+  if (!picker) return pill;
   const options = picker === "list" ? lists : projects;
   return (
     <div className="fixed inset-0 z-50">
+      {pill}
       <FuzzyPicker
         title={picker === "list" ? "Move to list" : "File to project"}
         options={options ?? []}

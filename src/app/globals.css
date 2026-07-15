@@ -487,3 +487,9 @@
   padding: 0 1px;
   cursor: pointer;
 }
+
+/* Multi-selected rows (keyboard v / shift-j/k / cmd-click). */
+[data-kbd-selected="true"] {
+  background: color-mix(in oklab, var(--color-foreground) 16%, transparent);
+  border-radius: 10px;
+}

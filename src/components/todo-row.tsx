@@ -712,6 +712,7 @@ function TodoRowImpl({
     <li
       ref={rootRef}
       data-kbd-todo={isSubtask || todo.completedAt ? undefined : todo.id}
+      data-kbd-title={isSubtask || todo.completedAt ? undefined : todo.title}
       data-kbd-list={isSubtask || todo.completedAt ? undefined : sourceListId}
       className={cn(
         "group relative overflow-hidden md:overflow-visible",
