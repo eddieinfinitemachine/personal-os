@@ -6,12 +6,9 @@ import {
   Calendar,
   Folder,
   Home,
-  Inbox as InboxIcon,
-  Lightbulb,
   Menu,
   Search,
   Settings as SettingsIcon,
-  Users,
   X,
 } from "lucide-react";
 import { AddTemplateButton, useEnabledTemplates } from "./sidebar-template-picker";
@@ -150,20 +147,12 @@ function MobileTopBar() {
   );
 }
 
-// The drawer is the sole mobile nav (no bottom tab bar), so it carries the
-// full primary destinations including Settings.
-const DRAWER_PRIMARY_PRIVATE = [
-  { href: "/", label: "Home", Icon: Home },
-  { href: "/inbox", label: "Inbox", Icon: InboxIcon },
-  { href: "/calendar", label: "Calendar", Icon: Calendar },
-  { href: "/best-practices", label: "Practices", Icon: Lightbulb },
-  { href: "/settings", label: "Settings", Icon: SettingsIcon },
-];
-
-const DRAWER_PRIMARY_PUBLIC = [
+// The drawer is the sole mobile nav (no bottom tab bar). Kept deliberately
+// minimal: the lists/projects below are the point; Settings rides along so
+// it stays reachable on phones.
+const DRAWER_PRIMARY = [
   { href: "/", label: "Home", Icon: Home },
   { href: "/calendar", label: "Calendar", Icon: Calendar },
-  { href: "/friends", label: "Friends", Icon: Users },
   { href: "/settings", label: "Settings", Icon: SettingsIcon },
 ];
 
@@ -216,7 +205,7 @@ function MobileDrawer({ projects, appName, isPrivate }: { projects: MobileProjec
           </button>
         </div>
         <nav className="px-2 space-y-0.5">
-          {(isPrivate ? DRAWER_PRIMARY_PRIVATE : DRAWER_PRIMARY_PUBLIC).map((d) => {
+          {DRAWER_PRIMARY.map((d) => {
             const active = d.href === "/" ? pathname === "/" : pathname.startsWith(d.href);
             return (
               <Link
