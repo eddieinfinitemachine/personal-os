@@ -209,7 +209,61 @@ function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: Mobil
             <X className="size-5" />
           </button>
         </div>
-        <nav className="px-2 space-y-0.5">
+        {/* Lists lead the drawer — this is the primary navigation; pages are
+            the footnote below. */}
+        {lists.length > 0 ? (
+          <div className="px-2 space-y-0.5">
+            {lists.map((l) => (
+              <button
+                key={l.id}
+                onClick={() => {
+                  closeDrawer();
+                  sessionStorage.setItem("personalos:goto-list", l.id);
+                  if (pathname === "/") {
+                    window.dispatchEvent(new Event("personalos:goto-list"));
+                  } else {
+                    router.push("/");
+                  }
+                }}
+                className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[var(--color-foreground)] hover:bg-[var(--color-accent)] active:bg-[var(--color-accent)]"
+              >
+                <span
+                  aria-hidden
+                  className={cn("size-2.5 rounded-full", palette(l.color).dot)}
+                />
+                <span className="flex-1 truncate text-left">{l.name}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {projects.length > 0 ? (
+          <div className="mt-4 px-2">
+            <div className="px-3 mb-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+              Projects
+            </div>
+            <div className="space-y-0.5">
+              {projects.map((p) => {
+                const active = pathname === `/projects/${p.id}`;
+                return (
+                  <Link
+                    key={p.id}
+                    href={`/projects/${p.id}`}
+                    className={cn(
+                      "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm",
+                      active
+                        ? "bg-[var(--color-accent)] text-[var(--color-foreground)] font-medium"
+                        : "text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
+                    )}
+                  >
+                    <Folder className="size-4" />
+                    <span className="flex-1 truncate">{p.name}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+        <nav className="mt-4 px-2 pt-3 space-y-0.5 border-t border-[var(--color-border)]">
           {DRAWER_PRIMARY.map((d) => {
             const active = d.href === "/" ? pathname === "/" : pathname.startsWith(d.href);
             return (
@@ -248,63 +302,6 @@ function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: Mobil
           })}
           <AddTemplateButton available={available} onAdd={add} variant="drawer" />
         </nav>
-        {lists.length > 0 ? (
-          <div className="mt-4 px-2">
-            <div className="px-3 mb-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
-              Lists
-            </div>
-            <div className="space-y-0.5">
-              {lists.map((l) => (
-                <button
-                  key={l.id}
-                  onClick={() => {
-                    closeDrawer();
-                    sessionStorage.setItem("personalos:goto-list", l.id);
-                    if (pathname === "/") {
-                      window.dispatchEvent(new Event("personalos:goto-list"));
-                    } else {
-                      router.push("/");
-                    }
-                  }}
-                  className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] active:bg-[var(--color-accent)]"
-                >
-                  <span
-                    aria-hidden
-                    className={cn("size-2.5 rounded-full", palette(l.color).dot)}
-                  />
-                  <span className="flex-1 truncate text-left">{l.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        {projects.length > 0 ? (
-          <div className="mt-4 px-2">
-            <div className="px-3 mb-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
-              Projects
-            </div>
-            <div className="space-y-0.5">
-              {projects.map((p) => {
-                const active = pathname === `/projects/${p.id}`;
-                return (
-                  <Link
-                    key={p.id}
-                    href={`/projects/${p.id}`}
-                    className={cn(
-                      "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm",
-                      active
-                        ? "bg-[var(--color-accent)] text-[var(--color-foreground)] font-medium"
-                        : "text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
-                    )}
-                  >
-                    <Folder className="size-4" />
-                    <span className="flex-1 truncate">{p.name}</span>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
       </aside>
     </>
   );
