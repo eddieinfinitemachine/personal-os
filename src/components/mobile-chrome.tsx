@@ -6,7 +6,9 @@ import {
   Calendar,
   Folder,
   Home,
+  Loader2,
   Menu,
+  Plus,
   Search,
   Settings as SettingsIcon,
   X,
@@ -18,11 +20,13 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
+  useTransition,
   type ReactNode,
 } from "react";
 import { cn } from "@/lib/utils";
-import { palette } from "@/lib/lists";
+import { palette, LIST_PALETTE, type ListColor } from "@/lib/lists";
 import { ThemeToggle } from "./theme-toggle";
 import { MobileFab } from "./mobile-fab";
 
@@ -211,31 +215,30 @@ function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: Mobil
         </div>
         {/* Lists lead the drawer — this is the primary navigation; pages are
             the footnote below. */}
-        {lists.length > 0 ? (
-          <div className="px-2 space-y-0.5">
-            {lists.map((l) => (
-              <button
-                key={l.id}
-                onClick={() => {
-                  closeDrawer();
-                  sessionStorage.setItem("personalos:goto-list", l.id);
-                  if (pathname === "/") {
-                    window.dispatchEvent(new Event("personalos:goto-list"));
-                  } else {
-                    router.push("/");
-                  }
-                }}
-                className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[var(--color-foreground)] hover:bg-[var(--color-accent)] active:bg-[var(--color-accent)]"
-              >
-                <span
-                  aria-hidden
-                  className={cn("size-2.5 rounded-full", palette(l.color).dot)}
-                />
-                <span className="flex-1 truncate text-left">{l.name}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
+        <div className="px-2 space-y-0.5">
+          {lists.map((l) => (
+            <button
+              key={l.id}
+              onClick={() => {
+                closeDrawer();
+                sessionStorage.setItem("personalos:goto-list", l.id);
+                if (pathname === "/") {
+                  window.dispatchEvent(new Event("personalos:goto-list"));
+                } else {
+                  router.push("/");
+                }
+              }}
+              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[var(--color-foreground)] hover:bg-[var(--color-accent)] active:bg-[var(--color-accent)]"
+            >
+              <span
+                aria-hidden
+                className={cn("size-2.5 rounded-full", palette(l.color).dot)}
+              />
+              <span className="flex-1 truncate text-left">{l.name}</span>
+            </button>
+          ))}
+          <DrawerNewList />
+        </div>
         {projects.length > 0 ? (
           <div className="mt-4 px-2">
             <div className="px-3 mb-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
@@ -304,6 +307,124 @@ function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: Mobil
         </nav>
       </aside>
     </>
+  );
+}
+
+// Inline "New list" row at the bottom of the drawer's lists section. Expands
+// into a name + color form in place; posts to the same /api/lists endpoint as
+// the desktop NewListButton and fires the same list-created event so home
+// tiles pick it up. The drawer itself re-renders via router.refresh().
+const NEW_LIST_COLORS = Object.keys(LIST_PALETTE) as ListColor[];
+
+function DrawerNewList() {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [color, setColor] = useState<ListColor>("emerald");
+  const [submitting, setSubmitting] = useState(false);
+  const [, startTransition] = useTransition();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed || submitting) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/lists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed, color }),
+      });
+      if (!res.ok) return;
+      const body = (await res.json().catch(() => null)) as
+        | { list: { id: string; name: string; color: string; isDefault: boolean } }
+        | null;
+      if (body?.list) {
+        window.dispatchEvent(
+          new CustomEvent("personalos:list-created", { detail: { list: body.list } }),
+        );
+      }
+      setName("");
+      setColor("emerald");
+      setOpen(false);
+      startTransition(() => router.refresh());
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] active:bg-[var(--color-accent)]"
+      >
+        <Plus className="size-4" />
+        <span className="flex-1 text-left">New list</span>
+      </button>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="rounded-md bg-[var(--color-accent)]/40 px-3 py-2.5 space-y-2.5">
+      <input
+        ref={inputRef}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOpen(false);
+        }}
+        placeholder="List name"
+        className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2.5 py-1.5 text-sm focus:border-[var(--color-ring)] focus:outline-none"
+      />
+      <div className="flex flex-wrap gap-2">
+        {NEW_LIST_COLORS.map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => setColor(c)}
+            aria-label={c}
+            className={cn(
+              "size-5 rounded-full transition",
+              LIST_PALETTE[c].dot,
+              color === c
+                ? "ring-2 ring-offset-2 ring-offset-[var(--color-background)] ring-[var(--color-foreground)]"
+                : "opacity-70"
+            )}
+          />
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={!name.trim() || submitting}
+          className="flex-1 rounded-md bg-[var(--color-foreground)] text-[var(--color-background)] px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+        >
+          {submitting ? (
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <Loader2 className="size-3 animate-spin" /> Creating…
+            </span>
+          ) : (
+            "Create"
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            setName("");
+          }}
+          className="rounded-md px-3 py-1.5 text-sm text-[var(--color-muted-foreground)]"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 
