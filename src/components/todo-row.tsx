@@ -936,7 +936,7 @@ function TodoRowImpl({
             </div>
           ) : null}
           {/* Desktop-only chip row: date pill, subtask count, add-subtask, project picker. */}
-          <div className="mt-1 hidden md:flex items-center gap-2 text-xs text-[var(--color-muted-foreground)]">
+          <div className="mt-1 hidden md:flex flex-wrap items-center gap-2 whitespace-nowrap text-xs text-[var(--color-muted-foreground)]">
             {(() => {
               // Age chip: decay made visible. Only past the two-week cliff.
               if (todo.completedAt || !todo.createdAt) return null;
