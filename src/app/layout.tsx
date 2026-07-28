@@ -117,7 +117,11 @@ export default async function RootLayout({
     : null;
   const appName = (me && initials(me.name, me.email)) || "EC";
 
-  const mobileProjects = projects.map((p) => ({ id: p.id, name: p.name }));
+  const mobileProjects = projects.map((p) => ({
+    id: p.id,
+    name: p.name,
+    count: p._count.todos,
+  }));
 
   // The mobile drawer's main job: pull up the lists (same order as Home's
   // pager, so a tap lands on the matching tile via /#list-<id>).

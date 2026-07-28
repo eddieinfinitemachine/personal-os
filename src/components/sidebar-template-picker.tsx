@@ -102,7 +102,7 @@ export function AddTemplateButton({
         <span className="text-[var(--color-muted-foreground)]">
           <Plus className="size-4" />
         </span>
-        <span className="flex-1 text-left truncate">Add list</span>
+        <span className="flex-1 text-left truncate">Add tracker</span>
       </button>
       {open ? (
         <div
@@ -114,7 +114,7 @@ export function AddTemplateButton({
         >
           {available.length === 0 ? (
             <div className="px-3 py-2 text-xs text-[var(--color-muted-foreground)]">
-              All templates added.
+              All trackers added.
             </div>
           ) : (
             <ul className="space-y-0.5 max-h-[60vh] overflow-y-auto">

@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Calendar, ChevronDown, ChevronRight, Eye, EyeOff, Folder, Home, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Loader2, MoreHorizontal, Settings, Trash2 } from "lucide-react";
+import { Calendar, ChevronDown, ChevronRight, Eye, EyeOff, Folder, Home, Inbox as InboxIcon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Loader2, MoreHorizontal, Settings, Trash2 } from "lucide-react";
 import { AddTemplateButton, useEnabledTemplates } from "./sidebar-template-picker";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
+import { partitionProjects } from "@/lib/project-groups";
 import { ThemeToggle } from "./theme-toggle";
 
 type SidebarProject = {
@@ -85,6 +86,30 @@ export function Sidebar({
 
   const visibleProjects = projects.filter((p) => !hiddenProjectIds.has(p.id));
   const hiddenProjects = projects.filter((p) => hiddenProjectIds.has(p.id));
+
+  // Inbox pinned first, projects with open todos next (manual order kept),
+  // zero-todo tail collapsed behind "N more". The currently-open project
+  // always stays above the fold even when empty.
+  const activeProjectId = pathname.startsWith("/projects/")
+    ? pathname.slice("/projects/".length)
+    : null;
+  const [dormantOpen, setDormantOpen] = useState(false);
+  const {
+    inbox: inboxProject,
+    active: activeProjects,
+    dormant: dormantProjects,
+  } = partitionProjects(
+    visibleProjects,
+    (p) => p._count.todos,
+    activeProjectId ? new Set([activeProjectId]) : undefined
+  );
+
+  // Trackers (template pages) are lifted here so the footer can pull
+  // Print lists out of the content group and park it next to Settings.
+  const { enabled: enabledTemplates, available: availableTemplates, add: addTemplate } =
+    useEnabledTemplates(isPrivate);
+  const trackers = enabledTemplates.filter((t) => t.slug !== "print-lists");
+  const printLists = enabledTemplates.find((t) => t.slug === "print-lists") ?? null;
 
   function moveTo(fromId: string, toId: string) {
     if (fromId === toId) return;
@@ -166,7 +191,38 @@ export function Sidebar({
         </button>
       </div>
 
-      <SidebarTemplatesNav pathname={pathname} isPrivate={isPrivate} />
+      <nav className="px-2 space-y-0.5">
+        <SidebarLink
+          href="/"
+          icon={<Home className="size-4" />}
+          label="Home"
+          active={pathname === "/"}
+        />
+        <SidebarLink
+          href="/calendar"
+          icon={<Calendar className="size-4" />}
+          label="Calendar"
+          active={pathname === "/calendar"}
+        />
+      </nav>
+
+      <div className="px-2 mt-4">
+        <div className="px-2 mb-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+          Trackers
+        </div>
+        <nav className="space-y-0.5">
+          {trackers.map((t) => (
+            <SidebarLink
+              key={t.slug}
+              href={t.href}
+              icon={<t.Icon className="size-4" />}
+              label={t.label}
+              active={pathname.startsWith(t.href)}
+            />
+          ))}
+          <AddTemplateButton available={availableTemplates} onAdd={addTemplate} />
+        </nav>
+      </div>
 
       <div className="px-2 mt-4">
         <div className="px-2 mb-1.5 flex items-center justify-between">
@@ -183,7 +239,21 @@ export function Sidebar({
         </div>
 
         <div className="space-y-0.5">
-          {visibleProjects.map((project) => (
+          {inboxProject ? (
+            <ProjectSidebarRow
+              key={inboxProject.id}
+              project={inboxProject}
+              active={pathname === `/projects/${inboxProject.id}`}
+              inbox
+              onTodoDropped={() => {
+                startTransition(() => router.refresh());
+              }}
+              onDeleted={() => {
+                startTransition(() => router.refresh());
+              }}
+            />
+          ) : null}
+          {activeProjects.map((project) => (
             <ProjectSidebarRow
               key={project.id}
               project={project}
@@ -220,6 +290,55 @@ export function Sidebar({
               }}
             />
           ))}
+          {dormantProjects.length > 0 ? (
+            <div className="pt-1">
+              <button
+                onClick={() => setDormantOpen((v) => !v)}
+                className="w-full flex items-center gap-1.5 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]/40 rounded"
+              >
+                {dormantOpen ? (
+                  <ChevronDown className="size-3" />
+                ) : (
+                  <ChevronRight className="size-3" />
+                )}
+                <span className="tabular-nums">{dormantProjects.length} more</span>
+              </button>
+              {dormantOpen ? (
+                <div className="space-y-0.5 mt-0.5">
+                  {dormantProjects.map((project) => (
+                    <ProjectSidebarRow
+                      key={project.id}
+                      project={project}
+                      active={pathname === `/projects/${project.id}`}
+                      hidden={false}
+                      onToggleHidden={() => toggleHidden(project.id)}
+                      onDragStart={() => setDraggingId(project.id)}
+                      onDragOver={() => {
+                        if (!draggingId) return;
+                        moveTo(draggingId, project.id);
+                      }}
+                      onDrop={persistOrder}
+                      dragging={draggingId === project.id}
+                      onDeleted={() => {
+                        startTransition(() => router.refresh());
+                      }}
+                      onTodoDropped={() => {
+                        startTransition(() => router.refresh());
+                      }}
+                      onRenamed={(newName) => {
+                        setProjects((prev) =>
+                          prev.map((p) =>
+                            p.id === project.id ? { ...p, name: newName } : p
+                          )
+                        );
+                        startTransition(() => router.refresh());
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {hiddenProjects.length > 0 ? (
             <div className="pt-1">
               <button
@@ -304,7 +423,15 @@ export function Sidebar({
 
       <div className="mt-auto border-t border-[var(--color-border)]">
         <BuildInfo />
-        <div className="px-2 py-2 border-t border-[var(--color-border)]">
+        <div className="px-2 py-2 border-t border-[var(--color-border)] space-y-0.5">
+          {printLists ? (
+            <SidebarLink
+              href={printLists.href}
+              icon={<printLists.Icon className="size-4" />}
+              label={printLists.label}
+              active={pathname === printLists.href}
+            />
+          ) : null}
           <SidebarLink
             href="/settings"
             icon={<Settings className="size-4" />}
@@ -357,42 +484,6 @@ function formatRelative(d: Date): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function SidebarTemplatesNav({
-  pathname,
-  isPrivate,
-}: {
-  pathname: string;
-  isPrivate: boolean;
-}) {
-  const { enabled, available, add } = useEnabledTemplates(isPrivate);
-  return (
-    <nav className="px-2 pb-4 space-y-0.5">
-      <SidebarLink
-        href="/"
-        icon={<Home className="size-4" />}
-        label="Home"
-        active={pathname === "/"}
-      />
-      <SidebarLink
-        href="/calendar"
-        icon={<Calendar className="size-4" />}
-        label="Calendar"
-        active={pathname === "/calendar"}
-      />
-      {enabled.map((t) => (
-        <SidebarLink
-          key={t.slug}
-          href={t.href}
-          icon={<t.Icon className="size-4" />}
-          label={t.label}
-          active={t.href === "/print/today" ? pathname === t.href : pathname.startsWith(t.href)}
-        />
-      ))}
-      <AddTemplateButton available={available} onAdd={add} />
-    </nav>
-  );
-}
-
 function SidebarLink({
   href,
   icon,
@@ -431,6 +522,7 @@ function ProjectSidebarRow({
   project,
   active,
   hidden,
+  inbox,
   onToggleHidden,
   onDeleted,
   onDragStart,
@@ -443,6 +535,9 @@ function ProjectSidebarRow({
   project: SidebarProject;
   active: boolean;
   hidden?: boolean;
+  // Pinned capture spout: tray icon, no drag, no rename/hide/delete menu —
+  // Smart Capture files by the literal name "Inbox", so renaming would fork it.
+  inbox?: boolean;
   onToggleHidden?: () => void;
   onDeleted: () => void;
   onDragStart?: () => void;
@@ -635,7 +730,7 @@ function ProjectSidebarRow({
           draggable={false}
           onDoubleClick={(e) => {
             e.preventDefault();
-            startRename();
+            if (!inbox) startRename();
           }}
           className={cn(
             "flex-1 flex items-center gap-2 px-2 py-1.5 text-sm",
@@ -644,10 +739,17 @@ function ProjectSidebarRow({
               : "text-[var(--color-muted-foreground)] group-hover/row:text-[var(--color-foreground)]"
           )}
         >
-          <Folder
-            className="size-4 text-[var(--color-muted-foreground)]"
-            strokeWidth={1.75}
-          />
+          {inbox ? (
+            <InboxIcon
+              className="size-4 text-[var(--color-muted-foreground)]"
+              strokeWidth={1.75}
+            />
+          ) : (
+            <Folder
+              className="size-4 text-[var(--color-muted-foreground)]"
+              strokeWidth={1.75}
+            />
+          )}
           <span className="flex-1 truncate">{project.name}</span>
           {project._count.todos > 0 ? (
             <span className="text-xs text-[var(--color-muted-foreground)] tabular-nums">
@@ -656,6 +758,7 @@ function ProjectSidebarRow({
           ) : null}
         </Link>
       )}
+      {inbox ? null : (
       <button
         onClick={(e) => {
           e.preventDefault();
@@ -671,6 +774,7 @@ function ProjectSidebarRow({
           <MoreHorizontal className="size-3.5" />
         )}
       </button>
+      )}
       {menuOpen ? (
         <>
           <button

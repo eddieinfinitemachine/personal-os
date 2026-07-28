@@ -4,8 +4,11 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Calendar,
+  ChevronDown,
+  ChevronRight,
   Folder,
   Home,
+  Inbox as InboxIcon,
   Loader2,
   Menu,
   Plus,
@@ -27,6 +30,7 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { palette, LIST_PALETTE, type ListColor } from "@/lib/lists";
+import { partitionProjects } from "@/lib/project-groups";
 import { ThemeToggle } from "./theme-toggle";
 import { MobileFab } from "./mobile-fab";
 
@@ -46,7 +50,7 @@ type ChromeApi = {
 
 const Ctx = createContext<ChromeApi | null>(null);
 
-export type MobileProject = { id: string; name: string };
+export type MobileProject = { id: string; name: string; count: number };
 export type MobileList = { id: string; name: string; color: string };
 
 export function MobileChromeProvider({
@@ -156,12 +160,11 @@ function MobileTopBar() {
 }
 
 // The drawer is the sole mobile nav (no bottom tab bar). Kept deliberately
-// minimal: the lists/projects below are the point; Settings rides along so
-// it stays reachable on phones.
+// minimal: the lists/trackers/projects below are the point; Home, Calendar,
+// and Settings ride along at the bottom so they stay reachable on phones.
 const DRAWER_PRIMARY = [
   { href: "/", label: "Home", Icon: Home },
   { href: "/calendar", label: "Calendar", Icon: Calendar },
-  { href: "/settings", label: "Settings", Icon: SettingsIcon },
 ];
 
 function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: MobileProject[]; lists: MobileList[]; appName: string; isPrivate: boolean }) {
@@ -169,6 +172,23 @@ function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: Mobil
   const { drawerOpen, closeDrawer } = useMobileChrome();
   const pathname = usePathname();
   const router = useRouter();
+  // Same grouping as the desktop sidebar: Trackers get their own labeled
+  // section, Inbox pins to the top of Projects, empty projects collapse.
+  const trackers = enabled.filter((t) => t.slug !== "print-lists");
+  const printLists = enabled.find((t) => t.slug === "print-lists") ?? null;
+  const activeProjectId = pathname.startsWith("/projects/")
+    ? pathname.slice("/projects/".length)
+    : null;
+  const [dormantOpen, setDormantOpen] = useState(false);
+  const {
+    inbox: inboxProject,
+    active: activeProjects,
+    dormant: dormantProjects,
+  } = partitionProjects(
+    projects,
+    (p) => p.count,
+    activeProjectId ? new Set([activeProjectId]) : undefined
+  );
   // Close on route change.
   useEffect(() => {
     closeDrawer();
@@ -239,74 +259,156 @@ function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: Mobil
           ))}
           <DrawerNewList />
         </div>
+        {trackers.length > 0 || available.length > 0 ? (
+          <div className="mt-4 px-2">
+            <div className="px-3 mb-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+              Trackers
+            </div>
+            <div className="space-y-0.5">
+              {trackers.map((t) => (
+                <DrawerLink
+                  key={t.slug}
+                  href={t.href}
+                  active={pathname.startsWith(t.href)}
+                  icon={<t.Icon className="size-4" />}
+                  label={t.label}
+                />
+              ))}
+              <AddTemplateButton available={available} onAdd={add} variant="drawer" />
+            </div>
+          </div>
+        ) : null}
         {projects.length > 0 ? (
           <div className="mt-4 px-2">
             <div className="px-3 mb-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
               Projects
             </div>
             <div className="space-y-0.5">
-              {projects.map((p) => {
-                const active = pathname === `/projects/${p.id}`;
-                return (
-                  <Link
-                    key={p.id}
-                    href={`/projects/${p.id}`}
-                    className={cn(
-                      "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm",
-                      active
-                        ? "bg-[var(--color-accent)] text-[var(--color-foreground)] font-medium"
-                        : "text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
-                    )}
+              {inboxProject ? (
+                <DrawerProjectLink
+                  project={inboxProject}
+                  active={pathname === `/projects/${inboxProject.id}`}
+                  inbox
+                />
+              ) : null}
+              {activeProjects.map((p) => (
+                <DrawerProjectLink
+                  key={p.id}
+                  project={p}
+                  active={pathname === `/projects/${p.id}`}
+                />
+              ))}
+              {dormantProjects.length > 0 ? (
+                <>
+                  <button
+                    onClick={() => setDormantOpen((v) => !v)}
+                    className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)] active:bg-[var(--color-accent)] rounded-md"
                   >
-                    <Folder className="size-4" />
-                    <span className="flex-1 truncate">{p.name}</span>
-                  </Link>
-                );
-              })}
+                    {dormantOpen ? (
+                      <ChevronDown className="size-3" />
+                    ) : (
+                      <ChevronRight className="size-3" />
+                    )}
+                    <span className="tabular-nums">{dormantProjects.length} more</span>
+                  </button>
+                  {dormantOpen
+                    ? dormantProjects.map((p) => (
+                        <DrawerProjectLink
+                          key={p.id}
+                          project={p}
+                          active={pathname === `/projects/${p.id}`}
+                        />
+                      ))
+                    : null}
+                </>
+              ) : null}
             </div>
           </div>
         ) : null}
         <nav className="mt-4 px-2 pt-3 space-y-0.5 border-t border-[var(--color-border)]">
-          {DRAWER_PRIMARY.map((d) => {
-            const active = d.href === "/" ? pathname === "/" : pathname.startsWith(d.href);
-            return (
-              <Link
-                key={d.href}
-                href={d.href}
-                className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors active:bg-[var(--color-accent)]",
-                  active
-                    ? "bg-[var(--color-accent)] text-[var(--color-foreground)] font-medium"
-                    : "text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
-                )}
-              >
-                <d.Icon className="size-4" />
-                <span className="flex-1 truncate">{d.label}</span>
-              </Link>
-            );
-          })}
-          {enabled.map((t) => {
-            const active = t.href === "/print/today" ? pathname === t.href : pathname.startsWith(t.href);
-            return (
-              <Link
-                key={t.slug}
-                href={t.href}
-                className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors active:bg-[var(--color-accent)]",
-                  active
-                    ? "bg-[var(--color-accent)] text-[var(--color-foreground)] font-medium"
-                    : "text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
-                )}
-              >
-                <t.Icon className="size-4" />
-                <span className="flex-1 truncate">{t.label}</span>
-              </Link>
-            );
-          })}
-          <AddTemplateButton available={available} onAdd={add} variant="drawer" />
+          {DRAWER_PRIMARY.map((d) => (
+            <DrawerLink
+              key={d.href}
+              href={d.href}
+              active={d.href === "/" ? pathname === "/" : pathname.startsWith(d.href)}
+              icon={<d.Icon className="size-4" />}
+              label={d.label}
+            />
+          ))}
+          {printLists ? (
+            <DrawerLink
+              href={printLists.href}
+              active={pathname === printLists.href}
+              icon={<printLists.Icon className="size-4" />}
+              label={printLists.label}
+            />
+          ) : null}
+          <DrawerLink
+            href="/settings"
+            active={pathname.startsWith("/settings")}
+            icon={<SettingsIcon className="size-4" />}
+            label="Settings"
+          />
         </nav>
       </aside>
     </>
+  );
+}
+
+function DrawerLink({
+  href,
+  active,
+  icon,
+  label,
+}: {
+  href: string;
+  active: boolean;
+  icon: ReactNode;
+  label: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors active:bg-[var(--color-accent)]",
+        active
+          ? "bg-[var(--color-accent)] text-[var(--color-foreground)] font-medium"
+          : "text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
+      )}
+    >
+      {icon}
+      <span className="flex-1 truncate">{label}</span>
+    </Link>
+  );
+}
+
+function DrawerProjectLink({
+  project,
+  active,
+  inbox,
+}: {
+  project: MobileProject;
+  active: boolean;
+  inbox?: boolean;
+}) {
+  return (
+    <Link
+      href={`/projects/${project.id}`}
+      className={cn(
+        "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm active:bg-[var(--color-accent)]",
+        active
+          ? "bg-[var(--color-accent)] text-[var(--color-foreground)] font-medium"
+          : "text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
+      )}
+    >
+      {inbox ? <InboxIcon className="size-4" /> : <Folder className="size-4" />}
+      <span className="flex-1 truncate">{project.name}</span>
+      {project.count > 0 ? (
+        <span className="text-xs text-[var(--color-muted-foreground)] tabular-nums">
+          {project.count}
+        </span>
+      ) : null}
+    </Link>
   );
 }
 
