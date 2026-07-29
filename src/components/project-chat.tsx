@@ -1,18 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2, MessageCircle, Send, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Check, Loader2, MessageCircle, Send, X } from "lucide-react";
 import { SimpleMarkdown } from "./simple-markdown";
 
-type Turn = { role: "user" | "assistant"; content: string };
+type Turn = {
+  role: "user" | "assistant";
+  content: string;
+  applied?: string[];
+};
 
 export function ProjectChat({
   projectId,
   projectName,
+  canEdit = false,
 }: {
   projectId: string;
   projectName: string;
+  /** Pet projects accept natural-language edits ("she now weighs 9.6 lb"). */
+  canEdit?: boolean;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [question, setQuestion] = useState("");
@@ -38,7 +47,11 @@ export function ProjectChat({
       const res = await fetch(`/api/projects/${projectId}/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q, history: turns }),
+        body: JSON.stringify({
+          question: q,
+          // Strip UI-only fields — the API forwards history to Claude as-is.
+          history: turns.map(({ role, content }) => ({ role, content })),
+        }),
       });
       if (!res.ok) {
         const { error: msg } = (await res.json().catch(() => ({}))) as {
@@ -46,8 +59,13 @@ export function ProjectChat({
         };
         throw new Error(msg ?? `request failed (${res.status})`);
       }
-      const { answer } = (await res.json()) as { answer: string };
-      setTurns([...history, { role: "assistant", content: answer }]);
+      const { answer, applied } = (await res.json()) as {
+        answer: string;
+        applied?: string[];
+      };
+      setTurns([...history, { role: "assistant", content: answer, applied }]);
+      // New records were written — re-render the dashboard behind the chat.
+      if (applied && applied.length > 0) router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "request failed");
     } finally {
@@ -77,8 +95,18 @@ export function ProjectChat({
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
             {turns.length === 0 && !pending ? (
               <div className="text-sm text-[var(--color-muted-foreground)]">
-                Ask anything about this project — the assistant has read access
-                to the dashboard, todos, notes, and history.
+                {canEdit ? (
+                  <>
+                    Ask anything about this project, or record updates in plain
+                    language — e.g. &ldquo;{projectName} now weighs 9.6 pounds
+                    and got a rabies shot today.&rdquo;
+                  </>
+                ) : (
+                  <>
+                    Ask anything about this project — the assistant has read
+                    access to the dashboard, todos, notes, and history.
+                  </>
+                )}
               </div>
             ) : null}
             {turns.map((t, i) => (
@@ -98,6 +126,18 @@ export function ProjectChat({
                     <div className="rounded-lg bg-[var(--color-accent)]/40 px-3 py-2">
                       <SimpleMarkdown text={t.content} />
                     </div>
+                    {t.applied && t.applied.length > 0 ? (
+                      <ul className="mt-1.5 space-y-0.5">
+                        {t.applied.map((line, j) => (
+                          <li
+                            key={j}
+                            className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400"
+                          >
+                            <Check className="size-3 shrink-0" /> {line}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -120,7 +160,7 @@ export function ProjectChat({
               autoFocus
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              placeholder="Ask anything…"
+              placeholder={canEdit ? "Ask or record an update…" : "Ask anything…"}
               disabled={pending}
               className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2.5 py-1.5 text-sm focus:outline-none focus:border-[var(--color-ring)] disabled:opacity-60"
             />
