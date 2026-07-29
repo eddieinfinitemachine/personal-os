@@ -84,7 +84,11 @@ export default async function ProjectPage({
         {tab === "files" ? <FilesTab projectId={id} userId={userId} /> : null}
       </Suspense>
 
-      <ProjectChat projectId={id} projectName={project.name} />
+      <ProjectChat
+        projectId={id}
+        projectName={project.name}
+        canEdit={project.kind === "pet"}
+      />
     </div>
   );
 }
