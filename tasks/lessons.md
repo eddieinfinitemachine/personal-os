@@ -37,3 +37,13 @@ blue-tinted selection, hued grays). Eddie kept all the motion/typography but vet
 color change: "i liked the previous color scheme." Kaizen's flat neutral monochrome look
 is intentional. Rule: polish this app via motion, type, spacing, and depth — never recolor
 surfaces or selection states without showing Eddie first.
+
+## 2026-07-30 — keyboard-nav: synthetic clicks clobber the highlight
+Shipped a "highlight advances after e/l/p" fix that looked right but didn't work: complete()
+programmatically clicks the row checkbox, and the global click-capture handler treated that
+synthetic click as a user row-click, setting the vanishing row active again (j/k then restarted
+from the top). Rules: (1) any global click/key handler in keyboard-nav must ignore untrusted
+events (e.isTrusted) or it will fight programmatic .click() calls; (2) don't ship keyboard-nav
+changes without an in-browser test — dev server + seeded KbdTest list + dispatched KeyboardEvents
+(note: agent-browser `press` auto-repeats thousands of keydowns with repeat=false; dispatch
+synthetic KeyboardEvents via eval instead).
