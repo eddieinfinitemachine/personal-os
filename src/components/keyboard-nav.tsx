@@ -171,12 +171,35 @@ export function KeyboardListNav() {
     activeIdRef.current = id;
   }, []);
 
+  // After an action removes a row from view, land the highlight on the row
+  // below it — or the one above when it was last (move(1) clamps in place
+  // there, stranding the highlight on a row about to vanish).
+  const advanceFrom = useCallback(
+    (id: string) => {
+      const all = rows();
+      const idx = all.findIndex((el) => el.dataset.kbdTodo === id);
+      if (idx === -1) return;
+      const next = all[idx + 1] ?? all[idx - 1] ?? null;
+      setActive(next?.dataset.kbdTodo ?? null);
+    },
+    [setActive]
+  );
+
   // Clicking a row selects it, so j/k continue from where the mouse was.
   useEffect(() => {
     function onClick(e: MouseEvent) {
+      // Synthetic clicks (complete() clicking the row's checkbox) must not
+      // steal the highlight back onto the row that's about to disappear.
+      if (!e.isTrusted) return;
       const row = (e.target as HTMLElement).closest?.<HTMLElement>("[data-kbd-todo]");
       if (!row || row.getClientRects().length === 0) return;
       const id = row.dataset.kbdTodo!;
+      // A real click on the checkbox completes the row — advance off it
+      // instead of making a vanishing row the active one.
+      if ((e.target as HTMLElement).closest?.('button[title="Mark complete"]')) {
+        if (id === activeIdRef.current) advanceFrom(id);
+        return;
+      }
       if (e.shiftKey) {
         e.preventDefault();
         e.stopPropagation();
@@ -207,7 +230,7 @@ export function KeyboardListNav() {
       document.removeEventListener("click", onClick, { capture: true });
       document.removeEventListener("mousedown", onMouseDown, { capture: true });
     };
-  }, [setActive, toggleSelected, rangeSelect]);
+  }, [setActive, toggleSelected, rangeSelect, advanceFrom]);
 
   // Re-apply the highlight after router.refresh() re-renders the rows.
   // Must mark the VISIBLE instance — the first DOM match is the hidden
@@ -242,20 +265,6 @@ export function KeyboardListNav() {
       const next =
         idx === -1 ? 0 : Math.min(Math.max(idx + dir, 0), all.length - 1);
       setActive(all[next].dataset.kbdTodo ?? null);
-    },
-    [setActive]
-  );
-
-  // After an action removes a row from view, land the highlight on the row
-  // below it — or the one above when it was last (move(1) clamps in place
-  // there, stranding the highlight on a row about to vanish).
-  const advanceFrom = useCallback(
-    (id: string) => {
-      const all = rows();
-      const idx = all.findIndex((el) => el.dataset.kbdTodo === id);
-      if (idx === -1) return;
-      const next = all[idx + 1] ?? all[idx - 1] ?? null;
-      setActive(next?.dataset.kbdTodo ?? null);
     },
     [setActive]
   );
