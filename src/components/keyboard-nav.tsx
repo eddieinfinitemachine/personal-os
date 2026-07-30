@@ -210,12 +210,23 @@ export function KeyboardListNav() {
   }, [setActive, toggleSelected, rangeSelect]);
 
   // Re-apply the highlight after router.refresh() re-renders the rows.
+  // Must mark the VISIBLE instance — the first DOM match is the hidden
+  // mobile clone, and marking it leaves the highlight invisible.
   useEffect(() => {
     const obs = new MutationObserver(() => {
       const id = activeIdRef.current;
       if (!id) return;
-      const el = document.querySelector<HTMLElement>(`[data-kbd-todo="${id}"]`);
-      if (el && el.dataset.kbdActive !== "true") el.dataset.kbdActive = "true";
+      let marked = false;
+      for (const el of document.querySelectorAll<HTMLElement>(
+        `[data-kbd-todo="${id}"]`
+      )) {
+        if (!marked && el.getClientRects().length > 0) {
+          if (el.dataset.kbdActive !== "true") el.dataset.kbdActive = "true";
+          marked = true;
+        } else if (el.dataset.kbdActive) {
+          delete el.dataset.kbdActive;
+        }
+      }
     });
     obs.observe(document.body, { childList: true, subtree: true });
     return () => obs.disconnect();
@@ -231,6 +242,20 @@ export function KeyboardListNav() {
       const next =
         idx === -1 ? 0 : Math.min(Math.max(idx + dir, 0), all.length - 1);
       setActive(all[next].dataset.kbdTodo ?? null);
+    },
+    [setActive]
+  );
+
+  // After an action removes a row from view, land the highlight on the row
+  // below it — or the one above when it was last (move(1) clamps in place
+  // there, stranding the highlight on a row about to vanish).
+  const advanceFrom = useCallback(
+    (id: string) => {
+      const all = rows();
+      const idx = all.findIndex((el) => el.dataset.kbdTodo === id);
+      if (idx === -1) return;
+      const next = all[idx + 1] ?? all[idx - 1] ?? null;
+      setActive(next?.dataset.kbdTodo ?? null);
     },
     [setActive]
   );
@@ -266,14 +291,14 @@ export function KeyboardListNav() {
           if (undo) lastActionRef.current = undo;
           haptic("tick");
           // Move the highlight before this row disappears from the view.
-          move(1);
+          advanceFrom(todoId);
           router.refresh();
         }
       } finally {
         busyRef.current = false;
       }
     },
-    [router, move]
+    [router, advanceFrom]
   );
 
   const complete = useCallback(() => {
@@ -291,13 +316,13 @@ export function KeyboardListNav() {
     );
     if (checkbox) {
       lastActionRef.current = { kind: "complete", todoId: id };
-      move(1);
+      advanceFrom(id);
       checkbox.click();
       haptic("tick");
     } else {
       patch(id, { completedAt: new Date().toISOString() }, { kind: "complete", todoId: id });
     }
-  }, [patch, move]);
+  }, [patch, advanceFrom]);
 
   const undo = useCallback(() => {
     const a = lastActionRef.current;
@@ -463,7 +488,7 @@ export function KeyboardListNav() {
           const prevListId = row?.dataset.kbdList ?? "";
           // Ride the row's own optimistic move (instant, same as drag) —
           // the row PATCHes the server itself.
-          move(1);
+          advanceFrom(todoId);
           window.dispatchEvent(
             new CustomEvent("personalos:kbd-move", {
               detail: {
