@@ -439,3 +439,16 @@ all CSS (custom easing tokens, keyframes, @starting-style). Plan: ~/.claude/plan
   age/resurfaced chips, agenda full flow, /inbox redirect, private mobile tabs.
 - ⚠️ MERGE REQUIRES: `npm run db:push` against prod (3 nullable columns +
   2 with defaults on Todo — additive, backwards-compatible) BEFORE deploying.
+
+## Teammate Mac capture shortcut (2026-08-13)
+- [x] Multi-user capture auth: new `src/lib/capture-auth.ts` resolves bearer
+  token → user. CAPTURE_TOKEN → founder (unchanged); new CAPTURE_TOKENS env
+  (JSON token→email map) for teammates. Wired into /api/capture/smart/auto
+  and /api/capture/todo; per-route founder lookups removed. tsc clean.
+- [x] quick-todo/build.sh: QT_TOKEN + QT_APP_DIR overrides to bake a
+  teammate's token into a separate .app without editing main.swift.
+- [x] Built teammate copy → ~/Desktop/Quick-Todo-teammate.zip (app +
+  INSTALL.txt; verified their token baked in, founder token absent).
+- [ ] BLOCKED on teammate email: add Vercel env
+  CAPTURE_TOKENS={"<token>":"<email>"} (token in scratchpad), redeploy,
+  then send the zip.

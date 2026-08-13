@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists, ensureInboxProject, CAPTURE_LIST_NAME } from "@/lib/lists";
 import { parseCapture, type CaptureProposal } from "@/lib/smart-capture";
 import { parseAliasToken } from "@/lib/alias";
+import { resolveCaptureUser } from "@/lib/capture-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -13,8 +14,9 @@ export const maxDuration = 60;
 // intent. This one routes to the right table (asset / interaction / person /
 // trip / todo) based on the text.
 //
-// Auth: bearer token from CAPTURE_TOKEN env (same as /api/capture/todo). Falls
-// back to founder lookup via FOUNDER_EMAIL — no user session needed.
+// Auth: bearer token resolved to a user via lib/capture-auth — CAPTURE_TOKEN
+// maps to the founder, CAPTURE_TOKENS maps extra tokens to teammate emails.
+// No user session needed.
 //
 // Body (JSON):
 //   { text: "...", url?: "https://..." }
@@ -26,22 +28,24 @@ export const maxDuration = 60;
 // Contents of URL" action can hit it without composing a body.
 
 export async function POST(request: Request) {
-  if (!isAuthorized(request)) {
+  const userId = await resolveCaptureUser(request);
+  if (!userId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const body = (await request.json().catch(() => ({}))) as {
     text?: string;
     url?: string;
   };
-  return handle(body.text, body.url);
+  return handle(userId, body.text, body.url);
 }
 
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
+  const userId = await resolveCaptureUser(request);
+  if (!userId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const u = new URL(request.url);
-  return handle(u.searchParams.get("text"), u.searchParams.get("url"));
+  return handle(userId, u.searchParams.get("text"), u.searchParams.get("url"));
 }
 
 // Pick the right action verb for a media companion-todo based on the format
@@ -60,28 +64,15 @@ function mediaVerb(
   return "Read/watch";
 }
 
-function isAuthorized(request: Request): boolean {
-  const secret = process.env.CAPTURE_TOKEN;
-  // Fail closed in production (see capture/todo).
-  if (!secret) return process.env.NODE_ENV !== "production";
-  const auth = request.headers.get("authorization");
-  if (auth === `Bearer ${secret}`) return true;
-  const url = new URL(request.url);
-  return url.searchParams.get("token") === secret;
-}
-
-async function handle(rawText: string | null | undefined, rawUrl: string | null | undefined) {
+async function handle(
+  userId: string,
+  rawText: string | null | undefined,
+  rawUrl: string | null | undefined,
+) {
   const text = rawText?.trim();
   if (!text) {
     return NextResponse.json({ error: "text required" }, { status: 400 });
   }
-
-  const FOUNDER_EMAIL = process.env.FOUNDER_EMAIL ?? "emcohen@me.com";
-  const founder = await prisma.user.findUnique({ where: { email: FOUNDER_EMAIL } });
-  if (!founder) {
-    return NextResponse.json({ error: "founder user missing" }, { status: 500 });
-  }
-  const userId = founder.id;
 
   // Deterministic "@name" routing: skip Claude entirely and file the todo
   // (verbatim minus the token) straight onto the matching person-list.

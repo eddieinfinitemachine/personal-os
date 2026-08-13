@@ -2,15 +2,15 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists, ensureInboxProject, CAPTURE_LIST_NAME } from "@/lib/lists";
 import { parseAliasToken } from "@/lib/alias";
+import { resolveCaptureUser } from "@/lib/capture-auth";
 
 export const dynamic = "force-dynamic";
 
 // Capture endpoint built for iOS Shortcuts / share-sheet usage. Accepts
 // human-friendly list and project NAMES so you don't need to look up IDs.
 //
-// Auth: if CAPTURE_TOKEN is set in env, the request must include
-//   Authorization: Bearer <CAPTURE_TOKEN>
-// Otherwise the endpoint is open (use only with a secret URL).
+// Auth: bearer token resolved to a user via lib/capture-auth — CAPTURE_TOKEN
+// maps to the founder, CAPTURE_TOKENS maps extra tokens to teammate emails.
 //
 // Body:
 //   {
@@ -24,11 +24,12 @@ export const dynamic = "force-dynamic";
 // Also accepts the same fields as URL query params on a GET request — handy
 // for Shortcuts that prefer a URL hit over a POST body.
 export async function POST(request: Request) {
-  if (!isAuthorized(request)) {
+  const userId = await resolveCaptureUser(request);
+  if (!userId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-  return handle({
+  return handle(userId, {
     // `text` is accepted as an alias for `title` so this endpoint is a
     // drop-in replacement for /capture/smart/auto's body — repoint a
     // Shortcut here for "always a todo, never reclassified".
@@ -42,11 +43,12 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
+  const userId = await resolveCaptureUser(request);
+  if (!userId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const url = new URL(request.url);
-  return handle({
+  return handle(userId, {
     title: url.searchParams.get("title") ?? url.searchParams.get("text"),
     list: url.searchParams.get("list"),
     project: url.searchParams.get("project"),
@@ -56,24 +58,11 @@ export async function GET(request: Request) {
   });
 }
 
-function isAuthorized(request: Request): boolean {
-  const secret = process.env.CAPTURE_TOKEN;
-  // Fail closed in production: an unset token must NOT leave this public-write
-  // endpoint open. In dev, allow unsigned requests for hand-testing.
-  if (!secret) return process.env.NODE_ENV !== "production";
-  const auth = request.headers.get("authorization");
-  if (auth === `Bearer ${secret}`) return true;
-  // Also accept ?token=… so Shortcuts can use a plain URL action.
-  const url = new URL(request.url);
-  if (url.searchParams.get("token") === secret) return true;
-  return false;
-}
-
 function str(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v.trim() : null;
 }
 
-async function handle(input: {
+async function handle(userId: string, input: {
   title: string | null;
   list: string | null;
   project: string | null;
@@ -90,11 +79,6 @@ async function handle(input: {
     input.url && input.notes
       ? `${input.notes}\n${input.url}`
       : input.url ?? input.notes;
-
-  const FOUNDER_EMAIL = process.env.FOUNDER_EMAIL ?? "emcohen@me.com";
-  const founder = await prisma.user.findUnique({ where: { email: FOUNDER_EMAIL } });
-  if (!founder) return NextResponse.json({ error: "founder user missing" }, { status: 500 });
-  const userId = founder.id;
 
   await ensureDefaultLists(userId);
 

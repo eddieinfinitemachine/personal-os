@@ -31,4 +31,18 @@ launchctl load -w ~/Library/LaunchAgents/com.eddie.quicktodo.plist
 
 API URL and bearer token are hardcoded constants at the top of `main.swift`. Single-user local app — keep both in source.
 
+## Building a copy for a teammate
+
+Each person gets their own token, mapped to their EC account via the
+`CAPTURE_TOKENS` env var on Vercel (JSON: `{"<token>":"their@email.com"}` —
+see `src/lib/capture-auth.ts`). Then bake their token into a separate build:
+
+```bash
+QT_TOKEN=<their-token> QT_APP_DIR="/tmp/Quick Todo.app" ./build.sh
+```
+
+Zip the resulting `.app` and send it over. It's only ad-hoc signed, so on
+their Mac it's right-click → Open (or Privacy & Security → "Open Anyway"),
+or `xattr -dr com.apple.quarantine` on the app.
+
 To change the hotkey, edit `HotKeyManager.register()` in `main.swift` and rebuild.
