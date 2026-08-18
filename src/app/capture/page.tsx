@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { Sparkles } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
@@ -29,6 +30,12 @@ export default async function CapturePage() {
             Type a sentence, optionally drop a photo. Claude figures out the
             right place for it — inventory, friends, trips, todos, anywhere.
           </p>
+          <Link
+            href="/capture/meeting"
+            className="mt-2 inline-block text-sm text-[var(--color-muted-foreground)] underline underline-offset-2 hover:text-[var(--color-foreground)]"
+          >
+            Import a meeting transcript →
+          </Link>
         </div>
       </header>
 

@@ -38,6 +38,11 @@ color change: "i liked the previous color scheme." Kaizen's flat neutral monochr
 is intentional. Rule: polish this app via motion, type, spacing, and depth — never recolor
 surfaces or selection states without showing Eddie first.
 
+## 2026-08-18 — agent-browser wedges on huge textarea values
+**Context**: Browser-verifying meeting import by filling a 58k-char transcript into the textarea.
+**Mistake / surprise**: After the fill, `snapshot -i` and even small `eval`s hung the daemon ("Resource temporarily unavailable") — the accessibility tree serializes the full textarea value. Also `next dev` needs `--webpack` (repo has a webpack config; Turbopack default in Next 16 hard-errors).
+**Rule**: For UI passes over big-paste features, drive with a short representative paste (the full-size payload is API-testable via curl), do fills + clicks inside one small JS eval, and never `snapshot` while a huge value is in the DOM.
+
 ## 2026-07-30 — keyboard-nav: synthetic clicks clobber the highlight
 Shipped a "highlight advances after e/l/p" fix that looked right but didn't work: complete()
 programmatically clicks the row checkbox, and the global click-capture handler treated that

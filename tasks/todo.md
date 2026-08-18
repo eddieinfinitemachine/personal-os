@@ -1,3 +1,49 @@
+# Meeting Import — transcript → team-list todos (✅ built + verified 2026-08-18)
+
+Goal: paste a Granola meeting transcript → Claude extracts the concrete next
+steps → each one is routed to the right team member's `EC/*` delegation list
+(Obie's action items land on `EC/Obie`, etc.) → Eddie reviews/edits every row →
+commit creates the todos. Nothing is written without the explicit review step
+(per feedback_no_auto_todos / feedback_capture_inbox).
+
+Design (mirrors Bulk Add People parse→review→bulk shape):
+- `POST /api/meetings/parse` — `{ text }` → `{ meetingTitle, meetingDate,
+  items: [{ title, owner, notes, dueDate, listId, listName }] }`. No writes.
+  Server injects the user's `EC/*` list names (via `aliasTargetsFromLists`)
+  into the prompt so Claude picks an existing list; server validates the
+  returned listName against `listAccessWhere` lists and falls back to
+  alias-prefix matching on owner ("David" → EC/Dave), else null.
+- `POST /api/meetings/commit` — `{ meetingTitle?, meetingDate?, items }` →
+  validated per-row list access → `todo.createMany`. Rows with no/invalid list
+  go to To Do + Inbox project (capture triage convention); a "From meeting: …"
+  provenance line is appended to notes.
+- `/capture/meeting` page + `MeetingImport` client component (dense editable
+  rows: include ✓, title, list select, notes, optional due date). Entry link on
+  the Capture page. No schema changes; `callClaudeJSON` + DEFAULT_MODEL.
+
+## Tasks
+- [x] `src/app/api/meetings/parse/route.ts` (maxDuration 60, 200k char cap)
+- [x] `src/app/api/meetings/commit/route.ts` (≤100 items, list access checks)
+- [x] `src/components/meeting-import.tsx` (input → review → done phases)
+- [x] `src/app/capture/meeting/page.tsx` + link from `/capture`
+- [x] `tsc --noEmit` clean
+- [x] E2E on scratch Postgres (seed EC/Dave, EC/Obie, EC/Ash, EC/Ben; run the
+      real GTM Team Sync transcript through parse → commit; verify rows)
+
+## Review
+Verified against the real 58k-char GTM Team Sync transcript on a scratch
+Postgres (port 54329, torn down after): parse returned 15 items in ~24s, all
+correctly routed (EC/Obie ×8, EC/Dave ×4, EC/Ben ×2 incl. an end-of-day due
+date resolved to the meeting date, EC/Ash ×1); commit created all rows with
+context notes + a "From meeting: GTM Team Sync (Aug 17)" provenance line;
+unrouted items fall back to To Do + Inbox project (Smart Capture triage
+convention). Full browser pass (fill → Extract → review grid → Add → done
+panel) also verified. Model call is `callClaudeJSON` + DEFAULT_MODEL; owner→
+list fallback is alias common-prefix ≥ 3 ("David" → EC/Dave). No schema
+changes, no new deps. Uncommitted — review then push to deploy.
+
+---
+
 # Bulk Add People — Friends (in progress)
 
 Goal: paste freeform text ("Met Sarah Chen at the AI dinner in SF, PM at Stripe,
