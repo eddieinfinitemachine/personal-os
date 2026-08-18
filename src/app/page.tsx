@@ -147,7 +147,11 @@ export default async function HomePage() {
       list: {
         id: list.id,
         name: list.name,
-        color: list.color,
+        // Members see their personal tile color when they've set one;
+        // otherwise everyone sees the owner's color.
+        color:
+          (shared ? list.members.find((m) => m.userId === userId)?.color : null) ??
+          list.color,
         isDefault: list.isDefault,
         shared,
         ownerName: shared ? list.user.name ?? list.user.email : null,

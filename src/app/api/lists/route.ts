@@ -15,12 +15,14 @@ export async function GET(request: Request) {
     include: {
       // Hint for the UI: shared lists show a small chip + the owner's name.
       user: { select: { id: true, name: true, email: true } },
+      // The caller's own membership row, for their personal tile color.
+      members: { where: { userId }, select: { color: true } },
     },
   });
   const lists = rows.map((l) => ({
     id: l.id,
     name: l.name,
-    color: l.color,
+    color: (l.userId !== userId ? l.members[0]?.color : null) ?? l.color,
     position: l.position,
     isDefault: l.isDefault,
     createdAt: l.createdAt,

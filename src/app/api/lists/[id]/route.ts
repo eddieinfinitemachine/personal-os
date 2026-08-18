@@ -12,14 +12,29 @@ export async function PATCH(
 
   const { id } = await params;
   const existing = await prisma.list.findUnique({ where: { id } });
-  if (!existing || existing.userId !== userId) {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
-  }
+  if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
   const body = (await request.json()) as {
     name?: string;
     color?: string;
     position?: number;
   };
+
+  // A member (not the owner) can only personalize their own tile color —
+  // it's stored on their ListMember row so the owner's color is untouched.
+  if (existing.userId !== userId) {
+    const membership = await prisma.listMember.findUnique({
+      where: { listId_userId: { listId: id, userId } },
+    });
+    if (!membership) return NextResponse.json({ error: "not found" }, { status: 404 });
+    if (body.color === undefined || !isListColor(body.color)) {
+      return NextResponse.json({ error: "only color can be changed on a shared list" }, { status: 400 });
+    }
+    await prisma.listMember.update({
+      where: { id: membership.id },
+      data: { color: body.color },
+    });
+    return NextResponse.json({ list: { ...existing, color: body.color } });
+  }
 
   const updates: Record<string, unknown> = {};
   if (body.name !== undefined) {

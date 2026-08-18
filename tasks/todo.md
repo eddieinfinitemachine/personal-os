@@ -50,7 +50,14 @@ row ("Remove from my lists" in the tile ⋯ menu); owner delete/default guard
 unchanged. Verified on scratch PG: leave keeps the list + owner's todos,
 repeat leave 404s, owner delete still works; browser pass confirmed the menu
 item and tile removal. Known pre-existing wart: the color swatches shown on a
-shared tile don't save (PATCH is owner-only) — left as is. Model call is `callClaudeJSON` + DEFAULT_MODEL; owner→
+shared tile don't save (PATCH is owner-only) — left as is.
+Follow-up 3 (2026-08-18, Eddie approved the schema change): per-member tile
+colors — `ListMember.color String?` (additive, pushed to prod Neon
+ep-cold-mountain via db push before deploy). Member PATCH /api/lists/[id]
+now saves color to their membership row (name/position still 400 for
+members); home page + GET /api/lists render the member's color when set,
+falling back to the owner's List.color. Verified on scratch PG + browser:
+member picks violet, owner stays emerald, name hijack rejected. Model call is `callClaudeJSON` + DEFAULT_MODEL; owner→
 list fallback is alias common-prefix ≥ 3 ("David" → EC/Dave). No schema
 changes, no new deps. Uncommitted — review then push to deploy.
 

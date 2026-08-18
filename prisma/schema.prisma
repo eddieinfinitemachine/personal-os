@@ -94,6 +94,10 @@ model ListMember {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   role      String   @default("editor") // future: "viewer" | "admin"
+  // Member's personal tile color for this list. Null = inherit the owner's
+  // List.color. Lets a member recolor a shared tile without repainting it
+  // for everyone else.
+  color     String?
   createdAt DateTime @default(now())
 
   @@unique([listId, userId])
