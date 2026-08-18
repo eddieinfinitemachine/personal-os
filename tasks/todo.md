@@ -38,7 +38,11 @@ date resolved to the meeting date, EC/Ash ×1); commit created all rows with
 context notes + a "From meeting: GTM Team Sync (Aug 17)" provenance line;
 unrouted items fall back to To Do + Inbox project (Smart Capture triage
 convention). Full browser pass (fill → Extract → review grid → Add → done
-panel) also verified. Model call is `callClaudeJSON` + DEFAULT_MODEL; owner→
+panel) also verified. Follow-up 2026-08-18: processing interstitial while
+parsing (spinner + explanation + elapsed timer + Cancel via AbortController)
+that auto-opens the triage grid; triage subtitle added. Browser-verified:
+interstitial renders with live timer, auto-transitions to triage, Cancel
+returns to the paste screen with text preserved and no error. Model call is `callClaudeJSON` + DEFAULT_MODEL; owner→
 list fallback is alias common-prefix ≥ 3 ("David" → EC/Dave). No schema
 changes, no new deps. Uncommitted — review then push to deploy.
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Check, Loader2, Sparkles, Trash2 } from "lucide-react";
@@ -63,6 +63,18 @@ export function MeetingImport({
   const [meetingDate, setMeetingDate] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<DraftItem[]>([]);
   const [result, setResult] = useState<CommitResult | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const parseAbort = useRef<AbortController | null>(null);
+
+  // Elapsed-seconds ticker for the processing interstitial.
+  useEffect(() => {
+    if (!parsing) {
+      setElapsed(0);
+      return;
+    }
+    const t = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [parsing]);
 
   const includedCount = useMemo(
     () => drafts.filter((d) => d.include && d.title.trim()).length,
@@ -72,6 +84,8 @@ export function MeetingImport({
   async function parse() {
     const body = text.trim();
     if (!body) return;
+    const controller = new AbortController();
+    parseAbort.current = controller;
     setParsing(true);
     setError(null);
     try {
@@ -79,6 +93,7 @@ export function MeetingImport({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: body }),
+        signal: controller.signal,
       });
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string };
@@ -109,8 +124,12 @@ export function MeetingImport({
       haptic("success");
       setPhase("review");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Network error.");
+      // A user-initiated cancel just returns to the paste screen, no error.
+      if (!(e instanceof DOMException && e.name === "AbortError")) {
+        setError(e instanceof Error ? e.message : "Network error.");
+      }
     } finally {
+      parseAbort.current = null;
       setParsing(false);
     }
   }
@@ -212,6 +231,10 @@ export function MeetingImport({
             {includedCount} of {drafts.length} selected
           </span>
         </div>
+        <p className="-mt-1 text-xs text-[var(--color-muted-foreground)]">
+          Triage: pick the list each task goes to, edit or uncheck anything —
+          nothing is added until you confirm.
+        </p>
 
         <div className="grid gap-2">
           {drafts.map((d, i) => (
@@ -310,6 +333,29 @@ export function MeetingImport({
             </button>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (parsing) {
+    return (
+      <div className="grid place-items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] px-6 py-14 text-center">
+        <Loader2 className="size-6 animate-spin text-[var(--color-muted-foreground)]" />
+        <div className="text-sm font-semibold">Extracting next steps…</div>
+        <p className="max-w-sm text-sm text-[var(--color-muted-foreground)]">
+          Claude is reading the transcript and pulling out who committed to
+          what. Long meetings take 20–30 seconds — the triage screen opens
+          automatically when it&apos;s done.
+        </p>
+        <div className="text-xs tabular-nums text-[var(--color-muted-foreground)]">
+          {elapsed}s
+        </div>
+        <button
+          onClick={() => parseAbort.current?.abort()}
+          className="mt-1 rounded-md border border-[var(--color-border)] px-4 py-2 text-sm font-medium hover:bg-[var(--color-accent)] min-h-[40px]"
+        >
+          Cancel
+        </button>
       </div>
     );
   }
