@@ -42,7 +42,15 @@ panel) also verified. Follow-up 2026-08-18: processing interstitial while
 parsing (spinner + explanation + elapsed timer + Cancel via AbortController)
 that auto-opens the triage grid; triage subtitle added. Browser-verified:
 interstitial renders with live timer, auto-transitions to triage, Cancel
-returns to the paste screen with text preserved and no error. Model call is `callClaudeJSON` + DEFAULT_MODEL; owner→
+returns to the paste screen with text preserved and no error.
+Follow-up 2 (2026-08-18): "Import meeting" sidebar link under Calendar (the
+/capture link was the only entry and Eddie couldn't find it), and shared-list
+removal — DELETE /api/lists/[id] as a member now deletes only your ListMember
+row ("Remove from my lists" in the tile ⋯ menu); owner delete/default guard
+unchanged. Verified on scratch PG: leave keeps the list + owner's todos,
+repeat leave 404s, owner delete still works; browser pass confirmed the menu
+item and tile removal. Known pre-existing wart: the color swatches shown on a
+shared tile don't save (PATCH is owner-only) — left as is. Model call is `callClaudeJSON` + DEFAULT_MODEL; owner→
 list fallback is alias common-prefix ≥ 3 ("David" → EC/Dave). No schema
 changes, no new deps. Uncommitted — review then push to deploy.
 

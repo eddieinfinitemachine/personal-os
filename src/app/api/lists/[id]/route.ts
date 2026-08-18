@@ -43,7 +43,20 @@ export async function DELETE(
 
   const { id } = await params;
   const list = await prisma.list.findUnique({ where: { id } });
-  if (!list || list.userId !== userId) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!list) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  // A member (not the owner) deleting a shared list only leaves it: their
+  // ListMember row goes away, the list and its todos stay intact for the
+  // owner and any other members.
+  if (list.userId !== userId) {
+    const membership = await prisma.listMember.findUnique({
+      where: { listId_userId: { listId: id, userId } },
+    });
+    if (!membership) return NextResponse.json({ error: "not found" }, { status: 404 });
+    await prisma.listMember.delete({ where: { id: membership.id } });
+    return NextResponse.json({ ok: true, left: true });
+  }
+
   if (list.isDefault) {
     return NextResponse.json({ error: "default lists cannot be deleted" }, { status: 400 });
   }

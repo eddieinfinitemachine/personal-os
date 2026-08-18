@@ -813,7 +813,12 @@ export function ListTile({
   }
 
   async function deleteList() {
-    if (!confirm(`Delete list "${list.name}"? Its todos will be deleted too.`)) return;
+    // For a list shared WITH you, DELETE only removes your membership — the
+    // list and its todos stay intact for the owner.
+    const message = list.shared
+      ? `Remove "${list.name}" from your lists? It stays intact for ${list.ownerName ?? "the owner"}.`
+      : `Delete list "${list.name}"? Its todos will be deleted too.`;
+    if (!confirm(message)) return;
     const res = await fetch(`/api/lists/${list.id}`, { method: "DELETE" });
     if (res.ok) {
       setMenuOpen(false);
@@ -1073,13 +1078,14 @@ export function ListTile({
                     <Users className="size-3.5" /> Share…
                   </button>
                 ) : null}
-                {!list.isDefault && !list.shared ? (
+                {!list.isDefault ? (
                   <button
                     onClick={deleteList}
                     className="flex w-full items-center gap-2 border-t border-[var(--color-border)] px-3 py-2 text-left text-sm hover:bg-[var(--color-accent)]"
                     style={{ color: "rgb(244, 63, 94)" }}
                   >
-                    <Trash2 className="size-3.5" /> Delete list
+                    <Trash2 className="size-3.5" />
+                    {list.shared ? "Remove from my lists" : "Delete list"}
                   </button>
                 ) : null}
               </div>
