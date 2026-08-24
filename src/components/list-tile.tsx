@@ -5,7 +5,9 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Check, ChevronDown, ChevronRight, MoreHorizontal, Plus, Trash2, Users } from "lucide-react";
 import { LIST_PALETTE, palette } from "@/lib/lists";
 import { haptic } from "@/lib/haptic";
-import { cn } from "@/lib/utils";
+import { pushUndo, quoteTitle } from "@/lib/undo";
+import { pushTodoMoveUndo } from "@/lib/todo-undo";
+import { cn, toDateInputValue } from "@/lib/utils";
 import { TodoRow, type TodoLike } from "./todo-row";
 import { ListShareDialog } from "./list-share-dialog";
 import { AgendaLauncher } from "./agenda-mode";
@@ -219,6 +221,17 @@ export function ListTile({
       });
       if (res.ok) {
         startTransition(() => router.refresh());
+        pushTodoMoveUndo({
+          label: `Moved ${quoteTitle(payload.todo.title)}`,
+          todo: payload.todo,
+          from: {
+            listId: payload.sourceListId,
+            projectId: payload.sourceProjectId,
+            projectName: payload.todo.projectName ?? null,
+          },
+          to: { listId: list.id, projectId: groupProjectId },
+          refresh: () => startTransition(() => router.refresh()),
+        });
       } else if (!sameTile) {
         setPendingTodos((prev) =>
           prev.filter((t) => t.id !== payload.todoId)
@@ -531,6 +544,33 @@ export function ListTile({
     startTransition(() => router.refresh());
   }
 
+  // Undo support: put a row back on screen (cancel any pending completion
+  // collapse, un-hide it) and re-apply the field values it had before. The
+  // optimistic layer is what the eye sees, so an undo has to unwind it here
+  // as well as on the server.
+  function restoreRow(id: string, fields: Partial<TodoLike> = {}) {
+    clearHideTimers(id);
+    setLeavingIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    setHiddenIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    if (Object.keys(fields).length > 0) {
+      setTodoOverrides((prev) => {
+        const map = new Map(prev);
+        map.set(id, { ...prev.get(id), ...fields });
+        return map;
+      });
+    }
+  }
+
   function toggleComplete(id: string) {
     const current = visibleTodos.find((t) => t.id === id);
     if (!current) return;
@@ -620,6 +660,21 @@ export function ListTile({
           rollback();
           return;
         }
+        const was = current.completedAt ? new Date(current.completedAt).toISOString() : null;
+        pushUndo({
+          label: `${completing ? "Completed" : "Reopened"} ${quoteTitle(current.title)}`,
+          run: async () => {
+            restoreRow(id, { completedAt: was ? new Date(was) : null });
+            // Explicit value, not toggleComplete — an undo must be exact even
+            // if something else flipped the row in the meantime.
+            await fetch(`/api/todos/${id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ completedAt: was }),
+            });
+            startTransition(() => router.refresh());
+          },
+        });
         if (completing) {
           // Hold the refresh until the leave animation has played, so the
           // server-rendered list doesn't unmount the row mid-collapse.
@@ -638,18 +693,19 @@ export function ListTile({
     // Look up current completed state from server data + any in-flight
     // override so a rapid double-toggle still flips.
     let currentCompletedAt: Date | string | null = null;
+    let subtaskTitle = "";
     const existingOv = subtaskOverrides.get(subtaskId);
-    if (existingOv && "completedAt" in existingOv) {
-      currentCompletedAt = existingOv.completedAt ?? null;
-    } else {
-      outer: for (const t of todos) {
-        for (const s of t.subtasks ?? []) {
-          if (s.id === subtaskId) {
-            currentCompletedAt = s.completedAt ?? null;
-            break outer;
-          }
+    outer: for (const t of todos) {
+      for (const s of t.subtasks ?? []) {
+        if (s.id === subtaskId) {
+          subtaskTitle = s.title;
+          currentCompletedAt = s.completedAt ?? null;
+          break outer;
         }
       }
+    }
+    if (existingOv && "completedAt" in existingOv) {
+      currentCompletedAt = existingOv.completedAt ?? null;
     }
     const nextCompletedAt: Date | null = currentCompletedAt ? null : new Date();
     setSubtaskOverrides((prev) => {
@@ -663,8 +719,33 @@ export function ListTile({
       body: JSON.stringify({ toggleComplete: true }),
     })
       .then((res) => {
-        if (res.ok) startTransition(() => router.refresh());
-        else rollbackSubtaskToggle(subtaskId);
+        if (!res.ok) {
+          rollbackSubtaskToggle(subtaskId);
+          return;
+        }
+        startTransition(() => router.refresh());
+        const was = currentCompletedAt
+          ? new Date(currentCompletedAt).toISOString()
+          : null;
+        pushUndo({
+          label: `${was ? "Reopened" : "Completed"} ${quoteTitle(subtaskTitle || "subtask")}`,
+          run: async () => {
+            setSubtaskOverrides((prev) => {
+              const next = new Map(prev);
+              next.set(subtaskId, {
+                ...prev.get(subtaskId),
+                completedAt: was ? new Date(was) : null,
+              });
+              return next;
+            });
+            await fetch(`/api/todos/${subtaskId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ completedAt: was }),
+            });
+            startTransition(() => router.refresh());
+          },
+        });
       })
       .catch(() => rollbackSubtaskToggle(subtaskId));
   }
@@ -672,6 +753,8 @@ export function ListTile({
   function saveDueDate(id: string, value: string | null) {
     // Optimistic override on the todo. value is a YYYY-MM-DD string from the
     // input element; Date conversion happens here so the UI can format it.
+    const current = visibleTodos.find((t) => t.id === id);
+    const prevValue = toDateInputValue(current?.dueDate) || null;
     const nextDate: Date | null = value ? new Date(value) : null;
     setTodoOverrides((prev) => {
       const map = new Map(prev);
@@ -694,14 +777,33 @@ export function ListTile({
       body: JSON.stringify({ dueDate: value }),
     })
       .then((res) => {
-        if (res.ok) startTransition(() => router.refresh());
-        else rollback();
+        if (!res.ok) {
+          rollback();
+          return;
+        }
+        startTransition(() => router.refresh());
+        if (prevValue === value || !current) return;
+        pushUndo({
+          label: `${value ? "Scheduled" : "Cleared the date on"} ${quoteTitle(current.title)}`,
+          run: async () => {
+            restoreRow(id, { dueDate: prevValue ? new Date(prevValue) : null });
+            await fetch(`/api/todos/${id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ dueDate: prevValue }),
+            });
+            startTransition(() => router.refresh());
+          },
+        });
       })
       .catch(rollback);
   }
 
   function deleteTodo(id: string) {
     lastActionWasCompleteRef.current = false;
+    // Snapshot before it goes — /api/todos/restore replays this exact row
+    // (same id, same subtasks) when the delete is undone.
+    const snapshot = visibleTodos.find((t) => t.id === id);
     setHiddenIds((prev) => {
       const next = new Set(prev);
       next.add(id);
@@ -709,8 +811,25 @@ export function ListTile({
     });
     fetch(`/api/todos/${id}`, { method: "DELETE" })
       .then((res) => {
-        if (res.ok) startTransition(() => router.refresh());
-        else
+        if (res.ok) {
+          startTransition(() => router.refresh());
+          if (snapshot) {
+            pushUndo({
+              label: `Deleted ${quoteTitle(snapshot.title)}`,
+              run: async () => {
+                restoreRow(id);
+                await fetch("/api/todos/restore", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    todo: { ...snapshot, listId: list.id, projectId: snapshot.projectId ?? projectId ?? null },
+                  }),
+                });
+                startTransition(() => router.refresh());
+              },
+            });
+          }
+        } else
           setHiddenIds((prev) => {
             if (!prev.has(id)) return prev;
             const next = new Set(prev);
@@ -933,6 +1052,17 @@ export function ListTile({
       });
       if (res.ok) {
         startTransition(() => router.refresh());
+        pushTodoMoveUndo({
+          label: `Moved ${quoteTitle(payload.todo.title)} to ${list.name}`,
+          todo: payload.todo,
+          from: {
+            listId: payload.sourceListId,
+            projectId: payload.sourceProjectId,
+            projectName: payload.todo.projectName ?? null,
+          },
+          to: { listId: list.id, projectId: targetProjectId },
+          refresh: () => startTransition(() => router.refresh()),
+        });
       } else {
         setPendingTodos((prev) => prev.filter((t) => t.id !== payload.todoId));
         window.dispatchEvent(

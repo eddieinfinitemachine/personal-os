@@ -20,6 +20,8 @@ import {
 import { palette } from "@/lib/lists";
 import { cn, formatCalendarDate, toDateInputValue, isCalendarDateOverdue } from "@/lib/utils";
 import { linkify } from "@/lib/linkify";
+import { pushUndo, quoteTitle } from "@/lib/undo";
+import { pushTodoMoveUndo } from "@/lib/todo-undo";
 import { getLists, getProjects } from "@/lib/todo-menu-cache";
 import { TodoDetailModal } from "./todo-detail-modal";
 import {
@@ -132,7 +134,8 @@ function TodoRowImpl({
 
   async function save() {
     const next = draft.trim();
-    if (!next || next === (optimisticTitle ?? todo.title)) {
+    const prev = optimisticTitle ?? todo.title;
+    if (!next || next === prev) {
       setEditing(false);
       setDraft(optimisticTitle ?? todo.title);
       return;
@@ -148,6 +151,20 @@ function TodoRowImpl({
       if (!res.ok) {
         setOptimisticTitle(null);
         setDraft(todo.title);
+      } else {
+        pushUndo({
+          label: `Renamed ${quoteTitle(prev)}`,
+          run: async () => {
+            setOptimisticTitle(prev);
+            setDraft(prev);
+            await fetch(`/api/todos/${todo.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ title: prev }),
+            });
+            startTransition(() => router.refresh());
+          },
+        });
       }
       // Skip router.refresh — the optimistic title is durable until the next
       // natural refresh (navigation, parent mutation, etc.).
@@ -168,12 +185,25 @@ function TodoRowImpl({
       onSaveDueDate(todo.id, value);
       return;
     }
+    const prevValue = toDateInputValue(todo.dueDate) || null;
     await fetch(`/api/todos/${todo.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ dueDate: value }),
     });
     startTransition(() => router.refresh());
+    if (prevValue === value) return;
+    pushUndo({
+      label: `${value ? "Scheduled" : "Cleared the date on"} ${quoteTitle(displayTitle)}`,
+      run: async () => {
+        await fetch(`/api/todos/${todo.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dueDate: prevValue }),
+        });
+        startTransition(() => router.refresh());
+      },
+    });
   }
 
   useEffect(() => {
@@ -232,8 +262,24 @@ function TodoRowImpl({
       onDelete(todo.id);
       return;
     }
-    await fetch(`/api/todos/${todo.id}`, { method: "DELETE" });
+    const res = await fetch(`/api/todos/${todo.id}`, { method: "DELETE" });
     router.refresh();
+    // Without a known source list there's nowhere to put the row back, so
+    // no undo is offered rather than a broken one.
+    if (!res.ok || !sourceListId) return;
+    pushUndo({
+      label: `Deleted ${quoteTitle(displayTitle)}`,
+      run: async () => {
+        await fetch("/api/todos/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            todo: { ...todo, listId: sourceListId, projectId: todo.projectId ?? sourceProjectId },
+          }),
+        });
+        router.refresh();
+      },
+    });
   }
   async function moveToList(listId: string) {
     // Optimistic: source tile hides this todo via the event; the destination
@@ -260,7 +306,22 @@ function TodoRowImpl({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ listId }),
     }).then((res) => {
-      if (res.ok) startTransition(() => router.refresh());
+      if (!res.ok) return;
+      startTransition(() => router.refresh());
+      if (!sourceListId) return;
+      pushTodoMoveUndo({
+        label: `Moved ${quoteTitle(displayTitle)} to ${
+          availableLists.find((l) => l.id === listId)?.name ?? "another list"
+        }`,
+        todo,
+        from: {
+          listId: sourceListId,
+          projectId: sourceProjectId,
+          projectName: todo.projectName ?? null,
+        },
+        to: { listId, projectId: sourceProjectId },
+        refresh: () => startTransition(() => router.refresh()),
+      });
     });
   }
 
@@ -368,7 +429,24 @@ function TodoRowImpl({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId }),
     }).then((res) => {
-      if (res.ok) startTransition(() => router.refresh());
+      if (!res.ok) return;
+      startTransition(() => router.refresh());
+      if (!sourceListId) return;
+      pushTodoMoveUndo({
+        label: projectId
+          ? `Filed ${quoteTitle(displayTitle)} under ${
+              availableProjects.find((p) => p.id === projectId)?.name ?? "a project"
+            }`
+          : `Unfiled ${quoteTitle(displayTitle)}`,
+        todo,
+        from: {
+          listId: sourceListId,
+          projectId: sourceProjectId,
+          projectName: todo.projectName ?? null,
+        },
+        to: { listId: sourceListId, projectId },
+        refresh: () => startTransition(() => router.refresh()),
+      });
     });
   }
   const menu: AnyMenuEntry[] = [
@@ -553,7 +631,22 @@ function TodoRowImpl({
           projectId: targetProjectId,
         }),
       });
-      if (res.ok) router.refresh();
+      if (res.ok) {
+        router.refresh();
+        if (sourceListId) {
+          pushTodoMoveUndo({
+            label: `Moved ${quoteTitle(displayTitle)}`,
+            todo,
+            from: {
+              listId: sourceListId,
+              projectId: sourceProjectId ?? null,
+              projectName: todo.projectName ?? null,
+            },
+            to: { listId: targetListId, projectId: targetProjectId },
+            refresh: () => router.refresh(),
+          });
+        }
+      }
     } catch {}
   }
 

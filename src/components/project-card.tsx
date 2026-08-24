@@ -5,7 +5,9 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { palette } from "@/lib/lists";
-import { cn } from "@/lib/utils";
+import { cn, toDateInputValue } from "@/lib/utils";
+import { pushUndo, quoteTitle } from "@/lib/undo";
+import { pushTodoMoveUndo } from "@/lib/todo-undo";
 import { TodoRow, type TodoLike } from "./todo-row";
 
 type ListInfo = { id: string; name: string; color: string };
@@ -205,6 +207,25 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
     });
   }, [allServerIds, serverIdsByList]);
 
+  // Server-side row for an id, wherever it sits in this card's columns.
+  // Undo entries snapshot from here rather than from the optimistic layer.
+  function findTodo(id: string): { todo: TodoLike; listId: string } | null {
+    for (const g of data.byList) {
+      for (const t of g.todos) if (t.id === id) return { todo: t, listId: g.list.id };
+    }
+    return null;
+  }
+
+  // Undo support: un-hide a row this card optimistically removed.
+  function unhide(id: string) {
+    setHidden((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
+
   function toggleComplete(id: string) {
     const isDone = overrides.has(id) ? overrides.get(id) != null : false;
     const completing = !isDone;
@@ -246,27 +267,52 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
       body: JSON.stringify({ toggleComplete: true }),
     })
       .then((res) => {
-        if (res.ok) startTransition(() => router.refresh());
-        else rollback();
+        if (!res.ok) {
+          rollback();
+          return;
+        }
+        startTransition(() => router.refresh());
+        const found = findTodo(id);
+        const was = found?.todo.completedAt
+          ? new Date(found.todo.completedAt).toISOString()
+          : null;
+        pushUndo({
+          label: `${completing ? "Completed" : "Reopened"} ${quoteTitle(found?.todo.title ?? "task")}`,
+          run: async () => {
+            unhide(id);
+            setOverrides((prev) => {
+              const m = new Map(prev);
+              m.set(id, was ? new Date(was) : null);
+              return m;
+            });
+            await fetch(`/api/todos/${id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ completedAt: was }),
+            });
+            startTransition(() => router.refresh());
+          },
+        });
       })
       .catch(rollback);
   }
 
   function toggleSubtask(subtaskId: string) {
     let currentCompletedAt: Date | string | null = null;
-    if (subtaskOverrides.has(subtaskId)) {
-      currentCompletedAt = subtaskOverrides.get(subtaskId) ?? null;
-    } else {
-      outer: for (const g of data.byList) {
-        for (const t of g.todos) {
-          for (const s of t.subtasks ?? []) {
-            if (s.id === subtaskId) {
-              currentCompletedAt = s.completedAt ?? null;
-              break outer;
-            }
+    let subtaskTitle = "";
+    outer: for (const g of data.byList) {
+      for (const t of g.todos) {
+        for (const s of t.subtasks ?? []) {
+          if (s.id === subtaskId) {
+            subtaskTitle = s.title;
+            currentCompletedAt = s.completedAt ?? null;
+            break outer;
           }
         }
       }
+    }
+    if (subtaskOverrides.has(subtaskId)) {
+      currentCompletedAt = subtaskOverrides.get(subtaskId) ?? null;
     }
     const next: Date | null = currentCompletedAt ? null : new Date();
     setSubtaskOverrides((prev) => {
@@ -280,13 +326,34 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
       body: JSON.stringify({ toggleComplete: true }),
     })
       .then((res) => {
-        if (res.ok) startTransition(() => router.refresh());
-        else
+        if (!res.ok) {
           setSubtaskOverrides((prev) => {
             const m = new Map(prev);
             m.delete(subtaskId);
             return m;
           });
+          return;
+        }
+        startTransition(() => router.refresh());
+        const was = currentCompletedAt
+          ? new Date(currentCompletedAt).toISOString()
+          : null;
+        pushUndo({
+          label: `${was ? "Reopened" : "Completed"} ${quoteTitle(subtaskTitle || "subtask")}`,
+          run: async () => {
+            setSubtaskOverrides((prev) => {
+              const m = new Map(prev);
+              m.set(subtaskId, was ? new Date(was) : null);
+              return m;
+            });
+            await fetch(`/api/todos/${subtaskId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ completedAt: was }),
+            });
+            startTransition(() => router.refresh());
+          },
+        });
       })
       .catch(() =>
         setSubtaskOverrides((prev) => {
@@ -297,6 +364,8 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
       );
   }
   function saveDueDate(id: string, value: string | null) {
+    const found = findTodo(id);
+    const prevValue = toDateInputValue(found?.todo.dueDate) || null;
     const nextDate: Date | null = value ? new Date(value) : null;
     setDueDateOverrides((prev) => {
       const m = new Map(prev);
@@ -309,14 +378,33 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
       body: JSON.stringify({ dueDate: value }),
     })
       .then((res) => {
-        if (res.ok) startTransition(() => router.refresh());
-        else
+        if (!res.ok) {
           setDueDateOverrides((prev) => {
             if (!prev.has(id)) return prev;
             const m = new Map(prev);
             m.delete(id);
             return m;
           });
+          return;
+        }
+        startTransition(() => router.refresh());
+        if (prevValue === value || !found) return;
+        pushUndo({
+          label: `${value ? "Scheduled" : "Cleared the date on"} ${quoteTitle(found.todo.title)}`,
+          run: async () => {
+            setDueDateOverrides((prev) => {
+              const m = new Map(prev);
+              m.set(id, prevValue ? new Date(prevValue) : null);
+              return m;
+            });
+            await fetch(`/api/todos/${id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ dueDate: prevValue }),
+            });
+            startTransition(() => router.refresh());
+          },
+        });
       })
       .catch(() =>
         setDueDateOverrides((prev) => {
@@ -329,6 +417,8 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
   }
 
   function deleteTodo(id: string) {
+    // Snapshot before it goes — see /api/todos/restore.
+    const found = findTodo(id);
     setHidden((prev) => {
       if (prev.has(id)) return prev;
       const next = new Set(prev);
@@ -337,8 +427,29 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
     });
     fetch(`/api/todos/${id}`, { method: "DELETE" })
       .then((res) => {
-        if (res.ok) startTransition(() => router.refresh());
-        else
+        if (res.ok) {
+          startTransition(() => router.refresh());
+          if (found) {
+            pushUndo({
+              label: `Deleted ${quoteTitle(found.todo.title)}`,
+              run: async () => {
+                unhide(id);
+                await fetch("/api/todos/restore", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    todo: {
+                      ...found.todo,
+                      listId: found.listId,
+                      projectId: found.todo.projectId ?? data.project.id,
+                    },
+                  }),
+                });
+                startTransition(() => router.refresh());
+              },
+            });
+          }
+        } else
           setHidden((prev) => {
             if (!prev.has(id)) return prev;
             const next = new Set(prev);
@@ -486,6 +597,17 @@ export function ProjectCard({ data }: { data: ProjectCardData }) {
       });
       if (res.ok) {
         startTransition(() => router.refresh());
+        pushTodoMoveUndo({
+          label: `Moved ${quoteTitle(payload.todo.title)} into ${data.project.name}`,
+          todo: payload.todo,
+          from: {
+            listId: payload.sourceListId,
+            projectId: payload.sourceProjectId,
+            projectName: payload.todo.projectName ?? null,
+          },
+          to: { listId, projectId: data.project.id },
+          refresh: () => startTransition(() => router.refresh()),
+        });
       } else {
         // Roll back optimistic insert.
         setPendingByList((prev) => {
