@@ -517,3 +517,29 @@ all CSS (custom easing tokens, keyframes, @starting-style). Plan: ~/.claude/plan
 - [ ] BLOCKED on teammate email: add Vercel env
   CAPTURE_TOKENS={"<token>":"<email>"} (token in scratchpad), redeploy,
   then send the zip.
+
+## ⌘Z undo (2026-08-24)
+- [x] `src/lib/undo.ts` — module-singleton undo stack (depth 25, entries go
+  stale after 15 min). Not a context: every todo row/tile only writes to it,
+  so a context would re-render the whole board on each push.
+- [x] `src/components/undo-host.tsx` — mounted in layout. ⌘Z / ⌃Z runs the
+  newest entry; bottom pill shows "<action> · Undo ⌘Z" for 5s (the Undo
+  button is the phone path, which has no ⌘Z) and "Undone · …" after. ⌘Z
+  inside an input/textarea/contentEditable is left to the field's native undo.
+- [x] `POST /api/todos/restore` — undo for deletes. Re-creates the row with
+  its ORIGINAL id plus its subtasks; no shared-list email (unlike POST
+  /api/todos). Attachments/comments are gone with the cascade; the task isn't.
+- [x] Registered inverses: complete/reopen (tile + project card + subtasks),
+  delete, move between lists, file/unfile project, due date, rename.
+  Each entry's `run` also unwinds that component's optimistic state — a row
+  restored on the server but still in `hiddenIds` would come back invisible.
+- [x] keyboard-nav's `u` now runs the same stack (its bespoke one-slot
+  LastAction ref is gone), so ⌘Z and `u` agree.
+- Verified on scratch Postgres + browser (localhost:3717, seeded): complete →
+  ⌘Z (list tile AND project card), delete → ⌘Z restores row + subtask with
+  original ids, cross-list move → ⌘Z returns it to the source tile visibly,
+  rename → ⌘Z, `u` key, pill Undo button, ⌘Z inside the New Reminder input
+  leaves the stack alone, "Nothing to undo" on an empty stack. DB state
+  confirmed by psql after each. No console errors. Build + tsc clean.
+- Not covered (deliberate): list/project deletion (confirm-gated), attachment
+  and comment deletes (blob/cascade, not restorable), capture commits, reader.

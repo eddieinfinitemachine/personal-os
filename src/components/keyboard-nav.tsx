@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { haptic } from "@/lib/haptic";
+import { pushUndo, quoteTitle, requestUndo } from "@/lib/undo";
 import { FuzzyPicker } from "./fuzzy-picker";
 
 // Email-style keyboard navigation over the todo rows on the page:
@@ -10,16 +11,12 @@ import { FuzzyPicker } from "./fuzzy-picker";
 //   l      — file the highlighted todo to a list (fuzzy picker; "ben" ⏎ → EC/Ben)
 //   p      — file to a project
 //   e      — complete
-//   u      — undo the last action
+//   u      — undo the last action (same stack as ⌘Z; see lib/undo.ts)
 //   Esc    — clear the highlight
 // Rows are discovered from the DOM ([data-kbd-todo]) so this works across
 // tiles and project cards without threading state through them.
 
 type Option = { id: string; label: string };
-type LastAction =
-  | { kind: "complete"; todoId: string }
-  | { kind: "list"; todoId: string; prevListId: string }
-  | { kind: "project"; todoId: string; prevProjectId: string | null };
 
 export function KeyboardListNav() {
   const router = useRouter();
@@ -27,7 +24,6 @@ export function KeyboardListNav() {
   const [lists, setLists] = useState<Option[] | null>(null);
   const [projects, setProjects] = useState<Option[] | null>(null);
   const activeIdRef = useRef<string | null>(null);
-  const lastActionRef = useRef<LastAction | null>(null);
   const busyRef = useRef(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const anchorRef = useRef<string | null>(null);
@@ -287,7 +283,7 @@ export function KeyboardListNav() {
   }, [lists, projects]);
 
   const patch = useCallback(
-    async (todoId: string, body: Record<string, unknown>, undo: LastAction | null) => {
+    async (todoId: string, body: Record<string, unknown>) => {
       if (busyRef.current) return;
       busyRef.current = true;
       try {
@@ -297,7 +293,6 @@ export function KeyboardListNav() {
           body: JSON.stringify(body),
         });
         if (res.ok) {
-          if (undo) lastActionRef.current = undo;
           haptic("tick");
           // Move the highlight before this row disappears from the view.
           advanceFrom(todoId);
@@ -324,29 +319,20 @@ export function KeyboardListNav() {
       'button[title="Mark complete"]'
     );
     if (checkbox) {
-      lastActionRef.current = { kind: "complete", todoId: id };
+      // The tile owns this path (choreography + its own undo registration).
       advanceFrom(id);
       checkbox.click();
       haptic("tick");
     } else {
-      patch(id, { completedAt: new Date().toISOString() }, { kind: "complete", todoId: id });
+      const title = row?.dataset.kbdTitle ?? "task";
+      void patch(id, { completedAt: new Date().toISOString() }).then(() => {
+        pushUndo({
+          label: `Completed ${quoteTitle(title)}`,
+          run: () => patch(id, { completedAt: null }),
+        });
+      });
     }
   }, [patch, advanceFrom]);
-
-  const undo = useCallback(() => {
-    const a = lastActionRef.current;
-    if (!a) return;
-    lastActionRef.current = null;
-    if (a.kind === "complete") patch(a.todoId, { completedAt: null }, null);
-    else if (a.kind === "list") {
-      window.dispatchEvent(
-        new CustomEvent("personalos:kbd-move", {
-          detail: { todoId: a.todoId, kind: "list", targetId: a.prevListId },
-        })
-      );
-      haptic("tick");
-    } else patch(a.todoId, { projectId: a.prevProjectId }, null);
-  }, [patch]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -444,7 +430,7 @@ export function KeyboardListNav() {
           complete();
           break;
         case "u":
-          undo();
+          requestUndo();
           break;
         case "Escape":
           if (selectedRef.current.size > 0) clearSelection();
@@ -464,7 +450,7 @@ export function KeyboardListNav() {
     // can stop propagation (inputs/overlays are still respected above).
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [picker, move, complete, undo, ensureOptions, setActive, toggleSelected, clearSelection, copySelection, applySelection]);
+  }, [picker, move, complete, ensureOptions, setActive, toggleSelected, clearSelection, copySelection, applySelection]);
 
   const pill =
     copied != null ? (
@@ -489,14 +475,8 @@ export function KeyboardListNav() {
           const todoId = activeIdRef.current;
           setPicker(null);
           if (!todoId) return;
-          const row = [
-            ...document.querySelectorAll<HTMLElement>(
-              `[data-kbd-todo="${todoId}"]`
-            ),
-          ].find((el) => el.getClientRects().length > 0);
-          const prevListId = row?.dataset.kbdList ?? "";
           // Ride the row's own optimistic move (instant, same as drag) —
-          // the row PATCHes the server itself.
+          // the row PATCHes the server itself, and registers the undo.
           advanceFrom(todoId);
           window.dispatchEvent(
             new CustomEvent("personalos:kbd-move", {
@@ -507,9 +487,6 @@ export function KeyboardListNav() {
               },
             })
           );
-          if (picker === "list" && prevListId) {
-            lastActionRef.current = { kind: "list", todoId, prevListId };
-          }
           haptic("tick");
         }}
         onClose={() => setPicker(null)}

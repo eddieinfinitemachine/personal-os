@@ -6,6 +6,7 @@ import { MobileChromeProvider } from "@/components/mobile-chrome";
 import { VersionWatcher } from "@/components/version-watcher";
 import { CaptureInbox } from "@/components/capture-inbox";
 import { LayoutOverlays } from "@/components/layout-overlays";
+import { UndoHost } from "@/components/undo-host";
 import { SyncPollMount } from "@/components/sync-poll-mount";
 import { themePreloadScript } from "@/components/theme-toggle";
 import { ServiceWorkerRegister } from "@/components/sw-register";
@@ -145,6 +146,7 @@ export default async function RootLayout({
         <SyncPollMount />
         <CaptureProvider>
           <CaptureInbox />
+          <UndoHost />
           <LayoutOverlays />
           <MobileChromeProvider projects={mobileProjects} lists={mobileLists} appName={appName} isPrivate={isPrivate}>
             <div className="flex min-h-screen">
