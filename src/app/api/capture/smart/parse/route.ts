@@ -26,6 +26,9 @@ export async function POST(request: Request) {
   const form = await request.formData();
   const text = form.get("text");
   const photo = form.get("photo");
+  const forceTypeRaw = form.get("forceType");
+  const forceType =
+    forceTypeRaw === "trip" ? ("trip" as const) : undefined;
 
   if (typeof text !== "string" || text.trim().length === 0) {
     return NextResponse.json({ error: "text required" }, { status: 400 });
@@ -83,7 +86,7 @@ export async function POST(request: Request) {
   // like "@shane follow up on container email" is a todo for the EC/Shane
   // list, verbatim minus the token. No Claude call, no reclassification risk.
   const aliasHit = parseAliasToken(text.trim());
-  if (aliasHit && !photoForClaude) {
+  if (aliasHit && !photoForClaude && !forceType) {
     const list = await prisma.list.findFirst({
       where: {
         userId,
@@ -119,6 +122,7 @@ export async function POST(request: Request) {
     proposal = await parseCapture({
       text: text.trim(),
       photo: photoForClaude,
+      forceType,
       today,
       activeProjects,
     });

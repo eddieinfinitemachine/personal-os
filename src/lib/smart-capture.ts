@@ -120,6 +120,7 @@ interface ParseInput {
   photo?: CapturePhoto;
   today: string; // YYYY-MM-DD — passed in so Claude can resolve "Friday", "yesterday"
   activeProjects: ActiveProject[];
+  forceType?: "trip";
 }
 
 const SYSTEM_PROMPT = `You classify a user's quick "capture" into one of FIVE structured record types and extract the fields needed to file it. The user may have attached a photo (an object, a receipt, a business card, a screenshot) and a short typed description.
@@ -266,6 +267,12 @@ export async function parseCapture(input: ParseInput): Promise<CaptureProposal> 
     "",
     "CAPTURE TEXT:",
     input.text || "(no text provided)",
+    ...(input.forceType === "trip"
+      ? [
+          "",
+          'REQUIRED TYPE: trip — the user is filling in a "New trip" form. Classify this capture as "trip" regardless of other signals and extract the trip fields.',
+        ]
+      : []),
   ].join("\n");
 
   const userContent: Array<

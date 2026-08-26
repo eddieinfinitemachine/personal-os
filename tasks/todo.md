@@ -1,3 +1,31 @@
+# Trips — NL trip entry on /trips (✅ built + verified 2026-08-26)
+
+Goal: describe a trip in natural language from the /trips page ("Tokyo Jan 5–12
+with Maya, Park Hyatt booked") → parsed fields prefill the New-trip modal →
+review → Create. Reuses smart-capture's parseCapture + /api/capture/smart/parse.
+Plan: ~/.claude/plans/wiggly-singing-sketch.md
+
+## Tasks
+- [x] `src/lib/smart-capture.ts` — `ParseInput.forceType?: "trip"` + REQUIRED TYPE directive line
+- [x] `src/app/api/capture/smart/parse/route.ts` — accept `forceType=trip`, skip @alias routing when set
+- [x] `src/components/add-trip-button.tsx` — "Describe it…" input + Fill button prefills draft (non-null merge)
+- [x] `npm run typecheck` clean; diff reviewed (only these 3 files)
+- [x] E2E on scratch Postgres (port 54331, torn down): parse API + full browser flow
+
+## Review
+Implementation dispatched to Sol (cursor), reviewed line-by-line — matches spec.
+E2E on scratch PG + real API key: "Tokyo Jan 5–12 with Maya, staying at Park
+Hyatt, $4k budget, flights booked" → trip w/ 2027 dates (correct forward
+resolution), status=booked, travelers=[Maya], costUsd=4000. Force test: "Aspen
+with the kids over Thanksgiving" (would classify as interaction) → trip with
+approximated Thanksgiving dates, so REQUIRED TYPE directive holds. Browser
+pass (agent-browser, magic-link login): Fill disabled when empty → typed
+"Lisbon with Piol first week of October, flying TAP, Airbnb in Alfama, ~$3k"
+→ all 9 fields prefilled → Create → row verified in psql exactly as parsed.
+No new deps, no schema changes. Uncommitted — review then push to deploy.
+
+---
+
 # Trips — AI Packing Lists (✅ built + shipped 2026-08-26)
 
 Goal: on a trip, describe what you're doing → AI recommends a packing checklist
