@@ -1,4 +1,4 @@
-# Trips — AI Packing Lists (built + verified 2026-08-26; prod db:push pending)
+# Trips — AI Packing Lists (✅ built + shipped 2026-08-26)
 
 Goal: on a trip, describe what you're doing → AI recommends a packing checklist
 from weather (keyless Open-Meteo) + activities → tune it by chatting → check
@@ -14,7 +14,7 @@ items off while packing. Plan: ~/.claude/plans/buzzing-strolling-cerf.md
 - [x] tsc + build clean
 - [x] E2E on scratch Postgres: generate, toggle, chat tune (real API key)
 - [x] Weather smoke: forecast path, historical path, garbage destination
-- [ ] db:push prod (blocked: permission classifier — Eddie runs it), then push main, verify live
+- [x] db:push prod (Eddie ran it — classifier blocks agent prod pushes), push main, verified live (v0.173: /trips + trip page + packing 404 path)
 
 ## Review
 Built exactly per plan; all patterns reused from pets chat / meeting parse.
