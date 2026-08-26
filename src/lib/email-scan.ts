@@ -48,8 +48,17 @@ export type ScanProposal = {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const Q2_KEYWORDS =
-  'subject:(confirmation OR confirmed OR reservation OR itinerary OR "e-ticket" OR "boarding pass" OR booking OR receipt) OR from:(airbnb.com OR booking.com OR expedia.com OR vrbo.com OR hotels.com OR marriott.com OR hyatt.com OR hilton.com OR opentable.com OR resy.com OR sevenrooms.com OR amtrak.com OR trainline.com OR raileurope.com OR viator.com OR getyourguide.com OR delta.com OR united.com OR aa.com OR jetblue.com OR alaskaair.com OR southwest.com OR britishairways.com OR lufthansa.com OR swiss.com OR airfrance.com OR emirates.com)';
+// Travel senders. High precision: a hit here is nearly always a real booking.
+// Bare domains also match subdomains (comms.trainline.com, e.eurostar.com).
+const TRAVEL_SENDERS =
+  "airbnb.com OR booking.com OR expedia.com OR vrbo.com OR hotels.com OR marriott.com OR hyatt.com OR hilton.com OR ihg.com OR accor.com OR opentable.com OR resy.com OR sevenrooms.com OR exploretock.com OR reserve-noreply@google.com OR amtrak.com OR trainline.com OR eurostar.com OR raileurope.com OR sbb.ch OR trenitalia.com OR renfe.com OR viator.com OR getyourguide.com OR tripadvisor.com OR delta.com OR united.com OR aa.com OR jetblue.com OR alaskaair.com OR southwest.com OR britishairways.com OR lufthansa.com OR swiss.com OR airfrance.com OR klm.com OR emirates.com OR flysas.com OR iberia.com OR aircanada.com OR ryanair.com OR easyjet.com OR hertz.com OR avis.com OR enterprise.com OR sixt.com";
+
+// Travel-specific subject phrases. Deliberately NOT bare "confirmation" /
+// "receipt" / "booking" — in a work mailbox those match every SaaS invoice,
+// payment notice and internal customer email, which then crowd real bookings
+// out of the newest-first result window.
+const TRAVEL_SUBJECTS =
+  'subject:("e-ticket" OR "eticket" OR "boarding pass" OR "your itinerary" OR "travel itinerary" OR "booking confirmation" OR "booking reference" OR "reservation confirmed" OR "reservation is confirmed" OR "your reservation" OR "your booking" OR "your stay" OR "your flight" OR "your trip" OR "check-in opens" OR "confirmation number")';
 
 const Q1_STOPWORDS = new Set(["the", "and", "trip", "city"]);
 
@@ -61,7 +70,13 @@ export function buildGmailQueries(trip: ScanTripContext): { q: string; maxResult
   const after = Math.floor(((start ? start.getTime() : now) - 180 * DAY_MS) / 1000);
   const before = Math.floor((end ? end.getTime() + 2 * DAY_MS : now + DAY_MS) / 1000);
 
+  const win = `after:${after} before:${before}`;
   const queries: { q: string; maxResults: number }[] = [];
+
+  // Highest precision first — the route interleaves results round-robin, so
+  // these always get slots even when a broader query matches hundreds.
+  queries.push({ q: `${win} from:(${TRAVEL_SENDERS})`, maxResults: 20 });
+  queries.push({ q: `${win} category:reservations`, maxResults: 10 });
 
   if (trip.destination) {
     const tokens = trip.destination
@@ -71,18 +86,37 @@ export function buildGmailQueries(trip: ScanTripContext): { q: string; maxResult
       .map((t) => `"${t}"`);
     if (tokens.length) {
       queries.push({
-        q: `after:${after} before:${before} (${tokens.join(" OR ")})`,
-        maxResults: 15,
+        q: `${win} -category:promotions (${tokens.join(" OR ")}) (${TRAVEL_SUBJECTS})`,
+        maxResults: 10,
       });
     }
   }
 
   queries.push({
-    q: `after:${after} before:${before} -category:promotions (${Q2_KEYWORDS})`,
-    maxResults: 20,
+    q: `${win} -category:promotions ${TRAVEL_SUBJECTS}`,
+    maxResults: 10,
   });
 
   return queries;
+}
+
+// Merge per-query id lists round-robin so one broad query can't consume the
+// whole message budget before a high-precision query contributes anything.
+export function interleaveIds(lists: string[][], cap: number): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const depth = Math.max(0, ...lists.map((l) => l.length));
+  for (let i = 0; i < depth && out.length < cap; i++) {
+    for (const list of lists) {
+      if (out.length >= cap) break;
+      const id = list[i];
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        out.push(id);
+      }
+    }
+  }
+  return out;
 }
 
 export function buildScanSystemPrompt(trip: ScanTripContext, today: string): string {

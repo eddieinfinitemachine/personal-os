@@ -12,6 +12,7 @@ import {
 import {
   buildGmailQueries,
   buildScanSystemPrompt,
+  interleaveIds,
   markDuplicates,
   serializeEmailsForPrompt,
   validateProposals,
@@ -84,19 +85,13 @@ export async function POST(
   let emails: GmailEmail[];
   try {
     const queries = buildGmailQueries(tripCtx);
-    const seen = new Set<string>();
-    const orderedIds: string[] = [];
-    // Q1-first order, deduped, capped at MAX_MESSAGES.
-    for (const { q, maxResults } of queries) {
-      const ids = await searchMessageIds(q, maxResults);
-      for (const mid of ids) {
-        if (!seen.has(mid)) {
-          seen.add(mid);
-          orderedIds.push(mid);
-        }
-      }
-    }
-    const capped = orderedIds.slice(0, MAX_MESSAGES);
+    const lists = await Promise.all(
+      queries.map(({ q, maxResults }) =>
+        // A malformed/unsupported operator in one query must not sink the scan.
+        searchMessageIds(q, maxResults).catch(() => [] as string[])
+      )
+    );
+    const capped = interleaveIds(lists, MAX_MESSAGES);
     const fetched = await chunkedFetch(capped);
 
     // Accumulate text, stop including once the total-chars budget is exceeded.
