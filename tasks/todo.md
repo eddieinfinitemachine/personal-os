@@ -22,7 +22,7 @@ approximated Thanksgiving dates, so REQUIRED TYPE directive holds. Browser
 pass (agent-browser, magic-link login): Fill disabled when empty → typed
 "Lisbon with Piol first week of October, flying TAP, Airbnb in Alfama, ~$3k"
 → all 9 fields prefilled → Create → row verified in psql exactly as parsed.
-No new deps, no schema changes. Uncommitted — review then push to deploy.
+No new deps, no schema changes. Pushed to main (f464f7a) 2026-08-26.
 
 ---
 
