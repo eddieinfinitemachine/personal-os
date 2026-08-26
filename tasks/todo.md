@@ -18,10 +18,13 @@ no schema changes. Plan: ~/.claude/plans/wiggly-singing-sketch.md
       live prompt smoke w/ real API key); guard checks on scratch PG (unconfigured
       500, kind "task" 400, 101 items 400, valid bulk insert renders in sections,
       no button when unconfigured, ?scan=1 no-op, create→redirect verified)
-- [ ] BLOCKED on Eddie: Google Cloud OAuth client + `npx tsx scripts/google-oauth-mint.ts`
-      + 3 GOOGLE_* vars in .env and Vercel (consent screen MUST be published "In
-      production" — Testing-mode refresh tokens die in 7 days)
-- [ ] Phase 2 verify (after creds): live scan on a real booked trip, then deploy
+- [x] Google Cloud setup (driven via Eddie's Chrome, 2026-08-26): project
+      kaizen-gmail-506720, Gmail API enabled, consent screen **Internal**
+      (bookings live on eddie@infinitemachine.com Workspace — Internal beats
+      External: no verification, no 7-day Testing-mode token expiry), Desktop
+      OAuth client, refresh token minted via scripts/google-oauth-mint.ts +
+      in-browser consent. 3 GOOGLE_* vars in .env + Vercel production.
+- [ ] Phase 2 verify: live scan on a real booked trip on prod after deploy
 
 ## Review
 Implementation dispatched to Sol (cursor) from the full spec, reviewed line-by-line
