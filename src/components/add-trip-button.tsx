@@ -128,9 +128,10 @@ export function AddTripButton() {
     });
     setSaving(false);
     if (res.ok) {
+      const data = (await res.json()) as { trip: { id: string } };
       closeModal();
       setDraft({ status: "planned" });
-      router.refresh();
+      router.push(`/trips/${data.trip.id}?scan=1`);
     }
   }
 

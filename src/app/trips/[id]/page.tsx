@@ -9,13 +9,17 @@ import {
 } from "@/components/trip-itinerary";
 import { TripPacking, type PackingItemRow } from "@/components/trip-packing";
 import { getSession } from "@/lib/auth";
+import { isGmailConfigured } from "@/lib/google";
+import { isFounderUser } from "@/lib/cron";
 
 export const dynamic = "force-dynamic";
 
 export default async function TripDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ scan?: string }>;
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
@@ -38,6 +42,9 @@ export default async function TripDetailPage({
   });
   if (!trip) notFound();
   if (trip.userId !== userId) notFound();
+
+  const gmailConfigured = isGmailConfigured() && (await isFounderUser(userId));
+  const autoScan = gmailConfigured && (await searchParams).scan === "1";
 
   const detail: TripDetail = {
     id: trip.id,
@@ -86,7 +93,12 @@ export default async function TripDetailPage({
       >
         <ChevronLeft className="size-3.5" /> All trips
       </Link>
-      <TripItinerary trip={detail} initialItems={items} />
+      <TripItinerary
+        trip={detail}
+        initialItems={items}
+        gmailConfigured={gmailConfigured}
+        autoScan={autoScan}
+      />
       <div className="mt-4">
         <TripPacking
           tripId={trip.id}

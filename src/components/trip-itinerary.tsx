@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TripEmailImport } from "./trip-email-import";
 
 export type TripDetail = {
   id: string;
@@ -110,9 +111,13 @@ function fmtWhen(start: string | null, end: string | null) {
 export function TripItinerary({
   trip: initialTrip,
   initialItems,
+  gmailConfigured = false,
+  autoScan = false,
 }: {
   trip: TripDetail;
   initialItems: TripItemRow[];
+  gmailConfigured?: boolean;
+  autoScan?: boolean;
 }) {
   const router = useRouter();
   const [trip, setTrip] = useState(initialTrip);
@@ -177,13 +182,22 @@ export function TripItinerary({
               ) : null}
             </div>
           </div>
-          <button
-            onClick={() => setEditingTrip(true)}
-            className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent)] inline-flex items-center gap-1.5"
-          >
-            <Pencil className="size-3.5" />
-            Edit
-          </button>
+          <div className="flex items-center gap-2">
+            {gmailConfigured ? (
+              <TripEmailImport
+                tripId={trip.id}
+                autoScan={autoScan}
+                onAdded={(created) => setItems((prev) => [...prev, ...created])}
+              />
+            ) : null}
+            <button
+              onClick={() => setEditingTrip(true)}
+              className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent)] inline-flex items-center gap-1.5"
+            >
+              <Pencil className="size-3.5" />
+              Edit
+            </button>
+          </div>
         </div>
       </header>
 

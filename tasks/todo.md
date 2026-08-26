@@ -1,3 +1,40 @@
+# Trips — Gmail booking import → itinerary (built, Phase-1 verified 2026-08-26)
+
+Goal: "Pull from email" — scan Gmail for booking confirmations (flights, lodging,
+trains, restaurants, activities) relevant to a trip → Claude parses into TripItem
+proposals → pre-checked review list → bulk add. Auto-runs after trip create via
+/trips/[id]?scan=1. Env-token founder-gated Gmail (Dropbox pattern), review-first,
+no schema changes. Plan: ~/.claude/plans/wiggly-singing-sketch.md
+
+## Tasks
+- [x] `src/lib/google.ts` — token refresh + Gmail REST + extractTextFromPayload
+- [x] `src/lib/email-scan.ts` — queries, prompt, validateProposals, markDuplicates (pure)
+- [x] `src/app/api/trips/[id]/email-scan/route.ts` — scan endpoint, no writes
+- [x] `src/app/api/trips/[id]/items/bulk/route.ts` — bulk insert (cap 100, kind whitelist)
+- [x] `src/components/trip-email-import.tsx` — button → scanning → review → add
+- [x] Wire: trips/[id]/page.tsx (gmailConfigured/autoScan), trip-itinerary.tsx header, add-trip-button redirect ?scan=1
+- [x] `scripts/google-oauth-mint.ts` + .env.example GOOGLE_* vars
+- [x] Phase 1 verify: tsc clean; 27/27 checks (extraction/queries/dedupe fixtures +
+      live prompt smoke w/ real API key); guard checks on scratch PG (unconfigured
+      500, kind "task" 400, 101 items 400, valid bulk insert renders in sections,
+      no button when unconfigured, ?scan=1 no-op, create→redirect verified)
+- [ ] BLOCKED on Eddie: Google Cloud OAuth client + `npx tsx scripts/google-oauth-mint.ts`
+      + 3 GOOGLE_* vars in .env and Vercel (consent screen MUST be published "In
+      production" — Testing-mode refresh tokens die in 7 days)
+- [ ] Phase 2 verify (after creds): live scan on a real booked trip, then deploy
+
+## Review
+Implementation dispatched to Sol (cursor) from the full spec, reviewed line-by-line
+by Fable — matches spec incl. founder gate (404), no-write scan route, review-first
+commit. One prompt fix found via live smoke test: a round-trip fare was landing in
+notes on both segments — added rule to put costUsd on the first item only of a
+multi-item booking (avoids double-counting); re-ran, 27/27 green. Feature ships
+dark: button hidden and ?scan=1 inert until the GOOGLE_* env vars exist, so it is
+safe to deploy before the operator steps. Verification harness kept at
+scratchpad verify-email-scan.ts (session-local). Uncommitted.
+
+---
+
 # Trips — NL trip entry on /trips (✅ built + verified 2026-08-26)
 
 Goal: describe a trip in natural language from the /trips page ("Tokyo Jan 5–12
