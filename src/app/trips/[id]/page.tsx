@@ -7,6 +7,7 @@ import {
   type TripDetail,
   type TripItemRow,
 } from "@/components/trip-itinerary";
+import { TripPacking, type PackingItemRow } from "@/components/trip-packing";
 import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,9 @@ export default async function TripDetailPage({
           { startAt: { sort: "asc", nulls: "last" } },
           { position: "asc" },
         ],
+      },
+      packingItems: {
+        orderBy: [{ category: "asc" }, { position: "asc" }, { createdAt: "asc" }],
       },
     },
   });
@@ -65,6 +69,14 @@ export default async function TripDetailPage({
     notes: it.notes,
     completedAt: it.completedAt ? it.completedAt.toISOString() : null,
   }));
+  const packingItems: PackingItemRow[] = trip.packingItems.map((p) => ({
+    id: p.id,
+    title: p.title,
+    category: p.category,
+    quantity: p.quantity,
+    notes: p.notes,
+    packedAt: p.packedAt ? p.packedAt.toISOString() : null,
+  }));
 
   return (
     <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6">
@@ -75,6 +87,13 @@ export default async function TripDetailPage({
         <ChevronLeft className="size-3.5" /> All trips
       </Link>
       <TripItinerary trip={detail} initialItems={items} />
+      <div className="mt-4">
+        <TripPacking
+          tripId={trip.id}
+          initialItems={packingItems}
+          packingContext={trip.packingContext}
+        />
+      </div>
     </div>
   );
 }

@@ -21,12 +21,16 @@ model Trip {
   bookingUrl    String?
   notes         String?
   imageUrl      String?
+  // "What I'm doing on this trip" — drives AI packing-list generation; saved
+  // so regenerate and the tuning chat reuse it.
+  packingContext String?
   archived      Boolean   @default(false)
   position      Int       @default(0)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   items         TripItem[]
+  packingItems  PackingItem[]
 
 
   userId String
@@ -61,6 +65,26 @@ model TripItem {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([tripId, startAt, position])
+  @@index([userId])
+}
+
+model PackingItem {
+  id        String    @id @default(cuid())
+  tripId    String
+  trip      Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  title     String
+  category  String    @default("Other") // Clothing | Toiletries | Electronics | Documents | Gear | Other (free-form)
+  quantity  Int       @default(1)
+  packedAt  DateTime? // set = checked off
+  notes     String?   // AI's "why", e.g. "rain expected Tue"
+  position  Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tripId, category, position])
   @@index([userId])
 }
 
@@ -904,6 +928,7 @@ model User {
   highlights                   Highlight[]
   trips                        Trip[]
   tripItems                    TripItem[]
+  packingItems                 PackingItem[]
   lists                        List[]
   projects                     Project[]
   vehicles                     Vehicle[]

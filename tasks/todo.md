@@ -1,3 +1,34 @@
+# Trips — AI Packing Lists (built + verified 2026-08-26; prod db:push pending)
+
+Goal: on a trip, describe what you're doing → AI recommends a packing checklist
+from weather (keyless Open-Meteo) + activities → tune it by chatting → check
+items off while packing. Plan: ~/.claude/plans/buzzing-strolling-cerf.md
+
+## Tasks
+- [x] Schema: `PackingItem` model + `Trip.packingContext` (additive; db:push)
+- [x] `src/lib/trip-weather.ts` — geocode + forecast/historical summary, null-safe
+- [x] `src/app/api/trips/[id]/packing/route.ts` (GET/POST) + `[itemId]` (PATCH/DELETE)
+- [x] `src/app/api/trips/[id]/packing/generate/route.ts` (maxDuration 60, dedupe)
+- [x] `src/lib/packing-edit.ts` + `src/app/api/trips/[id]/packing/chat/route.ts`
+- [x] `src/components/trip-packing.tsx` + wire into `/trips/[id]` page
+- [x] tsc + build clean
+- [x] E2E on scratch Postgres: generate, toggle, chat tune (real API key)
+- [x] Weather smoke: forecast path, historical path, garbage destination
+- [ ] db:push prod (blocked: permission classifier — Eddie runs it), then push main, verify live
+
+## Review
+Built exactly per plan; all patterns reused from pets chat / meeting parse.
+E2E on scratch PG: generate produced 34 items (weather-aware — rain jacket for
+drizzle days, layers for 60s mornings; activity-aware — hike/dinner/gym; altitude
+reasoning for Denver). Chat tune removed 5 dinner/gym items + added a book;
+"swap book for magazine + check sunglasses" did an update_item (not delete+add)
+and set_packed, verified in pixels. Regenerate: 0 dupes, nothing removed.
+Found+fixed during verification: Open-Meteo archive precip defaults to mm —
+added precipitation_unit=inch. Deploy order matters: schema push BEFORE main
+push or /trips/[id] 500s on missing columns.
+
+---
+
 # Meeting Import — transcript → team-list todos (✅ built + verified 2026-08-18)
 
 Goal: paste a Granola meeting transcript → Claude extracts the concrete next
