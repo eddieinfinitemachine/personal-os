@@ -24,7 +24,18 @@ no schema changes. Plan: ~/.claude/plans/wiggly-singing-sketch.md
       External: no verification, no 7-day Testing-mode token expiry), Desktop
       OAuth client, refresh token minted via scripts/google-oauth-mint.ts +
       in-browser consent. 3 GOOGLE_* vars in .env + Vercel production.
-- [ ] Phase 2 verify: live scan on a real booked trip on prod after deploy
+- [x] Phase 2 verify on prod: live scan extracted a real Trainline booking
+      (Shrewsbury→London Euston, both times, connection detail, $65.39) into
+      Ground transport; auto-scan via ?scan=1, review list, Add, and re-scan
+      dedupe all confirmed. Test trip created + deleted.
+- [x] FIX during live verify: first prod scan returned 0 proposals from 25
+      emails despite matching bookings existing. Broad subject clause
+      (confirmation OR booking OR receipt) matched 200+ SaaS invoices /
+      internal customer mail; Gmail is newest-first, so junk ate the whole
+      25-message budget. Replaced with 4 precise queries (travel senders,
+      category:reservations, destination+travel phrases, travel phrases)
+      merged ROUND-ROBIN so a broad query can't starve a precise one.
+      Junk dropped 25 → 12 scanned, real bookings now surface. (19ab407)
 
 ## Review
 Implementation dispatched to Sol (cursor) from the full spec, reviewed line-by-line
@@ -33,8 +44,23 @@ commit. One prompt fix found via live smoke test: a round-trip fare was landing 
 notes on both segments — added rule to put costUsd on the first item only of a
 multi-item booking (avoids double-counting); re-ran, 27/27 green. Feature ships
 dark: button hidden and ?scan=1 inert until the GOOGLE_* env vars exist, so it is
-safe to deploy before the operator steps. Verification harness kept at
-scratchpad verify-email-scan.ts (session-local). Uncommitted.
+safe to deploy before the operator steps.
+
+LIVE ON PROD 2026-08-26 (afedacd + 19ab407). Two gotchas worth remembering:
+1. `vercel env add` reading piped stdin stores the trailing newline as a
+   literal `\n` inside the value → every GOOGLE_* var was 2 chars too long and
+   token refresh 502'd. Use `printf '%s'` (no newline) when piping secrets in.
+2. Broad Gmail subject keywords are useless in a work mailbox — see the
+   round-robin query fix above. Precision beats recall when the result window
+   is capped and Gmail sorts newest-first.
+
+MAILBOX CAVEAT: the connected account is eddie@infinitemachine.com (work). It
+holds Eurostar/Trainline/OpenTable bookings but essentially no leisure travel —
+the Swiss and South-of-France trips have zero matching emails there. Personal
+bookings likely live on another account (eddiecohen.on@gmail.com, eddie@walden.us,
+or iCloud). Connecting a second mailbox = re-mint a refresh token for that
+account; the current design holds ONE token in env, so multi-mailbox support
+would need a per-account token store (schema change — flag before building).
 
 ---
 
