@@ -62,8 +62,11 @@ export async function middleware(req: NextRequest) {
     pathname.startsWith("/api/cron/") ||
     pathname.startsWith("/api/capture/") ||
     // Read-later save from the iOS share-sheet Shortcut (route checks
-    // CAPTURE_TOKEN or session itself; GET stays behind the session).
-    (pathname === "/api/reader" && req.method === "POST")
+    // CAPTURE_TOKEN or session itself). The Shortcut's "Get contents of URL"
+    // defaults to GET, so a GET carrying ?url= is a save too; a bare GET
+    // (the in-app list) stays behind the session.
+    (pathname === "/api/reader" &&
+      (req.method === "POST" || req.nextUrl.searchParams.has("url")))
   ) {
     return passthrough();
   }

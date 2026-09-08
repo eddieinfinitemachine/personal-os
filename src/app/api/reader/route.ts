@@ -27,13 +27,23 @@ async function resolveUserId(request: Request): Promise<string | null> {
 }
 
 export async function POST(request: Request) {
+  return saveFromRequest(request);
+}
+
+// Shared by POST and GET-with-?url=. The share-sheet Shortcut's "Get contents
+// of URL" action is a GET unless someone opens its hidden Method field, and
+// for weeks it was saving nothing while showing "Saved" — so both verbs save.
+async function saveFromRequest(request: Request): Promise<Response> {
   const userId = await resolveUserId(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const body = (await request.json().catch(() => ({}))) as {
-    url?: string;
-    text?: string; // Shortcuts sometimes hand over the URL as plain text
-  };
+  const body =
+    request.method === "POST"
+      ? ((await request.json().catch(() => ({}))) as {
+          url?: string;
+          text?: string; // Shortcuts sometimes hand over the URL as plain text
+        })
+      : {};
   const qsUrl = new URL(request.url).searchParams.get("url");
   const raw = (body.url ?? body.text ?? qsUrl ?? "").trim();
   const match = raw.match(/https?:\/\/\S+/);
@@ -84,6 +94,7 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
+  if (new URL(request.url).searchParams.has("url")) return saveFromRequest(request);
   const userId = await getCurrentUserId(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const archived = new URL(request.url).searchParams.get("archived") === "1";

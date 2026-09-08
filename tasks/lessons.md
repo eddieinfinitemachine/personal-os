@@ -57,3 +57,8 @@ synthetic KeyboardEvents via eval instead).
 **Context**: Planning Google Calendar sync with deterministic event ids `"kz" + hex(todoId)`.
 **Mistake / surprise**: Google event ids are base32hex (`[a-v0-9]{5,1024}`); `z` is invalid. The executor caught it and used `ka`.
 **Rule**: When deriving ids/keys for an external API, look up the exact allowed alphabet and length and put a regex assertion in the contract test — don't assume "lowercase alnum" is enough.
+
+## 2026-09-08 — a Shortcut's "Saved" notification proves nothing
+**Context**: Read Later share-sheet saves had silently failed since launch (0 rows ever).
+**Mistake / surprise**: "Get contents of URL" defaults to GET; the middleware allowed only POST, so requests redirected to /login and the Shortcut's unconditional notification still said "Saved". Nobody noticed for 8 weeks.
+**Rule**: For any Shortcut/webhook integration, (1) accept the verb the client actually sends, (2) verify with a DB row count after a real device run, not with the client's success message, and (3) put the endpoint's failure in the notification (show the response body) so silent breakage is impossible.

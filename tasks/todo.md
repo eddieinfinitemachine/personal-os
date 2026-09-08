@@ -694,3 +694,15 @@ a ✓/✗ prefix (his call). No schema change — event ids are derived from tod
   is gone or undated. Todos go to a dedicated auto-created "Kaizen" calendar (GOOGLE_CALENDAR_ID overrides). Event id prefix is `ka` (Google ids are base32hex:
   `[a-v0-9]`, so my planned `kz` was invalid — Sol caught it).
 
+
+## Read Later share-sheet saves never landed (2026-09-08)
+Eddie: desktop Read later page empty despite "using it for a while on my phone".
+- Root cause: the "Read Later" Shortcut's Get-contents-of-URL action is a GET
+  (Method field is hidden under Show More and was never set to POST). Middleware
+  only passed POST through, so every share 307'd to /login and the Shortcut
+  still showed "Saved to Read Later". DB had 0 reader items for any user, ever.
+- [x] Fix server-side so no Shortcut edit is needed: middleware passes
+  `/api/reader` through when the request carries `?url=`; route's GET with
+  `?url=` runs the same save path as POST (shared `saveFromRequest`).
+- Test items created during diagnosis: Wikipedia "Kaizen" (POST test) and
+  theverge.com (Shortcut run from the Mac). Archive/delete at will.
