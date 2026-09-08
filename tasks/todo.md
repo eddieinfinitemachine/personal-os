@@ -706,3 +706,13 @@ Eddie: desktop Read later page empty despite "using it for a while on my phone".
   `?url=` runs the same save path as POST (shared `saveFromRequest`).
 - Test items created during diagnosis: Wikipedia "Kaizen" (POST test) and
   theverge.com (Shortcut run from the Mac). Archive/delete at will.
+- Follow-up (same day): with GET fixed, the phone's request still arrived with
+  `url=` EMPTY (Vercel log: POST, token OK, BackgroundShortcutRunner). The
+  Shortcut's "URL Encode" action has no input wired, so it encodes nothing.
+  Built a replacement from a plist ("Save to Read Later": Get URLs → POST form
+  {url, text} → notification shows the server response), signed with
+  `shortcuts sign --mode anyone`, imported on the Mac (syncs via iCloud).
+  Verified: Mac run saved nytimes probe; a phone share (WSJ) saved at 22:45Z.
+  Left for Eddie: delete the old "Read Later" and the stray "Read Later signed"
+  (GUI-only; tiles are unlabeled AXGroups, and his terminal was in front).
+  Shortcut source: scratchpad only (contains CAPTURE_TOKEN) — not committed.
