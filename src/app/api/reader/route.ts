@@ -37,17 +37,43 @@ async function saveFromRequest(request: Request): Promise<Response> {
   const userId = await resolveUserId(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const body =
-    request.method === "POST"
-      ? ((await request.json().catch(() => ({}))) as {
-          url?: string;
-          text?: string; // Shortcuts sometimes hand over the URL as plain text
-        })
-      : {};
-  const qsUrl = new URL(request.url).searchParams.get("url");
-  const raw = (body.url ?? body.text ?? qsUrl ?? "").trim();
+  // Shortcuts is loose about shape: the link may arrive as JSON {url} or
+  // {text}, as a form field, as a raw text body, or in the query string, and
+  // "Get URLs from Input" hands over a list. Take the first http(s) URL found
+  // anywhere in that pile.
+  const params = new URL(request.url).searchParams;
+  const candidates: unknown[] = [params.get("url"), params.get("text")];
+  let bodyPreview = "";
+  if (request.method === "POST") {
+    const text = await request.text().catch(() => "");
+    bodyPreview = text.slice(0, 200);
+    try {
+      const json = JSON.parse(text) as Record<string, unknown>;
+      candidates.push(json?.url, json?.text, json?.link, json?.input);
+    } catch {
+      const form = new URLSearchParams(text);
+      candidates.push(form.get("url"), form.get("text"), text);
+    }
+  }
+  const raw = candidates
+    .flatMap((c) => (Array.isArray(c) ? c : [c]))
+    .filter((c): c is string => typeof c === "string")
+    .map((c) => {
+      // Query values are already decoded; bodies may carry an encoded URL.
+      try { return /^https?%3A/i.test(c) ? decodeURIComponent(c) : c; } catch { return c; }
+    })
+    .join("\n");
   const match = raw.match(/https?:\/\/\S+/);
-  if (!match) return NextResponse.json({ error: "url required" }, { status: 400 });
+  if (!match) {
+    console.warn("[reader] save without a URL", {
+      method: request.method,
+      contentType: request.headers.get("content-type"),
+      ua: request.headers.get("user-agent"),
+      query: Object.fromEntries(params),
+      bodyPreview,
+    });
+    return NextResponse.json({ error: "url required" }, { status: 400 });
+  }
   const url = match[0];
 
   // Re-saving the same URL refreshes the extraction instead of duplicating.
