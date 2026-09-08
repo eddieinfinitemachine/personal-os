@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists, ensureInboxProject, CAPTURE_LIST_NAME } from "@/lib/lists";
 import { parseAliasToken } from "@/lib/alias";
 import { resolveCaptureUser } from "@/lib/capture-auth";
+import { syncRecentTodos } from "@/lib/gcal";
 
 export const dynamic = "force-dynamic";
 
@@ -148,5 +149,6 @@ async function handle(userId: string, input: {
       dueDate: input.dueDate ? new Date(input.dueDate) : null,
     },
   });
+  after(() => syncRecentTodos());
   return NextResponse.json({ ok: true, todo });
 }

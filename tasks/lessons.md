@@ -52,3 +52,8 @@ events (e.isTrusted) or it will fight programmatic .click() calls; (2) don't shi
 changes without an in-browser test — dev server + seeded KbdTest list + dispatched KeyboardEvents
 (note: agent-browser `press` auto-repeats thousands of keydowns with repeat=false; dispatch
 synthetic KeyboardEvents via eval instead).
+
+## 2026-09-08 — verify external ID alphabets before specifying them
+**Context**: Planning Google Calendar sync with deterministic event ids `"kz" + hex(todoId)`.
+**Mistake / surprise**: Google event ids are base32hex (`[a-v0-9]{5,1024}`); `z` is invalid. The executor caught it and used `ka`.
+**Rule**: When deriving ids/keys for an external API, look up the exact allowed alphabet and length and put a regex assertion in the contract test — don't assume "lowercase alnum" is enough.

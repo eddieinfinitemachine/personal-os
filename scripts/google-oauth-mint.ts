@@ -1,12 +1,13 @@
 /**
- * Mint a Gmail read-only refresh token for the founder-only booking importer.
+ * Mint a founder-only refresh token covering Gmail booking reads and Google
+ * Calendar (full scope: the app creates its own "Kaizen" calendar).
  *
  *   npx tsx scripts/google-oauth-mint.ts
  *   npx tsx scripts/google-oauth-mint.ts <CLIENT_ID> <CLIENT_SECRET>
  *
  * Prereqs (one-time, in the Google Cloud console):
  *   1. Create an OAuth 2.0 Client ID of type "Desktop app".
- *   2. Enable the Gmail API for the project.
+ *   2. Enable the Gmail API AND the Google Calendar API for the project.
  *   3. Publish the OAuth consent screen to "In production".
  *      IMPORTANT: a consent screen left in "Testing" mode issues refresh
  *      tokens that EXPIRE AFTER 7 DAYS. Production is required for a durable
@@ -14,7 +15,7 @@
  *
  * This starts a tiny loopback server, opens a consent URL, exchanges the
  * returned code, and prints GOOGLE_REFRESH_TOKEN. Put that value in .env and
- * in your Vercel project env.
+ * in your Vercel project env. Re-minting replaces GOOGLE_REFRESH_TOKEN.
  */
 import http from "node:http";
 
@@ -24,7 +25,8 @@ const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? process.argv[3];
 const PORT = 53682;
 const REDIRECT_URI = `http://127.0.0.1:${PORT}/oauth2/callback`;
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
-const SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+const SCOPE =
+  "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar";
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
   console.error("Missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET.");
@@ -34,9 +36,11 @@ if (!CLIENT_ID || !CLIENT_SECRET) {
   console.error("");
   console.error("First, in the Google Cloud console:");
   console.error("  1. Create an OAuth 2.0 Client ID of type 'Desktop app'.");
-  console.error("  2. Enable the Gmail API for the project.");
+  console.error("  2. Enable the Gmail API AND the Google Calendar API for the project.");
   console.error("  3. Publish the OAuth consent screen to 'In production'");
   console.error("     (Testing-mode refresh tokens expire after 7 days).");
+  console.error("");
+  console.error("Re-minting replaces GOOGLE_REFRESH_TOKEN in .env and Vercel.");
   process.exit(1);
 }
 
@@ -76,6 +80,7 @@ async function exchangeCode(code: string): Promise<void> {
     );
     console.error("prompt=consent. Revoke the app's access, then re-run:");
     console.error("  https://myaccount.google.com/permissions");
+    console.error("The newly minted token replaces GOOGLE_REFRESH_TOKEN.");
     process.exit(1);
   }
 

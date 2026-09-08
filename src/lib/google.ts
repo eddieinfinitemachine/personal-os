@@ -1,4 +1,4 @@
-// Gmail read-only access for the booking-import scanner. Mirrors the
+// Google Gmail + Calendar access for founder-only integrations. Mirrors the
 // env-token OAuth-refresh pattern in lib/dropbox.ts: a single founder-owned
 // refresh token is exchanged for short-lived access tokens, cached in-module
 // with a 60s expiry skew. No per-user OAuth — this is founder-only.
@@ -8,7 +8,7 @@ import { JSDOM } from "jsdom";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me";
 
-export function isGmailConfigured(): boolean {
+export function isGoogleConfigured(): boolean {
   return !!(
     process.env.GOOGLE_CLIENT_ID &&
     process.env.GOOGLE_CLIENT_SECRET &&
@@ -16,9 +16,11 @@ export function isGmailConfigured(): boolean {
   );
 }
 
+export const isGmailConfigured = isGoogleConfigured;
+
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
-async function getAccessToken(): Promise<string> {
+export async function getGoogleAccessToken(): Promise<string> {
   if (cachedToken && Date.now() < cachedToken.expiresAt - 60_000) {
     return cachedToken.token;
   }
@@ -29,7 +31,7 @@ async function getAccessToken(): Promise<string> {
 
   if (!clientId || !clientSecret || !refreshToken) {
     throw new Error(
-      "Missing Gmail credentials (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN)"
+      "Missing Google credentials (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN)"
     );
   }
 
@@ -46,7 +48,7 @@ async function getAccessToken(): Promise<string> {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Gmail token refresh failed (${res.status}): ${text}`);
+    throw new Error(`Google token refresh failed (${res.status}): ${text}`);
   }
 
   const data = (await res.json()) as { access_token: string; expires_in: number };
@@ -74,7 +76,7 @@ export type GmailEmail = {
 };
 
 export async function searchMessageIds(q: string, maxResults: number): Promise<string[]> {
-  const token = await getAccessToken();
+  const token = await getGoogleAccessToken();
   const res = await fetch(
     `${GMAIL_API}/messages?q=${encodeURIComponent(q)}&maxResults=${maxResults}`,
     { headers: { Authorization: `Bearer ${token}` } }
@@ -91,7 +93,7 @@ export async function fetchEmail(id: string, charCap: number): Promise<GmailEmai
   // Any failure here (transport error or non-2xx) drops the single message
   // rather than aborting the whole scan — one bad email shouldn't sink a batch.
   try {
-    const token = await getAccessToken();
+    const token = await getGoogleAccessToken();
     const res = await fetch(`${GMAIL_API}/messages/${id}?format=full`, {
       headers: { Authorization: `Bearer ${token}` },
     });

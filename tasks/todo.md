@@ -668,3 +668,29 @@ all CSS (custom easing tokens, keyframes, @starting-style). Plan: ~/.claude/plan
   confirmed by psql after each. No console errors. Build + tsc clean.
 - Not covered (deliberate): list/project deletion (confirm-gated), attachment
   and comment deletes (blob/cascade, not restorable), capture commits, reader.
+
+## Google Calendar due-date sync (2026-09-08)
+Eddie: "when I assign a date, add it to my calendar." Target: Google Calendar via
+the existing founder OAuth token; completed/dropped todos stay on the calendar with
+a ✓/✗ prefix (his call). No schema change — event ids are derived from todo ids.
+- [x] `src/lib/google.ts`: export `getGoogleAccessToken` / `isGoogleConfigured`
+- [x] `src/lib/gcal.ts`: syncTodoEvent / deleteTodoEvent / syncRecentTodos / reconcileCalendar
+- [x] `after(() => syncRecentTodos())` on every todo write route; DELETE removes the event
+- [x] `/api/cron/calendar-sync` daily reconcile + orphan sweep (vercel.json)
+- [x] mint script scope += calendar.events; `.env.example` GOOGLE_CALENDAR_ID
+- [x] `pnpm typecheck` clean
+- [ ] Build + end-to-end verification against a real calendar
+- [x] Operator steps done by Claude (2026-09-08): Calendar API enabled on the
+      kaizen-gmail Cloud project; token re-minted with gmail.readonly + calendar
+      (full scope, so the app can create its own calendar) for
+      eddie@infinitemachine.com via Chrome consent; GOOGLE_REFRESH_TOKEN replaced
+      in .env and Vercel prod (printf, byte-length verified); app auto-created the
+      "Kaizen" calendar; local backfill upserted 16 dated todos, verified via the
+      Google Calendar connector.
+- Review: `syncRecentTodos` only upserts *dated* todos (a reorder bumps
+  updatedAt on every row; issuing a Google DELETE per undated row would be
+  dozens of wasted calls). Clearing a date → PATCH route calls
+  `deleteTodoEvent` explicitly; the daily sweep also removes events whose todo
+  is gone or undated. Todos go to a dedicated auto-created "Kaizen" calendar (GOOGLE_CALENDAR_ID overrides). Event id prefix is `ka` (Google ids are base32hex:
+  `[a-v0-9]`, so my planned `kz` was invalid — Sol caught it).
+

@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
+import { syncRecentTodos } from "@/lib/gcal";
 import { listAccessWhere } from "@/lib/list-access";
 
 // Undo for a delete. The client snapshots the row before removing it and
@@ -116,5 +117,6 @@ export async function POST(request: Request) {
     });
   }
 
+  after(() => syncRecentTodos());
   return NextResponse.json({ todo: restored, restored: true });
 }

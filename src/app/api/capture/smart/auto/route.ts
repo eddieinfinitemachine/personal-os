@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists, ensureInboxProject, CAPTURE_LIST_NAME } from "@/lib/lists";
 import { parseCapture, type CaptureProposal } from "@/lib/smart-capture";
 import { parseAliasToken } from "@/lib/alias";
 import { resolveCaptureUser } from "@/lib/capture-auth";
+import { syncRecentTodos } from "@/lib/gcal";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -97,6 +98,7 @@ async function handle(
           notes: rawUrl ?? null,
         },
       });
+      after(() => syncRecentTodos());
       return NextResponse.json({ ok: true, type: "todo", todo, routedByAlias: true });
     }
   }
@@ -211,6 +213,7 @@ async function handle(
       }
     }
 
+    if (companionTodoId) after(() => syncRecentTodos());
     return NextResponse.json({
       ok: true,
       type: "asset",
@@ -246,6 +249,7 @@ async function handle(
         dueDate: proposal.dueDate ? new Date(proposal.dueDate) : null,
       },
     });
+    after(() => syncRecentTodos());
     return NextResponse.json({ ok: true, type: "todo", id: todo.id });
   }
 
@@ -280,6 +284,7 @@ async function handle(
       `Follow up with ${fullName}`,
       proposal.notes ?? null,
     );
+    if (companionTodoId) after(() => syncRecentTodos());
     return NextResponse.json({
       ok: true,
       type: "person",
@@ -387,6 +392,7 @@ async function handle(
       proposal.notes ?? null,
       proposal.projectId ?? null,
     );
+    if (companionTodoId) after(() => syncRecentTodos());
     return NextResponse.json({
       ok: true,
       type: "interaction",

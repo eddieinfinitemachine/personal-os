@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
+import { deleteTodoEvent, syncRecentTodos } from "@/lib/gcal";
 import { listAccessWhere } from "@/lib/list-access";
 
 export async function PATCH(
@@ -93,6 +94,10 @@ export async function PATCH(
   }
 
   const todo = await prisma.todo.update({ where: { id }, data: updates });
+  // syncRecentTodos only upserts dated todos; clearing a date needs an
+  // explicit event delete.
+  if (body.dueDate === null) after(() => deleteTodoEvent(id));
+  else after(() => syncRecentTodos());
   return NextResponse.json({ todo });
 }
 
@@ -104,11 +109,14 @@ export async function DELETE(
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const result = await prisma.todo.deleteMany({
+  const existing = await prisma.todo.findFirst({
     where: { id, list: listAccessWhere(userId) },
+    select: { id: true },
   });
-  if (result.count === 0) {
+  if (!existing) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
+  await prisma.todo.delete({ where: { id } });
+  after(() => deleteTodoEvent(id));
   return NextResponse.json({ ok: true });
 }

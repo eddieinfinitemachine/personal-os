@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getCurrentUserId } from "@/lib/auth";
+import { syncRecentTodos } from "@/lib/gcal";
 import { prisma } from "@/lib/prisma";
 import { listAccessWhere } from "@/lib/list-access";
 import { ensureDefaultLists, ensureInboxProject, CAPTURE_LIST_NAME } from "@/lib/lists";
@@ -80,6 +81,7 @@ export async function POST(request: Request) {
   });
 
   await prisma.todo.createMany({ data: rows });
+  after(() => syncRecentTodos());
 
   const counts = new Map<string, number>();
   for (const r of rows) counts.set(r.listId, (counts.get(r.listId) ?? 0) + 1);

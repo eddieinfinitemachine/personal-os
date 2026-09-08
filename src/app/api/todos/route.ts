@@ -1,6 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
+import { syncRecentTodos } from "@/lib/gcal";
 import { listAccessWhere } from "@/lib/list-access";
 import { notifySharedListAdd } from "@/lib/notify";
 
@@ -112,6 +113,7 @@ export async function POST(request: Request) {
     after(() =>
       notifySharedListAdd({ todoId: todo.id, listId: todo.listId, creatorId: userId }),
     );
+    after(() => syncRecentTodos());
     return NextResponse.json({ todo });
   }
 
@@ -146,5 +148,6 @@ export async function POST(request: Request) {
   after(() =>
     notifySharedListAdd({ todoId: todo.id, listId: todo.listId, creatorId: userId }),
   );
+  after(() => syncRecentTodos());
   return NextResponse.json({ todo });
 }

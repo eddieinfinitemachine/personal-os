@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
+import { syncRecentTodos } from "@/lib/gcal";
 import { ensureDefaultLists, ensureInboxProject, CAPTURE_LIST_NAME } from "@/lib/lists";
 import type { CaptureProposal } from "@/lib/smart-capture";
 
@@ -108,6 +109,7 @@ export async function POST(request: Request) {
       }
     }
 
+    if (followupTodo) after(() => syncRecentTodos());
     return NextResponse.json({ asset, followupTodo });
   }
 
@@ -252,6 +254,7 @@ export async function POST(request: Request) {
         dueDate: proposal.dueDate ? new Date(proposal.dueDate) : null,
       },
     });
+    after(() => syncRecentTodos());
     return NextResponse.json({ todo });
   }
 

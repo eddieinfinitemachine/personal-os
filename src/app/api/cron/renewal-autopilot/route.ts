@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { computeDue } from "@/lib/maintenance";
 import { getDefaultTodoList, isAuthorizedCron } from "@/lib/cron";
+import { syncRecentTodos } from "@/lib/gcal";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -192,6 +193,7 @@ export async function GET(request: Request) {
   // Single batched insert.
   if (toCreate.length > 0) {
     await prisma.todo.createMany({ data: toCreate });
+    await syncRecentTodos();
   }
 
   return NextResponse.json({
