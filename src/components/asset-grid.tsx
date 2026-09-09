@@ -45,6 +45,7 @@ export function AssetGrid({
   showMoneyTotal,
   emptyHint,
   autoEnrich,
+  smartFill,
 }: {
   kind: string;
   initialAssets: AssetRow[];
@@ -52,6 +53,7 @@ export function AssetGrid({
   showMoneyTotal?: boolean;
   emptyHint?: string;
   autoEnrich?: "place" | "media";
+  smartFill?: "inventory";
 }) {
   const [editing, setEditing] = useState<AssetRow | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -323,6 +325,7 @@ export function AssetGrid({
         kind={kind}
         fields={editorFields}
         autoEnrich={autoEnrich}
+        smartFill={smartFill}
         onClose={() => {
           setEditing(null);
           setAddOpen(false);

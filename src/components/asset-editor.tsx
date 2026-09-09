@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Trash2, X } from "lucide-react";
 import type { AssetRow } from "./asset-grid";
 import { haptic } from "@/lib/haptic";
+import type { AssetProposal } from "@/lib/smart-capture";
 
 export type EditorField = {
   key: keyof AssetRow | (string & {});
@@ -40,6 +41,7 @@ export function AssetEditor({
   kind,
   fields,
   autoEnrich,
+  smartFill,
   onClose,
 }: {
   open: boolean;
@@ -47,6 +49,7 @@ export function AssetEditor({
   kind: string;
   fields: EditorField[];
   autoEnrich?: "place" | "media"; // link in `url` fills empty fields
+  smartFill?: "inventory";
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -63,6 +66,9 @@ export function AssetEditor({
   const [hitIdx, setHitIdx] = useState(0);
   const [searchingPlaces, setSearchingPlaces] = useState(false);
   const suppressSearchRef = useRef<string | null>(null);
+  const [smartText, setSmartText] = useState("");
+  const [smartFilling, setSmartFilling] = useState(false);
+  const smartTextRef = useRef<HTMLTextAreaElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
   // Hydrate the draft when opened.
@@ -88,12 +94,17 @@ export function AssetEditor({
     setDraft(next);
     enrichedUrlRef.current = null;
     setEnriched(false);
+    setSmartText("");
+    setSmartFilling(false);
     // Don't pop the search dropdown for a title we hydrated ourselves.
     suppressSearchRef.current = next.title ?? null;
     setHits([]);
     setHitsOpen(false);
-    setTimeout(() => titleRef.current?.focus(), 30);
-  }, [open, asset, fields]);
+    setTimeout(() => {
+      if (!asset && smartFill) smartTextRef.current?.focus();
+      else titleRef.current?.focus();
+    }, 30);
+  }, [open, asset, fields, smartFill]);
 
   // Search places by name as the title is typed (Places page only).
   const draftTitle = draft.title;
@@ -195,6 +206,92 @@ export function AssetEditor({
   }, [open, onClose]);
 
   if (!open) return null;
+
+  async function fillFromDescription() {
+    const text = smartText.trim();
+    if (!text || smartFilling) return;
+
+    setSmartFilling(true);
+    setEnriched(false);
+    setError(null);
+
+    try {
+      const form = new FormData();
+      form.set("text", text);
+      form.set("forceType", "inventory");
+
+      const res = await fetch("/api/capture/smart/parse", {
+        method: "POST",
+        body: form,
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        proposal?: Partial<AssetProposal>;
+      };
+      if (!res.ok) {
+        throw new Error(body.error ?? "Couldn't fill the form");
+      }
+      const proposal = body.proposal;
+      if (proposal?.type !== "asset") {
+        throw new Error("Couldn't fill the form");
+      }
+
+      setDraft((current) => {
+        const next = { ...current };
+        const fillEmpty = (
+          key: string,
+          value: string | number | null | undefined,
+        ) => {
+          if (next[key]?.trim() || value == null) return;
+          if (typeof value === "number" && !Number.isFinite(value)) return;
+          const stringValue = String(value).trim();
+          if (stringValue) next[key] = stringValue;
+        };
+
+        fillEmpty("title", proposal.title);
+        fillEmpty("subtitle", proposal.subtitle);
+        fillEmpty("category", proposal.category);
+        fillEmpty("status", proposal.status);
+        fillEmpty("location", proposal.location);
+        fillEmpty("costBasis", proposal.costBasis);
+        fillEmpty("currentValue", proposal.currentValue);
+        fillEmpty("acquiredAt", proposal.acquiredAt?.slice(0, 10));
+        fillEmpty("url", proposal.url);
+        fillEmpty("imageUrl", proposal.photoUrl);
+
+        let notes = next.notes?.trim() ?? "";
+        const appendUnique = (value: unknown, label?: string) => {
+          if (typeof value !== "string" && typeof value !== "number") return;
+          const textValue = String(value).trim();
+          if (!textValue) return;
+          const line = label ? `${label}: ${textValue}` : textValue;
+          const normalizedNotes = notes.toLocaleLowerCase();
+          if (
+            normalizedNotes.includes(line.toLocaleLowerCase()) ||
+            (label && normalizedNotes.includes(textValue.toLocaleLowerCase()))
+          ) {
+            return;
+          }
+          notes = notes ? `${notes}\n${line}` : line;
+        };
+
+        appendUnique(proposal.notes);
+        appendUnique(proposal.details?.condition, "Condition");
+        appendUnique(proposal.details?.serialNumber, "Serial");
+        appendUnique(proposal.details?.year, "Year");
+        appendUnique(proposal.details?.purchaseChannel, "Bought via");
+        if (notes) next.notes = notes;
+
+        return next;
+      });
+      setEnriched(true);
+      haptic("success");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't fill the form");
+    } finally {
+      setSmartFilling(false);
+    }
+  }
 
   async function save() {
     const title = draft.title?.trim();
@@ -305,6 +402,49 @@ export function AssetEditor({
         </div>
 
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 p-5">
+          {!asset && smartFill ? (
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-[var(--color-muted-foreground)] mb-1">
+                Describe it
+              </label>
+              <div className="flex items-end gap-2">
+                <textarea
+                  ref={smartTextRef}
+                  value={smartText}
+                  onChange={(e) => setSmartText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === "Enter" &&
+                      (e.metaKey || e.ctrlKey)
+                    ) {
+                      e.preventDefault();
+                      void fillFromDescription();
+                    }
+                  }}
+                  placeholder="Describe it — brand, model, what you paid, when, where it lives"
+                  rows={3}
+                  className="min-w-0 flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2.5 py-1.5 text-sm focus:border-[var(--color-ring)] focus:outline-none resize-y"
+                />
+                <button
+                  type="button"
+                  onClick={fillFromDescription}
+                  disabled={smartFilling || !smartText.trim()}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-foreground)] text-[var(--color-background)] px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+                >
+                  {smartFilling ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : null}
+                  {smartFilling ? "Filling…" : "Fill"}
+                </button>
+              </div>
+              {enriched ? (
+                <div className="mt-1 flex items-center gap-1 text-xs text-[var(--color-muted-foreground)]">
+                  ✓ Filled from description — check the values
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="sm:col-span-2 relative">
             <label className="block text-xs font-medium text-[var(--color-muted-foreground)] mb-1">
               Title

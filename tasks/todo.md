@@ -716,3 +716,31 @@ Eddie: desktop Read later page empty despite "using it for a while on my phone".
   Left for Eddie: delete the old "Read Later" and the stray "Read Later signed"
   (GUI-only; tiles are unlabeled AXGroups, and his terminal was in front).
   Shortcut source: scratchpad only (contains CAPTURE_TOKEN) — not committed.
+
+## Contacts → Friends link + iMessage stats (2026-09-09)
+Eddie: "first link my contacts to my friends database. then do imessage sync but i just
+want stats." Decisions: stats bump `Person.lastInteractionAt` + report file (no schema
+change); nightly launchd on the Mac. WhatsApp out of scope (no personal API).
+Baseline: 502 people, 1 phone, 77 emails, 86 with any last-seen. Contacts: 6,788 cards.
+Dry-run tiers: exact 197 / contains 40 / nickname 5 / unique-first 2 → 244 matched.
+- [ ] `scripts/link-contacts.ts` — JXA export → tiered match → fill null phone/email →
+      `~/Library/Application Support/personal-os/contact-handles.json` + link-report
+- [ ] `scripts/imessage-stats.ts` — chat.db copy, metadata-only SQL, per-person stats,
+      bump-forward last-seen, report JSON + console tables, `--install-launchd`
+- [ ] BLOCKED on Eddie: Full Disk Access for /Applications/Knife Terminal.app
+- [ ] Run link (real), verify counts; run stats once FDA granted; install launchd
+
+## Inventory: natural-language add (2026-09-09)
+Eddie: "allow me to add an item to inventory with natural language" (the New entry modal
+has 11 fields). Reuses `parseCapture` with a new `forceType: "inventory"`.
+- [x] `smart-capture.ts`: forceType "inventory" + categoryHints addendum
+- [x] parse route: accept forceType=inventory, pass the user's existing categories,
+      coerce/422 non-asset results
+- [x] `asset-editor.tsx`: "Describe it" textarea + Fill (⌘↩) in create mode, fill-empty-only
+- [x] grid + inventory page pass `smartFill="inventory"`
+- [x] `pnpm typecheck` clean
+- [ ] Build + API/browser verification
+
+Review: Inventory create mode now sends descriptions through the authenticated smart-capture
+route, reuses the user's category vocabulary, and prefills only blank fields. Existing typed
+notes are preserved while unique inventory details are appended. No schema or script changes.

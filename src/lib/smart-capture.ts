@@ -120,7 +120,8 @@ interface ParseInput {
   photo?: CapturePhoto;
   today: string; // YYYY-MM-DD — passed in so Claude can resolve "Friday", "yesterday"
   activeProjects: ActiveProject[];
-  forceType?: "trip";
+  forceType?: "trip" | "inventory";
+  categoryHints?: string[];
 }
 
 const SYSTEM_PROMPT = `You classify a user's quick "capture" into one of FIVE structured record types and extract the fields needed to file it. The user may have attached a photo (an object, a receipt, a business card, a screenshot) and a short typed description.
@@ -271,6 +272,12 @@ export async function parseCapture(input: ParseInput): Promise<CaptureProposal> 
       ? [
           "",
           'REQUIRED TYPE: trip — the user is filling in a "New trip" form. Classify this capture as "trip" regardless of other signals and extract the trip fields.',
+        ]
+      : []),
+    ...(input.forceType === "inventory"
+      ? [
+          "",
+          `REQUIRED TYPE: asset/inventory — the user is filling in a "New inventory item" form. Return type "asset" with assetKind "inventory" regardless of other signals. title = "Brand Model" the way people say it ("Leica M11", "Nikon Z8", "Togo Couch"), never the model alone. subtitle = "Brand · Model". category: reuse one of the user's existing categories when it fits: ${input.categoryHints?.join(", ") || "(none yet)"} (otherwise a short lowercase noun). status: one of owned | loaned | stored | sold | wishlist | lost | broken (default owned; "want"/"thinking about" → wishlist). costBasis and currentValue in USD numbers; if the current value is not stated, estimate it (web search allowed) and mention the basis in notes. acquiredAt as YYYY-MM-DD (resolve relative dates against TODAY; year-only → YYYY-01-01). location if mentioned. url if mentioned. notes: anything with no field (condition, serial number, seller, why it matters). details: { brand, model, year, condition, serialNumber, purchaseChannel } when known.`,
         ]
       : []),
   ].join("\n");

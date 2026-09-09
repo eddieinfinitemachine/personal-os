@@ -28,7 +28,9 @@ export async function POST(request: Request) {
   const photo = form.get("photo");
   const forceTypeRaw = form.get("forceType");
   const forceType =
-    forceTypeRaw === "trip" ? ("trip" as const) : undefined;
+    forceTypeRaw === "trip" || forceTypeRaw === "inventory"
+      ? forceTypeRaw
+      : undefined;
 
   if (typeof text !== "string" || text.trim().length === 0) {
     return NextResponse.json({ error: "text required" }, { status: 400 });
@@ -114,6 +116,17 @@ export async function POST(request: Request) {
     select: { id: true, name: true, kind: true },
     orderBy: [{ position: "asc" }, { createdAt: "asc" }],
   });
+  const categoryRows =
+    forceType === "inventory"
+      ? await prisma.asset.findMany({
+          where: { userId, kind: "inventory", category: { not: null } },
+          distinct: ["category"],
+          select: { category: true },
+        })
+      : [];
+  const categoryHints = categoryRows.flatMap(({ category }) =>
+    typeof category === "string" && category.trim() ? [category.trim()] : [],
+  );
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -125,6 +138,7 @@ export async function POST(request: Request) {
       forceType,
       today,
       activeProjects,
+      categoryHints,
     });
   } catch (err) {
     console.error("smart-capture parse failed", err);
@@ -134,6 +148,18 @@ export async function POST(request: Request) {
       },
       { status: 502 },
     );
+  }
+
+  if (forceType === "inventory") {
+    if (proposal.type !== "asset") {
+      return NextResponse.json(
+        { error: "Couldn't read that as an inventory item" },
+        { status: 422 },
+      );
+    }
+    if (proposal.assetKind !== "inventory") {
+      proposal = { ...proposal, assetKind: "inventory" };
+    }
   }
 
   // Validate the projectId Claude returned (if any) actually belongs to this user.

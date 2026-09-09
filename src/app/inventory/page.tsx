@@ -25,6 +25,7 @@ export default async function InventoryPage() {
       <AssetGrid
         kind="inventory"
         initialAssets={assets}
+        smartFill="inventory"
         emptyHint="Log what you own — handy for insurance, sell-day prep, and remembering what's in storage."
         fields={[
           { key: "subtitle", label: "Brand / model" },
