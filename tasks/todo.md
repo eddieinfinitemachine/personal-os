@@ -723,12 +723,20 @@ want stats." Decisions: stats bump `Person.lastInteractionAt` + report file (no 
 change); nightly launchd on the Mac. WhatsApp out of scope (no personal API).
 Baseline: 502 people, 1 phone, 77 emails, 86 with any last-seen. Contacts: 6,788 cards.
 Dry-run tiers: exact 197 / contains 40 / nickname 5 / unique-first 2 → 244 matched.
-- [ ] `scripts/link-contacts.ts` — JXA export → tiered match → fill null phone/email →
+- [x] `scripts/link-contacts.ts` — JXA export → tiered match → fill null phone/email →
       `~/Library/Application Support/personal-os/contact-handles.json` + link-report
-- [ ] `scripts/imessage-stats.ts` — chat.db copy, metadata-only SQL, per-person stats,
+- [x] `scripts/imessage-stats.ts` (written; live run blocked on FDA) — chat.db copy, metadata-only SQL, per-person stats,
       bump-forward last-seen, report JSON + console tables, `--install-launchd`
 - [ ] BLOCKED on Eddie: Full Disk Access for /Applications/Knife Terminal.app
-- [ ] Run link (real), verify counts; run stats once FDA granted; install launchd
+- [x] Link ran for real 2026-09-09: 245 matched (exact 197 / contains 40 / nickname 6 /
+      unique-first 2), phones 1→229, emails 77→207; second run is a no-op. Handles map
+      + link-report written to ~/Library/Application Support/personal-os/.
+- [ ] Run stats once FDA granted; install launchd
+- Review: Cursor relay returned nothing (three attempts, exit 0, no files) → Codex
+  fallback wrote both scripts. Fixed in review: JXA must use the `app.people`
+  specifier (not `app.people()`) for bulk property reads; tier counters were
+  double-counting; unique-first-name tier now only for single-token names;
+  dry-run now reports would-set counts; empty sqlite3 -json output guard.
 
 ## Inventory: natural-language add (2026-09-09)
 Eddie: "allow me to add an item to inventory with natural language" (the New entry modal
