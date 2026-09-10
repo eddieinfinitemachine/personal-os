@@ -1,3 +1,4 @@
+import { deleteAssetWithBlobs } from "@/lib/asset-delete";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
@@ -63,6 +64,6 @@ export async function DELETE(
   if (!existing || existing.userId !== userId) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
-  await prisma.asset.delete({ where: { id } });
+  await deleteAssetWithBlobs(id);
   return NextResponse.json({ ok: true });
 }

@@ -9,6 +9,7 @@ import {
   Image as ImageIcon,
   LayoutGrid,
   Plus,
+  Paperclip,
   Star,
   Table2,
 } from "lucide-react";
@@ -33,6 +34,7 @@ export type AssetRow = {
   acquiredAt: Date | string | null;
   notes: string | null;
   detailsJson?: unknown;
+  attachmentCount?: number;
 };
 
 type View = "cards" | "table";
@@ -46,6 +48,7 @@ export function AssetGrid({
   emptyHint,
   autoEnrich,
   smartFill,
+  attachments,
 }: {
   kind: string;
   initialAssets: AssetRow[];
@@ -54,6 +57,7 @@ export function AssetGrid({
   emptyHint?: string;
   autoEnrich?: "place" | "media";
   smartFill?: "inventory";
+  attachments?: boolean;
 }) {
   const [editing, setEditing] = useState<AssetRow | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -326,6 +330,7 @@ export function AssetGrid({
         fields={editorFields}
         autoEnrich={autoEnrich}
         smartFill={smartFill}
+        attachments={attachments}
         onClose={() => {
           setEditing(null);
           setAddOpen(false);
@@ -421,7 +426,7 @@ function TableView({
                 className="border-t border-[var(--color-border)] hover:bg-[var(--color-accent)]/30 cursor-pointer"
               >
                 <td className="px-3 py-2 align-top">
-                  <div className="font-medium">{a.title}</div>
+                  <div className="font-medium">{a.title} <AttachmentCount count={a.attachmentCount} /></div>
                   {a.notes ? (
                     <div className="text-xs text-[var(--color-muted-foreground)] line-clamp-1 md:hidden">
                       {a.notes}
@@ -650,6 +655,7 @@ function CardView({
               </div>
             ) : null}
           </div>
+          <AttachmentCount count={a.attachmentCount} />
         </button>
       ))}
     </div>
@@ -756,4 +762,9 @@ function MobileList({
       })}
     </ul>
   );
+}
+
+function AttachmentCount({ count }: { count?: number }) {
+  if (!count) return null;
+  return <span className="inline-flex items-center gap-1 text-xs font-normal text-[var(--color-muted-foreground)]" aria-label={`${count} attachments`}><Paperclip className="size-3" />{count}</span>;
 }

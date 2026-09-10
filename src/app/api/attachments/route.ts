@@ -6,23 +6,25 @@ import { listAccessWhere } from "@/lib/list-access";
 
 const VALID_KINDS = new Set(["file", "link", "dropbox"]);
 
-// Resolve + authorize the attachment owner (a project or a todo) from a
-// projectId/todoId pair. Returns the Prisma `where` to scope a listing and the
+// Resolve + authorize the attachment owner (a project, a todo, or an asset) from a
+// projectId/todoId/assetId selection. Returns the Prisma `where` to scope a listing and the
 // `data` fields to stamp on a create, or a NextResponse error to short-circuit.
 async function resolveOwner(
   userId: string,
   projectId: string | null | undefined,
   todoId: string | null | undefined,
+  assetId: string | null | undefined,
 ): Promise<
   | { error: NextResponse }
-  | { listWhere: { projectId: string; userId: string } | { todoId: string }; ownerData: { projectId?: string; todoId?: string } }
+  | { listWhere: { projectId: string; userId: string } | { todoId: string } | { assetId: string }; ownerData: { projectId?: string; todoId?: string; assetId?: string } }
 > {
   const hasProject = typeof projectId === "string" && projectId.length > 0;
   const hasTodo = typeof todoId === "string" && todoId.length > 0;
-  if (hasProject === hasTodo) {
+  const hasAsset = typeof assetId === "string" && assetId.length > 0;
+  if (Number(hasProject) + Number(hasTodo) + Number(hasAsset) !== 1) {
     return {
       error: NextResponse.json(
-        { error: "exactly one of projectId or todoId required" },
+        { error: "exactly one of projectId, todoId or assetId required" },
         { status: 400 },
       ),
     };
@@ -37,6 +39,11 @@ async function resolveOwner(
       listWhere: { projectId: projectId as string, userId },
       ownerData: { projectId: projectId as string },
     };
+  }
+  if (hasAsset) {
+    const asset = await prisma.asset.findFirst({ where: { id: assetId as string, userId } });
+    if (!asset) return { error: NextResponse.json({ error: "asset not found" }, { status: 404 }) };
+    return { listWhere: { assetId: assetId as string }, ownerData: { assetId: assetId as string } };
   }
   // Authorize via parent list membership so shared-list collaborators can see
   // and add a todo's files.
@@ -59,6 +66,7 @@ export async function GET(request: Request) {
     userId,
     url.searchParams.get("projectId"),
     url.searchParams.get("todoId"),
+    url.searchParams.get("assetId"),
   );
   if ("error" in owner) return owner.error;
 
@@ -76,6 +84,7 @@ export async function POST(request: Request) {
   const body = (await request.json()) as {
     projectId?: string;
     todoId?: string;
+    assetId?: string;
     kind?: string;
     title?: string;
     url?: string;
@@ -83,7 +92,7 @@ export async function POST(request: Request) {
     size?: number;
   };
 
-  const owner = await resolveOwner(userId, body.projectId, body.todoId);
+  const owner = await resolveOwner(userId, body.projectId, body.todoId, body.assetId);
   if ("error" in owner) return owner.error;
 
   const url = body.url?.trim();

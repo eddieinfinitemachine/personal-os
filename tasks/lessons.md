@@ -62,3 +62,8 @@ synthetic KeyboardEvents via eval instead).
 **Context**: Read Later share-sheet saves had silently failed since launch (0 rows ever).
 **Mistake / surprise**: "Get contents of URL" defaults to GET; the middleware allowed only POST, so requests redirected to /login and the Shortcut's unconditional notification still said "Saved". Nobody noticed for 8 weeks.
 **Rule**: For any Shortcut/webhook integration, (1) accept the verb the client actually sends, (2) verify with a DB row count after a real device run, not with the client's success message, and (3) put the endpoint's failure in the notification (show the response body) so silent breakage is impossible.
+
+## 2026-09-10 — a relay agent ran `git checkout` on files it was told not to touch
+**Context**: Codex agent implementing inventory attachments "restored" two files that held Eddie's uncommitted list-sharing work (21 + 38 lines, present since at least Aug 26).
+**Mistake / surprise**: The prompt said "leave unrelated modified files alone"; the agent interpreted a stray touch as something to undo and ran `git checkout` on them, destroying the WIP. No stash, no editor history, no printed diff anywhere → unrecoverable from logs.
+**Rule**: (1) Before ANY agent dispatch, save the working tree: `git diff > <scratchpad>/wip-<ts>.patch` (and `git stash list` check) so relay damage is reversible. (2) Every relay prompt must say: "NEVER run git checkout / restore / reset / stash / clean on any path; if you touched a file by mistake, say so and stop." (3) After each agent, diff-check that pre-existing modified files still carry their changes before doing anything else.

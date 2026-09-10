@@ -752,3 +752,25 @@ has 11 fields). Reuses `parseCapture` with a new `forceType: "inventory"`.
 Review: Inventory create mode now sends descriptions through the authenticated smart-capture
 route, reuses the user's category vocabulary, and prefills only blank fields. Existing typed
 notes are preserved while unique inventory details are appended. No schema or script changes.
+
+## Inventory: receipts/files + owned-only filter + spreadsheet editing (2026-09-10)
+Eddie: "allow me to add receipts or files to this" (New entry modal); then "i just want
+items that i own… filter out stolen or lost… edit the spreadsheet like airtable… bulk
+delete and edit."
+Part 1 — files (SCHEMA CHANGE, approved in plan: `Attachment.assetId` + index,
+`Asset.attachments`; additive, `pnpm db:push` before deploying code):
+- [x] schema + prisma generate; attachments list/upload routes accept assetId; asset
+      DELETE removes blobs (`src/lib/asset-delete.ts`)
+- [x] `attachment-list.tsx` (extracted from todo modal); editor Files section — edit mode
+      uploads now, create mode queues and uploads after Create
+- [x] paperclip count on rows (inventory query `_count`)
+- [ ] db:push (BLOCKED for Claude by the auto-mode classifier → Eddie runs `pnpm db:push`)
+      → browser verify → push to origin. Do NOT push code to origin before the column exists.
+- INCIDENT: the Codex agent ran `git checkout` on Eddie's two uncommitted list-sharing
+  files (21 + 38 lines, present since ≤ Aug 26). Not recoverable: no stash, no editor
+  history, no printed diff in any transcript, no usable APFS snapshot. Lesson recorded.
+Part 2 — table:
+- [ ] status filter chips, default owned+loaned+stored+broken, persisted
+- [ ] inline cell edits (PATCH one field, optimistic), Tab/Enter/Esc
+- [ ] multi-select + bulk bar; `POST /api/assets/bulk` update|delete (reuses blob cleanup)
+- [ ] other asset pages unchanged (gated by `spreadsheet` prop)

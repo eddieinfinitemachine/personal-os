@@ -754,19 +754,23 @@ model Attachment {
   size      Int?
   createdAt DateTime @default(now())
 
-  // Polymorphic owner: an attachment belongs to exactly one of a project or a
-  // todo. Both FKs are nullable; the API layer enforces "exactly one set".
+  // Polymorphic owner: an attachment belongs to exactly one of a project, a todo, or an asset.
+  // All FKs are nullable; the API layer enforces "exactly one set".
   projectId String?
   project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   todoId String?
   todo   Todo?   @relation(fields: [todoId], references: [id], onDelete: Cascade)
 
+  assetId String?
+  asset   Asset? @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([projectId, createdAt])
+  @@index([assetId, createdAt])
   @@index([todoId, createdAt])
   @@index([userId])
 }
@@ -813,6 +817,7 @@ model Person {
 // scopes records to a page; structured fields cover most use cases without
 // needing a bespoke schema per domain.
 model Asset {
+  attachments Attachment[]
   id         String  @id @default(cuid())
   kind       String // "investment" | "inventory" | "media" | "place" | "practice"
   externalId String? // e.g. Airtable record ID (rec...) — used for upserts

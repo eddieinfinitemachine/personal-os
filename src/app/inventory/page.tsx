@@ -12,6 +12,7 @@ export default async function InventoryPage() {
 
   const assets = await prisma.asset.findMany({
     where: { userId, kind: "inventory", archived: false },
+    include: { _count: { select: { attachments: true } } },
     orderBy: [{ position: "asc" }, { createdAt: "desc" }],
   });
   return (
@@ -24,7 +25,8 @@ export default async function InventoryPage() {
       </header>
       <AssetGrid
         kind="inventory"
-        initialAssets={assets}
+        initialAssets={assets.map(({ _count, ...asset }) => ({ ...asset, attachmentCount: _count.attachments }))}
+        attachments
         smartFill="inventory"
         emptyHint="Log what you own — handy for insurance, sell-day prep, and remembering what's in storage."
         fields={[

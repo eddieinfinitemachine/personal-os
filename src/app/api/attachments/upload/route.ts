@@ -15,14 +15,16 @@ export async function POST(request: Request) {
   const form = await request.formData();
   const projectId = form.get("projectId");
   const todoId = form.get("todoId");
+  const assetId = form.get("assetId");
   const file = form.get("file");
 
-  // An attachment belongs to exactly one owner — a project or a todo.
+  // An attachment belongs to exactly one owner — a project, a todo, or an asset.
   const hasProject = typeof projectId === "string" && projectId.length > 0;
   const hasTodo = typeof todoId === "string" && todoId.length > 0;
-  if (hasProject === hasTodo) {
+  const hasAsset = typeof assetId === "string" && assetId.length > 0;
+  if (Number(hasProject) + Number(hasTodo) + Number(hasAsset) !== 1) {
     return NextResponse.json(
-      { error: "exactly one of projectId or todoId required" },
+      { error: "exactly one of projectId, todoId or assetId required" },
       { status: 400 },
     );
   }
@@ -47,6 +49,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "project not found" }, { status: 404 });
     }
     scope = `projects/${projectId}`;
+  } else if (hasAsset) {
+    const asset = await prisma.asset.findFirst({ where: { id: assetId as string, userId } });
+    if (!asset) return NextResponse.json({ error: "asset not found" }, { status: 404 });
+    scope = `assets/${assetId}`;
   } else {
     // Authorize via parent list membership so shared-list collaborators can
     // attach files to a todo too.
@@ -100,6 +106,7 @@ export async function POST(request: Request) {
       userId,
       projectId: hasProject ? (projectId as string) : null,
       todoId: hasTodo ? (todoId as string) : null,
+      assetId: hasAsset ? (assetId as string) : null,
       kind: "file",
       title: file.name || "Untitled",
       url: blobUrl,

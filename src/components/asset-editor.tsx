@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Trash2, X } from "lucide-react";
+import { AttachmentList, AttachmentDropZone, formatAttachmentSize, uploadAttachment } from "./attachment-list";
 import type { AssetRow } from "./asset-grid";
 import { haptic } from "@/lib/haptic";
 import type { AssetProposal } from "@/lib/smart-capture";
@@ -42,6 +43,7 @@ export function AssetEditor({
   fields,
   autoEnrich,
   smartFill,
+  attachments = false,
   onClose,
 }: {
   open: boolean;
@@ -50,10 +52,16 @@ export function AssetEditor({
   fields: EditorField[];
   autoEnrich?: "place" | "media"; // link in `url` fills empty fields
   smartFill?: "inventory";
+  attachments?: boolean;
   onClose: () => void;
 }) {
   const router = useRouter();
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [queuedFiles, setQueuedFiles] = useState<File[]>([]);
+  const [createdAssetId, setCreatedAssetId] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+  const hydratedIdentity = useRef<string | null>(null);
+  const savingRef = useRef(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +81,17 @@ export function AssetEditor({
 
   // Hydrate the draft when opened.
   useEffect(() => {
-    if (!open) return;
+    if (!open) { hydratedIdentity.current = null; return; }
+    // Server refreshes must preserve the draft and any remaining upload queue.
+    const identity = asset?.id ?? "new";
+    if (hydratedIdentity.current === identity) return;
+    hydratedIdentity.current = identity;
+    setQueuedFiles([]);
+    setCreatedAssetId(null);
+    setUploadProgress(null);
+    setSaving(false);
+    savingRef.current = false;
+    setError(null);
     const next: Record<string, string> = {};
     if (asset) {
       for (const f of fields) {
@@ -294,11 +312,13 @@ export function AssetEditor({
   }
 
   async function save() {
+    if (savingRef.current) return;
     const title = draft.title?.trim();
     if (!title) {
       setError("Title is required.");
       return;
     }
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     const payload: Record<string, unknown> = { kind, title };
@@ -323,8 +343,9 @@ export function AssetEditor({
     }
     if (Object.keys(details).length) payload.details = details;
     try {
-      const res = asset
-        ? await fetch(`/api/assets/${asset.id}`, {
+      const savedId = asset?.id ?? createdAssetId;
+      const res = savedId
+        ? await fetch(`/api/assets/${savedId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
@@ -340,12 +361,30 @@ export function AssetEditor({
         setSaving(false);
         return;
       }
+      const body = await res.json() as { asset: { id: string } };
+      if (!asset) setCreatedAssetId(body.asset.id);
+      if (attachments && !asset) {
+        for (const [i, file] of queuedFiles.entries()) {
+          setUploadProgress(`Uploading ${i + 1} of ${queuedFiles.length}…`);
+          try {
+            await uploadAttachment({ assetId: body.asset.id }, file);
+            setQueuedFiles((prev) => prev.filter((f) => f !== file));
+          } catch (e) {
+            setError(`Saved, but ${file.name} failed to upload: ${e instanceof Error ? e.message : "Upload failed."}`);
+            router.refresh();
+            return;
+          }
+        }
+      }
       haptic("success");
       onClose();
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error.");
+    } finally {
+      savingRef.current = false;
       setSaving(false);
+      setUploadProgress(null);
     }
   }
 
@@ -384,7 +423,7 @@ export function AssetEditor({
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 pb-[calc(1rem+56px+env(safe-area-inset-bottom))] md:pb-4"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && !savingRef.current) onClose();
       }}
     >
       <div className="w-full max-w-2xl rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-2xl max-h-[85vh] overflow-y-auto">
@@ -393,7 +432,7 @@ export function AssetEditor({
             {asset ? `Edit · ${asset.title}` : "New entry"}
           </div>
           <button
-            onClick={onClose}
+            onClick={() => { if (!savingRef.current) onClose(); }}
             className="rounded p-1 hover:bg-[var(--color-accent)]"
             title="Close"
           >
@@ -607,6 +646,24 @@ export function AssetEditor({
               ) : null}
             </div>
           ))}
+          {attachments ? (
+            <div className="sm:col-span-2">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">Files</div>
+              {asset ? <AttachmentList owner={{ assetId: asset.id }} onCountChange={() => router.refresh()} /> : (
+                <AttachmentDropZone disabled={saving} onFiles={(files) => setQueuedFiles((prev) => [...prev, ...files])}>
+                  {queuedFiles.length === 0 ? <div className="text-[12px] text-[var(--color-muted-foreground)]/70">Drop receipts or files here. Files upload after saving.</div> : null}
+                  <div className="flex flex-wrap gap-1.5">
+                    {queuedFiles.map((file, i) => (
+                      <span key={i} className="inline-flex max-w-full items-center gap-1 rounded-md bg-[var(--color-accent)]/60 px-2 py-1 text-xs">
+                        <span className="truncate">{file.name} · {formatAttachmentSize(file.size)}</span>
+                        <button type="button" disabled={saving} aria-label={`Remove ${file.name}`} onClick={() => setQueuedFiles((prev) => prev.filter((_, index) => index !== i))}><X className="size-3" /></button>
+                      </span>
+                    ))}
+                  </div>
+                </AttachmentDropZone>
+              )}
+            </div>
+          ) : null}
         </div>
 
         {error ? (
@@ -639,7 +696,7 @@ export function AssetEditor({
           )}
           <div className="flex items-center gap-2">
             <button
-              onClick={onClose}
+              onClick={() => { if (!savingRef.current) onClose(); }}
               className="rounded-md px-3 py-1.5 text-sm text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
             >
               Cancel
@@ -652,7 +709,7 @@ export function AssetEditor({
               {saving ? (
                 <Loader2 className="size-3.5 animate-spin" />
               ) : null}
-              {asset ? "Save" : "Create"}
+              {uploadProgress ?? (asset ? "Save" : createdAssetId ? "Retry save" : "Create")}
             </button>
           </div>
         </div>
