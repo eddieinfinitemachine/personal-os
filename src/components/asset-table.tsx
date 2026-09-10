@@ -297,16 +297,19 @@ export function SpreadsheetTable({ rows, fields, onEdit, onCommit, selected, onS
   const some = visibleIds.some((id) => selected.has(id));
   return <div className="rounded-xl border border-[var(--color-border)] overflow-x-auto">
     <table className="w-full text-sm">
-      <thead className="bg-[var(--color-accent)]/30 text-xs text-[var(--color-muted-foreground)] uppercase tracking-wider"><tr>
-        <th className="px-3 py-2"><input type="checkbox" aria-label="Select all visible rows" checked={all} ref={(el) => { if (el) el.indeterminate = some && !all; }} onChange={onSelectAll} className="accent-[var(--color-foreground)]" /></th>
+      <thead className="bg-[var(--color-accent)]/30 text-xs text-[var(--color-muted-foreground)] uppercase tracking-wider"><tr className="group/head">
+        {/* Selection is available but not on display: the checkbox column reads as
+            left padding until you hover a row or a selection exists, so the table
+            stays as clean as Investments. */}
+        <th className="w-8 px-2 py-2"><input type="checkbox" aria-label="Select all visible rows" checked={all} ref={(el) => { if (el) el.indeterminate = some && !all; }} onChange={onSelectAll} className={cn("accent-[var(--color-foreground)] transition-opacity", some ? "opacity-100" : "opacity-0 group-hover/head:opacity-100 focus-visible:opacity-100")} /></th>
         {columns.map((column) => <th key={column.key} className={cn("px-3 py-2 text-left font-semibold whitespace-nowrap", column.type === "number" && "text-right")}>{column.label}</th>)}
         <th className="px-3 py-2 text-right font-semibold whitespace-nowrap">Expected Return</th>
         <th className="px-3 py-2"><span className="sr-only">Open</span></th>
       </tr></thead>
       <tbody>{rows.map((row) => {
         const ret = row.returnPercent ?? (row.costBasis && row.currentValue != null ? (row.currentValue - row.costBasis) / row.costBasis * 100 : null);
-        return <tr key={row.id} className={cn("border-t border-[var(--color-border)] hover:bg-[var(--color-accent)]/30", selected.has(row.id) && "bg-[var(--color-accent)]/60")}>
-          <td className="px-3 py-2 align-top"><input type="checkbox" aria-label={`Select ${row.title}`} checked={selected.has(row.id)} onChange={() => {}} onClick={(e) => onSelect(row.id, e.shiftKey)} className="accent-[var(--color-foreground)]" /></td>
+        return <tr key={row.id} className={cn("group border-t border-[var(--color-border)] hover:bg-[var(--color-accent)]/30", selected.has(row.id) && "bg-[var(--color-accent)]/60")}>
+          <td className="w-8 px-2 py-2 align-top"><input type="checkbox" aria-label={`Select ${row.title}`} checked={selected.has(row.id)} onChange={() => {}} onClick={(e) => onSelect(row.id, e.shiftKey)} className={cn("accent-[var(--color-foreground)] transition-opacity", selected.has(row.id) || some ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100")} /></td>
           {columns.map((column) => <EditableCell key={column.key} row={row} column={column} disabled={busy || pending.has(`${row.id}:${column.key}`)} suggestions={column.key === "category" || column.key === "status" ? fields.find((f) => f.key === column.key)?.suggestions : undefined} onCommit={onCommit} />)}
           <td className={cn("px-3 py-2 align-top text-right tabular-nums", ret != null && ret > 0 && "text-emerald-500", ret != null && ret < 0 && "text-rose-500")}>{ret != null ? `${ret > 0 ? "+" : ""}${ret.toFixed(0)}%` : "—"}</td>
           <td className="px-3 py-2 align-top"><div className="flex gap-2">

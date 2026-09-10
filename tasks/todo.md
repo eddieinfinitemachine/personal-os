@@ -791,6 +791,10 @@ Part 2 — table (done 2026-09-10):
   right-aligned with native spinners suppressed; (b) category renders as the uppercase chip
   again; (c) Expected Return is emerald/rose; (d) cost muted, value medium; (e) where /
   status / category no longer wrap, so rows are one line like Investments.
+- Checkbox column removed on sight (2026-09-10, Eddie: "i think get rid of checkbox
+  column" — he likes the Investments layout). Selection is kept but hidden: the box
+  fades in on row hover, and once anything is selected every box shows so a selection
+  can be extended. Column is w-8 so nothing shifts. Linear/Airtable pattern.
 - INCIDENT 2: the Part-2 agent overwrote tasks/todo.md with its own scratch plan (776
   lines → 58). Restored from HEAD. Same root cause family as INCIDENT 1 — see lessons.
 
