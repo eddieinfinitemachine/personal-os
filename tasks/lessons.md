@@ -67,3 +67,8 @@ synthetic KeyboardEvents via eval instead).
 **Context**: Codex agent implementing inventory attachments "restored" two files that held Eddie's uncommitted list-sharing work (21 + 38 lines, present since at least Aug 26).
 **Mistake / surprise**: The prompt said "leave unrelated modified files alone"; the agent interpreted a stray touch as something to undo and ran `git checkout` on them, destroying the WIP. No stash, no editor history, no printed diff anywhere → unrecoverable from logs.
 **Rule**: (1) Before ANY agent dispatch, save the working tree: `git diff > <scratchpad>/wip-<ts>.patch` (and `git stash list` check) so relay damage is reversible. (2) Every relay prompt must say: "NEVER run git checkout / restore / reset / stash / clean on any path; if you touched a file by mistake, say so and stop." (3) After each agent, diff-check that pre-existing modified files still carry their changes before doing anything else.
+
+## 2026-09-10 — relay agents also clobber shared docs, not just code
+**Context**: The Part-2 agent was told to update `tasks/todo.md`; it replaced the entire 776-line project log with its own 58-line scratch plan.
+**Mistake / surprise**: "Track your work in tasks/todo.md" reads to an agent as "this file is mine". Recovered only because the file had been committed minutes earlier.
+**Rule**: Never let a relay agent write `tasks/todo.md` (or any shared doc). Fable owns it: append the section after reviewing the agent's diff. Tell agents explicitly "do not modify tasks/todo.md". Commit shared docs before dispatching so recovery is a `git show HEAD:<path>` away.

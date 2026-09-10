@@ -25,6 +25,8 @@ export default async function InventoryPage() {
       </header>
       <AssetGrid
         kind="inventory"
+        spreadsheet
+        showMoneyTotal
         initialAssets={assets.map(({ _count, ...asset }) => ({ ...asset, attachmentCount: _count.attachments }))}
         attachments
         smartFill="inventory"

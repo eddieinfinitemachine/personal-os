@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef, useLayoutEffect } from "react";
 import NextImage from "next/image";
 import {
   ChevronDown,
@@ -8,12 +8,14 @@ import {
   ExternalLink,
   Image as ImageIcon,
   LayoutGrid,
+  Maximize2,
   Plus,
   Paperclip,
   Star,
   Table2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TableView, SpreadsheetTable, BulkBar, useSpreadsheetRows } from "./asset-table";
 import { AssetEditor, detailStr, type EditorField } from "./asset-editor";
 
 export type AssetRow = {
@@ -49,6 +51,7 @@ export function AssetGrid({
   autoEnrich,
   smartFill,
   attachments,
+  spreadsheet = false,
 }: {
   kind: string;
   initialAssets: AssetRow[];
@@ -58,6 +61,7 @@ export function AssetGrid({
   autoEnrich?: "place" | "media";
   smartFill?: "inventory";
   attachments?: boolean;
+  spreadsheet?: boolean;
 }) {
   const [editing, setEditing] = useState<AssetRow | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -65,6 +69,34 @@ export function AssetGrid({
   const [groupBy, setGroupBy] = useState<GroupBy>("status");
   const [showImages, setShowImages] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  const { rows, commit, bulk, busy, pending, error, retry } = useSpreadsheetRows(initialAssets);
+  const assets = spreadsheet ? rows : initialAssets;
+  const statuses = useMemo(() => [...new Set(initialAssets.map((a) => a.status ?? "—"))], [initialAssets]);
+  const ownedStatuses = useMemo(() => {
+    const defaults = statuses.filter((s) => ["owned", "loaned", "stored", "broken"].includes(s));
+    return defaults.length ? defaults : statuses;
+  }, [statuses]);
+  const [statusFilter, setStatusFilter] = useState<string[] | null>(null);
+  const activeStatuses = statusFilter ?? ownedStatuses;
+  const filtered = useMemo(() => spreadsheet
+    ? assets.filter((a) => activeStatuses.includes(a.status ?? "—"))
+    : assets, [assets, spreadsheet, activeStatuses]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const gridRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const grid = gridRef.current;
+    if (!spreadsheet || !grid?.dataset.focusRow) return;
+    const target = Array.from(grid.querySelectorAll<HTMLTableCellElement>("td[data-editable]")).find((cell) => cell.dataset.row === grid.dataset.focusRow && cell.dataset.column === grid.dataset.focusColumn);
+    delete grid.dataset.focusRow;
+    delete grid.dataset.focusColumn;
+    target?.focus();
+  });
+  const lastSelected = useRef<string | null>(null);
+  useEffect(() => {
+    if (busy) return;
+    setSelected((prev) => new Set([...prev].filter((id) => rows.some((a) => a.id === id))));
+  }, [rows, busy]);
 
   // Persist view + group prefs per kind.
   const prefKey = `personalos:asset-pref:${kind}`;
@@ -76,15 +108,17 @@ export function AssetGrid({
           view?: View;
           groupBy?: GroupBy;
           showImages?: boolean;
+          statusFilter?: string[];
         };
+        if (spreadsheet && Array.isArray(p.statusFilter) && p.statusFilter.every((s) => typeof s === "string")) setStatusFilter(p.statusFilter);
         if (p.view) setView(p.view);
         if (p.groupBy) setGroupBy(p.groupBy);
         if (typeof p.showImages === "boolean") setShowImages(p.showImages);
       }
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefKey]);
-  function persist(p: { view?: View; groupBy?: GroupBy; showImages?: boolean }) {
+  }, [prefKey, spreadsheet]);
+  function persist(p: { view?: View; groupBy?: GroupBy; showImages?: boolean; statusFilter?: string[] }) {
     try {
       const raw = localStorage.getItem(prefKey);
       const cur = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
@@ -93,13 +127,13 @@ export function AssetGrid({
   }
 
   const total = showMoneyTotal
-    ? initialAssets.reduce(
+    ? filtered.reduce(
         (sum, a) => sum + (a.currentValue ?? a.amountUsd ?? 0),
         0
       )
     : 0;
   const totalCost = showMoneyTotal
-    ? initialAssets.reduce((sum, a) => sum + (a.costBasis ?? 0), 0)
+    ? filtered.reduce((sum, a) => sum + (a.costBasis ?? 0), 0)
     : 0;
 
   // Chips should offer values already in use, not just the static defaults —
@@ -123,9 +157,9 @@ export function AssetGrid({
 
   // Build groups.
   const groups = useMemo(() => {
-    if (groupBy === "none") return [{ key: "all", label: null, rows: initialAssets }];
+    if (groupBy === "none") return [{ key: "all", label: null, rows: filtered }];
     const map = new Map<string, AssetRow[]>();
-    for (const a of initialAssets) {
+    for (const a of filtered) {
       const k = (groupBy === "status" ? a.status : a.category) ?? "—";
       const arr = map.get(k) ?? [];
       arr.push(a);
@@ -143,7 +177,35 @@ export function AssetGrid({
         label: key === "—" ? "Uncategorized" : key,
         rows,
       }));
-  }, [initialAssets, groupBy]);
+  }, [filtered, groupBy]);
+
+  const visibleIds = groups.filter((g) => !collapsedGroups.has(g.key)).flatMap((g) => g.rows.map((a) => a.id));
+  function selectRow(id: string, shift: boolean) {
+    const anchor = lastSelected.current;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const checked = !next.has(id);
+      const start = anchor ? visibleIds.indexOf(anchor) : -1;
+      const end = visibleIds.indexOf(id);
+      const ids = shift && start >= 0 && end >= 0
+        ? visibleIds.slice(Math.min(start, end), Math.max(start, end) + 1) : [id];
+      for (const rowId of ids) { if (checked) next.add(rowId); else next.delete(rowId); }
+      return next;
+    });
+    lastSelected.current = id;
+  }
+  function selectAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const all = visibleIds.every((id) => prev.has(id));
+      for (const id of visibleIds) { if (all) next.delete(id); else next.add(id); }
+      return next;
+    });
+  }
+  function filterStatuses(next: string[]) {
+    setStatusFilter(next);
+    persist({ statusFilter: next });
+  }
 
   function toggleGroup(key: string) {
     setCollapsedGroups((prev) => {
@@ -155,8 +217,8 @@ export function AssetGrid({
   }
 
   return (
-    <div>
-      {showMoneyTotal && initialAssets.length > 0 ? (
+    <div ref={gridRef} data-asset-grid={spreadsheet ? "" : undefined} className={spreadsheet && selected.size ? "pb-48" : undefined}>
+      {showMoneyTotal && assets.length > 0 ? (
         <div className="mb-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 flex items-baseline gap-6 flex-wrap">
           <div>
             <div className="text-xs uppercase tracking-wider text-[var(--color-muted-foreground)]">
@@ -184,7 +246,7 @@ export function AssetGrid({
               <div
                 className={cn(
                   "text-lg tabular-nums",
-                  total >= totalCost ? "text-emerald-500" : "text-rose-500"
+                  !spreadsheet && (total >= totalCost ? "text-emerald-500" : "text-rose-500")
                 )}
               >
                 {total >= totalCost ? "+" : ""}
@@ -193,14 +255,22 @@ export function AssetGrid({
             </div>
           ) : null}
           <div className="ml-auto text-xs text-[var(--color-muted-foreground)]">
-            {initialAssets.length} positions
+            {spreadsheet && filtered.length !== assets.length ? `${filtered.length} of ${assets.length} shown` : `${assets.length} positions`}
           </div>
         </div>
       ) : null}
 
+      {spreadsheet ? (
+        <div className="mb-3 flex items-center gap-1.5 flex-wrap text-xs">
+          <StatusChip label="Owned only" active={ownedStatuses.length === activeStatuses.length && ownedStatuses.every((s) => activeStatuses.includes(s))} onClick={() => filterStatuses(ownedStatuses)} />
+          <span className="text-[var(--color-muted-foreground)]">Status:</span>
+          {statuses.map((status) => <StatusChip key={status} label={status} active={activeStatuses.includes(status)} onClick={() => filterStatuses(activeStatuses.includes(status) ? activeStatuses.filter((s) => s !== status) : [...activeStatuses, status])} />)}
+        </div>
+      ) : null}
       {/* Toolbar */}
       <div className="mb-3 flex items-center gap-2 flex-wrap">
-        <div className="hidden md:inline-flex rounded-md border border-[var(--color-border)] overflow-hidden">
+        {spreadsheet && view === "cards" ? <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" aria-label="Select all visible rows" checked={visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))} ref={(el) => { if (el) el.indeterminate = visibleIds.some((id) => selected.has(id)) && !visibleIds.every((id) => selected.has(id)); }} onChange={selectAll} className="accent-[var(--color-foreground)]" />Select all</label> : null}
+        <div className={cn(spreadsheet ? "inline-flex" : "hidden md:inline-flex", "rounded-md border border-[var(--color-border)] overflow-hidden")}>
           <ToolbarBtn
             active={view === "table"}
             onClick={() => {
@@ -263,12 +333,13 @@ export function AssetGrid({
         </button>
       </div>
 
-      {initialAssets.length === 0 ? (
+      {assets.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-[var(--color-border)] p-8 text-center text-sm text-[var(--color-muted-foreground)]">
           {emptyHint ?? "Nothing here yet."}
         </div>
       ) : null}
 
+      {spreadsheet && assets.length > 0 && filtered.length === 0 ? <p className="py-8 text-center text-sm text-[var(--color-muted-foreground)]">No items match the selected statuses.</p> : null}
       {groups.map((g) => {
         const open = !collapsedGroups.has(g.key);
         const hasMoney =
@@ -303,7 +374,7 @@ export function AssetGrid({
 
             {open ? (
               view === "table" ? (
-                <>
+                spreadsheet ? <SpreadsheetTable rows={g.rows} fields={fields} onEdit={setEditing} onCommit={commit} selected={selected} onSelect={selectRow} onSelectAll={selectAll} visibleIds={visibleIds} busy={busy} pending={pending} /> : <>
                   <div className="md:hidden">
                     <MobileList rows={g.rows} onEdit={setEditing} />
                   </div>
@@ -316,6 +387,7 @@ export function AssetGrid({
                   rows={g.rows}
                   showImages={showImages}
                   onEdit={setEditing}
+                  selection={spreadsheet ? { selected, onSelect: selectRow } : undefined}
                 />
               )
             ) : null}
@@ -323,6 +395,11 @@ export function AssetGrid({
         );
       })}
 
+      {spreadsheet && selected.size > 0 ? <BulkBar rows={rows} fields={fields} count={selected.size} busy={busy || pending.size > 0} onClear={() => setSelected(new Set())} onAction={async (action, data) => {
+        const ok = await bulk([...selected], action, data);
+        if (ok) setSelected(new Set());
+      }} /> : null}
+      {spreadsheet && error ? <div role="alert" className="fixed bottom-[calc(12rem+env(safe-area-inset-bottom))] md:bottom-24 left-1/2 -translate-x-1/2 z-40 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-xs shadow-lg">Couldn't save · <button className="underline" onClick={retry} disabled={busy || pending.size > 0}>retry</button></div> : null}
       <AssetEditor
         open={!!editing || addOpen}
         asset={editing}
@@ -364,182 +441,30 @@ function ToolbarBtn({
   );
 }
 
-function TableView({
-  rows,
-  onEdit,
-}: {
-  rows: AssetRow[];
-  onEdit: (a: AssetRow) => void;
-}) {
-  const hasMoney = rows.some(
-    (a) => a.currentValue != null || a.costBasis != null || a.amountUsd != null
-  );
-  const hasRating = rows.some((a) => a.rating != null);
-
-  return (
-    <div className="rounded-xl border border-[var(--color-border)] overflow-hidden">
-      <table className="w-full text-sm">
-        <thead className="bg-[var(--color-accent)]/30 text-xs text-[var(--color-muted-foreground)] uppercase tracking-wider">
-          <tr>
-            <th className="text-left font-semibold px-3 py-2">Title</th>
-            <th className="text-left font-semibold px-3 py-2 hidden md:table-cell">
-              Detail
-            </th>
-            <th className="text-left font-semibold px-3 py-2 hidden md:table-cell">
-              Category
-            </th>
-            {hasMoney ? (
-              <>
-                <th className="text-right font-semibold px-3 py-2 tabular-nums">
-                  Cost
-                </th>
-                <th className="text-right font-semibold px-3 py-2 tabular-nums">
-                  Value
-                </th>
-                <th className="text-right font-semibold px-3 py-2 tabular-nums">
-                  Expected Return
-                </th>
-              </>
-            ) : null}
-            {hasRating ? (
-              <th className="text-right font-semibold px-3 py-2 hidden sm:table-cell">
-                Rating
-              </th>
-            ) : null}
-            <th className="px-3 py-2 w-6"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((a) => {
-            // Prefer the stored returnPercent if set; otherwise compute from
-            // cost basis + current value.
-            const ret =
-              a.returnPercent != null
-                ? a.returnPercent
-                : a.costBasis != null && a.currentValue != null
-                  ? ((a.currentValue - a.costBasis) / a.costBasis) * 100
-                  : null;
-            return (
-              <tr
-                key={a.id}
-                onClick={() => onEdit(a)}
-                className="border-t border-[var(--color-border)] hover:bg-[var(--color-accent)]/30 cursor-pointer"
-              >
-                <td className="px-3 py-2 align-top">
-                  <div className="font-medium">{a.title} <AttachmentCount count={a.attachmentCount} /></div>
-                  {a.notes ? (
-                    <div className="text-xs text-[var(--color-muted-foreground)] line-clamp-1 md:hidden">
-                      {a.notes}
-                    </div>
-                  ) : null}
-                  <div className="md:hidden text-xs text-[var(--color-muted-foreground)] mt-0.5">
-                    {a.subtitle ?? a.category ?? a.location}
-                  </div>
-                </td>
-                <td className="px-3 py-2 align-top text-[var(--color-muted-foreground)] hidden md:table-cell">
-                  {a.subtitle ?? a.location ?? "—"}
-                  {detailStr(a, "staff") ? (
-                    <span className="text-xs"> · ask for {detailStr(a, "staff")}</span>
-                  ) : null}
-                </td>
-                <td className="px-3 py-2 align-top hidden md:table-cell">
-                  {a.category ? (
-                    <span className="inline-flex rounded bg-[var(--color-accent)]/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wider">
-                      {a.category}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-[var(--color-muted-foreground)]">
-                      —
-                    </span>
-                  )}
-                </td>
-                {hasMoney ? (
-                  <>
-                    <td className="px-3 py-2 align-top text-right tabular-nums text-[var(--color-muted-foreground)]">
-                      {a.costBasis != null
-                        ? `$${a.costBasis.toLocaleString()}`
-                        : "—"}
-                    </td>
-                    <td className="px-3 py-2 align-top text-right tabular-nums font-medium">
-                      {a.currentValue != null
-                        ? `$${a.currentValue.toLocaleString()}`
-                        : a.amountUsd != null
-                          ? `$${a.amountUsd.toLocaleString()}`
-                          : "—"}
-                    </td>
-                    <td
-                      className={cn(
-                        "px-3 py-2 align-top text-right tabular-nums",
-                        ret != null && ret > 0 && "text-emerald-500",
-                        ret != null && ret < 0 && "text-rose-500"
-                      )}
-                    >
-                      {ret != null
-                        ? `${ret > 0 ? "+" : ""}${ret.toFixed(0)}%`
-                        : "—"}
-                    </td>
-                  </>
-                ) : null}
-                {hasRating ? (
-                  <td className="px-3 py-2 align-top text-right hidden sm:table-cell">
-                    {a.rating != null ? (
-                      <div className="inline-flex items-center gap-0.5 justify-end">
-                        {[1, 2, 3, 4, 5].map((n) => (
-                          <Star
-                            key={n}
-                            className={cn(
-                              "size-3",
-                              n <= a.rating!
-                                ? "fill-amber-400 text-amber-400"
-                                : "text-[var(--color-muted-foreground)]/30"
-                            )}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                ) : null}
-                <td className="px-3 py-2 align-top w-6">
-                  {a.url ? (
-                    <a
-                      href={a.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
-                    >
-                      <ExternalLink className="size-3.5" />
-                    </a>
-                  ) : null}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 function CardView({
   rows,
   showImages,
   onEdit,
+  selection,
 }: {
   rows: AssetRow[];
   showImages: boolean;
   onEdit: (a: AssetRow) => void;
+  selection?: { selected: Set<string>; onSelect: (id: string, shift: boolean) => void };
 }) {
+  const Card = selection ? "div" : "button";
   return (
     <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
       {rows.map((a) => (
-        <button
+        <Card
           key={a.id}
-          onClick={() => onEdit(a)}
-          className="group rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 hover:bg-[var(--color-accent)]/40 transition relative text-left"
+          onClick={selection ? undefined : () => onEdit(a)}
+          className={cn("group rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4 hover:bg-[var(--color-accent)]/40 transition relative text-left", selection?.selected.has(a.id) && "bg-[var(--color-accent)]/60")}
         >
+          {selection ? <div className="mb-2 flex items-center justify-between">
+            <input type="checkbox" aria-label={`Select ${a.title}`} checked={selection.selected.has(a.id)} onChange={() => {}} onClick={(e) => selection.onSelect(a.id, e.shiftKey)} className="accent-[var(--color-foreground)]" />
+            <button onClick={() => onEdit(a)} aria-label={`Open ${a.title}`} title="Open"><Maximize2 className="size-3.5" /></button>
+          </div> : null}
           {showImages && a.imageUrl ? (
             <div className="relative w-full h-28 mb-3">
               <NextImage
@@ -656,7 +581,7 @@ function CardView({
             ) : null}
           </div>
           <AttachmentCount count={a.attachmentCount} />
-        </button>
+        </Card>
       ))}
     </div>
   );
@@ -767,4 +692,8 @@ function MobileList({
 function AttachmentCount({ count }: { count?: number }) {
   if (!count) return null;
   return <span className="inline-flex items-center gap-1 text-xs font-normal text-[var(--color-muted-foreground)]" aria-label={`${count} attachments`}><Paperclip className="size-3" />{count}</span>;
+}
+
+function StatusChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return <button aria-pressed={active} onClick={onClick} className={cn("rounded-full px-2.5 py-1 text-xs border min-h-[28px]", active ? "bg-[var(--color-foreground)] text-[var(--color-background)] border-[var(--color-foreground)]" : "border-[var(--color-border)] hover:border-[var(--color-foreground)]/30")}>{label}</button>;
 }
