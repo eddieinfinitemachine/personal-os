@@ -784,6 +784,13 @@ Part 2 — table (done 2026-09-10):
 - Verified live: inline edit of "Where" wrote + cleared (null) in DB; "lost" chip revealed
   the Ikepod Seaslug and totals moved 63→64 of 74; bulk status→stored on 2 scratch rows
   moved them out of the filter; bulk delete removed both (count back to 74).
+- Polish pass (2026-09-10, after Eddie: "this interaction is weird" + "make inventory
+  match the investments page"): the spreadsheet table had drifted from the house style.
+  Fixed — (a) edit input no longer widens the column (an <input> carries a ~20ch intrinsic
+  width; `size={1} min-w-0` and dropping `min-w-24` pins it to the cell), numbers are
+  right-aligned with native spinners suppressed; (b) category renders as the uppercase chip
+  again; (c) Expected Return is emerald/rose; (d) cost muted, value medium; (e) where /
+  status / category no longer wrap, so rows are one line like Investments.
 - INCIDENT 2: the Part-2 agent overwrote tasks/todo.md with its own scratch plan (776
   lines → 58). Restored from HEAD. Same root cause family as INCIDENT 1 — see lessons.
 

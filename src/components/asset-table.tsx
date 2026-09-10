@@ -246,10 +246,27 @@ function EditableCell({ row, column, suggestions, disabled, onCommit }: {
         if (e.key === "Enter") { e.preventDefault(); begin(); }
         if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); move(e.key === "ArrowUp" ? "up" : "down"); }
       }}
-      className={cn("px-3 py-2 align-top min-w-28 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-[var(--color-ring)]", type === "number" && "text-right tabular-nums", key === "title" && "font-medium min-w-44", disabled ? "opacity-60" : "cursor-text")}>
-      {editing ? <input autoFocus aria-label={label} type={type} step={type === "number" ? "any" : undefined}
+      className={cn(
+        "px-3 py-2 align-top min-w-28 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-[var(--color-ring)]",
+        type === "number" && "text-right tabular-nums",
+        key === "title" && "font-medium min-w-44",
+        // Match the Investments table: muted supporting columns, medium-weight
+        // current value, and no wrapping so rows stay one line tall.
+        (key === "subtitle" || key === "location" || key === "costBasis" || key === "acquiredAt") && "text-[var(--color-muted-foreground)]",
+        key === "currentValue" && "font-medium",
+        (key === "location" || key === "status" || key === "category") && "whitespace-nowrap",
+        disabled ? "opacity-60" : "cursor-text",
+      )}>
+      {/* size={1} + min-w-0: an <input> otherwise carries a ~20ch intrinsic width,
+          which widens the whole column in an auto-layout table the moment a cell
+          enters edit mode. Numbers keep the column's right alignment and drop the
+          native spinners, which don't belong in a dense money table. */}
+      {editing ? <input autoFocus aria-label={label} type={type} size={1} step={type === "number" ? "any" : undefined}
         value={draft} list={suggestions?.length ? listId : undefined}
-        className="w-full min-w-24 rounded border border-[var(--color-border)] bg-[var(--color-background)] px-1 text-sm focus:outline-none"
+        className={cn(
+          "w-full min-w-0 rounded-sm border border-[var(--color-ring)] bg-[var(--color-background)] px-1 py-0 text-sm leading-5 focus:outline-none",
+          type === "number" && "text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
+        )}
         onChange={(e) => setDraft(e.target.value)} onBlur={() => finish(true)}
         onKeyDown={(e) => {
           e.stopPropagation();
@@ -259,7 +276,12 @@ function EditableCell({ row, column, suggestions, disabled, onCommit }: {
             finish(true);
             if (move(e.shiftKey ? "previous" : "next")) e.preventDefault();
           }
-        }} /> : <>{type === "number" && row[key] != null ? `$${Number(row[key]).toLocaleString()}` : value || "—"}{key === "title" ? <> <AttachmentCount count={row.attachmentCount} /></> : null}</>}
+        }} /> : <>{
+        key === "category"
+          ? (value ? <span className="inline-flex whitespace-nowrap rounded bg-[var(--color-accent)]/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wider">{value}</span> : <span className="text-xs text-[var(--color-muted-foreground)]">—</span>)
+          : type === "number" && row[key] != null ? `$${Number(row[key]).toLocaleString()}`
+          : value || "—"
+      }{key === "title" ? <> <AttachmentCount count={row.attachmentCount} /></> : null}</>}
       {suggestions?.length ? <datalist id={listId}>{suggestions.map((s) => <option key={s} value={s} />)}</datalist> : null}
     </td>
   );
@@ -286,7 +308,7 @@ export function SpreadsheetTable({ rows, fields, onEdit, onCommit, selected, onS
         return <tr key={row.id} className={cn("border-t border-[var(--color-border)] hover:bg-[var(--color-accent)]/30", selected.has(row.id) && "bg-[var(--color-accent)]/60")}>
           <td className="px-3 py-2 align-top"><input type="checkbox" aria-label={`Select ${row.title}`} checked={selected.has(row.id)} onChange={() => {}} onClick={(e) => onSelect(row.id, e.shiftKey)} className="accent-[var(--color-foreground)]" /></td>
           {columns.map((column) => <EditableCell key={column.key} row={row} column={column} disabled={busy || pending.has(`${row.id}:${column.key}`)} suggestions={column.key === "category" || column.key === "status" ? fields.find((f) => f.key === column.key)?.suggestions : undefined} onCommit={onCommit} />)}
-          <td className="px-3 py-2 align-top text-right tabular-nums">{ret != null ? `${ret > 0 ? "+" : ""}${ret.toFixed(0)}%` : "—"}</td>
+          <td className={cn("px-3 py-2 align-top text-right tabular-nums", ret != null && ret > 0 && "text-emerald-500", ret != null && ret < 0 && "text-rose-500")}>{ret != null ? `${ret > 0 ? "+" : ""}${ret.toFixed(0)}%` : "—"}</td>
           <td className="px-3 py-2 align-top"><div className="flex gap-2">
             {row.url ? <a href={row.url} target="_blank" rel="noreferrer" aria-label={`Open link for ${row.title}`}><ExternalLink className="size-3.5" /></a> : null}
             <button onClick={() => onEdit(row)} aria-label={`Open ${row.title}`} title="Open"><Maximize2 className="size-3.5" /></button>
