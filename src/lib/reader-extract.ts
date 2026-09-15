@@ -1,6 +1,7 @@
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
 import createDOMPurify from "dompurify";
+import { safeFetch, SAFARI_USER_AGENT } from "@/lib/safe-fetch";
 
 // Safari-Reader-style extraction. Articles go through Mozilla Readability
 // (the engine behind Firefox reader view); tweets go through Twitter's
@@ -17,12 +18,6 @@ export type ExtractedArticle = {
   wordCount: number;
 };
 
-const BLOCKED_HOST =
-  /^(localhost$|127\.|0\.|10\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[)|\.(local|internal)$/i;
-
-const UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15";
-
 function sanitize(html: string): string {
   const window = new JSDOM("").window;
   const purify = createDOMPurify(window);
@@ -33,13 +28,10 @@ function sanitize(html: string): string {
   });
 }
 
-function assertFetchable(raw: string): URL {
+function parseArticleUrl(raw: string): URL {
   const url = new URL(raw);
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new Error("Only http(s) links can be saved.");
-  }
-  if (BLOCKED_HOST.test(url.hostname)) {
-    throw new Error("That host can't be fetched.");
   }
   return url;
 }
@@ -49,7 +41,10 @@ async function extractTweet(raw: string): Promise<ExtractedArticle> {
   const normalized = raw.replace(/^https?:\/\/(www\.)?x\.com\//i, "https://twitter.com/");
   const res = await fetch(
     `https://publish.twitter.com/oembed?url=${encodeURIComponent(normalized)}&omit_script=true&dnt=true`,
-    { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(10_000) }
+    {
+      headers: { "User-Agent": SAFARI_USER_AGENT },
+      signal: AbortSignal.timeout(10_000),
+    }
   );
   if (!res.ok) throw new Error("Couldn't load that tweet.");
   const data = (await res.json()) as {
@@ -71,21 +66,11 @@ async function extractTweet(raw: string): Promise<ExtractedArticle> {
   };
 }
 
-export async function extractArticle(raw: string): Promise<ExtractedArticle> {
-  const url = assertFetchable(raw.trim());
-
-  if (/(^|\.)(twitter\.com|x\.com)$/i.test(url.hostname)) {
-    return extractTweet(raw.trim());
-  }
-
-  const res = await fetch(url.toString(), {
-    headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml" },
-    signal: AbortSignal.timeout(15_000),
-    redirect: "follow",
-  });
-  if (!res.ok) throw new Error(`Page returned ${res.status}.`);
-  const html = (await res.text()).slice(0, 3_000_000);
-
+export function extractArticleFromHtml(
+  rawUrl: string,
+  html: string,
+): ExtractedArticle {
+  const url = parseArticleUrl(rawUrl.trim());
   const dom = new JSDOM(html, { url: url.toString() });
   const doc = dom.window.document;
 
@@ -114,4 +99,24 @@ export async function extractArticle(raw: string): Promise<ExtractedArticle> {
     contentHtml,
     wordCount: text.split(/\s+/).filter(Boolean).length,
   };
+}
+
+export async function extractArticle(raw: string): Promise<ExtractedArticle> {
+  const trimmed = raw.trim();
+  const url = parseArticleUrl(trimmed);
+
+  if (/(^|\.)(twitter\.com|x\.com)$/i.test(url.hostname)) {
+    return extractTweet(trimmed);
+  }
+
+  const response = await safeFetch(url, {
+    accept: "text/html,application/xhtml+xml",
+    timeoutMs: 15_000,
+    maxBytes: 15 * 1024 * 1024,
+  });
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`Page returned ${response.status}.`);
+  }
+  const html = response.body.toString("utf8").slice(0, 3_000_000);
+  return extractArticleFromHtml(response.url, html);
 }

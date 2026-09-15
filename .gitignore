@@ -2,6 +2,7 @@
 node_modules/
 .next/
 out/
+tmp-kindle/
 .env
 .env.local
 *.tsbuildinfo

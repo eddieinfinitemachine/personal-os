@@ -27,6 +27,7 @@ const withSerwist = withSerwistInit({
 
 const config: NextConfig = {
   reactStrictMode: true,
+  serverExternalPackages: ["sharp"],
   experimental: {
     optimizePackageImports: ["lucide-react"],
   },

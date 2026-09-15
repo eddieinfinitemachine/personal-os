@@ -14,6 +14,39 @@ const FROM_EMAIL = process.env.EMAIL_FROM ?? "EC <onboarding@resend.dev>";
 const APP_URL_FALLBACK =
   process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
+export async function sendKindleEmail({
+  to,
+  title,
+  filename,
+  epub,
+}: {
+  to: string;
+  title: string;
+  filename: string;
+  epub: Buffer;
+}): Promise<{ id: string }> {
+  if (epub.length > 35 * 1024 * 1024) {
+    throw new Error("EPUB is too large to email (maximum 35 MB).");
+  }
+
+  const { data, error } = await getResend().emails.send({
+    from: FROM_EMAIL,
+    to,
+    subject: title.trim().slice(0, 200),
+    text: "Sent from EC Read Later.",
+    attachments: [
+      {
+        filename,
+        content: epub,
+        contentType: "application/epub+zip",
+      },
+    ],
+  });
+  if (error) throw new Error(error.message);
+  if (!data?.id) throw new Error("Resend did not return a message id.");
+  return { id: data.id };
+}
+
 /**
  * Send a magic-link email. Pass `originUrl` to use the request's actual host
  * (e.g. so a sign-up from kaizen.eddiecohen.com gets a link back to that host

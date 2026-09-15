@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "kindle:send": "tsx --env-file-if-exists=.env scripts/kindle-send.ts",
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
@@ -22,12 +24,14 @@
     "dompurify": "^3.4.12",
     "jose": "^6.2.3",
     "jsdom": "26.1.0",
+    "jszip": "^3.10.2",
     "lucide-react": "^0.460.0",
     "next": "^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "resend": "^6.12.3",
     "serwist": "^9.5.11",
+    "sharp": "^0.35.3",
     "tailwind-merge": "^2.5.5",
     "web-push": "^3.6.7"
   },
@@ -42,6 +46,8 @@
     "eslint-config-next": "^16.0.0",
     "prisma": "^6.0.0",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.7.0"
+    "tsx": "^4.23.13",
+    "typescript": "^5.7.0",
+    "vitest": "^5.0.1"
   }
 }
