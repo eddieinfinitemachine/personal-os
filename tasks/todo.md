@@ -803,13 +803,14 @@ Review: `pnpm typecheck` and `git diff --check` passed. Mocked DOM checks covere
 ## Send to Kindle for Read Later (2026-09-15)
 Plan: ~/.claude/plans/fizzy-hugging-dawn.md. Branch `feat/kindle` (worktree ~/Code/.worktrees/personal-os-kindle).
 Decisions (Eddie): each saved article emailed to Kindle right away; capture = Chrome extension, iOS share sheet (existing Shortcut), forwarded newsletters.
-- [ ] P1 pipeline: `src/lib/safe-fetch.ts`, `src/lib/kindle-epub.ts`, `src/lib/kindle.ts`, vitest, `scripts/kindle-send.ts`
-- [ ] P1 verify: vitest green, epubcheck 0 errors (Colossus + webp page), Colossus arrives on Kindle
-- [ ] P2 schema (APPROVED, additive): User.kindleEmail/kindleAutoSend, ReaderItem.kindleSentAt/kindleError → Eddie runs prod `pnpm db:push`
+- [x] P1 pipeline: `src/lib/safe-fetch.ts`, `src/lib/kindle-epub.ts`, `src/lib/kindle.ts`, vitest, `scripts/kindle-send.ts` (dc6c8fc)
+- [x] P1 verify: 65 tests green, epubcheck 0/0/0 on Colossus (15k words, 7 imgs, 2.3 MB), build ok; real send Resend id 1e60d2b4… → Eddie's 2nd Kindle (confirm on device)
+- [ ] P2 schema (APPROVED, additive; a153796): prod `migrate diff` = exactly 4 ADD COLUMN → Eddie runs prod db push (agent-run blocked)
 - [ ] P2 auto-send in /api/reader via after(), `html` input, POST /api/reader/[id]/kindle, daily cap
 - [ ] P2 UI: article top-bar Kindle button, list marker, Settings → Reading
-- [ ] P2 preview deploy: jsdom/sharp/after() work on Vercel; real bearer save → Kindle
-- [ ] P3 Chrome extension "Save to Read Later" (rendered HTML, URL fallback) v0.2.0
+- [~] P2 preview deploy DROPPED: copying prod secrets to branch-scoped preview env is blocked (secret-store write); verify on prod right after merge instead
+- [x] P3 Chrome extension "Save to Read Later" (rendered HTML, URL fallback) v0.2.0 (05974ef; ⌘⇧U, context menus, popup button)
 - [ ] P4 ship: db:push done → merge main → prod E2E (extension on Colossus, iPhone share) with kindleSentAt rows
 - [ ] P5 newsletters: /api/reader/inbound (Svix, address + sender allowlist, dedupe) on Eddie's personal Resend account
-- Needs from Eddie: @kindle.com address; approve hello@infinitemachine.com on Amazon's Approved Personal Document E-mail List
+- [x] Amazon (Eddie's PERSONAL account — Chrome defaults to the IM business account, which has no Kindle): hello@infinitemachine.com approved 2026-09-15; target = "Eddie's 2nd Kindle"
+- Needs from Eddie: prod db push; reload unpacked extension after merge; personal Resend account for newsletters (P5)
