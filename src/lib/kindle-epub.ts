@@ -578,16 +578,22 @@ export function toXhtmlBody(contentHtml: string): string {
     .join("");
 }
 
+// Amazon's Send to Kindle shows the attachment filename as the document's
+// title in the Kindle library, so keep it readable (ASCII, spaces kept)
+// rather than slugged.
 export function kindleFilename(title: string): string {
-  const slug = title
+  const name = title
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80)
-    .replace(/-+$/g, "");
-  return `${slug || "article"}.epub`;
+    .replace(/[\u2018\u2019\u201a\u201b\u2032]/g, "'")
+    .replace(/[\u201c\u201d\u201e\u2033"]/g, "")
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/[^A-Za-z0-9 '.,!&()+-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 75)
+    .replace(/^[\s.,-]+|[\s.,-]+$/g, "");
+  return `${name || "Article"}.epub`;
 }
 
 export async function buildEpub(input: EpubInput): Promise<Buffer> {

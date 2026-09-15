@@ -23,28 +23,39 @@ describe("sniffImageType", () => {
 });
 
 describe("kindleFilename", () => {
-  it("normalizes Unicode and removes emoji", () => {
-    expect(kindleFilename("Crème brûlée 東京 🚀")).toBe(
-      "creme-brulee.epub",
+  it("keeps a readable title (Amazon shows the filename as the title)", () => {
+    expect(
+      kindleFilename("A journey to the heart of history\u2019s largest nonterritorial empire"),
+    ).toBe("A journey to the heart of history's largest nonterritorial empire.epub");
+  });
+
+  it("normalizes accents, drops non-ASCII and emoji", () => {
+    expect(kindleFilename("Cr\u00e8me br\u00fbl\u00e9e \u6771\u4eac \ud83d\ude80")).toBe(
+      "Creme brulee.epub",
     );
   });
 
-  it("uses an ASCII lowercase slug", () => {
+  it("replaces unsafe punctuation, smart quotes and dashes", () => {
     expect(kindleFilename("  A Title: With / Punctuation!  ")).toBe(
-      "a-title-with-punctuation.epub",
+      "A Title With Punctuation!.epub",
+    );
+    expect(kindleFilename("Big Tech \u2014 \u201cWhy\u201d it matters")).toBe(
+      "Big Tech - Why it matters.epub",
     );
   });
 
-  it("limits the ASCII slug to 80 characters", () => {
+  it("limits the name to 75 characters without trailing separators", () => {
     const filename = kindleFilename("word ".repeat(100));
-    expect(filename.slice(0, -".epub".length).length).toBeLessThanOrEqual(80);
-    expect(filename).toMatch(/^[a-z0-9-]+\.epub$/);
+    const name = filename.slice(0, -".epub".length);
+    expect(name.length).toBeLessThanOrEqual(75);
+    expect(filename).toMatch(/^[A-Za-z0-9 '.,!&()+-]+\.epub$/);
+    expect(name).not.toMatch(/[\s.,-]$/);
   });
 
-  it.each(["", "   ", "東京 🚀"])(
-    "uses the fallback for an empty ASCII slug",
+  it.each(["", "   ", "\u6771\u4eac \ud83d\ude80", "..."])(
+    "uses the fallback when nothing readable remains (%j)",
     (title) => {
-      expect(kindleFilename(title)).toBe("article.epub");
+      expect(kindleFilename(title)).toBe("Article.epub");
     },
   );
 });
