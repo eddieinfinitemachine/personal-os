@@ -27,9 +27,12 @@ export function ReaderListActions({
 
     try {
       const response = await fetch(`/api/reader/${id}/kindle`, { method: "POST" });
-      const body = (await response.json().catch(() => null)) as { error?: string } | null;
+      const body = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
 
-      if (!response.ok) {
+      if (!response.ok || body?.ok === false) {
         throw new Error(body?.error || "Failed to send to Kindle.");
       }
 

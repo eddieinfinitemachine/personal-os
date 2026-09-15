@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUserId } from '@/lib/auth';
-import { sendReaderItemToKindle } from '@/lib/kindle';
+import { sendReaderItemToKindle } from '@/lib/kindle-send';
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';

@@ -1,9 +1,12 @@
 import { after, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
-import { extractArticle, extractArticleFromHtml } from "@/lib/reader-extract";
-import { sendReaderItemToKindle } from "@/lib/kindle";
-import { kindleStatus } from "@/lib/kindle-status";
+import {
+  extractArticle,
+  extractArticleFromHtml,
+  type ExtractedArticle,
+} from "@/lib/reader-extract";
+import { sendReaderItemToKindle } from "@/lib/kindle-send";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -45,13 +48,23 @@ async function saveFromRequest(request: Request): Promise<Response> {
   // anywhere in that pile.
   const params = new URL(request.url).searchParams;
   const candidates: unknown[] = [params.get("url"), params.get("text")];
-  let bodyPreview = "";
+  const text =
+    request.method === "POST" ? await request.text().catch(() => "") : "";
+  let postJson: Record<string, unknown> | null = null;
   if (request.method === "POST") {
-    const text = await request.clone().text().catch(() => "");
-    bodyPreview = text.slice(0, 200);
     try {
-      const json = JSON.parse(text) as Record<string, unknown>;
-      candidates.push(json?.url, json?.text, json?.link, json?.input);
+      const parsed = JSON.parse(text) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        postJson = parsed as Record<string, unknown>;
+        candidates.push(
+          postJson.url,
+          postJson.text,
+          postJson.link,
+          postJson.input,
+        );
+      } else {
+        candidates.push(parsed);
+      }
     } catch {
       const form = new URLSearchParams(text);
       candidates.push(form.get("url"), form.get("text"), text);
@@ -72,7 +85,7 @@ async function saveFromRequest(request: Request): Promise<Response> {
       contentType: request.headers.get("content-type"),
       ua: request.headers.get("user-agent"),
       query: Object.fromEntries(params),
-      bodyPreview,
+      bodyPreview: text.slice(0, 200),
     });
     return NextResponse.json({ error: "url required" }, { status: 400 });
   }
@@ -84,26 +97,22 @@ async function saveFromRequest(request: Request): Promise<Response> {
   });
 
   try {
-    let a;
-    if (request.method === "POST") {
+    const html =
+      typeof postJson?.html === "string" && postJson.html.length <= 4_000_000
+        ? postJson.html
+        : null;
+    let a: ExtractedArticle | null = null;
+    if (html) {
       try {
-        const text = await request.text();
-        const json = JSON.parse(text);
-        if (typeof json?.html === "string" && json.html.length <= 4_000_000) {
-          try {
-            a = await extractArticleFromHtml(url, json.html);
-          } catch {
-            a = await extractArticle(url);
-          }
-        } else {
-          a = await extractArticle(url);
-        }
-      } catch {
-        a = await extractArticle(url);
+        a = await extractArticleFromHtml(url, html);
+      } catch (e) {
+        console.warn("[reader] html extraction failed; fetching url", {
+          url,
+          error: e instanceof Error ? e.message : String(e),
+        });
       }
-    } else {
-      a = await extractArticle(url);
     }
+    if (!a) a = await extractArticle(url);
 
     const data = {
       title: a.title,
@@ -119,14 +128,33 @@ async function saveFromRequest(request: Request): Promise<Response> {
       ? await prisma.readerItem.update({ where: { id: existing.id }, data })
       : await prisma.readerItem.create({ data: { userId, url, ...data } });
 
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { kindleEmail: true, kindleAutoSend: true } });
-    const shouldAutoSend = user?.kindleEmail && user.kindleAutoSend && !item.kindleSentAt && item.contentHtml;
-    const kindleState = shouldAutoSend ? "sending" : (item.kindleSentAt ? "already-sent" : "off");
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { kindleEmail: true, kindleAutoSend: true },
+    });
+    const shouldAutoSend = Boolean(
+      user?.kindleEmail &&
+        user.kindleAutoSend &&
+        !item.kindleSentAt &&
+        item.contentHtml,
+    );
+    const kindleState = shouldAutoSend
+      ? "sending"
+      : item.kindleSentAt
+        ? "already-sent"
+        : "off";
 
     if (shouldAutoSend) {
       after(async () => {
         try {
-          await sendReaderItemToKindle(item.id);
+          const r = await sendReaderItemToKindle(item.id);
+          if (!r.ok) {
+            console.warn("[reader] auto-send not sent", {
+              itemId: item.id,
+              status: r.status,
+              error: r.error,
+            });
+          }
         } catch (e) {
           console.error("[reader] auto-send failed", { itemId: item.id, error: e });
         }
@@ -134,7 +162,12 @@ async function saveFromRequest(request: Request): Promise<Response> {
     }
 
     const minutes = Math.max(1, Math.round(item.wordCount / 230));
-    const messagePreview = kindleState === "sending" ? " · sending to Kindle" : "";
+    const messagePreview =
+      kindleState === "sending"
+        ? " · sending to Kindle"
+        : kindleState === "already-sent"
+          ? " · already on Kindle"
+          : "";
     return NextResponse.json({
       ok: true,
       id: item.id,
@@ -144,16 +177,25 @@ async function saveFromRequest(request: Request): Promise<Response> {
       message: `Saved · ${minutes} min${messagePreview}`,
     });
   } catch (e) {
+    // Extraction failed — still save the bare link so nothing shared is lost.
     const msg = e instanceof Error ? e.message : "extraction failed";
-    const item = existing ?? (await prisma.readerItem.create({
-      data: {
-        userId,
-        url,
-        title: url.replace(/^https?:\/\/(www\.)?/, "").slice(0, 120),
-        excerpt: `Saved without reader view (${msg})`,
-      },
-    }));
-    return NextResponse.json({ ok: true, id: item.id, degraded: true, kindle: "skipped", message: "Saved link only (no article text)" });
+    const item =
+      existing ??
+      (await prisma.readerItem.create({
+        data: {
+          userId,
+          url,
+          title: url.replace(/^https?:\/\/(www\.)?/, "").slice(0, 120),
+          excerpt: `Saved without reader view (${msg})`,
+        },
+      }));
+    return NextResponse.json({
+      ok: true,
+      id: item.id,
+      degraded: true,
+      kindle: "skipped",
+      message: "Saved link only (no article text)",
+    });
   }
 }
 

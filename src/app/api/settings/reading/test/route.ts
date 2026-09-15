@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { buildEpub, kindleFilename } from '@/lib/kindle-epub';
 import { sendKindleEmail } from '@/lib/email';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: Request) {
   const userId = await getCurrentUserId(request);
   if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });

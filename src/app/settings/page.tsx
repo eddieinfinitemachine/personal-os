@@ -72,8 +72,10 @@ export default async function SettingsPage() {
         </section>
 
         <section id="reading">
-          <h2 className="text-2xl font-bold">Reading</h2>
-          <div className="card">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+            Reading
+          </h2>
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
             <ReadingSettings
               kindleEmail={user.kindleEmail || null}
               kindleAutoSend={user.kindleAutoSend}

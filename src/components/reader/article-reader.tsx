@@ -56,6 +56,7 @@ export function ArticleReader({
   const [pill, setPill] = useState<{ x: number; y: number; text: string } | null>(null);
   const [archived, setArchived] = useState(!!item.archivedAt);
   const [confirming, setConfirming] = useState(false);
+  const [inFlight, setInFlight] = useState(false);
   const [kindle, setKindle] = useState<{
     status: ReturnType<typeof kindleStatus>;
     sentAt: string | null;
@@ -210,9 +211,10 @@ export function ArticleReader({
       router.push("/settings#reading");
       return;
     }
-    if (kindle.status === "sending") return;
+    if (inFlight) return;
 
-    setKindle((current) => ({ ...current, status: "sending", error: null }));
+    setInFlight(true);
+    setKindle((current) => ({ ...current, error: null }));
 
     try {
       const response = await fetch(`/api/reader/${item.id}/kindle`, { method: "POST" });
@@ -238,6 +240,8 @@ export function ArticleReader({
         status: "failed",
         error: error instanceof Error ? error.message : "Failed to send to Kindle.",
       }));
+    } finally {
+      setInFlight(false);
     }
   }
 
@@ -248,13 +252,15 @@ export function ArticleReader({
     sentDate && !Number.isNaN(sentDate.getTime()) ? sentDate.toLocaleString() : null;
   const kindleTitle = !kindleConfigured
     ? "Set up Send to Kindle"
-    : kindle.status === "sending"
+    : inFlight
       ? "Sending to Kindle…"
-      : kindle.status === "sent"
-        ? `Sent to Kindle${sentDateLabel ? ` ${sentDateLabel}` : ""}`
-        : kindle.status === "failed"
-          ? kindle.error || "Failed to send to Kindle."
-          : "Send to Kindle";
+      : kindle.status === "sending"
+        ? "Sending to Kindle… (click to retry)"
+        : kindle.status === "sent"
+          ? `Emailed to Kindle${sentDateLabel ? ` · ${sentDateLabel}` : ""}`
+          : kindle.status === "failed"
+            ? kindle.error || "Failed to send to Kindle."
+            : "Send to Kindle";
 
   return (
     <div className="px-4 py-4 sm:px-6 md:py-6 pb-24">
@@ -270,7 +276,7 @@ export function ArticleReader({
           <button
             type="button"
             onClick={() => void sendToKindle()}
-            disabled={kindleConfigured && kindle.status === "sending"}
+            disabled={inFlight}
             className={
               kindle.status === "failed"
                 ? "rounded p-1.5 text-rose-500 hover:bg-rose-500/10 disabled:cursor-wait"
@@ -279,7 +285,7 @@ export function ArticleReader({
             title={kindleTitle}
             aria-label={kindleTitle}
           >
-            {kindle.status === "sending" ? (
+            {inFlight || kindle.status === "sending" ? (
               <Loader2 className="size-4 animate-spin" />
             ) : kindle.status === "sent" ? (
               <BookCheck className="size-4" />
