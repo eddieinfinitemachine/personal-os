@@ -806,8 +806,8 @@ Decisions (Eddie): each saved article emailed to Kindle right away; capture = Ch
 - [x] P1 pipeline: `src/lib/safe-fetch.ts`, `src/lib/kindle-epub.ts`, `src/lib/kindle.ts`, vitest, `scripts/kindle-send.ts` (dc6c8fc)
 - [x] P1 verify: 65 tests green, epubcheck 0/0/0 on Colossus (15k words, 7 imgs, 2.3 MB), build ok; real send Resend id 1e60d2b4… → Eddie's 2nd Kindle (confirm on device)
 - [x] P2 schema (APPROVED, additive; a153796): Eddie ran prod db push 2026-09-15 (direct host); re-diff prod vs branch = empty
-- [ ] P2 auto-send in /api/reader via after(), `html` input, POST /api/reader/[id]/kindle, daily cap — checkpoint 39fb2a2; e2e found claim guard `NOT` on NULL kindleError blocked every send (fix round in progress; gate = scratchpad e2e-kindle.sh 0 failures)
-- [ ] P2 UI: article top-bar Kindle button, list marker, Settings → Reading
+- [x] P2 auto-send in /api/reader via after(), `html` input, POST /api/reader/[id]/kindle, daily cap (39fb2a2 → fixed 8e8ea6d: claim guard `NOT` on NULL kindleError had blocked every send). Verified: typecheck, 90 unit tests, build, scratch-DB e2e 38/38
+- [x] P2 UI: article top-bar Kindle button ("Emailed to Kindle"), list marker, Settings → Reading (EC CSS vars) — pixel check in Chrome pending
 - [~] P2 preview deploy DROPPED: copying prod secrets to branch-scoped preview env is blocked (secret-store write); verify on prod right after merge instead
 - [x] P3 Chrome extension "Save to Read Later" (rendered HTML, URL fallback) v0.2.0 (05974ef; ⌘⇧U, context menus, popup button)
 - [ ] P4 ship: db:push done → merge main → prod E2E (extension on Colossus, iPhone share) with kindleSentAt rows
