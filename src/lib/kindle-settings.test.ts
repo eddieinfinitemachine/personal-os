@@ -12,9 +12,16 @@ describe('normalizeKindleEmail', () => {
     expect(normalizeKindleEmail('  ')).toEqual({ ok: true, value: null });
   });
 
-  it('normalizes valid email', () => {
+  it('trims and lowercases only the domain', () => {
     const result = normalizeKindleEmail('  Test@Example.COM  ');
-    expect(result).toEqual({ ok: true, value: 'test@example.com' });
+    expect(result).toEqual({ ok: true, value: 'Test@example.com' });
+  });
+
+  it('keeps the mixed-case local part of a Kindle address', () => {
+    expect(normalizeKindleEmail('emcohen_b4Nyzs@Kindle.com')).toEqual({
+      ok: true,
+      value: 'emcohen_b4Nyzs@kindle.com',
+    });
   });
 
   it('rejects invalid email', () => {

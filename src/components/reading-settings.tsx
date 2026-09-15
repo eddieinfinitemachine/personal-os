@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { Check, Copy, Loader2 } from "lucide-react";
+import { normalizeKindleEmail } from "@/lib/kindle-settings";
 
 interface ReadingSettingsProps {
   kindleEmail: string | null;
@@ -24,7 +25,8 @@ export function ReadingSettings({
   const [testing, setTesting] = useState(false);
   const [testStatus, setTestStatus] = useState<string>("");
   const [copied, setCopied] = useState(false);
-  const normalizedEmail = kindleEmail.trim().toLowerCase();
+  const normalized = normalizeKindleEmail(kindleEmail);
+  const normalizedEmail = normalized.ok ? (normalized.value ?? "") : kindleEmail.trim();
   const emailMatchesSaved =
     savedEmail.length > 0 && normalizedEmail === savedEmail;
 
