@@ -925,6 +925,8 @@ model User {
   name       String?
   createdAt  DateTime @default(now())
   lastSeenAt DateTime @default(now())
+  kindleEmail    String?
+  kindleAutoSend Boolean  @default(true)
 
 
   // auto-generated back-references
@@ -1057,6 +1059,8 @@ model ReaderItem {
   savedAt     DateTime  @default(now())
   readAt      DateTime?
   archivedAt  DateTime?
+  kindleSentAt DateTime? // last successful email to the Kindle address
+  kindleError  String?
   highlights  Highlight[]
 
   @@index([userId, archivedAt, savedAt])
