@@ -37,24 +37,55 @@ Claude classifies the capture, so the same text-rules from the Mac app and
 todo on the Later list. A name + role → Person. A todo-like sentence → a
 Todo on To Do. Etc.
 
+## Read Later
+
+The **Save to Read Later** command saves the current page with
+`Ctrl+Shift+U` (`Cmd+Shift+U` on Mac).
+
+You can save content in any of these ways:
+
+- Press `Ctrl+Shift+U` (`Cmd+Shift+U` on Mac) to save the current page.
+- Right-click a page → **Save page to Read Later**.
+- Right-click a link → **Save link to Read Later**.
+- Click **Read later** in the popup, or press `Ctrl+Shift+Enter` while the
+  popup textarea is focused.
+
+Page captures include the page's rendered HTML, with scripts, styles, and
+iframes removed for privacy and size. If the resulting HTML is larger than
+4 MB, or Chrome does not allow the page to be scripted (for example, Chrome
+Web Store pages or PDFs), the extension sends only the URL. Link captures
+always send only the URL.
+
+The server runs Readability on captured HTML. Kindle delivery is optional
+and depends on the server's Read Later settings.
+
+Customize keyboard shortcuts at `chrome://extensions/shortcuts`. After
+updating the extension, reload it at `chrome://extensions/`.
+
 ## How it works
 
 - `manifest.json` declares the action, background service worker, options
-  page, and two keyboard commands.
+  page, three keyboard commands, context menus, and the `scripting`
+  permission used for HTML capture.
 - `background.js` reads the saved endpoint + token from
   `chrome.storage.local`, POSTs to `/api/capture/smart/auto`, and shows
   a system notification ("Capturing…" → "Added · `<type>`") via
   `chrome.notifications`.
-- `popup.{html,js}` is the optional UI for adding a note before sending.
+- `background.js` also provides `saveReadLater()`, which captures sanitized
+  rendered HTML when possible and POSTs the page or link to `/api/reader`.
+- The context menu includes **Save page to Read Later** and
+  **Save link to Read Later** entries.
+- `popup.{html,js}` is the optional UI for adding a note before sending or
+  saving the current page to Read Later.
 - `options.{html,js}` stores the endpoint + token.
 
 Permissions used:
 - `activeTab` — read the URL + title of the tab the user explicitly invoked
   the extension on.
 - `storage` — save settings.
-- `contextMenus` — right-click "Send to Kaizen".
+- `contextMenus` — right-click capture and Read Later entries.
 - `notifications` — toast on success / failure.
-- `scripting` — declared but unused today (reserved for content scripts).
+- `scripting` — capture and sanitize rendered page HTML for Read Later.
 
 Host permissions are scoped to your three Kaizen URLs only — the
 extension doesn't request access to other sites.

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Kaizen Capture",
-  "version": "0.1.0",
-  "description": "Send the current tab to your Kaizen smart-capture inbox. Auto-classifies as bookmark / todo / person / place / etc.",
+  "version": "0.2.0",
+  "description": "Send the current tab to your Kaizen smart-capture inbox or Read Later, with optional Kindle delivery. Auto-classifies as bookmark / todo / person / place / etc.",
   "permissions": ["activeTab", "storage", "contextMenus", "notifications", "scripting"],
   "host_permissions": [
     "https://internal.eddiecohen.com/*",
@@ -35,6 +35,13 @@
         "mac": "Command+Shift+J"
       },
       "description": "Send current tab to Kaizen (no popup)"
+    },
+    "save-read-later": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+U",
+        "mac": "Command+Shift+U"
+      },
+      "description": "Save this page to Read Later (sends to Kindle if enabled)"
     }
   },
   "icons": {
