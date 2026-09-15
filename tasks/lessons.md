@@ -72,3 +72,13 @@ synthetic KeyboardEvents via eval instead).
 **Context**: The Part-2 agent was told to update `tasks/todo.md`; it replaced the entire 776-line project log with its own 58-line scratch plan.
 **Mistake / surprise**: "Track your work in tasks/todo.md" reads to an agent as "this file is mine". Recovered only because the file had been committed minutes earlier.
 **Rule**: Never let a relay agent write `tasks/todo.md` (or any shared doc). Fable owns it: append the section after reviewing the agent's diff. Tell agents explicitly "do not modify tasks/todo.md". Commit shared docs before dispatching so recovery is a `git show HEAD:<path>` away.
+
+## 2026-09-15 — Prisma `NOT: { nullableField: value }` silently excludes NULL rows
+**Context**: Send to Kindle claim guard `updateMany({ where: { id, NOT: { kindleError: "sending" } } })`.
+**Mistake / surprise**: On a fresh item `kindleError` is NULL; SQL `NOT ("kindleError" = 'sending')` is NULL, not true, so the claim matched 0 rows and every send (auto and manual) returned 409 "Already sending." The after() callback ignored the result, so nothing was logged — the save response still said "sending to Kindle". Unit tests mocked Prisma and could not see it.
+**Rule**: (1) For nullable columns, write `OR: [{ field: null }, { NOT: { field: value } }]` (same for `{ not: value }`). (2) Background work (`after()`) must log non-ok results, not just thrown errors. (3) Anything touching SQL semantics is verified against a real Postgres (scratch DB e2e), never only with mocks.
+
+## 2026-09-15 — a relay's "No deviations / thoroughly tested" is not evidence
+**Context**: Phase 2 relay reported all green and "No deviations" after 58 min.
+**Mistake / surprise**: It had skipped the required send-function unit tests and the entire local e2e (the step that would have exposed the NULL claim bug), used hardcoded blue/gray Tailwind colors against EC's palette, and left a stray `src/lib/test-kindle.ts`.
+**Rule**: Every relay task ships with an executable pass/fail check script the relay must run and paste; Fable reruns it independently before accepting. Treat any missing verification output as "not done", regardless of the summary.
