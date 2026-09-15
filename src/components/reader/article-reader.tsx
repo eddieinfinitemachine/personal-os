@@ -7,12 +7,16 @@ import {
   Archive,
   ArchiveRestore,
   ArrowLeft,
+  BookCheck,
+  BookUp,
   ExternalLink,
   Highlighter,
+  Loader2,
   Trash2,
   X,
 } from "lucide-react";
 import { haptic } from "@/lib/haptic";
+import { kindleStatus } from "@/lib/kindle-status";
 
 // Reader view with persistent highlights. Select text → a floating pill saves
 // it; saved highlights are re-applied on load by walking the article's text
@@ -36,9 +40,15 @@ type HL = { id: string; text: string; note: string | null };
 export function ArticleReader({
   item,
   initialHighlights,
+  kindleSentAt = null,
+  kindleError = null,
+  kindleConfigured = false,
 }: {
   item: Item;
   initialHighlights: HL[];
+  kindleSentAt?: string | null;
+  kindleError?: string | null;
+  kindleConfigured?: boolean;
 }) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -46,6 +56,27 @@ export function ArticleReader({
   const [pill, setPill] = useState<{ x: number; y: number; text: string } | null>(null);
   const [archived, setArchived] = useState(!!item.archivedAt);
   const [confirming, setConfirming] = useState(false);
+  const [kindle, setKindle] = useState<{
+    status: ReturnType<typeof kindleStatus>;
+    sentAt: string | null;
+    error: string | null;
+  }>(() => {
+    const status = kindleStatus({ kindleSentAt, kindleError });
+    return {
+      status,
+      sentAt: kindleSentAt,
+      error: status === "failed" ? kindleError : null,
+    };
+  });
+
+  useEffect(() => {
+    const status = kindleStatus({ kindleSentAt, kindleError });
+    setKindle({
+      status,
+      sentAt: kindleSentAt,
+      error: status === "failed" ? kindleError : null,
+    });
+  }, [kindleSentAt, kindleError]);
 
   // Opening the article marks it read (once).
   useEffect(() => {
@@ -174,7 +205,56 @@ export function ArticleReader({
     router.push("/reader");
   }
 
+  async function sendToKindle() {
+    if (!kindleConfigured) {
+      router.push("/settings#reading");
+      return;
+    }
+    if (kindle.status === "sending") return;
+
+    setKindle((current) => ({ ...current, status: "sending", error: null }));
+
+    try {
+      const response = await fetch(`/api/reader/${item.id}/kindle`, { method: "POST" });
+      const body = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        sentAt?: string;
+        error?: string;
+      } | null;
+
+      if (!response.ok || body?.ok !== true) {
+        throw new Error(body?.error || "Failed to send to Kindle.");
+      }
+
+      setKindle({
+        status: "sent",
+        sentAt: body.sentAt ?? new Date().toISOString(),
+        error: null,
+      });
+      router.refresh();
+    } catch (error) {
+      setKindle((current) => ({
+        ...current,
+        status: "failed",
+        error: error instanceof Error ? error.message : "Failed to send to Kindle.",
+      }));
+    }
+  }
+
   const minutes = Math.max(1, Math.round(item.wordCount / 230));
+  const hasHttpUrl = /^https?:\/\//i.test(item.url);
+  const sentDate = kindle.sentAt ? new Date(kindle.sentAt) : null;
+  const sentDateLabel =
+    sentDate && !Number.isNaN(sentDate.getTime()) ? sentDate.toLocaleString() : null;
+  const kindleTitle = !kindleConfigured
+    ? "Set up Send to Kindle"
+    : kindle.status === "sending"
+      ? "Sending to Kindle…"
+      : kindle.status === "sent"
+        ? `Sent to Kindle${sentDateLabel ? ` ${sentDateLabel}` : ""}`
+        : kindle.status === "failed"
+          ? kindle.error || "Failed to send to Kindle."
+          : "Send to Kindle";
 
   return (
     <div className="px-4 py-4 sm:px-6 md:py-6 pb-24">
@@ -187,15 +267,37 @@ export function ArticleReader({
           <ArrowLeft className="size-4" /> Read later
         </Link>
         <div className="flex items-center gap-0.5">
-          <a
-            href={item.url}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded p-1.5 text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
-            title="Open original"
+          <button
+            type="button"
+            onClick={() => void sendToKindle()}
+            disabled={kindleConfigured && kindle.status === "sending"}
+            className={
+              kindle.status === "failed"
+                ? "rounded p-1.5 text-rose-500 hover:bg-rose-500/10 disabled:cursor-wait"
+                : "rounded p-1.5 text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] disabled:cursor-wait"
+            }
+            title={kindleTitle}
+            aria-label={kindleTitle}
           >
-            <ExternalLink className="size-4" />
-          </a>
+            {kindle.status === "sending" ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : kindle.status === "sent" ? (
+              <BookCheck className="size-4" />
+            ) : (
+              <BookUp className="size-4" />
+            )}
+          </button>
+          {hasHttpUrl ? (
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded p-1.5 text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
+              title="Open original"
+            >
+              <ExternalLink className="size-4" />
+            </a>
+          ) : null}
           <button
             onClick={toggleArchive}
             className="rounded p-1.5 text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
@@ -235,10 +337,15 @@ export function ArticleReader({
           />
         ) : (
           <p className="text-sm text-[var(--color-muted-foreground)]">
-            No reader view for this link —{" "}
-            <a className="underline" href={item.url} target="_blank" rel="noreferrer">
-              open the original
-            </a>
+            No reader view for this link
+            {hasHttpUrl ? (
+              <>
+                {" — "}
+                <a className="underline" href={item.url} target="_blank" rel="noreferrer">
+                  open the original
+                </a>
+              </>
+            ) : null}
             .
           </p>
         )}

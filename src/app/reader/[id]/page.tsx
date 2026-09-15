@@ -14,10 +14,33 @@ export default async function ReaderItemPage({
   if (!session) redirect("/login");
   const { id } = await params;
 
-  const item = await prisma.readerItem.findFirst({
-    where: { id, userId: session.userId },
-    include: { highlights: { orderBy: { createdAt: "asc" } } },
-  });
+  const [item, user] = await Promise.all([
+    prisma.readerItem.findFirst({
+      where: { id, userId: session.userId },
+      select: {
+        id: true,
+        url: true,
+        title: true,
+        byline: true,
+        siteName: true,
+        contentHtml: true,
+        wordCount: true,
+        readAt: true,
+        archivedAt: true,
+        savedAt: true,
+        kindleSentAt: true,
+        kindleError: true,
+        highlights: {
+          orderBy: { createdAt: "asc" },
+          select: { id: true, text: true, note: true },
+        },
+      },
+    }),
+    prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { kindleEmail: true },
+    }),
+  ]);
   if (!item) notFound();
 
   return (
@@ -39,6 +62,9 @@ export default async function ReaderItemPage({
         text: h.text,
         note: h.note,
       }))}
+      kindleSentAt={item.kindleSentAt?.toISOString() ?? null}
+      kindleError={item.kindleError}
+      kindleConfigured={Boolean(user?.kindleEmail)}
     />
   );
 }

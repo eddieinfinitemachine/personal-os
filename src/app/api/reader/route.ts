@@ -1,7 +1,9 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
-import { extractArticle } from "@/lib/reader-extract";
+import { extractArticle, extractArticleFromHtml } from "@/lib/reader-extract";
+import { sendReaderItemToKindle } from "@/lib/kindle";
+import { kindleStatus } from "@/lib/kindle-status";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -45,7 +47,7 @@ async function saveFromRequest(request: Request): Promise<Response> {
   const candidates: unknown[] = [params.get("url"), params.get("text")];
   let bodyPreview = "";
   if (request.method === "POST") {
-    const text = await request.text().catch(() => "");
+    const text = await request.clone().text().catch(() => "");
     bodyPreview = text.slice(0, 200);
     try {
       const json = JSON.parse(text) as Record<string, unknown>;
@@ -82,7 +84,27 @@ async function saveFromRequest(request: Request): Promise<Response> {
   });
 
   try {
-    const a = await extractArticle(url);
+    let a;
+    if (request.method === "POST") {
+      try {
+        const text = await request.text();
+        const json = JSON.parse(text);
+        if (typeof json?.html === "string" && json.html.length <= 4_000_000) {
+          try {
+            a = await extractArticleFromHtml(url, json.html);
+          } catch {
+            a = await extractArticle(url);
+          }
+        } else {
+          a = await extractArticle(url);
+        }
+      } catch {
+        a = await extractArticle(url);
+      }
+    } else {
+      a = await extractArticle(url);
+    }
+
     const data = {
       title: a.title,
       byline: a.byline,
@@ -96,26 +118,42 @@ async function saveFromRequest(request: Request): Promise<Response> {
     const item = existing
       ? await prisma.readerItem.update({ where: { id: existing.id }, data })
       : await prisma.readerItem.create({ data: { userId, url, ...data } });
+
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { kindleEmail: true, kindleAutoSend: true } });
+    const shouldAutoSend = user?.kindleEmail && user.kindleAutoSend && !item.kindleSentAt && item.contentHtml;
+    const kindleState = shouldAutoSend ? "sending" : (item.kindleSentAt ? "already-sent" : "off");
+
+    if (shouldAutoSend) {
+      after(async () => {
+        try {
+          await sendReaderItemToKindle(item.id);
+        } catch (e) {
+          console.error("[reader] auto-send failed", { itemId: item.id, error: e });
+        }
+      });
+    }
+
+    const minutes = Math.max(1, Math.round(item.wordCount / 230));
+    const messagePreview = kindleState === "sending" ? " · sending to Kindle" : "";
     return NextResponse.json({
       ok: true,
       id: item.id,
       title: item.title,
-      minutes: Math.max(1, Math.round(item.wordCount / 230)),
+      minutes,
+      kindle: kindleState,
+      message: `Saved · ${minutes} min${messagePreview}`,
     });
   } catch (e) {
-    // Extraction failed — still save the bare link so nothing shared is lost.
     const msg = e instanceof Error ? e.message : "extraction failed";
-    const item =
-      existing ??
-      (await prisma.readerItem.create({
-        data: {
-          userId,
-          url,
-          title: url.replace(/^https?:\/\/(www\.)?/, "").slice(0, 120),
-          excerpt: `Saved without reader view (${msg})`,
-        },
-      }));
-    return NextResponse.json({ ok: true, id: item.id, degraded: true });
+    const item = existing ?? (await prisma.readerItem.create({
+      data: {
+        userId,
+        url,
+        title: url.replace(/^https?:\/\/(www\.)?/, "").slice(0, 120),
+        excerpt: `Saved without reader view (${msg})`,
+      },
+    }));
+    return NextResponse.json({ ok: true, id: item.id, degraded: true, kindle: "skipped", message: "Saved link only (no article text)" });
   }
 }
 

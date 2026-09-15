@@ -1,9 +1,11 @@
 import { JSDOM } from "jsdom";
+import { sendKindleEmail } from "@/lib/email";
 import {
   buildEpub,
   kindleFilename,
   type EpubImage,
 } from "@/lib/kindle-epub";
+import { prisma } from "@/lib/prisma";
 import { safeFetch } from "@/lib/safe-fetch";
 
 const MAX_INLINE_IMAGES = 40;
@@ -368,4 +370,114 @@ export async function renderKindleEpub(article: {
       converted: kept.filter((image) => image.converted).length,
     },
   };
+}
+
+export const KINDLE_DAILY_LIMIT = 30;
+
+export type KindleSendResult =
+  | { ok: true; sentAt: Date; resendId: string | null }
+  | { ok: false; error: string; status: 400 | 404 | 409 | 422 | 429 | 502 };
+
+export async function sendReaderItemToKindle(
+  itemId: string,
+  opts?: { force?: boolean; userId?: string },
+): Promise<KindleSendResult> {
+  try {
+    const item = await prisma.readerItem.findUnique({
+      where: { id: itemId },
+      include: { user: { select: { id: true, kindleEmail: true } } },
+    });
+
+    if (!item) return { ok: false, status: 404, error: "Not found" };
+    if (opts?.userId && item.userId !== opts.userId) {
+      return { ok: false, status: 404, error: "Not found" };
+    }
+
+    const { kindleEmail } = item.user;
+    if (!kindleEmail) {
+      return {
+        ok: false,
+        status: 400,
+        error: "Add your Kindle email in Settings first.",
+      };
+    }
+    if (!item.contentHtml) {
+      await prisma.readerItem.update({
+        where: { id: itemId },
+        data: { kindleError: "No article text to send." },
+      });
+      return { ok: false, status: 422, error: "No article text to send." };
+    }
+
+    if (item.kindleSentAt && !opts?.force) {
+      return { ok: true, sentAt: item.kindleSentAt, resendId: null };
+    }
+
+    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const count = await prisma.readerItem.count({
+      where: { userId: item.userId, kindleSentAt: { gte: dayAgo } },
+    });
+    if (count >= KINDLE_DAILY_LIMIT) {
+      await prisma.readerItem.update({
+        where: { id: itemId },
+        data: {
+          kindleError: "Daily Kindle limit reached (30 in 24 hours).",
+        },
+      });
+      return {
+        ok: false,
+        status: 429,
+        error: "Daily Kindle limit reached (30 in 24 hours).",
+      };
+    }
+
+    const SENDING = "sending";
+    const claimed = await prisma.readerItem.updateMany({
+      where: {
+        id: itemId,
+        ...(opts?.force ? {} : { kindleSentAt: null }),
+        NOT: { kindleError: SENDING },
+      },
+      data: { kindleError: SENDING },
+    });
+
+    if (claimed.count === 0) {
+      return { ok: false, status: 409, error: "Already sending." };
+    }
+
+    try {
+      const { buffer, filename, images } = await renderKindleEpub(item);
+      const { id: resendId } = await sendKindleEmail({
+        to: kindleEmail,
+        title: item.title || "Article",
+        filename,
+        epub: buffer,
+      });
+
+      await prisma.readerItem.update({
+        where: { id: itemId },
+        data: { kindleSentAt: new Date(), kindleError: null },
+      });
+
+      console.log("[kindle] sent", {
+        itemId,
+        bytes: buffer.length,
+        images,
+        resendId,
+      });
+      return { ok: true, sentAt: new Date(), resendId };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await prisma.readerItem.update({
+        where: { id: itemId },
+        data: { kindleError: msg.slice(0, 500) },
+      });
+      console.warn("[kindle] failed", { itemId, error: msg });
+      return { ok: false, status: 502, error: msg };
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[kindle] unexpected error", { itemId, error: msg });
+    return { ok: false, status: 502, error: msg };
+  }
 }

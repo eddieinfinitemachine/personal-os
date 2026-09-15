@@ -2,18 +2,46 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, ArchiveRestore, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, BookUp, Loader2, Trash2 } from "lucide-react";
 
 export function ReaderListActions({
   id,
   archived,
+  kindleConfigured = false,
 }: {
   id: string;
   archived: boolean;
+  kindleConfigured?: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [kindleLoading, setKindleLoading] = useState(false);
+  const [kindleError, setKindleError] = useState<string | null>(null);
+
+  async function sendToKindle() {
+    if (kindleLoading) return;
+
+    setKindleLoading(true);
+    setKindleError(null);
+
+    try {
+      const response = await fetch(`/api/reader/${id}/kindle`, { method: "POST" });
+      const body = (await response.json().catch(() => null)) as { error?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(body?.error || "Failed to send to Kindle.");
+      }
+
+      router.refresh();
+    } catch (error) {
+      setKindleError(
+        error instanceof Error ? error.message : "Failed to send to Kindle.",
+      );
+    } finally {
+      setKindleLoading(false);
+    }
+  }
 
   async function toggleArchive() {
     setBusy(true);
@@ -40,6 +68,27 @@ export function ReaderListActions({
 
   return (
     <div className="flex items-center gap-0.5 opacity-60 md:opacity-0 md:group-hover:opacity-100 transition">
+      {kindleConfigured ? (
+        <button
+          type="button"
+          onClick={() => void sendToKindle()}
+          disabled={busy || kindleLoading}
+          className="rounded p-1.5 text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] disabled:cursor-wait"
+          title={
+            kindleError
+              ? kindleError
+              : kindleLoading
+                ? "Sending to Kindle…"
+                : "Send to Kindle"
+          }
+        >
+          {kindleLoading ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <BookUp className="size-4" />
+          )}
+        </button>
+      ) : null}
       <button
         onClick={toggleArchive}
         disabled={busy}

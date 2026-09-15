@@ -19,12 +19,30 @@ export default async function ReaderPage({
   const { view } = await searchParams;
   const archived = view === "archive";
 
-  const items = await prisma.readerItem.findMany({
-    where: { userId: session.userId, archivedAt: archived ? { not: null } : null },
-    orderBy: { savedAt: "desc" },
-    include: { _count: { select: { highlights: true } } },
-    take: 200,
-  });
+  const [items, user] = await Promise.all([
+    prisma.readerItem.findMany({
+      where: { userId: session.userId, archivedAt: archived ? { not: null } : null },
+      orderBy: { savedAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        siteName: true,
+        byline: true,
+        wordCount: true,
+        readAt: true,
+        excerpt: true,
+        kindleSentAt: true,
+        kindleError: true,
+        _count: { select: { highlights: true } },
+      },
+      take: 200,
+    }),
+    prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { kindleEmail: true },
+    }),
+  ]);
+  const kindleConfigured = Boolean(user?.kindleEmail);
 
   return (
     <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6">
@@ -85,6 +103,15 @@ export default async function ReaderPage({
                         </span>
                       ) : null}
                       {item.readAt ? <span>· read</span> : null}
+                      {item.kindleSentAt ? (
+                        <span>· On Kindle</span>
+                      ) : item.kindleError === "sending" ? (
+                        <span>· Sending to Kindle…</span>
+                      ) : item.kindleError ? (
+                        <span className="text-rose-500" title={item.kindleError}>
+                          · Kindle failed
+                        </span>
+                      ) : null}
                     </div>
                     {item.excerpt ? (
                       <p className="mt-1 text-sm text-[var(--color-muted-foreground)] line-clamp-2">
@@ -92,7 +119,11 @@ export default async function ReaderPage({
                       </p>
                     ) : null}
                   </Link>
-                  <ReaderListActions id={item.id} archived={archived} />
+                  <ReaderListActions
+                    id={item.id}
+                    archived={archived}
+                    kindleConfigured={kindleConfigured}
+                  />
                 </div>
               </li>
             );

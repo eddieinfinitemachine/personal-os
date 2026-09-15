@@ -3,10 +3,16 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { LogoutButton } from "@/components/logout-button";
 import { PushSettings } from "@/components/push-settings";
+import { ReadingSettings } from "@/components/reading-settings";
 
 export const dynamic = "force-dynamic";
 
 const BLOB_QUOTA_BYTES = 1024 * 1024 * 1024; // 1 GB
+
+function extractSenderAddress(emailFrom: string): string {
+  const match = emailFrom.match(/<([^>]+)>/);
+  return match?.[1] || emailFrom;
+}
 
 export default async function SettingsPage() {
   const session = await getSession();
@@ -14,7 +20,16 @@ export default async function SettingsPage() {
   const userId = session.userId;
 
   const [user, storageUsed] = await Promise.all([
-    prisma.user.findUnique({ where: { id: userId } }),
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        email: true,
+        createdAt: true,
+        lastSeenAt: true,
+        kindleEmail: true,
+        kindleAutoSend: true,
+      },
+    }),
     prisma.attachment.aggregate({
       where: { userId, kind: "file" },
       _sum: { size: true },
@@ -54,6 +69,18 @@ export default async function SettingsPage() {
             Notifications
           </h2>
           <PushSettings />
+        </section>
+
+        <section id="reading">
+          <h2 className="text-2xl font-bold">Reading</h2>
+          <div className="card">
+            <ReadingSettings
+              kindleEmail={user.kindleEmail || null}
+              kindleAutoSend={user.kindleAutoSend}
+              senderAddress={extractSenderAddress(process.env.EMAIL_FROM || "")}
+              newsletterAddress={process.env.READER_INBOUND_ADDRESS}
+            />
+          </div>
         </section>
 
         <section>
