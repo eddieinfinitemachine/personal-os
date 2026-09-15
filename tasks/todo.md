@@ -810,7 +810,7 @@ Decisions (Eddie): each saved article emailed to Kindle right away; capture = Ch
 - [x] P2 UI: article top-bar Kindle button ("Emailed to Kindle"), list marker, Settings → Reading (EC CSS vars) — pixel check in Chrome pending
 - [~] P2 preview deploy DROPPED: copying prod secrets to branch-scoped preview env is blocked (secret-store write); verify on prod right after merge instead
 - [x] P3 Chrome extension "Save to Read Later" (rendered HTML, URL fallback) v0.2.0 (05974ef; ⌘⇧U, context menus, popup button)
-- [ ] P4 ship: db:push done → merge main → prod E2E (extension on Colossus, iPhone share) with kindleSentAt rows
+- [x] P4 shipped 2026-09-15 (main e15e5b6, prod v0.203): Kindle email set in Settings on internal host; prod bearer save of Colossus → kindleSentAt in ~6s, Resend delivered, Amazon Docs lists the readable title. Follow-ups: Eddie reloads the unpacked extension; first real iPhone share
 - [ ] P5 newsletters: /api/reader/inbound (Svix, address + sender allowlist, dedupe) on Eddie's personal Resend account
 - [x] Amazon (Eddie's PERSONAL account — Chrome defaults to the IM business account, which has no Kindle): hello@infinitemachine.com approved 2026-09-15; target = "Eddie's 2nd Kindle"
 - Needs from Eddie: prod db push; reload unpacked extension after merge; personal Resend account for newsletters (P5)
