@@ -799,3 +799,17 @@ Part 2 — table (done 2026-09-10):
   lines → 58). Restored from HEAD. Same root cause family as INCIDENT 1 — see lessons.
 
 Review: `pnpm typecheck` and `git diff --check` passed. Mocked DOM checks covered filtering/preferences, keyboard commits/cancel/navigation, regrouping focus, decimal/date values, rollback/retry, selection, bulk update and delete confirmation. Static rendered HTML matched the original AssetGrid for four non-spreadsheet kinds. Bulk API mocked validation/auth/scope/sequential-delete checks passed. No live browser or database writes were performed.
+
+## Send to Kindle for Read Later (2026-09-15)
+Plan: ~/.claude/plans/fizzy-hugging-dawn.md. Branch `feat/kindle` (worktree ~/Code/.worktrees/personal-os-kindle).
+Decisions (Eddie): each saved article emailed to Kindle right away; capture = Chrome extension, iOS share sheet (existing Shortcut), forwarded newsletters.
+- [ ] P1 pipeline: `src/lib/safe-fetch.ts`, `src/lib/kindle-epub.ts`, `src/lib/kindle.ts`, vitest, `scripts/kindle-send.ts`
+- [ ] P1 verify: vitest green, epubcheck 0 errors (Colossus + webp page), Colossus arrives on Kindle
+- [ ] P2 schema (APPROVED, additive): User.kindleEmail/kindleAutoSend, ReaderItem.kindleSentAt/kindleError → Eddie runs prod `pnpm db:push`
+- [ ] P2 auto-send in /api/reader via after(), `html` input, POST /api/reader/[id]/kindle, daily cap
+- [ ] P2 UI: article top-bar Kindle button, list marker, Settings → Reading
+- [ ] P2 preview deploy: jsdom/sharp/after() work on Vercel; real bearer save → Kindle
+- [ ] P3 Chrome extension "Save to Read Later" (rendered HTML, URL fallback) v0.2.0
+- [ ] P4 ship: db:push done → merge main → prod E2E (extension on Colossus, iPhone share) with kindleSentAt rows
+- [ ] P5 newsletters: /api/reader/inbound (Svix, address + sender allowlist, dedupe) on Eddie's personal Resend account
+- Needs from Eddie: @kindle.com address; approve hello@infinitemachine.com on Amazon's Approved Personal Document E-mail List
