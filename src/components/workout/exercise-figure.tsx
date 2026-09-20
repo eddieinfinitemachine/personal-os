@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import type { MovementPattern } from "@/lib/workout";
 
 // Animated side-view stick figure, one loop per movement pattern.
@@ -252,6 +253,22 @@ const r = (n: number) => Math.round(n * 100) / 100;
 
 type Frame = ReturnType<typeof solve>;
 
+// prefers-reduced-motion, hydration-safe: the server and first client render
+// both say "no preference", then the real value takes over after mount.
+const REDUCE_QUERY = "(prefers-reduced-motion: reduce)";
+function subscribeReduce(cb: () => void) {
+  const mq = window.matchMedia(REDUCE_QUERY);
+  mq.addEventListener("change", cb);
+  return () => mq.removeEventListener("change", cb);
+}
+function useReducedMotion(): boolean {
+  return useSyncExternalStore(
+    subscribeReduce,
+    () => window.matchMedia(REDUCE_QUERY).matches,
+    () => false,
+  );
+}
+
 export type FigureProp = "dumbbell" | "bar" | "none";
 
 // What the hands hold, from the exercise's equipment/load text. Poses that
@@ -279,7 +296,8 @@ export function ExerciseFigure({
   className?: string;
 }) {
   const loop = LOOPS[pattern] ?? LOOPS.stretch;
-  const animate = playing && frame === undefined;
+  const reduceMotion = useReducedMotion();
+  const animate = playing && frame === undefined && !reduceMotion;
   const poses: Pose[] = animate
     ? samplePoses(loop)
     : [loop.frames[Math.max(0, Math.min(frame ?? 1, loop.frames.length - 1))]];
