@@ -7,9 +7,17 @@ const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 // Default model for all EC AI (capture, coach, project assistant, parsing).
 const DEFAULT_MODEL = "claude-opus-4-8";
 
+export type ClaudeImageBlock = {
+  type: "image";
+  source: { type: "base64"; media_type: string; data: string };
+};
+export type ClaudeTextBlock = { type: "text"; text: string };
+export type ClaudeContentBlock = ClaudeTextBlock | ClaudeImageBlock;
+
 export interface ClaudeMessage {
   role: "user" | "assistant";
-  content: string;
+  /** Plain text, or content blocks (text + base64 images for vision). */
+  content: string | ClaudeContentBlock[];
 }
 
 export interface ClaudeCall {

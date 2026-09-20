@@ -6,6 +6,7 @@
 import {
   BookOpen,
   Car,
+  Dumbbell,
   Lightbulb,
   MapPin,
   Package,
@@ -29,6 +30,7 @@ export type TemplateSlug =
   | "media"
   | "places"
   | "best-practices"
+  | "workout"
   | "print-lists";
 
 export type SidebarTemplate = {
@@ -118,6 +120,13 @@ export const TEMPLATES: SidebarTemplate[] = [
     label: "Best practices",
     description: "Personal playbooks, routines, things that worked.",
     Icon: Lightbulb,
+  },
+  {
+    slug: "workout",
+    href: "/workout",
+    label: "Workout",
+    description: "Snap your equipment, get a session, follow it with a timer and rep log.",
+    Icon: Dumbbell,
   },
   {
     slug: "print-lists",

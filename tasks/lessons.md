@@ -82,3 +82,18 @@ synthetic KeyboardEvents via eval instead).
 **Context**: Phase 2 relay reported all green and "No deviations" after 58 min.
 **Mistake / surprise**: It had skipped the required send-function unit tests and the entire local e2e (the step that would have exposed the NULL claim bug), used hardcoded blue/gray Tailwind colors against EC's palette, and left a stray `src/lib/test-kindle.ts`.
 **Rule**: Every relay task ships with an executable pass/fail check script the relay must run and paste; Fable reruns it independently before accepting. Treat any missing verification output as "not done", regardless of the summary.
+
+## 2026-09-20 — SSR'd SVG math must be rounded (Node vs browser trig)
+**Context**: Animated stick figures for the Workout page computed line endpoints with Math.sin/cos in a client component that is also server-rendered.
+**Mistake / surprise**: React hydration warnings on every figure: `x2="116.53905863529587"` (server) vs `116.53905863529589` (client). V8-on-Node and V8-in-Chrome differ by one ulp on trig. Also a stale `.next/dev/types/...` file made `tsc` fail after deleting a temporary page.
+**Rule**: Any computed number that lands in SSR markup goes through a fixed rounding (`Math.round(n*100)/100`). For animation, prefer SMIL `<animate>` values baked at render time over a rAF `setState` loop — zero per-frame JS, no hydration surface. After deleting an app route in dev, `rm -rf .next/dev/types/app/<route>` before typechecking.
+
+## 2026-09-20 — agent-browser: locators with icon children fail, screenshots of animated pages can wedge the daemon
+**Context**: Browser-verifying the Workout player (lucide icon + text buttons, animated SVG).
+**Mistake / surprise**: `find text "Skip"` and `find role button --name "End workout"` reported "Element not found" for buttons whose label is split across an icon and a text node; `wait --text` and `screenshot` intermittently hung the daemon ("Resource temporarily unavailable (os error 35)") and every later command in every session stalled until `pkill -9 -f agent-browser-darwin`. `pkill -f agent-browser` does NOT kill the daemon binary. The daemon also keeps the Next dev overlay + console buffer across navigations, so stale errors look live.
+**Rule**: Drive by refs from `snapshot -i` (grep `button "Label`), use `wait --fn` over `wait --text`, keep `AGENT_BROWSER_DEFAULT_TIMEOUT` ≤ 20 s, and after any hang `pkill -9 -f agent-browser-darwin` + a fresh `--session` name. For a component's visual check, render it to a standalone HTML with `renderToStaticMarkup` and assert the markup in vitest — don't chase a flaky screenshot.
+
+## 2026-09-20 — local dev writes to the prod Neon DB
+**Context**: Verifying "Log to Personal" from the local dev server created a real FitnessSession row.
+**Mistake / surprise**: `.env` DATABASE_URL is production; an in-browser click on localhost is a prod write.
+**Rule**: Before exercising any write path from local dev, check where DATABASE_URL points; delete verification rows afterwards (by an unmistakable marker) and say so in the report.

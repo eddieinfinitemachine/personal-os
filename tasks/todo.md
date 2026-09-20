@@ -814,3 +814,19 @@ Decisions (Eddie): each saved article emailed to Kindle right away; capture = Ch
 - [ ] P5 newsletters: /api/reader/inbound (Svix, address + sender allowlist, dedupe) on Eddie's personal Resend account
 - [x] Amazon (Eddie's PERSONAL account — Chrome defaults to the IM business account, which has no Kindle): hello@infinitemachine.com approved 2026-09-15; target = "Eddie's 2nd Kindle"
 - Needs from Eddie: prod db push; reload unpacked extension after merge; personal Resend account for newsletters (P5)
+
+## Workout page — photo → AI plan → guided session (2026-09-20)
+Eddie: "on my ios pwa, a workout page that lets me upload photos of my equipment and
+recommend a workout. timer, reps, visualizations of the exercises, etc." Built in Fable.
+- [x] `src/lib/image-compress.ts` — `compressImage` extracted from smart-capture-form (shared)
+- [x] `src/lib/claude.ts` — messages accept text + base64 image content blocks (vision)
+- [x] `src/lib/workout.ts` — plan types, 15 movement patterns, 14 muscles, prompt, normalizer, `flattenPlan` (supersets/circuits interleave), vitest
+- [x] `POST /api/workout/plan` — ≤6 photos + minutes/focus/intensity/notes/saved equipment → `{ equipment, plan }`; nothing stored server-side
+- [x] `POST /api/workout/log` — finished session → FitnessSession (kind "lift", source "manual") on the user's Human, if any; data-only
+- [x] `/workout` + `WorkoutStudio`: Setup (camera/library photos, saved-equipment chips, 15–60 min, focus, intensity, notes, resume banner, recent list) → Plan review (equipment spotted, warm-up / blocks / cool-down, tap a row for cues + muscle map) → Player (set x of y, rep stepper + load, timed holds with ring, auto rest countdown with +15s/pause/skip, prev/skip, wall-clock timers that survive backgrounding, wake lock, beeps + haptics) → Summary (minutes/sets/reps, per-exercise log, Log to Personal, New workout)
+- [x] `ExerciseFigure` — side-view kinematic stick figure; poses sampled into native SVG `<animate>` (no per-frame JS); prop (dumbbell/bar) inferred from equipment text. `MuscleMap` — front/back silhouettes with tinted regions
+- [x] localStorage: in-progress session, equipment profile (merged from each plan), prefs, last 30 sessions
+- [x] Sidebar template "Workout" (Dumbbell) + command palette entry
+- [x] Verified: `tsc` clean; vitest 97/98 (the 1 failure is `kindle-epub > passes epubcheck` hitting the 5 s default — passes alone with `--testTimeout=30000`, Java startup, unrelated); API e2e with a real kettlebell photo (Claude read the colour-coded weights, 17–28 s); browser run at 390×844 in dark + light: setup with photo, resume banner, player, 40 s hold ring, rep log (persisted), rest screen, summary, "Logged to Personal" → prod FitnessSession row created and then deleted (id cmua6ysya…)
+- Not verified in a browser: the SMIL figure (headless screenshots wedged agent-browser; covered by an SSR markup test instead — same geometry as the rAF version that was screenshotted) and the plan-review page after a real upload (API verified by curl; component shares rows with the player)
+- Follow-ups: real iPhone pass (wake lock, camera capture, haptics); persist plans/sessions server-side if history should sync across devices (schema change → flag first); reduced-motion for SMIL

@@ -12,6 +12,7 @@ import {
   FileText,
   Folder,
   Home,
+  Dumbbell,
   Lightbulb,
   ListTodo,
   MapPin,
@@ -77,6 +78,7 @@ const NAV_COMMANDS: NavCommand[] = [
   { id: "media", label: "Media", href: "/media", icon: <Lightbulb className="size-4" /> },
   { id: "places", label: "Places", href: "/places", icon: <MapPin className="size-4" /> },
   { id: "best-practices", label: "Best practices", href: "/best-practices", icon: <Lightbulb className="size-4" /> },
+  { id: "workout", label: "Workout", hint: "Photo of your gear → guided session", href: "/workout", icon: <Dumbbell className="size-4" /> },
   { id: "settings", label: "Settings", href: "/settings", icon: <Settings className="size-4" /> },
 ];
 
