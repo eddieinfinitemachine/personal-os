@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { InputError, parseBoardInput } from "@/lib/board-input";
 import { saveToBoard } from "@/lib/board-save";
 import { MAX_UPLOAD_BYTES } from "@/lib/board";
+import { tagInBackground } from "@/lib/board-tags";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -17,7 +18,8 @@ export async function POST(request: Request) {
   try {
     const input = await parseBoardInput(request, MAX_UPLOAD_BYTES);
     input.via = "share";
-    const { item } = await saveToBoard(session.userId, input);
+    const { item, duplicate } = await saveToBoard(session.userId, input);
+    if (!duplicate) after(() => tagInBackground(session.userId, item.id));
     back.searchParams.set("saved", item.id);
   } catch (e) {
     console.error("[board] share target save failed", e);

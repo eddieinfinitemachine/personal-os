@@ -1066,6 +1066,7 @@ model BoardItem {
   color       String? // dominant color, "#rrggbb", placeholder while loading
   price       String? // products: "$129.00"
   via         String   @default("app") // "app" | "shortcut" | "extension" | "share" | "rec"
+  tags        String[] @default([]) // Claude-assigned categories, e.g. "Musicians"
   savedAt     DateTime @default(now())
 
   @@index([userId, savedAt])

@@ -102,6 +102,7 @@ export function MobileFab() {
       onContextMenu={(e) => e.preventDefault()}
       onClick={onClick}
       aria-label="New reminder (long-press for capture)"
+      data-focus-hide
       disabled={!activeListId}
       className={cn(
         "md:hidden fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+18px)] z-30",

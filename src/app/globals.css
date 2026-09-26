@@ -289,6 +289,14 @@
     select {
       font-size: 16px !important;
     }
+    /* Notes editor (notes-pane.tsx): both already clear 16px, so keep the
+       large title and 17px body instead of flattening them. */
+    input[data-note-title] {
+      font-size: 1.75rem !important;
+    }
+    textarea[data-note-body] {
+      font-size: 17px !important;
+    }
   }
   @media (max-width: 767px) and (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) body {
@@ -492,4 +500,39 @@
 [data-kbd-selected="true"] {
   background: color-mix(in oklab, var(--color-foreground) 16%, transparent);
   border-radius: 10px;
+}
+
+/* Notes focus mode. notes-pane.tsx sets html[data-notes-focus] while the
+   Notes tab's editor is in focus; the app sidebar slides shut and page
+   chrome marked [data-focus-hide] (project header + tabs, mobile top bar,
+   FABs) steps aside. The attribute is removed on unmount, so no other page
+   is affected. max-width is 16rem = the sidebar's w-64; overflow-x: clip
+   (not hidden) keeps it from becoming a scroll container. */
+[data-app-sidebar] {
+  max-width: 16rem;
+  overflow-x: clip;
+  transition: max-width 0.3s var(--ease-spring), opacity 0.2s ease,
+    visibility 0.3s;
+}
+html[data-notes-focus] [data-app-sidebar] {
+  max-width: 0;
+  opacity: 0;
+  visibility: hidden;
+}
+html[data-notes-focus] [data-focus-hide] {
+  display: none !important;
+}
+/* The mobile top bar is gone, so drop the space reserved for it. */
+html[data-notes-focus] [data-app-main] {
+  padding-top: env(safe-area-inset-top);
+}
+html[data-notes-focus-instant] [data-app-sidebar],
+html[data-notes-focus-instant] [data-notes-split],
+html[data-notes-focus-instant] [data-notes-split] * {
+  transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-app-sidebar] {
+    transition: none;
+  }
 }
