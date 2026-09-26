@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
  * dating-messages-sync.ts
- * Purpose: Copy iMessage threads for the people on /dating into Kaizen.
+ * Purpose: Copy iMessage threads for the people on /dating into EC.
  * Privacy: reads message text ONLY for 1:1 chats with handles you added to a
  * person on /dating. Every other thread is never selected.
  * Usage: pnpm dlx tsx scripts/dating-messages-sync.ts [--dry-run] [--full] [--install-launchd]
  *   --full             ignore the last-synced time and resend everything (deduped server-side)
  *   --install-launchd  run every 30 minutes in the background
- * Env (.env): CAPTURE_TOKEN, and DATING_SYNC_URL or APP_URL (the Kaizen base URL).
+ * Env (.env): CAPTURE_TOKEN, and DATING_SYNC_URL or APP_URL (the EC base URL).
  * Needs Full Disk Access for the terminal running it.
  */
 
