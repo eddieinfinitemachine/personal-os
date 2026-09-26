@@ -34,7 +34,7 @@ Append after every correction or non-obvious gotcha. Format:
 ## Design polish: color is identity (2026-06-10)
 Shipped an Apple-HIG polish pass that changed both motion AND colors (grouped-gray bg,
 blue-tinted selection, hued grays). Eddie kept all the motion/typography but vetoed every
-color change: "i liked the previous color scheme." Kaizen's flat neutral monochrome look
+color change: "i liked the previous color scheme." EC's flat neutral monochrome look
 is intentional. Rule: polish this app via motion, type, spacing, and depth — never recolor
 surfaces or selection states without showing Eddie first.
 

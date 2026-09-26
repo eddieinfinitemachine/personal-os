@@ -64,12 +64,12 @@ export function SendHelp({ onClose }: { onClose: () => void }) {
         </Section>
 
         <Section title="Chrome">
-          Update the Kaizen Capture extension (reload it at chrome://extensions). Right-click any image →{" "}
+          Update the EC Capture extension (reload it at chrome://extensions). Right-click any image →{" "}
           <b>Save image to Board</b>, or any page or link → <b>Save to Board</b>. Shortcut: <Kbd>⌘⇧Y</Kbd>.
         </Section>
 
         <Section title="Android / desktop app">
-          Install Kaizen as an app (Chrome → Install). It then shows up in the system share sheet as a target.
+          Install EC as an app (Chrome → Install). It then shows up in the system share sheet as a target.
         </Section>
       </div>
     </div>

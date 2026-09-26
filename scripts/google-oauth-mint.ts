@@ -1,6 +1,6 @@
 /**
  * Mint a founder-only refresh token covering Gmail booking reads and Google
- * Calendar (full scope: the app creates its own "Kaizen" calendar).
+ * Calendar (full scope: the app creates its own "EC" calendar).
  *
  *   npx tsx scripts/google-oauth-mint.ts
  *   npx tsx scripts/google-oauth-mint.ts <CLIENT_ID> <CLIENT_SECRET>

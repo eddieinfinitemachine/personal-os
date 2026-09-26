@@ -20,7 +20,7 @@ import {
   ListTodo,
 } from "lucide-react";
 
-export function KaizenLanding() {
+export function EcLanding() {
   return (
     <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)]">
       <Nav />
@@ -43,7 +43,7 @@ function Nav() {
     <header className="sticky top-0 z-40 border-b border-[var(--color-border)]/60 bg-[var(--color-background)]/80 backdrop-blur-md">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5 sm:px-8">
         <Link href="/" className="flex items-center gap-2">
-          <KaizenMark />
+          <EcMark />
           <span className="text-sm font-semibold tracking-tight">EC</span>
         </Link>
         <nav className="hidden items-center gap-7 text-sm text-[var(--color-muted-foreground)] sm:flex">
@@ -76,7 +76,7 @@ function Nav() {
   );
 }
 
-function KaizenMark() {
+function EcMark() {
   return (
     <div className="flex h-6 w-6 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-card)] font-display text-[9px] font-bold tracking-tight">
       OS
@@ -601,7 +601,7 @@ function PaletteVisual() {
 function MenubarVisual() {
   return (
     <div className="flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 py-1 shadow-md">
-      <KaizenMark />
+      <EcMark />
       <span className="text-[10px] text-[var(--color-muted-foreground)]">Quick Todo</span>
       <span className="ml-1 inline-flex gap-1">
         <kbd className="rounded border border-[var(--color-border)] px-1 py-0 font-mono text-[9px] text-[var(--color-muted-foreground)]">
@@ -627,7 +627,7 @@ function ChromeVisual() {
         </div>
       </div>
       <div className="flex items-center gap-1.5 px-2 py-1.5 text-[10px]">
-        <KaizenMark />
+        <EcMark />
         <span>Save to EC</span>
       </div>
     </div>
@@ -846,7 +846,7 @@ function Footer() {
     <footer className="border-t border-[var(--color-border)]/60">
       <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-4 px-5 py-10 text-xs text-[var(--color-muted-foreground)] sm:flex-row sm:items-center sm:px-8">
         <div className="flex items-center gap-2">
-          <KaizenMark />
+          <EcMark />
           <span>EC · made by one person, shared with you.</span>
         </div>
         <div className="flex items-center gap-5">

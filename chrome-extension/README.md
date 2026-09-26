@@ -1,6 +1,6 @@
-# Kaizen Capture (Chrome extension)
+# EC Capture (Chrome extension)
 
-Send the current tab to your Kaizen smart-capture inbox. Auto-classifies as
+Send the current tab to your EC smart-capture inbox. Auto-classifies as
 bookmark / todo / person / place / etc. via the `/api/capture/smart/auto`
 endpoint.
 
@@ -10,7 +10,7 @@ endpoint.
    Brave, Edge).
 2. Toggle **Developer mode** on (top right).
 3. Click **Load unpacked** and point at this folder (`chrome-extension/`).
-4. Click the puzzle-piece icon in the toolbar → pin **Kaizen Capture** so
+4. Click the puzzle-piece icon in the toolbar → pin **EC Capture** so
    it lives in the toolbar permanently.
 5. Right-click the toolbar icon → **Options**. Enter:
    - **Endpoint**: `https://internal.eddiecohen.com` (default)
@@ -27,9 +27,9 @@ endpoint.
   tab without showing the popup. Fastest way to bookmark an article.
 - **Keyboard ⌘⇧L** (Ctrl+Shift+K) → open the popup. Use when you want to
   add a note before sending.
-- **Right-click selected text** → *"Send to Kaizen"* sends the selection
+- **Right-click selected text** → *"Send to EC"* sends the selection
   + the current URL.
-- **Right-click a page** (or link) → *"Send this page to Kaizen"* sends
+- **Right-click a page** (or link) → *"Send this page to EC"* sends
   the URL + page title.
 
 Claude classifies the capture, so the same text-rules from the Mac app and
@@ -98,5 +98,5 @@ Permissions used:
 - `notifications` — toast on success / failure.
 - `scripting` — capture and sanitize rendered page HTML for Read Later.
 
-Host permissions are scoped to your three Kaizen URLs only — the
+Host permissions are scoped to your three EC URLs only — the
 extension doesn't request access to other sites.

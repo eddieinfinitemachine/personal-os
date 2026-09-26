@@ -2,7 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import UserNotifications
 
-// Kaizen smart-capture endpoint (auto-classifies → asset/todo/person/trip/interaction).
+// EC smart-capture endpoint (auto-classifies → asset/todo/person/trip/interaction).
 let API_URL = "https://personal-os-two-gold.vercel.app/api/capture/smart/auto"
 let API_TOKEN = "nJpdojSLOrDa9q6rLgyDA5Sp9qA"
 

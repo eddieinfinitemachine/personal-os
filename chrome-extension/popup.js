@@ -41,7 +41,7 @@ async function send() {
 
   try {
     const res = await chrome.runtime.sendMessage({
-      type: "kaizen.capture",
+      type: "ec.capture",
       payload,
     });
     if (res?.ok) {
@@ -73,7 +73,7 @@ async function readLater() {
   setStatus("Saving…");
 
   try {
-    const res = await chrome.runtime.sendMessage({ type: "kaizen.readLater" });
+    const res = await chrome.runtime.sendMessage({ type: "ec.readLater" });
     if (res?.ok) {
       setStatus(res.message, "ok");
       setTimeout(() => window.close(), 900);
@@ -100,7 +100,7 @@ async function board() {
   setStatus("Saving…");
   try {
     const res = await chrome.runtime.sendMessage({
-      type: "kaizen.board",
+      type: "ec.board",
       note: $note.value,
     });
     if (res?.ok) {

@@ -20,7 +20,7 @@ let cachedJwtSecret: Uint8Array | null = null;
 function jwtSecret(): Uint8Array {
   return (cachedJwtSecret ??= resolveJwtSecret());
 }
-const SESSION_COOKIE = "kaizen-session";
+const SESSION_COOKIE = "ec-session";
 
 // Public paths — landing/signup/login and the auth API.
 const PUBLIC_PREFIXES = ["/login", "/signup", "/api/auth"];
