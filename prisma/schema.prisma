@@ -8,30 +8,29 @@ datasource db {
 }
 
 model Trip {
-  id            String    @id @default(cuid())
-  name          String
-  destination   String?
-  startDate     DateTime?
-  endDate       DateTime?
-  status        String    @default("planned") // planned | booked | active | past | cancelled
-  travelers     String[]  @default([])
-  transport     String?
-  accommodation String?
-  costUsd       Float?
-  bookingUrl    String?
-  notes         String?
-  imageUrl      String?
+  id             String    @id @default(cuid())
+  name           String
+  destination    String?
+  startDate      DateTime?
+  endDate        DateTime?
+  status         String    @default("planned") // planned | booked | active | past | cancelled
+  travelers      String[]  @default([])
+  transport      String?
+  accommodation  String?
+  costUsd        Float?
+  bookingUrl     String?
+  notes          String?
+  imageUrl       String?
   // "What I'm doing on this trip" — drives AI packing-list generation; saved
   // so regenerate and the tuning chat reuse it.
   packingContext String?
-  archived      Boolean   @default(false)
-  position      Int       @default(0)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  archived       Boolean   @default(false)
+  position       Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  items         TripItem[]
-  packingItems  PackingItem[]
-
+  items        TripItem[]
+  packingItems PackingItem[]
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -41,25 +40,24 @@ model Trip {
 }
 
 model TripItem {
-  id            String    @id @default(cuid())
-  tripId        String
-  trip          Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  kind          String    // "flight" | "lodging" | "activity" | "transport" | "meal" | "note" | "task"
-  title         String
-  startAt       DateTime?
-  endAt         DateTime?
-  location      String?
-  fromLocation  String?
-  toLocation    String?
-  confirmation  String?
-  url           String?
-  costUsd       Float?
-  notes         String?
-  completedAt   DateTime?
-  position      Int       @default(0)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
+  id           String    @id @default(cuid())
+  tripId       String
+  trip         Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  kind         String // "flight" | "lodging" | "activity" | "transport" | "meal" | "note" | "task"
+  title        String
+  startAt      DateTime?
+  endAt        DateTime?
+  location     String?
+  fromLocation String?
+  toLocation   String?
+  confirmation String?
+  url          String?
+  costUsd      Float?
+  notes        String?
+  completedAt  DateTime?
+  position     Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -76,7 +74,7 @@ model PackingItem {
   category  String    @default("Other") // Clothing | Toiletries | Electronics | Documents | Gear | Other (free-form)
   quantity  Int       @default(1)
   packedAt  DateTime? // set = checked off
-  notes     String?   // AI's "why", e.g. "rain expected Tue"
+  notes     String? // AI's "why", e.g. "rain expected Tue"
   position  Int       @default(0)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -99,7 +97,6 @@ model List {
 
   todos   Todo[]
   members ListMember[]
-
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -148,7 +145,6 @@ model Project {
   human        Human?
   assets       Asset[]
   interactions Interaction[]
-
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -204,12 +200,12 @@ model Vehicle {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  serviceItems   ServiceItem[]
-  serviceRecords ServiceRecord[]
-  contacts       VehicleContact[]
-  photos         VehiclePhoto[]
-  shoppingItems  ShoppingItem[]
-  drives         VehicleDrive[]
+  serviceItems    ServiceItem[]
+  serviceRecords  ServiceRecord[]
+  contacts        VehicleContact[]
+  photos          VehiclePhoto[]
+  shoppingItems   ShoppingItem[]
+  drives          VehicleDrive[]
   recommendations Recommendation[]
 
   userId String
@@ -232,7 +228,6 @@ model VehiclePhoto {
 
   position  Int      @default(0)
   createdAt DateTime @default(now())
-
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -257,7 +252,6 @@ model ShoppingItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -271,16 +265,16 @@ model Human {
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   // Identity
-  fullName        String
-  sex             String? // "M" | "F"
-  birthDate       DateTime?
-  bloodType       String?
-  heightInches    Float?
-  primaryCarePhysician String?
-  pcpPhone        String?
-  insurer         String?
-  insurerPhone    String?
-  policyNumber    String?
+  fullName              String
+  sex                   String? // "M" | "F"
+  birthDate             DateTime?
+  bloodType             String?
+  heightInches          Float?
+  primaryCarePhysician  String?
+  pcpPhone              String?
+  insurer               String?
+  insurerPhone          String?
+  policyNumber          String?
   emergencyContactName  String?
   emergencyContactPhone String?
 
@@ -326,7 +320,6 @@ model BiometricReading {
 
   createdAt DateTime @default(now())
 
-
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -351,7 +344,6 @@ model LabResult {
 
   createdAt DateTime @default(now())
 
-
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -364,16 +356,15 @@ model MedicalVisit {
   humanId String
   human   Human  @relation(fields: [humanId], references: [id], onDelete: Cascade)
 
-  performedAt DateTime
+  performedAt  DateTime
   providerName String
-  specialty   String? // "primary" | "cardiology" | "dental" | "derm" | etc
-  reason      String
-  summary     String?
-  costUsd     Float?
-  followUpAt  DateTime?
+  specialty    String? // "primary" | "cardiology" | "dental" | "derm" | etc
+  reason       String
+  summary      String?
+  costUsd      Float?
+  followUpAt   DateTime?
 
   createdAt DateTime @default(now())
-
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -395,7 +386,6 @@ model HumanVaccination {
 
   createdAt DateTime @default(now())
 
-
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -408,18 +398,17 @@ model FitnessSession {
   humanId String
   human   Human  @relation(fields: [humanId], references: [id], onDelete: Cascade)
 
-  performedAt   DateTime
-  kind          String // "run" | "lift" | "cardio" | "yoga" | "ride" | "hike"
-  durationMin   Int?
-  distanceMi    Float?
-  caloriesKcal  Int?
-  avgHr         Int?
-  maxHr         Int?
-  notes         String?
-  source        String? // "manual" | "strava" | "apple-health"
+  performedAt  DateTime
+  kind         String // "run" | "lift" | "cardio" | "yoga" | "ride" | "hike"
+  durationMin  Int?
+  distanceMi   Float?
+  caloriesKcal Int?
+  avgHr        Int?
+  maxHr        Int?
+  notes        String?
+  source       String? // "manual" | "strava" | "apple-health"
 
   createdAt DateTime @default(now())
-
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -442,7 +431,6 @@ model DnaResult {
   reportedAt DateTime?
   createdAt  DateTime  @default(now())
 
-
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -456,7 +444,7 @@ model Pet {
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   name        String
-  species     String   @default("dog") // "dog" | "cat" | "other"
+  species     String    @default("dog") // "dog" | "cat" | "other"
   breed       String?
   sex         String? // "F" | "M"
   color       String?
@@ -508,7 +496,6 @@ model PetWeight {
 
   createdAt DateTime @default(now())
 
-
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -529,7 +516,6 @@ model PetVaccination {
 
   createdAt DateTime @default(now())
 
-
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -549,7 +535,6 @@ model PetVetVisit {
   costUsd     Float?
 
   createdAt DateTime @default(now())
-
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -573,7 +558,6 @@ model PetPhoto {
   position  Int      @default(0)
   createdAt DateTime @default(now())
 
-
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -582,7 +566,7 @@ model PetPhoto {
 }
 
 model Recommendation {
-  id        String  @id @default(cuid())
+  id        String   @id @default(cuid())
   scope     String // "pet" | "vehicle" | "human"
   petId     String?
   vehicleId String?
@@ -602,12 +586,11 @@ model Recommendation {
 
   position Int @default(0)
 
-  @@index([petId, completedAt, dismissedAt, position])
-  @@index([vehicleId, completedAt, dismissedAt, position])
-
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([petId, completedAt, dismissedAt, position])
+  @@index([vehicleId, completedAt, dismissedAt, position])
   @@index([humanId, completedAt, dismissedAt, position])
   @@index([userId])
 }
@@ -627,7 +610,6 @@ model PetShoppingItem {
   position  Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -653,7 +635,6 @@ model ServiceItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -674,7 +655,6 @@ model ServiceRecord {
   costUsd     Float?
 
   createdAt DateTime @default(now())
-
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -699,7 +679,6 @@ model VehicleContact {
   position  Int      @default(0)
   createdAt DateTime @default(now())
 
-
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -708,17 +687,16 @@ model VehicleContact {
 }
 
 model VehicleDrive {
-  id          String   @id @default(cuid())
-  vehicleId   String
-  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  id        String  @id @default(cuid())
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
   drivenAt    DateTime
   distance    Int
   destination String?
   notes       String?
 
-  createdAt   DateTime @default(now())
-
+  createdAt DateTime @default(now())
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -736,7 +714,6 @@ model Note {
 
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -763,8 +740,7 @@ model Attachment {
   todo   Todo?   @relation(fields: [todoId], references: [id], onDelete: Cascade)
 
   assetId String?
-  asset   Asset? @relation(fields: [assetId], references: [id], onDelete: Cascade)
-
+  asset   Asset?  @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -776,13 +752,13 @@ model Attachment {
 }
 
 model Person {
-  id                String   @id @default(cuid())
-  externalId        String?  @unique // Airtable record ID
+  id                String    @id @default(cuid())
+  externalId        String?   @unique // Airtable record ID
   firstName         String
   lastName          String?
   strength          String? // "close" | "strong" | "casual" | "weak"
-  circles           String[] @default([])
-  tags              String[] @default([])
+  circles           String[]  @default([])
+  tags              String[]  @default([])
   email             String?
   phone             String?
   company           String?
@@ -793,17 +769,16 @@ model Person {
   // we can add platforms without migrations.
   socialUrls        Json?
   howWeMet          String?
-  interests         String[] @default([])
+  interests         String[]  @default([])
   birthday          DateTime?
   lastInteractionAt DateTime?
   notes             String?
   imageUrl          String?
-  starred           Boolean  @default(false)
-  archived          Boolean  @default(false)
-  position          Int      @default(0)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
+  starred           Boolean   @default(false)
+  archived          Boolean   @default(false)
+  position          Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -818,13 +793,13 @@ model Person {
 // needing a bespoke schema per domain.
 model Asset {
   attachments Attachment[]
-  id         String  @id @default(cuid())
-  kind       String // "investment" | "inventory" | "media" | "place" | "practice"
-  externalId String? // e.g. Airtable record ID (rec...) — used for upserts
-  title      String
-  subtitle  String?
-  category  String? // user-defined (e.g. "venture", "watch", "book", "restaurant")
-  status    String? // "active" | "exited" | "wishlist" | "owned" | "visited" | etc
+  id          String       @id @default(cuid())
+  kind        String // "investment" | "inventory" | "media" | "place" | "practice"
+  externalId  String? // e.g. Airtable record ID (rec...) — used for upserts
+  title       String
+  subtitle    String?
+  category    String? // user-defined (e.g. "venture", "watch", "book", "restaurant")
+  status      String? // "active" | "exited" | "wishlist" | "owned" | "visited" | etc
 
   // Money
   amountUsd     Float?
@@ -836,15 +811,15 @@ model Asset {
   returnPercent Float?
 
   // Common metadata
-  acquiredAt    DateTime?
-  exitedAt      DateTime?
-  rating        Int? // 1-5
-  url           String?
-  imageUrl      String?
-  location      String?
-  tagsJson      Json?
-  detailsJson   Json? // free-form structured data
-  notes         String?
+  acquiredAt  DateTime?
+  exitedAt    DateTime?
+  rating      Int? // 1-5
+  url         String?
+  imageUrl    String?
+  location    String?
+  tagsJson    Json?
+  detailsJson Json? // free-form structured data
+  notes       String?
 
   position  Int      @default(0)
   archived  Boolean  @default(false)
@@ -902,76 +877,77 @@ model Todo {
   parent   Todo?   @relation("TodoSubtasks", fields: [parentId], references: [id], onDelete: Cascade)
   subtasks Todo[]  @relation("TodoSubtasks")
 
-  attachments Attachment[]
-  comments    Comment[]
+  attachments  Attachment[]
+  comments     Comment[]
   commentReads CommentRead[]
-
-  @@index([listId, completedAt, position])
-  @@index([projectId, completedAt, position])
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, autopilotKey])
+  @@index([listId, completedAt, position])
+  @@index([projectId, completedAt, position])
   @@index([parentId, completedAt, position])
   @@index([userId])
-  @@unique([userId, autopilotKey])
 }
 
 // ─── Auth ──────────────────────────────────────────────────────────
 
 model User {
-  id         String   @id @default(cuid())
-  email      String   @unique
-  name       String?
-  createdAt  DateTime @default(now())
-  lastSeenAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String?
+  createdAt      DateTime @default(now())
+  lastSeenAt     DateTime @default(now())
   kindleEmail    String?
   kindleAutoSend Boolean  @default(true)
 
-
   // auto-generated back-references
-  pushSubscriptions            PushSubscription[]
-  readerItems                  ReaderItem[]
-  boardItems                   BoardItem[]
-  boardTaste                   BoardTaste?
-  boardRecs                    BoardRec[]
-  highlights                   Highlight[]
-  trips                        Trip[]
-  tripItems                    TripItem[]
-  packingItems                 PackingItem[]
-  lists                        List[]
-  projects                     Project[]
-  vehicles                     Vehicle[]
-  vehiclePhotos                VehiclePhoto[]
-  shoppingItems                ShoppingItem[]
-  humans                       Human[]
-  biometricReadings            BiometricReading[]
-  labResults                   LabResult[]
-  medicalVisits                MedicalVisit[]
-  humanVaccinations            HumanVaccination[]
-  fitnessSessions              FitnessSession[]
-  dnaResults                   DnaResult[]
-  pets                         Pet[]
-  petWeights                   PetWeight[]
-  petVaccinations              PetVaccination[]
-  petVetVisits                 PetVetVisit[]
-  petPhotos                    PetPhoto[]
-  recommendations              Recommendation[]
-  petShoppingItems             PetShoppingItem[]
-  serviceItems                 ServiceItem[]
-  serviceRecords               ServiceRecord[]
-  vehicleContacts              VehicleContact[]
-  vehicleDrives                VehicleDrive[]
-  notes                        Note[]
-  attachments                  Attachment[]
-  persons                      Person[]
-  assets                       Asset[]
-  todos                        Todo[]
-  interactions                 Interaction[]
-  personalRecord               PersonalRecord?
-  listMemberships              ListMember[]
-  comments                     Comment[]
-  commentReads                 CommentRead[]
+  pushSubscriptions PushSubscription[]
+  readerItems       ReaderItem[]
+  boardItems        BoardItem[]
+  boardTaste        BoardTaste?
+  boardRecs         BoardRec[]
+  highlights        Highlight[]
+  trips             Trip[]
+  tripItems         TripItem[]
+  packingItems      PackingItem[]
+  lists             List[]
+  projects          Project[]
+  vehicles          Vehicle[]
+  vehiclePhotos     VehiclePhoto[]
+  shoppingItems     ShoppingItem[]
+  humans            Human[]
+  biometricReadings BiometricReading[]
+  labResults        LabResult[]
+  medicalVisits     MedicalVisit[]
+  humanVaccinations HumanVaccination[]
+  fitnessSessions   FitnessSession[]
+  dnaResults        DnaResult[]
+  pets              Pet[]
+  petWeights        PetWeight[]
+  petVaccinations   PetVaccination[]
+  petVetVisits      PetVetVisit[]
+  petPhotos         PetPhoto[]
+  recommendations   Recommendation[]
+  petShoppingItems  PetShoppingItem[]
+  serviceItems      ServiceItem[]
+  serviceRecords    ServiceRecord[]
+  vehicleContacts   VehicleContact[]
+  vehicleDrives     VehicleDrive[]
+  notes             Note[]
+  attachments       Attachment[]
+  persons           Person[]
+  assets            Asset[]
+  todos             Todo[]
+  interactions      Interaction[]
+  personalRecord    PersonalRecord?
+  listMemberships   ListMember[]
+  comments          Comment[]
+  commentReads      CommentRead[]
+  datingPeople      DatingPerson[]
+  datingEvents      DatingEvent[]
+  datingMessages    DatingMessage[]
 
   @@index([email])
 }
@@ -1026,7 +1002,7 @@ model PersonalRecord {
 model Interaction {
   id         String   @id @default(cuid())
   occurredAt DateTime
-  kind       String   // "dinner" | "call" | "meeting" | "event" | "message" | "other"
+  kind       String // "dinner" | "call" | "meeting" | "event" | "message" | "other"
   title      String
   location   String?
   notes      String?
@@ -1048,23 +1024,23 @@ model Interaction {
 // Read-later: articles/tweets saved from the share sheet or in-app, stored
 // as sanitized reader-mode HTML with user highlights.
 model ReaderItem {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  url         String
-  title       String
-  byline      String?
-  siteName    String?
-  excerpt     String?
-  imageUrl    String?
-  contentHtml String    @default("") // sanitized reader-mode HTML
-  wordCount   Int       @default(0)
-  savedAt     DateTime  @default(now())
-  readAt      DateTime?
-  archivedAt  DateTime?
+  id           String      @id @default(cuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url          String
+  title        String
+  byline       String?
+  siteName     String?
+  excerpt      String?
+  imageUrl     String?
+  contentHtml  String      @default("") // sanitized reader-mode HTML
+  wordCount    Int         @default(0)
+  savedAt      DateTime    @default(now())
+  readAt       DateTime?
+  archivedAt   DateTime?
   kindleSentAt DateTime? // last successful email to the Kindle address
   kindleError  String?
-  highlights  Highlight[]
+  highlights   Highlight[]
 
   @@index([userId, archivedAt, savedAt])
 }
@@ -1156,13 +1132,81 @@ model PushSubscription {
 }
 
 model MagicLinkToken {
-  id         String    @id @default(cuid())
-  token      String    @unique
-  email      String
-  expiresAt  DateTime
-  usedAt     DateTime?
-  createdAt  DateTime  @default(now())
+  id        String    @id @default(cuid())
+  token     String    @unique
+  email     String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 
   @@index([email])
   @@index([expiresAt])
+}
+
+// Dating: people you're seeing. Notes to remember, a timeline you rate as it
+// goes, texts synced from the Mac (scripts/dating-messages-sync.ts) or pasted,
+// and what each one taught you. Additive tables; needs a prod db push.
+model DatingPerson {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  // Normalized phones (+15551234567) / lowercased emails used to match iMessage threads.
+  handles       String[]  @default([])
+  stage         String    @default("talking") // "talking" | "dating" | "exclusive" | "paused" | "ended"
+  metVia        String? // "Hinge", "friends", "bar"
+  metAt         DateTime?
+  endedAt       DateTime?
+  age           Int?
+  city          String?
+  work          String?
+  remember      String[]  @default([]) // quick facts: family, favorites, plans
+  greenFlags    String[]  @default([])
+  redFlags      String[]  @default([])
+  notes         String?
+  lessons       String? // what this one taught you
+  insights      Json? // last Claude read of the thread: { summary, remember, greenFlags, redFlags, lessons, ideas }
+  insightsAt    DateTime?
+  lastMessageAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  events   DatingEvent[]
+  messages DatingMessage[]
+
+  @@index([userId, stage])
+}
+
+model DatingEvent {
+  id         String       @id @default(cuid())
+  userId     String
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  personId   String
+  person     DatingPerson @relation(fields: [personId], references: [id], onDelete: Cascade)
+  occurredAt DateTime
+  kind       String // "date" | "milestone" | "call" | "conflict" | "note"
+  title      String
+  notes      String?
+  vibe       Int? // 1-10, how it felt; plotted over time
+  createdAt  DateTime     @default(now())
+
+  @@index([personId, occurredAt])
+}
+
+model DatingMessage {
+  id         String       @id @default(cuid())
+  userId     String
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  personId   String
+  person     DatingPerson @relation(fields: [personId], references: [id], onDelete: Cascade)
+  sentAt     DateTime
+  fromMe     Boolean
+  text       String
+  source     String       @default("imessage") // "imessage" | "paste"
+  // iMessage guid, or "paste:<hash>" so re-imports dedupe.
+  externalId String
+  createdAt  DateTime     @default(now())
+
+  @@unique([userId, externalId])
+  @@index([personId, sentAt])
 }

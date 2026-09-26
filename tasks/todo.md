@@ -851,3 +851,14 @@ Eddie: "send anything I come across that I like (video, song, product) ... a moo
   - Weekly cron `/api/cron/board-recs` (Sat 15:00 UTC): up to 4 users with ≥5 items and picks older than 6 days, then a push "N new picks for you" deep-linking to `/board?view=for-you`
   - Verified: 135 unit tests (prompt, reply parsing incl. citation-split text, pause_turn resume, API errors), typecheck, prod build; scratch-DB run of the real pipeline with only the Anthropic call faked (YouTube/Spotify art resolved, dead link → search, on-board item filtered); route flow start/poll/error/cron/auth; browser screenshots desktop light + mobile dark, save + dismiss
   - NOT verified: a live Claude call (no API key in the build env). First real run on prod is the test
+
+## Dating: people I'm seeing (2026-09-26)
+Ask: a page that pulls in messages, holds notes on each person, plots the relationship, and helps learn from each one.
+- [x] `DatingPerson`, `DatingEvent`, `DatingMessage` models (additive; needs prod `pnpm db:push` before merge)
+- [x] `/dating`: Now / Past cards (stage, 12-week message sparkline, last text, dates, avg vibe, top things to remember), Lessons roll-up, "Find patterns" (Claude across everyone's notes, lessons, flags, timelines)
+- [x] `/dating/[id]`: Overview (stats: volume, who starts conversations, median reply time each way, dates + avg vibe; messages-per-week chart stacked you/them over a vibe-over-time chart on the same time axis; Remember / Green flags / Red flags lists; "Claude's read" with one-click add of suggested facts, flags and lessons), Timeline (dates, milestones, calls, conflicts, rated 1-10), Messages (thread, search, load older, paste import), Notes (notes, what this taught me, details incl. phone/email for sync, delete)
+- [x] Messages in: `scripts/dating-messages-sync.ts` on the Mac reads only 1:1 iMessage threads for handles added on /dating (decodes `attributedBody` for text-less rows, skips tapbacks and group chats), POSTs to `/api/capture/dating` (CAPTURE_TOKEN), deduped by guid; `--install-launchd` runs it every 30 min. Paste import handles WhatsApp exports (iOS + Android) and "Name: text" lines, deduped by hash
+- [x] Sidebar template is `privateOnly` (shows on the private host); `/dating` itself works on any host for the signed-in user
+- [x] Verified: 17 new unit tests (handles, transcript parsing, stats, weekly buckets, attributedBody), typecheck, scratch-DB e2e (create, events, capture ingest + dedupe, paste, search, patch, cross-user 404s), sync script against a fake chat.db (tapback, group and other threads skipped; attributedBody decoded; re-run adds 0), browser screenshots light/dark/mobile with no console errors
+- [ ] Eddie: prod db push; add `APP_URL` + `CAPTURE_TOKEN` to the Mac repo `.env`, Full Disk Access for the terminal, run the sync once then `--install-launchd`
+- NOT verified: a live Claude call for "Claude's read" / "Find patterns" (no API key in the build env)
