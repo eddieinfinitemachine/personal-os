@@ -12,10 +12,10 @@ import { KindGlyph } from "./kind-glyph";
 import { SendHelp } from "./send-help";
 import type { BoardCard } from "./types";
 
-type Filter = "all" | BoardKind;
+// "all", a kind ("kind:image"), or one of Claude's tags ("tag:Musicians").
+type Filter = "all" | `kind:${BoardKind}` | `tag:${string}`;
 
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: "all", label: "All" },
+const KINDS: { key: BoardKind; label: string }[] = [
   { key: "image", label: "Images" },
   { key: "video", label: "Video" },
   { key: "music", label: "Music" },
@@ -94,6 +94,17 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
     window.history.replaceState(null, "", next === "for-you" ? "/board?view=for-you" : "/board");
   }, []);
 
+  const reload = useCallback(async () => {
+    try {
+      const res = await fetch("/api/board", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { items: BoardCard[] };
+      setItems(data.items);
+    } catch {
+      // Offline; keep what we have.
+    }
+  }, []);
+
   // Pick up things sent from the phone while this tab sat in the background.
   useEffect(() => {
     // focus and visibilitychange usually fire together; one fetch is enough.
@@ -101,16 +112,8 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
     const refresh = async () => {
       if (document.visibilityState !== "visible" || inFlight) return;
       inFlight = true;
-      try {
-        const res = await fetch("/api/board", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = (await res.json()) as { items: BoardCard[] };
-        setItems(data.items);
-      } catch {
-        // Offline; keep what we have.
-      } finally {
-        inFlight = false;
-      }
+      await reload();
+      inFlight = false;
     };
     document.addEventListener("visibilitychange", refresh);
     window.addEventListener("focus", refresh);
@@ -118,6 +121,30 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
       document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("focus", refresh);
     };
+  }, [reload]);
+
+  // Items saved before tagging existed (or whose tagging failed) get tagged
+  // just by opening the board: one backfill batch per visit.
+  const backfilled = useRef(false);
+  useEffect(() => {
+    if (backfilled.current || !initialItems.some((i) => !i.tags?.length)) return;
+    backfilled.current = true;
+    void fetch("/api/board/tags/backfill", { method: "POST" })
+      .then((res) => (res.ok ? (res.json() as Promise<{ tagged?: number }>) : null))
+      .then((data) => {
+        if (data?.tagged) void reload();
+      })
+      .catch(() => {});
+  }, [initialItems, reload]);
+
+  // Tagging runs after the save responds; pick up the new tag a bit later.
+  const tagRefresh = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reloadForTags = useCallback(() => {
+    if (tagRefresh.current) clearTimeout(tagRefresh.current);
+    tagRefresh.current = setTimeout(() => void reload(), 4000);
+  }, [reload]);
+  useEffect(() => () => {
+    if (tagRefresh.current) clearTimeout(tagRefresh.current);
   }, []);
 
   useEffect(() => {
@@ -148,6 +175,7 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
         setItems((prev) => [item, ...prev.filter((i) => i.id !== item.id)]);
         haptic("success");
         if (data.duplicate) say("Already on your board, moved to the top");
+        else reloadForTags();
       } catch (e) {
         say(e instanceof Error ? e.message : "Couldn't save that", true);
       } finally {
@@ -155,7 +183,7 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
         if (preview) URL.revokeObjectURL(preview);
       }
     },
-    [say, switchView],
+    [say, switchView, reloadForTags],
   );
 
   const sendText = useCallback(
@@ -288,16 +316,31 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((i) => {
-      if (filter !== "all" && i.kind !== filter) return false;
+      if (filter.startsWith("kind:") && `kind:${i.kind}` !== filter) return false;
+      if (filter.startsWith("tag:") && !i.tags?.includes(filter.slice(4))) return false;
       if (!q) return true;
-      return [i.title, i.note, i.siteName, i.url, i.price].some((f) => f?.toLowerCase().includes(q));
+      return [i.title, i.note, i.siteName, i.url, i.price, ...(i.tags ?? [])].some((f) => f?.toLowerCase().includes(q));
     });
   }, [items, filter, query]);
 
-  const counts = useMemo(() => {
-    const c: Record<string, number> = { all: items.length };
-    for (const i of items) c[i.kind] = (c[i.kind] ?? 0) + 1;
-    return c;
+  // Chips: All, then Claude's tags by how often they're used, then the kinds
+  // that have anything in them.
+  const chips = useMemo(() => {
+    const kindCounts = new Map<string, number>();
+    const tagCounts = new Map<string, number>();
+    for (const i of items) {
+      kindCounts.set(i.kind, (kindCounts.get(i.kind) ?? 0) + 1);
+      for (const t of i.tags ?? []) tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
+    }
+    const out: { key: Filter; label: string; count: number }[] = [{ key: "all", label: "All", count: items.length }];
+    for (const [t, n] of [...tagCounts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) {
+      out.push({ key: `tag:${t}`, label: t, count: n });
+    }
+    for (const k of KINDS) {
+      const n = kindCounts.get(k.key);
+      if (n) out.push({ key: `kind:${k.key}`, label: k.label, count: n });
+    }
+    return out;
   }, [items]);
 
   // Masonry: each tile goes to the currently shortest column, so reading
@@ -407,14 +450,20 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
       </header>
 
       {view === "for-you" ? (
-        <ForYou onSaved={(item) => setItems((prev) => [item, ...prev.filter((i) => i.id !== item.id)])} say={say} />
+        <ForYou
+          onSaved={(item) => {
+            setItems((prev) => [item, ...prev.filter((i) => i.id !== item.id)]);
+            reloadForTags();
+          }}
+          say={say}
+        />
       ) : (
         <>
       {composer && <Composer onText={sendText} onFiles={sendFiles} onClose={() => setComposer(false)} />}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="flex gap-1 overflow-x-auto [scrollbar-width:none] -mx-1 px-1">
-          {FILTERS.filter((f) => f.key === "all" || counts[f.key]).map((f) => (
+          {chips.map((f) => (
             <button
               key={f.key}
               onClick={() => setFilter(f.key)}
@@ -425,7 +474,7 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
               }`}
             >
               {f.label}
-              <span className="ml-1 opacity-50 tabular-nums">{counts[f.key] ?? 0}</span>
+              <span className="ml-1 opacity-50 tabular-nums">{f.count}</span>
             </button>
           ))}
         </div>

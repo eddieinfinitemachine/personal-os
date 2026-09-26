@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
-import { personPatch, toPersonDTO } from "@/lib/dating-server";
+import { personPatch, personPatchError, toPersonDTO } from "@/lib/dating-server";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +12,8 @@ export async function PATCH(request: Request, { params }: Ctx) {
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { id } = await params;
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const invalid = personPatchError(body);
+  if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
   const res = await prisma.datingPerson.updateMany({ where: { id, userId }, data: personPatch(body) });
   if (res.count === 0) return NextResponse.json({ error: "not found" }, { status: 404 });
   const person = await prisma.datingPerson.findUniqueOrThrow({ where: { id } });

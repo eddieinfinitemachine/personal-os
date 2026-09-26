@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Loader2, Plus, Sparkles, X } from "lucide-react";
+import { Instagram, Loader2, Plus, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { daysSince } from "@/lib/dating";
+import { daysSince, instagramUrl } from "@/lib/dating";
 import type { DatingPersonDTO } from "@/lib/dating-server";
 import { SimpleMarkdown } from "@/components/simple-markdown";
 import { DictateCard } from "./dictate-card";
@@ -267,16 +267,34 @@ function Section({ title, people, empty }: { title: string; people: DatingCard[]
 function PersonCard({ p }: { p: DatingCard }) {
   const since = daysSince(p.lastMessageAt);
   const max = Math.max(1, ...p.spark);
+  // The name link stretches over the whole card (after:inset-0) so the
+  // Instagram link can sit inside it without nesting <a>s.
   return (
-    <Link href={`/dating/${p.id}`} className={cn(card, "block p-4 hover:bg-[var(--color-fill-secondary)] transition")}>
+    <div className={cn(card, "relative p-4 hover:bg-[var(--color-fill-secondary)] transition")}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="font-semibold truncate">{p.name}</div>
+          <Link href={`/dating/${p.id}`} className="block font-semibold truncate after:absolute after:inset-0 after:rounded-xl">
+            {p.name}
+          </Link>
           <div className="text-xs text-[var(--color-muted-foreground)] truncate">
             {[p.metVia, p.age, p.city].filter(Boolean).join(" · ") || " "}
           </div>
         </div>
-        <span className="shrink-0 rounded-full bg-[var(--color-fill)] px-2 py-0.5 text-xs capitalize">{p.stage}</span>
+        <div className="flex shrink-0 items-center gap-1">
+          {p.instagram && (
+            <a
+              href={instagramUrl(p.instagram)}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`@${p.instagram} on Instagram`}
+              title={`@${p.instagram}`}
+              className="relative z-10 -my-1 rounded-full p-1.5 text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
+            >
+              <Instagram className="size-4" />
+            </a>
+          )}
+          <span className="rounded-full bg-[var(--color-fill)] px-2 py-0.5 text-xs capitalize">{p.stage}</span>
+        </div>
       </div>
       {p.spark.some(Boolean) && (
         <div className="mt-3 flex h-8 items-end gap-[2px]" aria-label="Messages per week, last 12 weeks">
@@ -298,6 +316,6 @@ function PersonCard({ p }: { p: DatingCard }) {
       {p.remember.length > 0 && (
         <p className="mt-2 text-xs text-[var(--color-label-tertiary)] line-clamp-2">{p.remember.slice(0, 3).join(" · ")}</p>
       )}
-    </Link>
+    </div>
   );
 }

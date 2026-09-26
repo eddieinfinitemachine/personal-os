@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
 import { saveToBoard } from "@/lib/board-save";
 import { InputError } from "@/lib/board-input";
+import { tagInBackground } from "@/lib/board-tags";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -30,14 +31,16 @@ export async function POST(request: Request, { params }: Ctx) {
     // save it as a card that carries the name and opens that search.
     const isSearch = !rec.url || /\/(results|search)\b|[?&](q|search_query)=/.test(rec.url);
     const title = rec.creator ? `${rec.title} · ${rec.creator}` : rec.title;
-    const { item } = isSearch
+    const { item, duplicate } = isSearch
       ? {
+          duplicate: false,
           item: await prisma.boardItem.create({
             data: { userId, kind: rec.kind, title, url: rec.url, price: rec.price, via: "rec" },
           }),
         }
       : await saveToBoard(userId, { url: rec.url!, title: rec.title, via: "rec" });
     await prisma.boardRec.update({ where: { id }, data: { status: "saved", boardItemId: item.id } });
+    if (!duplicate) after(() => tagInBackground(userId, item.id));
     return NextResponse.json({ ok: true, item });
   } catch (e) {
     if (e instanceof InputError) return NextResponse.json({ error: e.message }, { status: e.status });

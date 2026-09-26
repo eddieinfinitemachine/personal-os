@@ -37,8 +37,9 @@ Rules:
 - note: a cleaned-up first-person summary of what was said about her, in my voice, keeping specifics (names, places, plans, preferences). summary: a short title for it, under 8 words.
 - events: only real dates, milestones, calls or conflicts the note describes (or firmly plans). vibe 1-10 only if the note says how it felt, else null.
 - stage: set it when the note says the relationship changed: started dating, became exclusive, paused, or ended (broke up, ended it, it's over). Otherwise null.
+- instagram: her Instagram handle only when the note explicitly gives it ("her insta is @jane.doe", "she's jane.doe on Instagram"), without the @. Never guess one from her name. Null when the note doesn't state one or it matches the handle already listed.
 Reply with ONLY a JSON object:
-{"people":[{"personId":"<id or null>","name":"","isNew":false,"summary":"","note":"","remember":[],"greenFlags":[],"redFlags":[],"lessons":"","stage":"talking|dating|exclusive|paused|ended|null","events":[{"kind":"date|milestone|call|conflict","title":"","occurredAt":"YYYY-MM-DD","vibe":null,"notes":""}]}]}
+{"people":[{"personId":"<id or null>","name":"","isNew":false,"summary":"","note":"","remember":[],"greenFlags":[],"redFlags":[],"lessons":"","stage":"talking|dating|exclusive|paused|ended|null","instagram":null,"events":[{"kind":"date|milestone|call|conflict","title":"","occurredAt":"YYYY-MM-DD","vibe":null,"notes":""}]}]}
 If nobody being dated is discussed, reply {"people":[]}.`;
 
 const knownSelect = {
@@ -49,6 +50,7 @@ const knownSelect = {
   greenFlags: true,
   redFlags: true,
   lessons: true,
+  instagram: true,
   // Recent timeline, so a meeting that mentions last week's date doesn't log it twice.
   events: {
     where: { kind: { not: "note" } },
@@ -89,6 +91,7 @@ export async function fileDatingNote(opts: {
         .map((p) =>
           [
             `- id ${p.id}: ${p.name}${p.stage ? ` (${p.stage})` : ""}`,
+            p.instagram && `  instagram: @${p.instagram}`,
             p.remember.length && `  remember: ${p.remember.join("; ")}`,
             p.greenFlags.length && `  green flags: ${p.greenFlags.join("; ")}`,
             p.redFlags.length && `  red flags: ${p.redFlags.join("; ")}`,
@@ -145,7 +148,13 @@ export async function applyProposedPerson(
       if (!person) {
         if (!item.isNew || !item.name) return null;
         person = await tx.datingPerson.create({
-          data: { userId, name: item.name, stage: item.stage ?? "talking", metAt: noonUTC(opts.day) },
+          data: {
+            userId,
+            name: item.name,
+            stage: item.stage ?? "talking",
+            metAt: noonUTC(opts.day),
+            instagram: item.instagram,
+          },
         });
         created = true;
       }
@@ -199,6 +208,11 @@ export async function applyProposedPerson(
       if (redFlags.length) data.redFlags = [...person.redFlags, ...redFlags];
       const lessons = appendLessons(person.lessons, item.lessons);
       if (lessons !== (person.lessons?.trim() || null)) data.lessons = lessons;
+      // A reviewed dictation replaces the handle (the note gave a new one);
+      // unreviewed Granola filing only fills an empty one.
+      if (!created && item.instagram && item.instagram !== person.instagram) {
+        if (opts.source === "dictation" || !person.instagram) data.instagram = item.instagram;
+      }
       if (!created && item.stage && item.stage !== person.stage) {
         data.stage = item.stage;
         if (item.stage === "ended") data.endedAt = noonUTC(opts.day);
