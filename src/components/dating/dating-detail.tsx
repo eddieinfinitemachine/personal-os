@@ -16,8 +16,10 @@ import {
   type EventKind,
 } from "@/lib/dating";
 import type { DatingEventDTO, DatingMessageDTO, DatingPersonDTO } from "@/lib/dating-server";
+import type { DatingPhotoDTO } from "@/lib/dating-photos";
 import { DictateCard } from "./dictate-card";
 import { ListEditor } from "./list-editor";
+import { PhotoStrip } from "./photo-strip";
 import { RelationshipChart } from "./relationship-chart";
 import { SyncHelp } from "./sync-help";
 
@@ -43,18 +45,21 @@ export function DatingDetail({
   initialEvents,
   initialMessages,
   initialMore,
+  initialPhotos = [],
   meta: initialMeta,
 }: {
   initialPerson: DatingPersonDTO;
   initialEvents: DatingEventDTO[];
   initialMessages: DatingMessageDTO[];
   initialMore: boolean;
+  initialPhotos?: DatingPhotoDTO[];
   meta: Meta[];
 }) {
   const router = useRouter();
   const [person, setPerson] = useState(initialPerson);
   const [events, setEvents] = useState(initialEvents);
   const [meta, setMeta] = useState(initialMeta);
+  const [photos, setPhotos] = useState(initialPhotos);
   const [tab, setTab] = useState<Tab>("overview");
   const [error, setError] = useState<string | null>(null);
   const first = person.name.split(/\s+/)[0];
@@ -149,6 +154,8 @@ export function DatingDetail({
 
       {tab === "overview" && (
         <div className="space-y-4">
+          <PhotoStrip personId={person.id} firstName={first} photos={photos} setPhotos={setPhotos} setError={setError} />
+
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <Stat label="Messages" value={stats.total ? stats.total.toLocaleString() : "0"} sub={stats.total ? `${Math.round((stats.mine / stats.total) * 100)}% from you` : "Sync or paste them"} />
             <Stat

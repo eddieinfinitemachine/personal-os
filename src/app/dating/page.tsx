@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { isFounderUser } from "@/lib/cron";
 import { weekStart } from "@/lib/dating";
 import { toPersonDTO } from "@/lib/dating-server";
+import { pickAvatar } from "@/lib/dating-photos";
 import { DatingHome, type DatingCard, type GranolaSuggestion } from "@/components/dating/dating-home";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +23,7 @@ export default async function DatingPage() {
     prisma.datingPerson.findMany({
       where: { userId },
       orderBy: [{ lastMessageAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
+      include: { photos: { orderBy: { createdAt: "desc" }, take: 1, select: { url: true, createdAt: true } } },
     }),
     prisma.datingMessage.groupBy({ by: ["personId"], where: { userId }, _count: { _all: true } }),
     prisma.datingEvent.findMany({ where: { userId }, select: { personId: true, kind: true, vibe: true } }),
@@ -39,7 +41,7 @@ export default async function DatingPage() {
   const suggestions: GranolaSuggestion[] = pending.map((s) => ({ ...s, occurredAt: s.occurredAt.toISOString() }));
 
   const countBy = new Map(counts.map((c) => [c.personId, c._count._all]));
-  const cards: DatingCard[] = people.map((p) => {
+  const cards: DatingCard[] = people.map(({ photos, ...p }) => {
     const evs = events.filter((e) => e.personId === p.id);
     const vibes = evs.flatMap((e) => (e.vibe ? [e.vibe] : []));
     const spark = Array<number>(SPARK_WEEKS).fill(0);
@@ -54,6 +56,7 @@ export default async function DatingPage() {
       dateCount: evs.filter((e) => e.kind === "date").length,
       avgVibe: vibes.length ? vibes.reduce((a, b) => a + b, 0) / vibes.length : null,
       spark,
+      avatarUrl: pickAvatar(photos),
     };
   });
 

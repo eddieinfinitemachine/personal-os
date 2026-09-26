@@ -949,6 +949,7 @@ model User {
   datingEvents      DatingEvent[]
   datingMessages    DatingMessage[]
   datingSuggestions DatingSuggestion[]
+  datingPhotos      DatingPhoto[]
 
   @@index([email])
 }
@@ -1176,6 +1177,7 @@ model DatingPerson {
 
   events   DatingEvent[]
   messages DatingMessage[]
+  photos   DatingPhoto[]
 
   @@index([userId, stage])
 }
@@ -1240,4 +1242,17 @@ model DatingSuggestion {
 
   @@unique([userId, meetingId, name])
   @@index([userId, status])
+}
+
+model DatingPhoto {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  personId  String
+  person    DatingPerson @relation(fields: [personId], references: [id], onDelete: Cascade)
+  url       String
+  caption   String?
+  createdAt DateTime     @default(now())
+
+  @@index([personId, createdAt])
 }
