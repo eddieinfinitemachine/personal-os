@@ -9,7 +9,10 @@ const DEFAULT_MODEL = "claude-opus-4-8";
 
 export type ClaudeImageBlock = {
   type: "image";
-  source: { type: "base64"; media_type: string; data: string };
+  source:
+    | { type: "base64"; media_type: string; data: string }
+    // Anthropic fetches the image itself (public https URLs only).
+    | { type: "url"; url: string };
 };
 export type ClaudeTextBlock = { type: "text"; text: string };
 export type ClaudeContentBlock = ClaudeTextBlock | ClaudeImageBlock;

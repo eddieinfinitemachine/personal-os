@@ -13,6 +13,8 @@ export type BoardCard = {
   color: string | null;
   price: string | null;
   via: string;
+  /** Claude-assigned categories ("Musicians"); empty until tagged. */
+  tags: string[];
   savedAt: string;
 };
 
@@ -29,11 +31,13 @@ export function toCard(item: {
   color: string | null;
   price: string | null;
   via: string;
+  tags?: string[] | null;
   savedAt: Date | string;
 }): BoardCard {
   return {
     ...item,
     kind: item.kind as BoardKind,
+    tags: item.tags ?? [],
     savedAt: typeof item.savedAt === "string" ? item.savedAt : item.savedAt.toISOString(),
   };
 }

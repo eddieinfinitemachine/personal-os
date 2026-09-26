@@ -170,10 +170,21 @@ export function BoardLightbox({
           </button>
         </div>
 
-        <p className="mt-auto text-xs text-white/35">
-          Saved {new Date(item.savedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-          {item.via === "rec" ? " · from For you" : item.via !== "app" ? ` · via ${item.via}` : ""}
-        </p>
+        <div className="mt-auto space-y-2">
+          {item.tags?.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {item.tags.map((t) => (
+                <span key={t} className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white/60">
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
+          <p className="text-xs text-white/35">
+            Saved {new Date(item.savedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+            {item.via === "rec" ? " · from For you" : item.via !== "app" ? ` · via ${item.via}` : ""}
+          </p>
+        </div>
       </aside>
     </div>
   );
