@@ -18,7 +18,7 @@ export type BoardInput = {
   via: string;
 };
 
-const VIAS = new Set(["app", "shortcut", "extension", "share"]);
+const VIAS = new Set(["app", "shortcut", "extension", "share", "rec"]);
 const URL_RE = /https?:\/\/[^\s<>"']+/i;
 
 function decodeMaybe(s: string): string {

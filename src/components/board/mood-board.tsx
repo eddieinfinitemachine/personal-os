@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ImagePlus, Loader2, Music2, Play, Plus, Search, Send, ShoppingBag, X } from "lucide-react";
+import { ImagePlus, Loader2, Plus, Search, Send, X } from "lucide-react";
 import { compressImage } from "@/lib/image-compress";
 import { haptic } from "@/lib/haptic";
 import { displayHost, type BoardKind } from "@/lib/board-embed";
 import { BoardLightbox } from "./board-lightbox";
+import { ForYou } from "./for-you";
+import { KindGlyph } from "./kind-glyph";
 import { SendHelp } from "./send-help";
 import type { BoardCard } from "./types";
 
@@ -52,6 +54,7 @@ function isTyping(el: EventTarget | null): boolean {
 
 export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
   const [items, setItems] = useState(initialItems);
+  const [view, setView] = useState<"board" | "for-you">("board");
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState<Pending[]>([]);
@@ -70,14 +73,21 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
     toastTimer.current = setTimeout(() => setToast(null), 3200);
   }, []);
 
-  // Messages from the PWA share target redirect (?saved= / ?error=).
+  // Deep link to picks (?view=for-you, used by the weekly push), and messages
+  // from the PWA share target redirect (?saved= / ?error=).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    if (params.get("view") === "for-you") setView("for-you");
     const err = params.get("error");
     if (params.has("saved")) say("Saved to board");
     if (err) say(err, true);
     if (params.has("saved") || err) window.history.replaceState(null, "", "/board");
   }, [say]);
+
+  const switchView = useCallback((next: "board" | "for-you") => {
+    setView(next);
+    window.history.replaceState(null, "", next === "for-you" ? "/board?view=for-you" : "/board");
+  }, []);
 
   // Pick up things sent from the phone while this tab sat in the background.
   useEffect(() => {
@@ -301,8 +311,25 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
         <div>
           <h1 className="text-large-title font-bold">Board</h1>
           <p className="text-sm text-[var(--color-muted-foreground)] mt-1">
-            Everything you liked. Share, paste, or drop anything here.
+            {view === "board"
+              ? "Everything you liked. Share, paste, or drop anything here."
+              : "Picks found for you, based on everything you saved."}
           </p>
+          <div className="mt-3 inline-flex rounded-lg bg-[var(--color-fill)] p-0.5 text-sm">
+            {(["board", "for-you"] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => switchView(v)}
+                className={`rounded-md px-3 py-1 transition ${
+                  view === v
+                    ? "bg-[var(--color-elevated)] font-medium shadow-card"
+                    : "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
+                }`}
+              >
+                {v === "board" ? "Board" : "For you"}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -313,7 +340,10 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
             Ways to send
           </button>
           <button
-            onClick={() => setComposer((v) => !v)}
+            onClick={() => {
+              switchView("board");
+              setComposer((v) => !v);
+            }}
             className="rounded-lg bg-[var(--color-foreground)] px-3 py-1.5 text-sm font-medium text-[var(--color-background)] hover:opacity-90 pressable inline-flex items-center gap-1.5"
           >
             <Plus className="size-4" />
@@ -322,6 +352,10 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
         </div>
       </header>
 
+      {view === "for-you" ? (
+        <ForYou onSaved={(item) => setItems((prev) => [item, ...prev.filter((i) => i.id !== item.id)])} say={say} />
+      ) : (
+        <>
       {composer && <Composer onText={sendText} onFiles={sendFiles} onClose={() => setComposer(false)} />}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -373,6 +407,9 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
           </div>
         )}
       </div>
+
+        </>
+      )}
 
       {openIndex >= 0 && (
         <BoardLightbox
@@ -509,13 +546,6 @@ function PendingTile({ p }: { p: Pending }) {
       </div>
     </div>
   );
-}
-
-export function KindGlyph({ kind, className }: { kind: BoardKind; className?: string }) {
-  if (kind === "video") return <Play className={className} fill="currentColor" />;
-  if (kind === "music") return <Music2 className={className} />;
-  if (kind === "product") return <ShoppingBag className={className} />;
-  return null;
 }
 
 function Composer({

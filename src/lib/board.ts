@@ -33,6 +33,10 @@ export type ResolvedLink = {
   imageSrc: string | null;
   /** Set when the URL itself served an image, so it isn't fetched twice. */
   imageBody?: Buffer;
+  /** False when neither oEmbed nor the page answered 2xx (dead or blocked link). */
+  ok: boolean;
+  /** HTTP status of the page fetch; undefined if it never got an answer. */
+  status?: number;
 };
 
 export type StoredImage = {
@@ -181,10 +185,12 @@ export async function resolveLink(url: string): Promise<ResolvedLink> {
     description: null,
     price: null,
     imageSrc: null,
+    ok: false,
   };
 
   const oembed = await fetchOEmbed(url);
   if (oembed) {
+    out.ok = true;
     out.title = oembed.title ?? null;
     out.siteName = oembed.provider_name ?? null;
     out.description = oembed.author_name ?? null;
@@ -201,7 +207,9 @@ export async function resolveLink(url: string): Promise<ResolvedLink> {
       timeoutMs: 12_000,
       maxBytes: MAX_IMAGE_BYTES,
     });
+    out.status = res.status;
     if (res.status >= 200 && res.status < 300) {
+      out.ok = true;
       if (res.contentType?.startsWith("image/")) {
         out.kind = "image";
         out.imageBody = res.body;

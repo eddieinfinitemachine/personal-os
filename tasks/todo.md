@@ -842,4 +842,12 @@ Eddie: "send anything I come across that I like (video, song, product) ... a moo
 - [x] Middleware: drop client-supplied `x-user-id` (bearer passthrough routes could be spoofed)
 - [x] Verified locally: 128 unit tests, typecheck, prod build, scratch-DB e2e (YouTube, Spotify, Vimeo, product w/ price, direct image, HEIC, notes, dedupe, share target, PATCH/DELETE, auth), browser screenshots light/dark/mobile
 - [ ] Eddie: prod db push; build the Shortcut; reload the extension
-- [ ] Later: taste profile + recommendations from the board
+- [x] Recommendations ("For you" tab on /board):
+  - `BoardTaste` (profile + run state) and `BoardRec` models (additive)
+  - `lib/board-recs.ts`: board (150 newest) + saved/dismissed/shown picks → Claude with `web_search_20260209` → taste profile + 12 picks with real URLs; `lib/claude.ts` gained `callClaudeWithServerTools` (resumes `pause_turn`)
+  - Each pick's link resolved like a board save (image, site, price); 404/unreachable links swap to a search link, bot-blocked (403) keep the real link; items already on the board are dropped
+  - `POST /api/board/recs` claims a run (stale after 6 min) and generates in `after()`; UI polls GET; errors keep the previous picks
+  - Save copies a pick onto the board (`via: "rec"`) and counts as a like; ✕ dismisses and steers the next run away
+  - Weekly cron `/api/cron/board-recs` (Sat 15:00 UTC): up to 4 users with ≥5 items and picks older than 6 days, then a push "N new picks for you" deep-linking to `/board?view=for-you`
+  - Verified: 135 unit tests (prompt, reply parsing incl. citation-split text, pause_turn resume, API errors), typecheck, prod build; scratch-DB run of the real pipeline with only the Anthropic call faked (YouTube/Spotify art resolved, dead link → search, on-board item filtered); route flow start/poll/error/cron/auth; browser screenshots desktop light + mobile dark, save + dismiss
+  - NOT verified: a live Claude call (no API key in the build env). First real run on prod is the test
