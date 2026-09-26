@@ -150,10 +150,10 @@ export default async function RootLayout({
           <LayoutOverlays />
           <MobileChromeProvider projects={mobileProjects} lists={mobileLists} appName={appName} isPrivate={isPrivate}>
             <div className="flex min-h-screen">
-              <div className="hidden md:flex print:hidden">
+              <div data-app-sidebar className="hidden md:flex print:hidden">
                 <Sidebar projects={projects} appName={appName} isPrivate={isPrivate} />
               </div>
-              <main className="flex-1 overflow-x-hidden pt-[calc(48px+env(safe-area-inset-top))] pb-[calc(16px+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 print:pt-0 print:pb-0">
+              <main data-app-main className="flex-1 overflow-x-hidden pt-[calc(48px+env(safe-area-inset-top))] pb-[calc(16px+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 print:pt-0 print:pb-0">
                 {children}
               </main>
             </div>

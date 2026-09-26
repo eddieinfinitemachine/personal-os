@@ -36,7 +36,7 @@ export function ProjectTabs({
   }
 
   return (
-    <div className="border-b border-[var(--color-border)] mb-6 flex items-center gap-1">
+    <div data-focus-hide className="border-b border-[var(--color-border)] mb-6 flex items-center gap-1">
       {tabs.map((t) => {
         const Icon = t.icon;
         const isActive = active === t.key;

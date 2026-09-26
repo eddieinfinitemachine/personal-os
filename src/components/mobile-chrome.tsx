@@ -126,6 +126,7 @@ function MobileTopBar() {
   const { state, openDrawer } = useMobileChrome();
   return (
     <header
+      data-focus-hide
       className="md:hidden print:hidden fixed top-0 inset-x-0 z-30 bg-[var(--color-background)]/95 backdrop-blur border-b border-[var(--color-border)] pt-[env(safe-area-inset-top)]"
       style={{
         transform: "translate3d(0,0,0)",
