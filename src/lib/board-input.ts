@@ -54,6 +54,29 @@ export function splitUrlAndText(pile: string[]): { url?: string; text?: string }
   return { url, text: text || undefined };
 }
 
+// Apps wrap a shared link in stock copy ("Check out this item on Amazon",
+// "Listen to X on Spotify", "Shared via TikTok"). Keep a real caption as the
+// note; drop the boilerplate, and anything that only repeats the title.
+const SHARE_BOILERPLATE = [
+  /\bcheck (?:it|this) out\b[:!.]?/gi,
+  /\bcheck out (?:this|my|these)\b[^\n:!.]{0,60}?\b(?:on|at|from)\s+[\w.' ]{2,30}?(?=[:!.\n]|$)[:!.]?/gi,
+  /\b(?:listen to|watch|shop|buy|see)\b[^\n]{0,120}?\bon (?:spotify|youtube|apple music|amazon|etsy|tiktok|instagram|soundcloud|pinterest|x|twitter)\b[:!.]?/gi,
+  /\b(?:shared|sent) (?:via|from|with) [\w.' ]{2,30}/gi,
+  /\bi (?:found|saw) this on [\w.' ]{2,30}[:!.]?/gi,
+];
+
+export function shareCaption(text: string | undefined, title: string | null): string | undefined {
+  if (!text) return undefined;
+  let rest = text;
+  for (const re of SHARE_BOILERPLATE) rest = rest.replace(re, " ");
+  if (title) {
+    const escaped = title.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (escaped) rest = rest.replace(new RegExp(escaped, "gi"), " ");
+  }
+  rest = rest.replace(/^[\s:|\-–—"'“”.,!]+|[\s:|\-–—"'“”,]+$/g, "").replace(/[ \t]+/g, " ").trim();
+  return (rest.match(/[\p{L}\p{N}]/gu)?.length ?? 0) >= 3 ? rest : undefined;
+}
+
 function str(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
 }
