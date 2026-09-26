@@ -40,6 +40,34 @@ export function parseHandles(input: unknown): string[] {
   return [...new Set(parts.map(normalizeHandle).filter(Boolean))];
 }
 
+// Instagram paths that aren't profiles ("instagram.com/p/<post>").
+const IG_NOT_PROFILE = new Set(["p", "reel", "reels", "tv", "explore", "accounts", "direct", "about", "legal"]);
+
+/**
+ * An Instagram handle from "@jane.doe", "jane.doe", "instagram.com/jane.doe"
+ * or a shared profile link ("https://www.instagram.com/jane.doe/?igsh=…").
+ * Lowercased, no @. Null for empty input or anything that isn't a valid
+ * handle (a-z, 0-9, "." and "_", up to 30, no leading, trailing or double dot).
+ */
+export function normalizeInstagram(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  let s = input.trim();
+  const url = s.match(/^(?:https?:\/\/)?(?:(?:www|m)\.)?(?:instagram\.com|instagr\.am)(?:\/(.*))?$/i);
+  if (url) {
+    const segs = (url[1] ?? "").split(/[?#]/)[0].split("/").filter(Boolean);
+    const first = segs[0]?.toLowerCase();
+    if (!first || IG_NOT_PROFILE.has(first)) return null;
+    s = first === "stories" ? (segs[1] ?? "") : segs[0];
+  }
+  const h = s.replace(/^@/, "").toLowerCase();
+  if (!/^[a-z0-9._]{1,30}$/.test(h) || h.startsWith(".") || h.endsWith(".") || h.includes("..")) return null;
+  return h;
+}
+
+export function instagramUrl(handle: string): string {
+  return `https://instagram.com/${handle}`;
+}
+
 /** Trim, drop empties and duplicates, cap each entry and the list. */
 export function cleanList(input: unknown, max = 100): string[] {
   if (!Array.isArray(input)) return [];
@@ -289,6 +317,8 @@ export type ProposedPerson = {
   redFlags: string[];
   lessons: string;
   stage: Stage | null;
+  /** Instagram handle the note explicitly gives, normalized; null when none or unchanged. */
+  instagram: string | null;
   events: ProposedEvent[];
 };
 
@@ -303,6 +333,7 @@ export type KnownPerson = {
   greenFlags: string[];
   redFlags: string[];
   lessons?: string | null;
+  instagram?: string | null;
 };
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -439,6 +470,7 @@ export function parseProposal(
       redFlags: cleanList(r.redFlags, 15),
       lessons: text(r.lessons, 5000),
       stage: isStage(r.stage) ? r.stage : null,
+      instagram: normalizeInstagram(r.instagram),
       events: parseEvents(r.events, opts.noteDay),
     };
     const key = p.personId ?? `new:${p.name.toLowerCase()}`;
@@ -457,9 +489,10 @@ export function parseProposal(
           greenFlags: freshItems(known.greenFlags, p.greenFlags),
           redFlags: freshItems(known.redFlags, p.redFlags),
           lessons: p.lessons && known.lessons?.toLowerCase().includes(p.lessons.toLowerCase()) ? "" : p.lessons,
+          instagram: p.instagram === known.instagram ? null : p.instagram,
         };
       })
-      .filter((p) => p.note || p.summary || p.events.length || p.remember.length || p.greenFlags.length || p.redFlags.length || p.lessons || p.stage),
+      .filter((p) => p.note || p.summary || p.events.length || p.remember.length || p.greenFlags.length || p.redFlags.length || p.lessons || p.stage || p.instagram),
   };
 }
 
@@ -474,6 +507,7 @@ function mergePeople(a: ProposedPerson, b: ProposedPerson): ProposedPerson {
     redFlags: [...a.redFlags, ...freshItems(a.redFlags, b.redFlags)],
     lessons: join(a.lessons, b.lessons),
     stage: b.stage ?? a.stage,
+    instagram: b.instagram ?? a.instagram,
     events: [...a.events, ...b.events],
   };
 }

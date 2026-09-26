@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  instagramUrl,
   normalizeHandle,
+  normalizeInstagram,
   parseHandles,
   parseTranscript,
   pasteExternalId,
@@ -22,6 +24,49 @@ describe("normalizeHandle", () => {
 
   it("splits and dedupes a free-form field", () => {
     expect(parseHandles("415-555-0134, (415) 555 0134; a@b.co")).toEqual(["+14155550134", "a@b.co"]);
+  });
+});
+
+describe("normalizeInstagram", () => {
+  it.each([
+    ["@Jane.Doe", "jane.doe"],
+    ["jane_doe99", "jane_doe99"],
+    ["  @jane.doe  ", "jane.doe"],
+    ["instagram.com/jane.doe", "jane.doe"],
+    ["www.instagram.com/jane.doe/", "jane.doe"],
+    ["https://www.instagram.com/Jane.Doe/?igsh=MWx3ZGQ5eXBmOWR4", "jane.doe"],
+    ["http://instagram.com/jane.doe#top", "jane.doe"],
+    ["https://m.instagram.com/jane.doe", "jane.doe"],
+    ["https://instagr.am/jane.doe", "jane.doe"],
+    ["https://www.instagram.com/stories/jane.doe/3141592653/", "jane.doe"],
+    ["a".repeat(30), "a".repeat(30)],
+  ])("%s → %s", (raw, want) => expect(normalizeInstagram(raw)).toBe(want));
+
+  it.each([
+    [""],
+    ["   "],
+    ["@"],
+    ["jane doe"],
+    ["jane-doe"],
+    ["jäne"],
+    ["a".repeat(31)],
+    [".jane"],
+    ["jane."],
+    ["jane..doe"],
+    ["https://www.instagram.com/"],
+    ["https://www.instagram.com/p/C8xYz12AbCd/"],
+    ["https://www.instagram.com/reel/C8xYz12AbCd/"],
+    ["https://twitter.com/jane"],
+    ["https://evil.com/instagram.com/jane"],
+  ])("rejects %j", (raw) => expect(normalizeInstagram(raw)).toBeNull());
+
+  it("rejects non-strings", () => {
+    expect(normalizeInstagram(null)).toBeNull();
+    expect(normalizeInstagram(42)).toBeNull();
+  });
+
+  it("builds the profile url", () => {
+    expect(instagramUrl("jane.doe")).toBe("https://instagram.com/jane.doe");
   });
 });
 

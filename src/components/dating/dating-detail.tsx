@@ -3,9 +3,18 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { ChevronLeft, Loader2, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
+import { ChevronLeft, Instagram, Loader2, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { EVENT_KINDS, STAGES, daysSince, splitSourceLine, threadStats, type EventKind } from "@/lib/dating";
+import {
+  EVENT_KINDS,
+  STAGES,
+  daysSince,
+  instagramUrl,
+  normalizeInstagram,
+  splitSourceLine,
+  threadStats,
+  type EventKind,
+} from "@/lib/dating";
 import type { DatingEventDTO, DatingMessageDTO, DatingPersonDTO } from "@/lib/dating-server";
 import { DictateCard } from "./dictate-card";
 import { ListEditor } from "./list-editor";
@@ -88,6 +97,16 @@ export function DatingDetail({
               .filter(Boolean)
               .join(" · ") || "Add how you met in Notes"}
           </p>
+          {person.instagram && (
+            <a
+              href={instagramUrl(person.instagram)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-flex items-center gap-1 text-sm text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] hover:underline"
+            >
+              <Instagram className="size-3.5" />@{person.instagram}
+            </a>
+          )}
         </div>
         <select
           value={person.stage}
@@ -208,6 +227,7 @@ export function DatingDetail({
         <NotesTab
           person={person}
           patch={patch}
+          setError={setError}
           onDelete={async () => {
             if (!confirm(`Delete ${person.name} and all notes, timeline and messages?`)) return;
             const res = await fetch(`/api/dating/${person.id}`, { method: "DELETE" });
@@ -686,10 +706,12 @@ function Messages({
 function NotesTab({
   person,
   patch,
+  setError,
   onDelete,
 }: {
   person: DatingPersonDTO;
   patch: (f: Partial<Record<keyof DatingPersonDTO, unknown>>) => Promise<void>;
+  setError: (e: string | null) => void;
   onDelete: () => void;
 }) {
   // Text fields save on blur, only when changed.
@@ -741,6 +763,26 @@ function NotesTab({
             defaultValue={person.handles.join(", ")}
             placeholder="(415) 555-0134"
             onBlur={(e) => e.target.value !== person.handles.join(", ") && patch({ handles: e.target.value })}
+            className={input}
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs text-[var(--color-muted-foreground)]">Instagram</span>
+          <input
+            defaultValue={person.instagram ? `@${person.instagram}` : ""}
+            key={person.instagram ?? ""}
+            placeholder="@handle or profile link"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            onBlur={(e) => {
+              const raw = e.target.value.trim();
+              const handle = normalizeInstagram(raw);
+              // Checked here too so a bad value never shows as her link.
+              if (raw && !handle) return setError("That doesn't look like an Instagram handle. Use @name or an instagram.com/name link.");
+              if (handle !== person.instagram) patch({ instagram: handle ?? "" });
+              else if (raw) e.target.value = `@${handle}`;
+            }}
             className={input}
           />
         </label>

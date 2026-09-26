@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
-import { personPatch, toPersonDTO } from "@/lib/dating-server";
+import { personPatch, personPatchError, toPersonDTO } from "@/lib/dating-server";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +19,8 @@ export async function POST(request: Request) {
   const userId = await getCurrentUserId(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const invalid = personPatchError(body);
+  if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
   const data = personPatch(body);
   if (!data.name) return NextResponse.json({ error: "name is required" }, { status: 400 });
   const person = await prisma.datingPerson.create({ data: { ...data, name: data.name, userId } });

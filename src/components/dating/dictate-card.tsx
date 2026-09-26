@@ -149,6 +149,7 @@ export function DictateCard({
           redFlags: keep(p.redFlags, "redFlags"),
           lessons: on(`${k}:lessons`) ? p.lessons : "",
           stage: on(`${k}:stage`) ? p.stage : null,
+          instagram: on(`${k}:instagram`) ? p.instagram : null,
         },
       ];
     }),
@@ -295,6 +296,11 @@ export function DictateCard({
                     {p.lessons && (
                       <Row checked={on(`${k}:lessons`)} onChange={() => tick(`${k}:lessons`)} label="Lesson">
                         <span className="text-sm">{p.lessons}</span>
+                      </Row>
+                    )}
+                    {p.instagram && (
+                      <Row checked={on(`${k}:instagram`)} onChange={() => tick(`${k}:instagram`)} label="Instagram">
+                        <span className="text-sm">@{p.instagram}</span>
                       </Row>
                     )}
                     {p.stage && (
