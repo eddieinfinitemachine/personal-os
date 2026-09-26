@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isFounderUser } from "@/lib/cron";
 import { weekStart } from "@/lib/dating";
 import { toPersonDTO } from "@/lib/dating-server";
 import { DatingHome, type DatingCard, type GranolaSuggestion } from "@/components/dating/dating-home";
@@ -17,7 +18,7 @@ export default async function DatingPage() {
   const sparkStart = weekStart(new Date());
   sparkStart.setDate(sparkStart.getDate() - 7 * (SPARK_WEEKS - 1));
 
-  const [people, counts, events, recent, pending] = await Promise.all([
+  const [people, counts, events, recent, pending, founder] = await Promise.all([
     prisma.datingPerson.findMany({
       where: { userId },
       orderBy: [{ lastMessageAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
@@ -33,6 +34,7 @@ export default async function DatingPage() {
       orderBy: { occurredAt: "desc" },
       select: { id: true, name: true, summary: true, title: true, url: true, occurredAt: true },
     }),
+    isFounderUser(userId),
   ]);
   const suggestions: GranolaSuggestion[] = pending.map((s) => ({ ...s, occurredAt: s.occurredAt.toISOString() }));
 
@@ -55,5 +57,5 @@ export default async function DatingPage() {
     };
   });
 
-  return <DatingHome people={cards} suggestions={suggestions} />;
+  return <DatingHome people={cards} suggestions={suggestions} granola={founder} />;
 }

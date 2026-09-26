@@ -10,6 +10,7 @@ import {
   noonUTC,
   parseProposal,
   sameName,
+  suggestionsFrom,
   withSourceLine,
   type KnownPerson,
   type Proposal,
@@ -211,6 +212,143 @@ export async function applyProposedPerson(
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return null;
     throw e;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Granola meetings (the capture endpoint and the API sync share this)
+
+export type GranolaMeeting = {
+  meetingId: string;
+  occurredAt: Date;
+  title: string | null;
+  url: string | null;
+  text: string;
+};
+
+export type GranolaFiled = { meetingId: string; personId: string; name: string; eventIds: string[] };
+export type GranolaSuggested = {
+  meetingId: string;
+  name: string;
+  title: string | null;
+  url: string | null;
+  occurredAt: string;
+  summary: string;
+  note: string;
+};
+
+export type GranolaMeetingResult =
+  | { status: "skipped" }
+  | { status: "error"; error: string }
+  | { status: "done"; filed: GranolaFiled[]; suggestions: GranolaSuggested[]; skipped: number };
+
+/**
+ * Name on the dismissed placeholder suggestion that marks a meeting Claude
+ * read and found nothing in, so the sync doesn't pay for it again. Never
+ * shown: /dating lists pending suggestions only.
+ */
+export const NOTHING_FOUND = "(nothing to file)";
+
+/**
+ * Meetings (of `meetingIds`) that were already handled: any event filed from
+ * them, or any suggestion row (pending, added, dismissed or the
+ * nothing-found marker). Checked before any Granola detail fetch or Claude call.
+ */
+export async function granolaMeetingsDone(userId: string, meetingIds: string[]): Promise<Set<string>> {
+  const ids = [...new Set(meetingIds.map((m) => m.trim().slice(0, 120)).filter(Boolean))];
+  if (!ids.length) return new Set();
+  const [events, suggestions] = await Promise.all([
+    prisma.datingEvent.findMany({
+      where: { userId, OR: ids.map((m) => ({ externalId: { startsWith: granolaExternalId(m, "") } })) },
+      select: { externalId: true },
+    }),
+    prisma.datingSuggestion.findMany({ where: { userId, meetingId: { in: ids } }, select: { meetingId: true } }),
+  ]);
+  const done = new Set(suggestions.map((s) => s.meetingId));
+  for (const e of events) {
+    const key = e.externalId ?? "";
+    const hit = ids.find((m) => key.startsWith(granolaExternalId(m, "")));
+    if (hit) done.add(hit);
+  }
+  return done;
+}
+
+/**
+ * File one Granola meeting: skip it when it was already handled, else ask
+ * Claude, auto-apply notes for people already on /dating (source "granola",
+ * keyed granola:<meeting>:<person>) and store anyone new as a pending
+ * suggestion. With `markEmpty`, a meeting that yields nothing leaves a
+ * dismissed NOTHING_FOUND suggestion so it's skipped next time.
+ */
+export async function fileGranolaMeeting(
+  userId: string,
+  meeting: GranolaMeeting,
+  opts: { markEmpty?: boolean } = {},
+): Promise<GranolaMeetingResult> {
+  const { meetingId, title, url } = meeting;
+  if ((await granolaMeetingsDone(userId, [meetingId])).size) return { status: "skipped" };
+
+  let result;
+  try {
+    result = await fileDatingNote({
+      userId,
+      text: meeting.text,
+      occurredAt: meeting.occurredAt,
+      source: "granola",
+      sourceLabel: title,
+      sourceUrl: url,
+      people: await loadKnownPeople(userId),
+    });
+  } catch (e) {
+    console.error("granola dating filing failed", meetingId, e);
+    return { status: "error", error: "Claude could not file this one" };
+  }
+
+  const suggestions: GranolaSuggested[] = [];
+  const drafts = suggestionsFrom(result.proposal.people);
+  if (drafts.length) {
+    // Insert-only: an existing row (pending, added or dismissed) is left alone.
+    await prisma.datingSuggestion.createMany({
+      data: drafts.map((d) => ({ userId, meetingId, title, url, occurredAt: noonUTC(result.day), ...d })),
+      skipDuplicates: true,
+    });
+    for (const d of drafts) suggestions.push({ meetingId, title, url, occurredAt: result.day, ...d });
+  }
+
+  const filed: GranolaFiled[] = [];
+  let skipped = 0;
+  for (const item of result.proposal.people) {
+    if (!item.personId) continue;
+    const applied = await applyProposedPerson(userId, item, {
+      day: result.day,
+      source: "granola",
+      sourceLabel: title ?? "Granola",
+      sourceUrl: url,
+      externalId: (personId) => granolaExternalId(meetingId, personId),
+    });
+    if (applied) filed.push({ meetingId, personId: applied.personId, name: applied.name, eventIds: applied.eventIds });
+    else skipped++;
+  }
+
+  if (opts.markEmpty && !drafts.length && !filed.length && !skipped) {
+    await prisma.datingSuggestion.createMany({
+      data: [
+        {
+          userId,
+          meetingId,
+          title,
+          url,
+          occurredAt: noonUTC(result.day),
+          name: NOTHING_FOUND,
+          summary: "",
+          note: "",
+          status: "dismissed",
+        },
+      ],
+      skipDuplicates: true,
+    });
+  }
+
+  return { status: "done", filed, suggestions, skipped };
 }
 
 function firstWords(s: string, n = 8): string {
