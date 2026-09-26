@@ -62,6 +62,17 @@ and depends on the server's Read Later settings.
 Customize keyboard shortcuts at `chrome://extensions/shortcuts`. After
 updating the extension, reload it at `chrome://extensions/`.
 
+## Board
+
+Save anything you like to the mood board at `/board`:
+
+- Right-click an image → **Save image to Board** (the server re-hosts it).
+- Right-click a page, link, video, or audio → **Save to Board**.
+- **⌘⇧Y** / **Ctrl+Shift+Y** saves the current tab.
+- The popup's **Board** button saves the tab with your note.
+
+Posts to `/api/board` with the same capture token.
+
 ## How it works
 
 - `manifest.json` declares the action, background service worker, options
