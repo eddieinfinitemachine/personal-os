@@ -1,10 +1,11 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { resolveCaptureUser } from "@/lib/capture-auth";
 import { InputError, parseBoardInput } from "@/lib/board-input";
 import { saveToBoard } from "@/lib/board-save";
 import { MAX_UPLOAD_BYTES } from "@/lib/board";
+import { tagInBackground } from "@/lib/board-tags";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
     const input = await parseBoardInput(request, MAX_UPLOAD_BYTES);
     if (!session && input.via === "app") input.via = "shortcut";
     const { item, duplicate } = await saveToBoard(userId, input);
+    if (!duplicate) after(() => tagInBackground(userId, item.id));
     const label = item.title ?? item.siteName ?? item.kind;
     return NextResponse.json({
       ok: true,
