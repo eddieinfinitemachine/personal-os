@@ -7,6 +7,7 @@ import {
   BookOpen,
   Car,
   Dumbbell,
+  Heart,
   LayoutGrid,
   Lightbulb,
   MapPin,
@@ -25,6 +26,7 @@ export type TemplateSlug =
   | "highlights"
   | "personal"
   | "friends"
+  | "dating"
   | "vehicles"
   | "trips"
   | "investments"
@@ -80,6 +82,14 @@ export const TEMPLATES: SidebarTemplate[] = [
     label: "Friends",
     description: "People you keep up with, last interaction, upcoming birthdays.",
     Icon: Users,
+  },
+  {
+    slug: "dating",
+    href: "/dating",
+    label: "Dating",
+    description: "People you're seeing: texts, notes to remember, how it's going, what each one taught you.",
+    Icon: Heart,
+    privateOnly: true,
   },
   {
     slug: "vehicles",
