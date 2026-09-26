@@ -1,6 +1,6 @@
 import type { DatingEvent, DatingMessage, DatingPerson } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { cleanList, isEventKind, isStage, parseHandles } from "@/lib/dating";
+import { cleanList, isEventKind, isStage, normalizeInstagram, parseHandles } from "@/lib/dating";
 
 export type DatingInsights = {
   summary?: string;
@@ -61,6 +61,21 @@ const date = (v: unknown) => {
 };
 
 /**
+ * Why a person body can't be saved, or null. Checked before personPatch so a
+ * bad value is a 400 instead of being dropped silently.
+ */
+export function personPatchError(body: Record<string, unknown>): string | null {
+  if ("instagram" in body && body.instagram !== null) {
+    const v = body.instagram;
+    if (typeof v !== "string") return "instagram must be a handle or profile link";
+    if (v.trim() && !normalizeInstagram(v)) {
+      return "That doesn't look like an Instagram handle. Use @name or an instagram.com/name link.";
+    }
+  }
+  return null;
+}
+
+/**
  * Whitelist the editable person fields out of a request body. Only keys
  * present in the body are returned, so PATCH leaves the rest alone.
  */
@@ -68,6 +83,7 @@ export function personPatch(body: Record<string, unknown>) {
   const data: Partial<{
     name: string;
     handles: string[];
+    instagram: string | null;
     stage: string;
     metVia: string | null;
     metAt: Date | null;
@@ -86,6 +102,8 @@ export function personPatch(body: Record<string, unknown>) {
     if (n) data.name = n;
   }
   if ("handles" in body) data.handles = parseHandles(body.handles);
+  // Empty clears it; check personPatchError first so an invalid one isn't cleared too.
+  if ("instagram" in body) data.instagram = normalizeInstagram(body.instagram);
   if ("stage" in body && isStage(body.stage)) {
     data.stage = body.stage;
     if (body.stage === "ended" && !("endedAt" in body)) data.endedAt = new Date();

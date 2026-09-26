@@ -1154,6 +1154,7 @@ model DatingPerson {
   name          String
   // Normalized phones (+15551234567) / lowercased emails used to match iMessage threads.
   handles       String[]  @default([])
+  instagram     String? // handle without @, e.g. "jane.doe"
   stage         String    @default("talking") // "talking" | "dating" | "exclusive" | "paused" | "ended"
   metVia        String? // "Hinge", "friends", "bar"
   metAt         DateTime?

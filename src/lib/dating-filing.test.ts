@@ -18,7 +18,7 @@ import {
 
 const people: KnownPerson[] = [
   { id: "ana1", name: "Ana", remember: ["Sister is Maya"], greenFlags: ["Plans the next date"], redFlags: [], lessons: "Go slow." },
-  { id: "kat1", name: "Katherine", remember: [], greenFlags: [], redFlags: [] },
+  { id: "kat1", name: "Katherine", remember: [], greenFlags: [], redFlags: [], instagram: "kat.runs" },
 ];
 const noteDay = "2026-09-26";
 
@@ -118,6 +118,51 @@ describe("parseProposal", () => {
   });
 });
 
+describe("parseProposal instagram", () => {
+  it("normalizes a stated handle and keeps an entry that only sets it", () => {
+    const p = parseProposal(
+      {
+        people: [
+          { personId: "ana1", name: "Ana", instagram: "@Ana.Reyes" },
+          { personId: null, name: "Jess", isNew: true, note: "Met at a party.", instagram: "https://www.instagram.com/jess_k/?igsh=abc" },
+        ],
+      },
+      { people, noteDay },
+    );
+    expect(p.people.map((x) => [x.name, x.instagram])).toEqual([
+      ["Ana", "ana.reyes"],
+      ["Jess", "jess_k"],
+    ]);
+  });
+
+  it("drops invalid handles and the one she already has", () => {
+    const p = parseProposal(
+      {
+        people: [
+          { personId: "kat1", name: "Katherine", instagram: "@kat.runs", note: "Coffee." },
+          { personId: "ana1", name: "Ana", instagram: "not a handle!", note: "Dinner." },
+        ],
+      },
+      { people, noteDay },
+    );
+    expect(p.people.map((x) => [x.name, x.instagram])).toEqual([
+      ["Katherine", null],
+      ["Ana", null],
+    ]);
+    expect(parseProposal({ people: [{ personId: "kat1", name: "Katherine", instagram: "kat.runs" }] }, { people, noteDay })).toEqual({
+      people: [],
+    });
+  });
+
+  it("a later mention wins when the same person is listed twice", () => {
+    const p = parseProposal(
+      { people: [{ personId: "ana1", name: "Ana", instagram: "ana.old", note: "a" }, { personId: "ana1", name: "Ana", instagram: "ana.new" }] },
+      { people, noteDay },
+    );
+    expect(p.people[0].instagram).toBe("ana.new");
+  });
+});
+
 describe("list and lesson dedupe", () => {
   it("freshItems ignores case, spacing and trailing periods", () => {
     expect(freshItems(["Hates cilantro"], ["hates  cilantro.", "Loves jazz", "loves jazz", " "])).toEqual(["Loves jazz"]);
@@ -168,7 +213,7 @@ describe("granola keys and source lines", () => {
 });
 
 describe("granola suggestions", () => {
-  const base = { isNew: true, summary: "", note: "", remember: [], greenFlags: [], redFlags: [], lessons: "", stage: null, events: [] };
+  const base = { isNew: true, summary: "", note: "", remember: [], greenFlags: [], redFlags: [], lessons: "", stage: null, instagram: null, events: [] };
   it("compares names case- and space-insensitively", () => {
     expect(normName("  Priya   Shah ")).toBe("priya shah");
     expect(sameName("PRIYA", "priya ")).toBe(true);
