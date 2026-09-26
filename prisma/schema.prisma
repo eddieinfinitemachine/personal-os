@@ -933,6 +933,8 @@ model User {
   pushSubscriptions            PushSubscription[]
   readerItems                  ReaderItem[]
   boardItems                   BoardItem[]
+  boardTaste                   BoardTaste?
+  boardRecs                    BoardRec[]
   highlights                   Highlight[]
   trips                        Trip[]
   tripItems                    TripItem[]
@@ -1085,10 +1087,43 @@ model BoardItem {
   imageHeight Int?
   color       String? // dominant color, "#rrggbb", placeholder while loading
   price       String? // products: "$129.00"
-  via         String   @default("app") // "app" | "shortcut" | "extension" | "share"
+  via         String   @default("app") // "app" | "shortcut" | "extension" | "share" | "rec"
   savedAt     DateTime @default(now())
 
   @@index([userId, savedAt])
+}
+
+// One row per user: the taste profile Claude writes from the board, plus the
+// state of the latest recommendation run (the UI polls it while generating).
+model BoardTaste {
+  userId      String    @id
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile     String? // 2-4 sentence summary of what the board says about you
+  status      String    @default("idle") // "idle" | "generating" | "error"
+  error       String?
+  startedAt   DateTime?
+  generatedAt DateTime?
+}
+
+// A recommended thing, found with web search so the link is real. Saving it
+// copies it onto the board; saved and dismissed recs steer the next run.
+model BoardRec {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind        String // same kinds as BoardItem
+  title       String
+  creator     String? // artist, brand, director, author
+  reason      String // why it fits, citing things on the board
+  url         String?
+  imageUrl    String?
+  siteName    String?
+  price       String?
+  status      String   @default("new") // "new" | "saved" | "dismissed"
+  boardItemId String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, status, createdAt])
 }
 
 model Highlight {

@@ -163,7 +163,7 @@ export function BoardLightbox({
 
         <p className="mt-auto text-xs text-white/35">
           Saved {new Date(item.savedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-          {item.via !== "app" ? ` · via ${item.via}` : ""}
+          {item.via === "rec" ? " · from For you" : item.via !== "app" ? ` · via ${item.via}` : ""}
         </p>
       </aside>
     </div>
