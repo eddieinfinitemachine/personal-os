@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { resolveCaptureUser } from "@/lib/capture-auth";
-import { granolaExternalId, noonUTC, suggestionsFrom } from "@/lib/dating";
-import { applyProposedPerson, fileDatingNote, loadKnownPeople, NOTE_BUDGET } from "@/lib/dating-filer";
+import { fileGranolaMeeting, NOTE_BUDGET, type GranolaFiled, type GranolaSuggested } from "@/lib/dating-filer";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -29,16 +27,8 @@ export async function POST(request: Request) {
   if (!Array.isArray(body.items)) return NextResponse.json({ error: "items[] required" }, { status: 400 });
   if (body.items.length > MAX_ITEMS) return NextResponse.json({ error: `max ${MAX_ITEMS} per batch` }, { status: 413 });
 
-  const filed: { meetingId: string; personId: string; name: string; eventIds: string[] }[] = [];
-  const suggestions: {
-    meetingId: string;
-    name: string;
-    title: string | null;
-    url: string | null;
-    occurredAt: string;
-    summary: string;
-    note: string;
-  }[] = [];
+  const filed: GranolaFiled[] = [];
+  const suggestions: GranolaSuggested[] = [];
   const errors: { meetingId: string; error: string }[] = [];
   let skipped = 0;
 
@@ -53,58 +43,14 @@ export async function POST(request: Request) {
     const title = typeof raw.title === "string" && raw.title.trim() ? raw.title.trim().slice(0, 200) : null;
     const url = typeof raw.url === "string" && /^https?:\/\/\S+$/.test(raw.url.trim()) ? raw.url.trim() : null;
 
-    // Already filed to anyone, or already suggested someone (even if since
-    // added or dismissed): skip before spending a Claude call.
-    const [filedBefore, suggestedBefore] = await Promise.all([
-      prisma.datingEvent.findFirst({
-        where: { userId, externalId: { startsWith: granolaExternalId(meetingId, "") } },
-        select: { id: true },
-      }),
-      prisma.datingSuggestion.findFirst({ where: { userId, meetingId }, select: { id: true } }),
-    ]);
-    if (filedBefore || suggestedBefore) {
-      skipped++;
-      continue;
-    }
-
-    let result;
-    try {
-      result = await fileDatingNote({
-        userId,
-        text,
-        occurredAt,
-        source: "granola",
-        sourceLabel: title,
-        sourceUrl: url,
-        people: await loadKnownPeople(userId),
-      });
-    } catch (e) {
-      console.error("granola dating filing failed", meetingId, e);
-      errors.push({ meetingId, error: "Claude could not file this one" });
-      continue;
-    }
-
-    const drafts = suggestionsFrom(result.proposal.people);
-    if (drafts.length) {
-      // Insert-only: an existing row (pending, added or dismissed) is left alone.
-      await prisma.datingSuggestion.createMany({
-        data: drafts.map((d) => ({ userId, meetingId, title, url, occurredAt: noonUTC(result.day), ...d })),
-        skipDuplicates: true,
-      });
-      for (const d of drafts) suggestions.push({ meetingId, title, url, occurredAt: result.day, ...d });
-    }
-
-    for (const item of result.proposal.people) {
-      if (!item.personId) continue;
-      const applied = await applyProposedPerson(userId, item, {
-        day: result.day,
-        source: "granola",
-        sourceLabel: title ?? "Granola",
-        sourceUrl: url,
-        externalId: (personId) => granolaExternalId(meetingId, personId),
-      });
-      if (applied) filed.push({ meetingId, personId: applied.personId, name: applied.name, eventIds: applied.eventIds });
-      else skipped++;
+    // Skipped before the Claude call when already filed or suggested.
+    const res = await fileGranolaMeeting(userId, { meetingId, occurredAt, title, url, text });
+    if (res.status === "skipped") skipped++;
+    else if (res.status === "error") errors.push({ meetingId, error: res.error });
+    else {
+      filed.push(...res.filed);
+      suggestions.push(...res.suggestions);
+      skipped += res.skipped;
     }
   }
 

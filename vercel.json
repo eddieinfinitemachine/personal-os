@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/board-recs",
       "schedule": "0 15 * * 6"
+    },
+    {
+      "path": "/api/cron/dating-granola",
+      "schedule": "0 12 * * *"
     }
   ]
 }

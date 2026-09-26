@@ -9,6 +9,7 @@ import { daysSince } from "@/lib/dating";
 import type { DatingPersonDTO } from "@/lib/dating-server";
 import { SimpleMarkdown } from "@/components/simple-markdown";
 import { DictateCard } from "./dictate-card";
+import { GranolaSync } from "./granola-sync";
 import { SyncHelp } from "./sync-help";
 
 export type DatingCard = DatingPersonDTO & {
@@ -34,7 +35,16 @@ const card = "rounded-xl border border-[var(--color-card-border)] bg-[var(--colo
 const ghost =
   "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] disabled:opacity-50";
 
-export function DatingHome({ people, suggestions }: { people: DatingCard[]; suggestions: GranolaSuggestion[] }) {
+export function DatingHome({
+  people,
+  suggestions,
+  granola = false,
+}: {
+  people: DatingCard[];
+  suggestions: GranolaSuggestion[];
+  /** Show the Granola sync control (founder only: the API key is personal). */
+  granola?: boolean;
+}) {
   const router = useRouter();
   const [adding, setAdding] = useState(people.length === 0);
   const [name, setName] = useState("");
@@ -123,6 +133,8 @@ export function DatingHome({ people, suggestions }: { people: DatingCard[]; sugg
           )}
         </form>
       )}
+
+      {granola && <GranolaSync />}
 
       {suggestions.length > 0 && <Suggestions suggestions={suggestions} setError={setError} />}
 
