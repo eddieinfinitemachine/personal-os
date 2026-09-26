@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { toEventDTO, toMessageDTO, toPersonDTO } from "@/lib/dating-server";
+import { toPhotoDTO } from "@/lib/dating-photos";
 import { DatingDetail } from "@/components/dating/dating-detail";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ export default async function DatingPersonPage({ params }: { params: Promise<{ i
   const person = await prisma.datingPerson.findFirst({ where: { id, userId: session.userId } });
   if (!person) notFound();
 
-  const [events, recent, meta] = await Promise.all([
+  const [events, recent, meta, photos] = await Promise.all([
     prisma.datingEvent.findMany({ where: { personId: id }, orderBy: { occurredAt: "asc" } }),
     prisma.datingMessage.findMany({
       where: { personId: id },
@@ -28,6 +29,7 @@ export default async function DatingPersonPage({ params }: { params: Promise<{ i
       orderBy: { sentAt: "asc" },
       select: { sentAt: true, fromMe: true },
     }),
+    prisma.datingPhoto.findMany({ where: { personId: id, userId: session.userId }, orderBy: { createdAt: "desc" } }),
   ]);
 
   return (
@@ -37,6 +39,7 @@ export default async function DatingPersonPage({ params }: { params: Promise<{ i
       initialEvents={events.map(toEventDTO)}
       initialMessages={recent.reverse().map(toMessageDTO)}
       initialMore={recent.length === PAGE}
+      initialPhotos={photos.map(toPhotoDTO)}
       meta={meta.map((m) => ({ sentAt: m.sentAt.toISOString(), fromMe: m.fromMe }))}
     />
   );

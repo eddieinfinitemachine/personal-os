@@ -18,6 +18,8 @@ export type DatingCard = DatingPersonDTO & {
   avgVibe: number | null;
   /** Messages per week, last 12 weeks, oldest first. */
   spark: number[];
+  /** Newest photo, shown as a small round avatar. */
+  avatarUrl: string | null;
 };
 
 export type GranolaSuggestion = {
@@ -52,7 +54,7 @@ export function DatingHome({
   const [metVia, setMetVia] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [patterns, setPatterns] = useState<string | null>(null);
+  const [patterns, setPatterns] = useState<{ text: string; taste: string | null; photos: number } | null>(null);
   const [patternsBusy, setPatternsBusy] = useState(false);
 
   const active = people.filter((p) => p.stage !== "ended");
@@ -79,7 +81,7 @@ export function DatingHome({
     const data = await res.json().catch(() => ({}));
     setPatternsBusy(false);
     if (!res.ok) return setError(data.error ?? "Could not find patterns");
-    setPatterns(data.text);
+    setPatterns({ text: data.text ?? "", taste: data.taste ?? null, photos: data.photos ?? 0 });
     setError(null);
   };
 
@@ -155,8 +157,21 @@ export function DatingHome({
         </div>
         {patterns && (
           <div className={cn(card, "p-4 mb-3 text-sm")}>
-            <SimpleMarkdown text={patterns} />
+            <SimpleMarkdown text={patterns.text} />
           </div>
+        )}
+        {patterns?.taste && (
+          <section className={cn(card, "p-4 mb-3 text-sm")} aria-label="Your taste">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+              <h3 className="text-base font-semibold">Your taste</h3>
+              <span className="text-xs text-[var(--color-label-tertiary)]">
+                {patterns.photos
+                  ? `Read with ${patterns.photos} photo${patterns.photos === 1 ? "" : "s"}`
+                  : "From notes only. Add photos for a fuller read."}
+              </span>
+            </div>
+            <SimpleMarkdown text={patterns.taste} />
+          </section>
         )}
         {withLessons.length ? (
           <div className="grid gap-3 md:grid-cols-2">
@@ -272,12 +287,19 @@ function PersonCard({ p }: { p: DatingCard }) {
   return (
     <div className={cn(card, "relative p-4 hover:bg-[var(--color-fill-secondary)] transition")}>
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <Link href={`/dating/${p.id}`} className="block font-semibold truncate after:absolute after:inset-0 after:rounded-xl">
-            {p.name}
-          </Link>
-          <div className="text-xs text-[var(--color-muted-foreground)] truncate">
-            {[p.metVia, p.age, p.city].filter(Boolean).join(" · ") || " "}
+        <div className="flex min-w-0 items-center gap-2.5">
+          {p.avatarUrl && (
+            // Fixed size, so nothing moves while the image loads.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={p.avatarUrl} alt="" loading="lazy" className="size-9 shrink-0 rounded-full bg-[var(--color-fill)] object-cover" />
+          )}
+          <div className="min-w-0">
+            <Link href={`/dating/${p.id}`} className="block font-semibold truncate after:absolute after:inset-0 after:rounded-xl">
+              {p.name}
+            </Link>
+            <div className="text-xs text-[var(--color-muted-foreground)] truncate">
+              {[p.metVia, p.age, p.city].filter(Boolean).join(" · ") || " "}
+            </div>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">

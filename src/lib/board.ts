@@ -1,20 +1,14 @@
-import { del, put } from "@vercel/blob";
 import { JSDOM } from "jsdom";
-import sharp from "sharp";
-import heicConvert from "heic-convert";
-import { deleteFile, saveFile } from "@/lib/storage";
 import { safeFetch } from "@/lib/safe-fetch";
 import { kindFromUrl, youtubeId, type BoardKind } from "@/lib/board-embed";
-import { sniffImage } from "@/lib/board-sniff";
+import { deleteUserImage, storeUserImage, type StoredImage } from "@/lib/user-image";
+
+export { MAX_UPLOAD_BYTES, type StoredImage } from "@/lib/user-image";
 
 // Server side of the mood board: turn a shared URL into a card (title, image,
 // kind, price) and re-host its image so the board survives expiring CDN links.
 
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024; // images we fetch ourselves
-// Uploads: Vercel rejects function request bodies over 4.5 MB before the
-// route runs, so anything larger never reaches us anyway.
-export const MAX_UPLOAD_BYTES = Math.floor(4.4 * 1024 * 1024);
-const MAX_EDGE = 1600;
 
 export type PageMeta = {
   title: string | null;
@@ -40,13 +34,6 @@ export type ResolvedLink = {
   ok: boolean;
   /** HTTP status of the page fetch; undefined if it never got an answer. */
   status?: number;
-};
-
-export type StoredImage = {
-  imageUrl: string;
-  imageWidth: number;
-  imageHeight: number;
-  color: string | null;
 };
 
 function meta(doc: Document, ...keys: string[]): string | null {
@@ -253,71 +240,14 @@ export async function fetchImage(src: string): Promise<Buffer | null> {
   return null;
 }
 
-function hex(n: number): string {
-  return Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
-}
-
-// Normalize (EXIF-rotate, cap at 1600px, WebP, keep GIF animation) and upload.
-// iPhone HEIC goes through heic-convert first (the bundled libvips has no
-// HEVC decoder). Returns null when the bytes aren't a decodable image.
-export async function storeBoardImage(userId: string, raw: Buffer): Promise<StoredImage | null> {
-  let input = raw;
-  if (sniffImage(raw) === "heic") {
-    try {
-      input = Buffer.from(await heicConvert({ buffer: raw, format: "JPEG", quality: 0.9 }));
-    } catch (e) {
-      console.warn("[board] heic decode failed", { error: e instanceof Error ? e.message : String(e) });
-      return null;
-    }
-  }
-  let out: Buffer;
-  let width: number;
-  let height: number;
-  let color: string | null = null;
-  try {
-    const src = sharp(input, { animated: true, limitInputPixels: 100_000_000 });
-    out = await src
-      .rotate()
-      .resize({ width: MAX_EDGE, height: MAX_EDGE, fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 82 })
-      .toBuffer();
-    const m = await sharp(out).metadata();
-    width = m.width ?? 0;
-    height = m.pageHeight ?? m.height ?? 0;
-    if (!width || !height) return null;
-    const { dominant } = await sharp(out).stats();
-    color = `#${hex(dominant.r)}${hex(dominant.g)}${hex(dominant.b)}`;
-  } catch (e) {
-    console.warn("[board] image decode failed", { error: e instanceof Error ? e.message : String(e) });
-    return null;
-  }
-
-  const name = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.webp`;
-  let imageUrl: string;
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
-    const blob = await put(`users/${userId}/board/${name}`, out, {
-      access: "public",
-      addRandomSuffix: false,
-      contentType: "image/webp",
-    });
-    imageUrl = blob.url;
-  } else {
-    imageUrl = await saveFile(`board/${userId}`, name, out);
-  }
-  return { imageUrl, imageWidth: width, imageHeight: height, color };
+// Re-host a board image (normalized to WebP) under users/<userId>/board/.
+export function storeBoardImage(userId: string, raw: Buffer): Promise<StoredImage | null> {
+  return storeUserImage(userId, "board", raw);
 }
 
 // Only deletes images this user's saves re-hosted. An item can also carry a
 // remote imageUrl (when re-hosting failed), which may point at a Blob file
 // that isn't theirs.
-export async function deleteBoardImage(userId: string, imageUrl: string | null): Promise<void> {
-  if (!imageUrl) return;
-  try {
-    if (imageUrl.startsWith(`/uploads/board/${userId}/`)) await deleteFile(imageUrl);
-    else if (/^https:\/\/[^/]+\.blob\.vercel-storage\.com\//.test(imageUrl) && new URL(imageUrl).pathname.startsWith(`/users/${userId}/board/`)) {
-      await del(imageUrl);
-    }
-  } catch (e) {
-    console.error("[board] blob delete failed (orphaned)", imageUrl, e);
-  }
+export function deleteBoardImage(userId: string, imageUrl: string | null): Promise<void> {
+  return deleteUserImage(userId, "board", imageUrl);
 }
