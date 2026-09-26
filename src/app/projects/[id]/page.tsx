@@ -46,7 +46,8 @@ export default async function ProjectPage({
 
   return (
     <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6">
-      <header className="mb-4 flex items-start justify-between gap-3">
+      {/* data-focus-hide: hidden in Notes focus mode (notes-pane.tsx). */}
+      <header data-focus-hide className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-large-title font-bold">{project.name}</h1>
           <p className="text-sm text-[var(--color-muted-foreground)] mt-1">
@@ -84,11 +85,13 @@ export default async function ProjectPage({
         {tab === "files" ? <FilesTab projectId={id} userId={userId} /> : null}
       </Suspense>
 
-      <ProjectChat
-        projectId={id}
-        projectName={project.name}
-        canEdit={project.kind === "pet"}
-      />
+      <div data-focus-hide>
+        <ProjectChat
+          projectId={id}
+          projectName={project.name}
+          canEdit={project.kind === "pet"}
+        />
+      </div>
     </div>
   );
 }
