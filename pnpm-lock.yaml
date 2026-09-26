@@ -62,6 +62,9 @@ importers:
       tailwind-merge:
         specifier: ^2.5.5
         version: 2.6.1
+      undici:
+        specifier: ^6.25.0
+        version: 6.25.0
       web-push:
         specifier: ^3.6.7
         version: 3.6.7

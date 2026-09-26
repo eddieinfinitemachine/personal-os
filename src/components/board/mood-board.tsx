@@ -24,6 +24,8 @@ const FILTERS: { key: Filter; label: string }[] = [
 ];
 
 const GAP = 10;
+// Vercel rejects request bodies over 4.5 MB before the route runs.
+const MAX_UPLOAD_BYTES = 4.4 * 1024 * 1024;
 
 type Pending = { id: string; label: string; preview?: string };
 
@@ -91,8 +93,11 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
 
   // Pick up things sent from the phone while this tab sat in the background.
   useEffect(() => {
+    // focus and visibilitychange usually fire together; one fetch is enough.
+    let inFlight = false;
     const refresh = async () => {
-      if (document.visibilityState !== "visible") return;
+      if (document.visibilityState !== "visible" || inFlight) return;
+      inFlight = true;
       try {
         const res = await fetch("/api/board", { cache: "no-store" });
         if (!res.ok) return;
@@ -100,6 +105,8 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
         setItems(data.items);
       } catch {
         // Offline; keep what we have.
+      } finally {
+        inFlight = false;
       }
     };
     document.addEventListener("visibilitychange", refresh);
@@ -116,11 +123,14 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
     const ro = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+    // The grid unmounts while For you is showing; observe the new node.
+  }, [view]);
 
   const send = useCallback(
     async (body: BodyInit, label: string, preview?: string, headers?: HeadersInit) => {
       const pid = Math.random().toString(36).slice(2);
+      // Pasting or dropping while on For you: show it landing on the board.
+      switchView("board");
       setPending((p) => [{ id: pid, label, preview }, ...p]);
       try {
         const res = await fetch("/api/board", { method: "POST", body, headers });
@@ -142,7 +152,7 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
         if (preview) URL.revokeObjectURL(preview);
       }
     },
-    [say],
+    [say, switchView],
   );
 
   const sendText = useCallback(
@@ -168,12 +178,17 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
         } catch {
           // Undecodable here (e.g. HEIC on Chrome); let the server try.
         }
+        if (upload.size > MAX_UPLOAD_BYTES) {
+          URL.revokeObjectURL(preview);
+          say(`${file.name || "That image"} is over 4 MB. Try a smaller version.`, true);
+          continue;
+        }
         const form = new FormData();
         form.append("file", upload);
         void send(form, "Image", preview);
       }
     },
-    [send],
+    [send, say],
   );
 
   // Paste anywhere on the page: images, links, or text.
@@ -199,7 +214,16 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
   // Drag images from Finder or links/images from another tab.
   useEffect(() => {
     let depth = 0;
+    // Drags that start on this page (a tile's own image) aren't new things.
+    let internal = false;
+    const start = () => {
+      internal = true;
+    };
+    const end = () => {
+      internal = false;
+    };
     const accepts = (e: DragEvent) =>
+      !internal &&
       Array.from(e.dataTransfer?.types ?? []).some((t) => t === "Files" || t === "text/uri-list" || t === "text/plain");
     const enter = (e: DragEvent) => {
       if (!accepts(e)) return;
@@ -214,7 +238,10 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
       if (accepts(e)) e.preventDefault();
     };
     const drop = (e: DragEvent) => {
-      if (!accepts(e)) return;
+      if (!accepts(e)) {
+        internal = false;
+        return;
+      }
       e.preventDefault();
       depth = 0;
       setDragging(false);
@@ -243,7 +270,11 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
     window.addEventListener("dragleave", leave);
     window.addEventListener("dragover", over);
     window.addEventListener("drop", drop);
+    window.addEventListener("dragstart", start);
+    window.addEventListener("dragend", end);
     return () => {
+      window.removeEventListener("dragstart", start);
+      window.removeEventListener("dragend", end);
       window.removeEventListener("dragenter", enter);
       window.removeEventListener("dragleave", leave);
       window.removeEventListener("dragover", over);
@@ -285,14 +316,34 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
   const openIndex = openId ? visible.findIndex((i) => i.id === openId) : -1;
 
   async function remove(id: string) {
-    const prev = items;
+    const index = items.findIndex((i) => i.id === id);
+    const removed = items[index];
     setItems((p) => p.filter((i) => i.id !== id));
     setOpenId(null);
     const res = await fetch(`/api/board/${id}`, { method: "DELETE" }).catch(() => null);
-    if (!res?.ok) {
-      setItems(prev);
+    if (!res?.ok && removed) {
+      // Put it back where it was without dropping anything saved meanwhile.
+      setItems((p) => (p.some((i) => i.id === id) ? p : [...p.slice(0, index), removed, ...p.slice(index)]));
       say("Couldn't delete that", true);
     }
+  }
+
+  // Start a "More like this" run and jump to For you, which polls for it.
+  async function moreLikeThis(id: string) {
+    setOpenId(null);
+    const res = await fetch("/api/board/recs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seedId: id }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => ({}))) as { error?: string } | undefined;
+      say(data?.error ?? "Couldn't start that", true);
+      return;
+    }
+    const data = (await res.json()) as { alreadyRunning?: boolean };
+    if (data.alreadyRunning) say("Already finding picks. Try this again once they arrive.");
+    switchView("for-you");
   }
 
   async function update(id: string, patch: Partial<Pick<BoardCard, "note" | "title">>) {
@@ -419,6 +470,7 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
           onNext={openIndex < visible.length - 1 ? () => setOpenId(visible[openIndex + 1].id) : undefined}
           onDelete={() => remove(visible[openIndex].id)}
           onUpdate={(patch) => update(visible[openIndex].id, patch)}
+          onMoreLikeThis={() => moreLikeThis(visible[openIndex].id)}
         />
       )}
 

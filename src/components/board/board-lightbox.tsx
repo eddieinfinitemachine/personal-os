@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, ExternalLink, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, Sparkles, Trash2, X } from "lucide-react";
 import { displayHost, embedUrl } from "@/lib/board-embed";
 import type { BoardCard } from "./types";
 
@@ -12,6 +12,7 @@ export function BoardLightbox({
   onNext,
   onDelete,
   onUpdate,
+  onMoreLikeThis,
 }: {
   item: BoardCard;
   onClose: () => void;
@@ -19,6 +20,7 @@ export function BoardLightbox({
   onNext?: () => void;
   onDelete: () => void;
   onUpdate: (patch: { note?: string | null }) => void;
+  onMoreLikeThis: () => void;
 }) {
   const [note, setNote] = useState(item.note ?? "");
   const [playing, setPlaying] = useState(false);
@@ -150,6 +152,13 @@ export function BoardLightbox({
               Play here
             </button>
           )}
+          <button
+            onClick={onMoreLikeThis}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-sm font-medium hover:bg-white/15 pressable"
+          >
+            <Sparkles className="size-3.5" />
+            More like this
+          </button>
           <button
             onClick={() => {
               if (confirm("Remove from your board?")) onDelete();

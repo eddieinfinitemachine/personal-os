@@ -94,6 +94,8 @@ export interface ClaudeToolCall {
   effort?: "low" | "medium" | "high" | "xhigh" | "max";
   /** How many times to resume after `pause_turn` before giving up. */
   maxContinuations?: number;
+  /** Deadline for the whole turn, continuations included (aborts with TimeoutError). */
+  timeoutMs?: number;
 }
 
 /**
@@ -109,15 +111,18 @@ export async function callClaudeWithServerTools({
   tools,
   effort = "medium",
   maxContinuations = 3,
+  timeoutMs,
 }: ClaudeToolCall): Promise<{ content: ClaudeResponseBlock[]; stopReason: string | null }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
 
   const messages: Array<{ role: "user" | "assistant"; content: unknown }> = [{ role: "user", content: user }];
   const all: ClaudeResponseBlock[] = [];
+  const signal = timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined;
   for (let i = 0; i <= maxContinuations; i++) {
     const res = await fetch(ANTHROPIC_URL, {
       method: "POST",
+      signal,
       headers: {
         "Content-Type": "application/json",
         "x-api-key": apiKey,

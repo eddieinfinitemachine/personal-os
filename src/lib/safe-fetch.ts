@@ -1,5 +1,7 @@
 import { lookup as dnsLookup } from "node:dns/promises";
+import { lookup as dnsLookupCb, type LookupAddress } from "node:dns";
 import { isIP } from "node:net";
+import { Agent, fetch as undiciFetch } from "undici";
 
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -190,6 +192,35 @@ async function readBody(
   return Buffer.concat(chunks, byteLength);
 }
 
+// Connection-time check. assertPublicHost looks the name up once, but fetch
+// resolves it again when it connects; a rebinding DNS server can answer the
+// second lookup with a private address. Validating inside the socket's own
+// lookup closes that gap: the address checked is the address dialed.
+type LookupCallback = (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void;
+
+export function publicOnlyLookup(
+  hostname: string,
+  options: { all?: boolean; family?: number | "IPv4" | "IPv6" },
+  callback: LookupCallback,
+): void {
+  const family = options.family === "IPv4" ? 4 : options.family === "IPv6" ? 6 : (options.family ?? 0);
+  dnsLookupCb(hostname, { all: true, family }, (err, addresses) => {
+    if (err) return callback(err, "");
+    const list = addresses as LookupAddress[];
+    if (!list.length || list.some(({ address }) => !isPublicAddress(address))) {
+      return callback(Object.assign(new Error(`blocked host: ${hostname}`), { code: "EBLOCKED" }), "");
+    }
+    if (options.all) return callback(null, list);
+    callback(null, list[0].address, list[0].family);
+  });
+}
+
+let pinnedAgent: Agent | null = null;
+function publicOnlyFetch(url: URL, init: { headers: Headers; redirect: "manual"; signal: AbortSignal }) {
+  pinnedAgent ??= new Agent({ connect: { lookup: publicOnlyLookup } });
+  return undiciFetch(url, { ...init, dispatcher: pinnedAgent }) as unknown as Promise<Response>;
+}
+
 export async function safeFetch(
   raw: string | URL,
   opts: SafeFetchOptions = {},
@@ -202,7 +233,7 @@ export async function safeFetch(
   }
 
   const lookup: LookupFn = opts.lookup ?? dnsLookup;
-  const fetchImpl = opts.fetchImpl ?? fetch;
+  const fetchImpl = opts.fetchImpl ?? (publicOnlyFetch as unknown as typeof fetch);
   const headers = new Headers({
     "User-Agent": SAFARI_USER_AGENT,
     ...opts.headers,
