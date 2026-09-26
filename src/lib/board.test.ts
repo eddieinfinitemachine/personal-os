@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
 import { embedUrl, kindFromUrl, youtubeId } from "@/lib/board-embed";
-import { parseBoardInput, splitUrlAndText } from "@/lib/board-input";
+import { parseBoardInput, shareCaption, splitUrlAndText } from "@/lib/board-input";
 import { parsePageMeta } from "@/lib/board";
 import { sniffImage } from "@/lib/board-sniff";
 
@@ -185,5 +185,21 @@ describe("parsePageMeta", () => {
     expect(m.title).toBe("Chair");
     expect(m.imageSrc).toBe("https://c.test/chair.jpg");
     expect(m.price).toBe("€450.00");
+  });
+});
+
+describe("shareCaption", () => {
+  it.each([
+    ["Check out this item on Amazon", "Aeron Chair", undefined],
+    ["Check out this video on YouTube!", "Take On Me", undefined],
+    ["Listen to Blinding Lights by The Weeknd on Spotify", "Blinding Lights", undefined],
+    ["Shared via TikTok", null, undefined],
+    ["Aeron Chair", "Aeron Chair", undefined],
+    ["Aeron Chair: Herman Miller", "Aeron Chair", "Herman Miller"],
+    ["the lamp from the hotel lobby in Lisbon", "Arco Lamp", "the lamp from the hotel lobby in Lisbon"],
+    ["Check out this item on Amazon: for the new office", "Desk", "for the new office"],
+    [undefined, "x", undefined],
+  ])("%s", (text, title, expected) => {
+    expect(shareCaption(text as string | undefined, title as string | null)).toBe(expected);
   });
 });

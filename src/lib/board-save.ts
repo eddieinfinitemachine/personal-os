@@ -1,24 +1,11 @@
 import { prisma } from "@/lib/prisma";
-import { InputError, type BoardInput } from "@/lib/board-input";
+import { InputError, shareCaption, type BoardInput } from "@/lib/board-input";
 import { fetchImage, resolveLink, storeBoardImage, type StoredImage } from "@/lib/board";
 import { displayHost } from "@/lib/board-embed";
 
 function joinNote(...parts: Array<string | null | undefined>): string | null {
   const kept = parts.map((p) => p?.trim()).filter((p): p is string => Boolean(p));
   return kept.length ? kept.join("\n\n").slice(0, 4000) : null;
-}
-
-// Shared text is often just "<title> <url>" from the source app; don't keep
-// it as a note when it only repeats the title.
-function extraText(text: string | undefined, title: string | null): string | undefined {
-  if (!text) return undefined;
-  const t = text.toLowerCase().replace(/\s+/g, " ").trim();
-  const ti = (title ?? "").toLowerCase().replace(/\s+/g, " ").trim();
-  if (ti && (t === ti || ti.includes(t) || t.includes(ti))) {
-    const rest = t.replace(ti, "").replace(/[\s:|\-–—]+/g, "");
-    if (rest.length < 3) return undefined;
-  }
-  return text;
 }
 
 export async function saveToBoard(userId: string, input: BoardInput) {
@@ -86,7 +73,7 @@ export async function saveToBoard(userId: string, input: BoardInput) {
         kind: link.kind,
         url: link.url,
         title: title?.slice(0, 300) ?? null,
-        note: joinNote(input.note, extraText(input.text, title)),
+        note: joinNote(input.note, shareCaption(input.text, title)),
         siteName: link.siteName ?? displayHost(link.url),
         price: link.price,
         ...(stored ?? (link.imageSrc ? { imageUrl: link.imageSrc } : {})),
