@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { daysSince } from "@/lib/dating";
 import type { DatingPersonDTO } from "@/lib/dating-server";
 import { SimpleMarkdown } from "@/components/simple-markdown";
+import { DictateCard } from "./dictate-card";
 import { SyncHelp } from "./sync-help";
 
 export type DatingCard = DatingPersonDTO & {
@@ -113,6 +114,10 @@ export function DatingHome({ people }: { people: DatingCard[] }) {
           )}
         </form>
       )}
+
+      <div className="mb-6">
+        <DictateCard onSaved={() => router.refresh()} />
+      </div>
 
       <Section title="Now" people={active} empty="No one right now." />
       {past.length > 0 && <Section title="Past" people={past} />}

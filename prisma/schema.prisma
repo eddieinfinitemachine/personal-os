@@ -1188,8 +1188,12 @@ model DatingEvent {
   title      String
   notes      String?
   vibe       Int? // 1-10, how it felt; plotted over time
+  source     String? // "dictation" | "granola" | null (added by hand)
+  // "granola:<meetingId>:<personId>" so re-filing the same meeting is a no-op.
+  externalId String?
   createdAt  DateTime     @default(now())
 
+  @@unique([userId, externalId])
   @@index([personId, occurredAt])
 }
 

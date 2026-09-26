@@ -257,3 +257,246 @@ export function daysSince(iso: string | Date | null | undefined, now = Date.now(
   if (!iso) return null;
   return Math.max(0, Math.floor((now - new Date(iso).getTime()) / DAY));
 }
+
+// ---------------------------------------------------------------------------
+// Filing notes (dictation, Granola): Claude proposes what a free-text note
+// means for each person; these helpers validate that proposal and build the
+// bits that are written. See src/lib/dating-filer.ts for the Claude + DB side.
+
+export const FILED_EVENT_KINDS = ["date", "milestone", "call", "conflict"] as const;
+export type FiledEventKind = (typeof FILED_EVENT_KINDS)[number];
+
+export type ProposedEvent = {
+  kind: FiledEventKind;
+  title: string;
+  /** YYYY-MM-DD */
+  occurredAt: string;
+  vibe: number | null;
+  notes: string;
+};
+
+export type ProposedPerson = {
+  /** An existing person's id, or null for someone new. */
+  personId: string | null;
+  name: string;
+  isNew: boolean;
+  /** Short title for the timeline note. */
+  summary: string;
+  /** Cleaned-up first-person summary of what was said about her. */
+  note: string;
+  remember: string[];
+  greenFlags: string[];
+  redFlags: string[];
+  lessons: string;
+  stage: Stage | null;
+  events: ProposedEvent[];
+};
+
+export type Proposal = { people: ProposedPerson[] };
+
+/** What the proposal is checked against: the user's people as stored. */
+export type KnownPerson = {
+  id: string;
+  name: string;
+  stage?: string;
+  remember: string[];
+  greenFlags: string[];
+  redFlags: string[];
+  lessons?: string | null;
+};
+
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** YYYY-MM-DD of a Date in UTC, or of a valid YYYY-MM-DD string as given. */
+export function dayKey(d: Date | string): string {
+  if (typeof d === "string" && DAY_RE.test(d)) return d;
+  return new Date(d).toISOString().slice(0, 10);
+}
+
+/** Noon UTC on that day: lands on the same calendar day in every US zone. */
+export function noonUTC(day: string): Date {
+  return new Date(`${day}T12:00:00Z`);
+}
+
+function validDay(v: unknown): string | null {
+  if (typeof v !== "string" || !DAY_RE.test(v)) return null;
+  const d = noonUTC(v);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v ? v : null;
+}
+
+/**
+ * The note's day plus the week before it, spelled out with weekdays, so the
+ * model maps "last night" / "Saturday" to real dates instead of doing
+ * calendar math itself.
+ */
+export function dateContext(noteDay: string): string {
+  const base = noonUTC(noteDay);
+  const lines = [`The note is from ${WEEKDAYS[base.getUTCDay()]} ${noteDay}.`, "Recent days:"];
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(base.getTime() - i * 86_400_000);
+    lines.push(`- ${WEEKDAYS[d.getUTCDay()]} ${d.toISOString().slice(0, 10)}${i === 1 ? " (yesterday / last night)" : ""}`);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * A proposed event day: kept when it is a real date within a year either side
+ * of the note (plans ahead are fine), otherwise the note's own day.
+ */
+export function resolveEventDay(v: unknown, noteDay: string): string {
+  const day = validDay(v);
+  if (!day) return noteDay;
+  const gap = Math.abs(noonUTC(day).getTime() - noonUTC(noteDay).getTime());
+  return gap <= 366 * 86_400_000 ? day : noteDay;
+}
+
+/** Items in `add` not already in `existing` (case- and space-insensitive). */
+export function freshItems(existing: string[], add: string[]): string[] {
+  const seen = new Set(existing.map(normItem));
+  const out: string[] = [];
+  for (const a of add) {
+    const k = normItem(a);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(a.trim());
+  }
+  return out;
+}
+
+const normItem = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ").replace(/[.!]+$/, "");
+
+/** Existing lessons plus `add` as a new paragraph, unless it is already there. */
+export function appendLessons(existing: string | null | undefined, add: string): string | null {
+  const a = add.trim();
+  const cur = existing?.trim() || "";
+  if (!a || cur.toLowerCase().includes(a.toLowerCase())) return cur || null;
+  return cur ? `${cur}\n\n${a}` : a;
+}
+
+const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+
+function parseEvents(raw: unknown, noteDay: string): ProposedEvent[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 10).flatMap((e): ProposedEvent[] => {
+    if (!e || typeof e !== "object") return [];
+    const r = e as Record<string, unknown>;
+    const title = text(r.title, 200);
+    if (!title || !(FILED_EVENT_KINDS as readonly unknown[]).includes(r.kind)) return [];
+    const v = Number(r.vibe);
+    return [
+      {
+        kind: r.kind as FiledEventKind,
+        title,
+        occurredAt: resolveEventDay(r.occurredAt, noteDay),
+        vibe: r.vibe !== null && Number.isInteger(v) && v >= 1 && v <= 10 ? v : null,
+        notes: text(r.notes, 5000),
+      },
+    ];
+  });
+}
+
+/**
+ * Validate a proposal, from Claude or edited in the review UI. Unknown ids
+ * become new people (or snap to an existing person with the same name), a
+ * forced `personId` gets everything, the same person listed twice is merged,
+ * and list items already on the person are dropped.
+ *
+ * `strict` is for proposals coming back from the client: an id that isn't
+ * one of `people` is dropped rather than turned into someone new, and new
+ * people must be marked isNew.
+ */
+export function parseProposal(
+  raw: unknown,
+  opts: { people: KnownPerson[]; noteDay: string; personId?: string | null; strict?: boolean },
+): Proposal {
+  const list = raw && typeof raw === "object" ? (raw as { people?: unknown }).people : null;
+  if (!Array.isArray(list)) return { people: [] };
+  const byId = new Map(opts.people.map((p) => [p.id, p]));
+  const byName = new Map(opts.people.map((p) => [p.name.trim().toLowerCase(), p]));
+  const forced = opts.personId ? byId.get(opts.personId) : undefined;
+
+  const merged = new Map<string, ProposedPerson>();
+  for (const item of list.slice(0, 20)) {
+    if (!item || typeof item !== "object") continue;
+    const r = item as Record<string, unknown>;
+    const name = text(r.name, 100);
+    const claimsId = typeof r.personId === "string" && r.personId !== "";
+    if (opts.strict && !forced && (claimsId ? !byId.has(r.personId as string) : r.isNew !== true)) continue;
+    const known =
+      forced ??
+      (typeof r.personId === "string" ? byId.get(r.personId) : undefined) ??
+      (name ? byName.get(name.toLowerCase()) : undefined);
+    if (!known && !name) continue;
+    const p: ProposedPerson = {
+      personId: known?.id ?? null,
+      name: known?.name ?? name,
+      isNew: !known,
+      summary: text(r.summary, 120),
+      note: text(r.note, 20_000),
+      remember: cleanList(r.remember, 30),
+      greenFlags: cleanList(r.greenFlags, 15),
+      redFlags: cleanList(r.redFlags, 15),
+      lessons: text(r.lessons, 5000),
+      stage: isStage(r.stage) ? r.stage : null,
+      events: parseEvents(r.events, opts.noteDay),
+    };
+    const key = p.personId ?? `new:${p.name.toLowerCase()}`;
+    const prev = merged.get(key);
+    merged.set(key, prev ? mergePeople(prev, p) : p);
+  }
+
+  return {
+    people: [...merged.values()]
+      .map((p) => {
+        const known = p.personId ? byId.get(p.personId) : undefined;
+        if (!known) return p;
+        return {
+          ...p,
+          remember: freshItems(known.remember, p.remember),
+          greenFlags: freshItems(known.greenFlags, p.greenFlags),
+          redFlags: freshItems(known.redFlags, p.redFlags),
+          lessons: p.lessons && known.lessons?.toLowerCase().includes(p.lessons.toLowerCase()) ? "" : p.lessons,
+        };
+      })
+      .filter((p) => p.note || p.summary || p.events.length || p.remember.length || p.greenFlags.length || p.redFlags.length || p.lessons || p.stage),
+  };
+}
+
+function mergePeople(a: ProposedPerson, b: ProposedPerson): ProposedPerson {
+  const join = (x: string, y: string) => [x, y].filter(Boolean).join("\n\n");
+  return {
+    ...a,
+    summary: a.summary || b.summary,
+    note: join(a.note, b.note),
+    remember: [...a.remember, ...freshItems(a.remember, b.remember)],
+    greenFlags: [...a.greenFlags, ...freshItems(a.greenFlags, b.greenFlags)],
+    redFlags: [...a.redFlags, ...freshItems(a.redFlags, b.redFlags)],
+    lessons: join(a.lessons, b.lessons),
+    stage: b.stage ?? a.stage,
+    events: [...a.events, ...b.events],
+  };
+}
+
+/** Idempotency key for a Granola meeting filed to one person. */
+export function granolaExternalId(meetingId: string, personId: string): string {
+  return `granola:${meetingId.trim().slice(0, 120)}:${personId}`;
+}
+
+// Filed notes keep where they came from on their last line, so the timeline
+// can link back without extra columns: "Source: <label> <url>".
+const SOURCE_LINE = /(?:^|\n+)Source: ([^\n]*?)[ \t]*(https?:\/\/\S+)?[ \t]*$/;
+
+export function withSourceLine(notes: string, label?: string | null, url?: string | null): string {
+  const l = label?.trim().replace(/\s+/g, " ") ?? "";
+  const u = url && /^https?:\/\/\S+$/.test(url.trim()) ? url.trim() : "";
+  if (!l && !u) return notes;
+  return `${notes}\n\nSource: ${[l || "link", u].filter(Boolean).join(" ")}`;
+}
+
+export function splitSourceLine(notes: string | null): { body: string; label: string | null; url: string | null } {
+  if (!notes) return { body: "", label: null, url: null };
+  const m = notes.match(SOURCE_LINE);
+  if (!m || m.index === undefined) return { body: notes, label: null, url: null };
+  return { body: notes.slice(0, m.index), label: m[1] || null, url: m[2] ?? null };
+}
