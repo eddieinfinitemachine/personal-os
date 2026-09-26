@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ChevronLeft, Loader2, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { EVENT_KINDS, STAGES, daysSince, threadStats, type EventKind } from "@/lib/dating";
+import { EVENT_KINDS, STAGES, daysSince, splitSourceLine, threadStats, type EventKind } from "@/lib/dating";
 import type { DatingEventDTO, DatingMessageDTO, DatingPersonDTO } from "@/lib/dating-server";
+import { DictateCard } from "./dictate-card";
 import { ListEditor } from "./list-editor";
 import { RelationshipChart } from "./relationship-chart";
 import { SyncHelp } from "./sync-help";
@@ -143,6 +144,20 @@ export function DatingDetail({
               sub={vibes.length ? `avg vibe ${(vibes.reduce((a, b) => a + b, 0) / vibes.length).toFixed(1)}` : "none rated yet"}
             />
           </div>
+
+          <DictateCard
+            personId={person.id}
+            firstName={first}
+            onSaved={({ people, events: added }) => {
+              const updated = people.find((p) => p.id === person.id);
+              if (updated) setPerson(updated);
+              setEvents((list) =>
+                [...list.filter((e) => !added.some((a) => a.id === e.id)), ...added].sort((a, b) =>
+                  a.occurredAt.localeCompare(b.occurredAt),
+                ),
+              );
+            }}
+          />
 
           <section className={card}>
             <RelationshipChart messages={meta} events={events} name={first} metAt={person.metAt} />
@@ -383,24 +398,27 @@ function Timeline({
                 <div className="text-lg font-semibold tabular-nums leading-tight">{e.vibe ?? "·"}</div>
                 <div className="text-[10px] uppercase tracking-wide text-[var(--color-label-tertiary)]">{e.kind}</div>
               </div>
-              <button
-                onClick={() => {
-                  setDraft({
-                    id: e.id,
-                    occurredAt: dateInput(e.occurredAt),
-                    kind: e.kind as EventKind,
-                    title: e.title,
-                    notes: e.notes ?? "",
-                    vibe: e.vibe,
-                  });
-                  formRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                }}
-                className="flex-1 min-w-0 text-left"
-              >
-                <div className="text-sm font-medium">{e.title}</div>
-                <div className="text-xs text-[var(--color-muted-foreground)]">{fmtDate(e.occurredAt)}</div>
-                {e.notes && <p className="mt-1 text-sm whitespace-pre-wrap">{e.notes}</p>}
-              </button>
+              <div className="flex-1 min-w-0">
+                <button
+                  onClick={() => {
+                    setDraft({
+                      id: e.id,
+                      occurredAt: dateInput(e.occurredAt),
+                      kind: e.kind as EventKind,
+                      title: e.title,
+                      notes: e.notes ?? "",
+                      vibe: e.vibe,
+                    });
+                    formRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                  }}
+                  className="w-full text-left"
+                >
+                  <div className="text-sm font-medium">{e.title}</div>
+                  <div className="text-xs text-[var(--color-muted-foreground)]">{fmtDate(e.occurredAt)}</div>
+                  {e.notes && <p className="mt-1 text-sm whitespace-pre-wrap">{e.source ? splitSourceLine(e.notes).body : e.notes}</p>}
+                </button>
+                <SourceBadge event={e} />
+              </div>
               <button
                 onClick={() => remove(e.id)}
                 aria-label="Delete"
@@ -494,6 +512,21 @@ function Timeline({
         </button>
       </form>
     </div>
+  );
+}
+
+// Where a filed note came from; Granola notes link back to the meeting.
+function SourceBadge({ event }: { event: DatingEventDTO }) {
+  if (event.source !== "dictation" && event.source !== "granola") return null;
+  const { label, url } = splitSourceLine(event.notes);
+  const text = event.source === "dictation" ? "dictated" : `from Granola${label && label !== "Granola" ? ` · ${label}` : ""}`;
+  const cls = "mt-1.5 inline-block max-w-full truncate rounded-full bg-[var(--color-fill)] px-2 py-0.5 text-[11px] text-[var(--color-muted-foreground)]";
+  return url ? (
+    <a href={url} target="_blank" rel="noopener noreferrer" className={cn(cls, "hover:text-[var(--color-foreground)] hover:underline")}>
+      {text}
+    </a>
+  ) : (
+    <span className={cls}>{text}</span>
   );
 }
 

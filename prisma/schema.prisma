@@ -948,6 +948,7 @@ model User {
   datingPeople      DatingPerson[]
   datingEvents      DatingEvent[]
   datingMessages    DatingMessage[]
+  datingSuggestions DatingSuggestion[]
 
   @@index([email])
 }
@@ -1188,8 +1189,12 @@ model DatingEvent {
   title      String
   notes      String?
   vibe       Int? // 1-10, how it felt; plotted over time
+  source     String? // "dictation" | "granola" | null (added by hand)
+  // "granola:<meetingId>:<personId>" so re-filing the same meeting is a no-op.
+  externalId String?
   createdAt  DateTime     @default(now())
 
+  @@unique([userId, externalId])
   @@index([personId, occurredAt])
 }
 
@@ -1209,4 +1214,28 @@ model DatingMessage {
 
   @@unique([userId, externalId])
   @@index([personId, sentAt])
+}
+
+// Someone a Granola meeting talked about who isn't on /dating yet. Never
+// auto-created: shown as "New from Granola" until added (creates the person
+// and files the note) or dismissed. One row per meeting + name (names are
+// matched case-insensitively in code).
+model DatingSuggestion {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  meetingId  String
+  title      String?
+  url        String?
+  occurredAt DateTime
+  summary    String
+  note       String
+  status     String   @default("pending") // "pending" | "added" | "dismissed"
+  personId   String? // the DatingPerson it was added as
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, meetingId, name])
+  @@index([userId, status])
 }
