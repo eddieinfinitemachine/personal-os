@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Loader2, Plus, Sparkles } from "lucide-react";
+import { Loader2, Plus, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { daysSince } from "@/lib/dating";
 import type { DatingPersonDTO } from "@/lib/dating-server";
@@ -19,13 +19,22 @@ export type DatingCard = DatingPersonDTO & {
   spark: number[];
 };
 
+export type GranolaSuggestion = {
+  id: string;
+  name: string;
+  summary: string;
+  title: string | null;
+  url: string | null;
+  occurredAt: string;
+};
+
 const input =
   "rounded-md bg-[var(--color-fill-secondary)] px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-[var(--color-ring)]";
 const card = "rounded-xl border border-[var(--color-card-border)] bg-[var(--color-card)]";
 const ghost =
   "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] disabled:opacity-50";
 
-export function DatingHome({ people }: { people: DatingCard[] }) {
+export function DatingHome({ people, suggestions }: { people: DatingCard[]; suggestions: GranolaSuggestion[] }) {
   const router = useRouter();
   const [adding, setAdding] = useState(people.length === 0);
   const [name, setName] = useState("");
@@ -115,6 +124,8 @@ export function DatingHome({ people }: { people: DatingCard[] }) {
         </form>
       )}
 
+      {suggestions.length > 0 && <Suggestions suggestions={suggestions} setError={setError} />}
+
       <div className="mb-6">
         <DictateCard onSaved={() => router.refresh()} />
       </div>
@@ -155,6 +166,72 @@ export function DatingHome({ people }: { people: DatingCard[] }) {
         <SyncHelp compact />
       </section>
     </div>
+  );
+}
+
+// People Granola meetings talked about who aren't here yet.
+function Suggestions({
+  suggestions,
+  setError,
+}: {
+  suggestions: GranolaSuggestion[];
+  setError: (e: string | null) => void;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [gone, setGone] = useState<Set<string>>(new Set());
+  const act = async (s: GranolaSuggestion, action: "add" | "dismiss") => {
+    setBusy(s.id);
+    const res = await fetch(`/api/dating/suggestions/${s.id}/${action}`, { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    setBusy(null);
+    if (!res.ok) return setError(data.error ?? "Could not update");
+    setError(null);
+    if (action === "add") return router.push(`/dating/${data.person.id}`);
+    setGone((g) => new Set(g).add(s.id));
+    router.refresh();
+  };
+  const visible = suggestions.filter((s) => !gone.has(s.id));
+  if (!visible.length) return null;
+  return (
+    <section className="mb-6">
+      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+        New from Granola
+      </h2>
+      <ul className="space-y-2">
+        {visible.map((s) => (
+          <li key={s.id} className={cn(card, "flex flex-wrap items-center gap-x-3 gap-y-2 p-3")}>
+            <div className="min-w-0 flex-1 basis-56">
+              <div className="text-sm font-semibold">{s.name}</div>
+              {s.summary && <p className="text-sm text-[var(--color-muted-foreground)]">{s.summary}</p>}
+              <div className="mt-0.5 text-xs text-[var(--color-label-tertiary)]">
+                {new Date(s.occurredAt).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })}
+                {" · "}
+                {s.url ? (
+                  <a href={s.url} target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-[var(--color-foreground)]">
+                    {s.title ?? "Granola note"}
+                  </a>
+                ) : (
+                  (s.title ?? "Granola")
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => act(s, "add")}
+                disabled={busy !== null}
+                className="pressable inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium bg-[var(--color-foreground)] text-[var(--color-background)] disabled:opacity-50"
+              >
+                {busy === s.id ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />} Add her
+              </button>
+              <button onClick={() => act(s, "dismiss")} disabled={busy !== null} className={ghost} aria-label={`Dismiss ${s.name}`}>
+                <X className="size-4" /> Dismiss
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

@@ -6,9 +6,12 @@ import {
   freshItems,
   granolaExternalId,
   noonUTC,
+  normName,
   parseProposal,
   resolveEventDay,
+  sameName,
   splitSourceLine,
+  suggestionsFrom,
   withSourceLine,
   type KnownPerson,
 } from "@/lib/dating";
@@ -161,5 +164,24 @@ describe("granola keys and source lines", () => {
     expect(withSourceLine("x", null, "javascript:alert(1)")).toBe("x");
     expect(splitSourceLine("Plain note")).toEqual({ body: "Plain note", label: null, url: null });
     expect(splitSourceLine(withSourceLine("x", "Label only"))).toEqual({ body: "x", label: "Label only", url: null });
+  });
+});
+
+describe("granola suggestions", () => {
+  const base = { isNew: true, summary: "", note: "", remember: [], greenFlags: [], redFlags: [], lessons: "", stage: null, events: [] };
+  it("compares names case- and space-insensitively", () => {
+    expect(normName("  Priya   Shah ")).toBe("priya shah");
+    expect(sameName("PRIYA", "priya ")).toBe(true);
+    expect(sameName("Priya", "Pria")).toBe(false);
+  });
+  it("keeps only unmatched people, one per name", () => {
+    expect(
+      suggestionsFrom([
+        { ...base, personId: "ana1", name: "Ana", isNew: false, note: "matched" },
+        { ...base, personId: null, name: " Priya ", summary: "Hinge match", note: "" },
+        { ...base, personId: null, name: "priya", note: "dupe" },
+        { ...base, personId: null, name: "", note: "nameless" },
+      ]),
+    ).toEqual([{ name: "Priya", summary: "Hinge match", note: "Hinge match" }]);
   });
 });

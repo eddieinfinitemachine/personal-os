@@ -6,8 +6,10 @@ import {
   dateContext,
   dayKey,
   freshItems,
+  granolaExternalId,
   noonUTC,
   parseProposal,
+  sameName,
   withSourceLine,
   type KnownPerson,
   type Proposal,
@@ -215,3 +217,45 @@ function firstWords(s: string, n = 8): string {
   const words = s.split(/\s+/).filter(Boolean);
   return words.slice(0, n).join(" ") + (words.length > n ? "…" : "");
 }
+
+/**
+ * "Add her" on a Granola suggestion: create the person and file the meeting
+ * note to her, along with every other pending suggestion with the same name
+ * so all the meetings about her land. Null when the suggestion isn't the
+ * user's or is no longer pending.
+ */
+export async function addSuggestion(userId: string, id: string) {
+  return prisma.$transaction(async (tx) => {
+    const s = await tx.datingSuggestion.findFirst({ where: { id, userId, status: "pending" } });
+    if (!s) return null;
+    const person = await tx.datingPerson.create({
+      data: { userId, name: s.name, stage: "talking", metAt: s.occurredAt },
+    });
+    const pending = await tx.datingSuggestion.findMany({
+      where: { userId, status: "pending", name: { equals: s.name, mode: "insensitive" } },
+      orderBy: { occurredAt: "asc" },
+    });
+    // The equals above is exact apart from case; sameName also folds spacing.
+    const same = pending.filter((p) => sameName(p.name, s.name));
+    for (const p of same) {
+      await tx.datingEvent.create({
+        data: {
+          userId,
+          personId: person.id,
+          kind: "note",
+          occurredAt: p.occurredAt,
+          title: (p.summary || `From ${p.title ?? "Granola"}`).slice(0, 200),
+          notes: withSourceLine(p.note || p.summary, p.title ?? "Granola", p.url).slice(0, 20_000),
+          source: "granola",
+          externalId: granolaExternalId(p.meetingId, person.id),
+        },
+      });
+    }
+    await tx.datingSuggestion.updateMany({
+      where: { id: { in: same.map((p) => p.id) } },
+      data: { status: "added", personId: person.id },
+    });
+    return { person, filed: same.length };
+  });
+}
+

@@ -500,3 +500,28 @@ export function splitSourceLine(notes: string | null): { body: string; label: st
   if (!m || m.index === undefined) return { body: notes, label: null, url: null };
   return { body: notes.slice(0, m.index), label: m[1] || null, url: m[2] ?? null };
 }
+
+// ---------------------------------------------------------------------------
+// Granola suggestions: people a meeting talked about who aren't on /dating.
+
+/** Trimmed, single-spaced, lowercased: how suggestion names are compared. */
+export function normName(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+export function sameName(a: string, b: string): boolean {
+  return normName(a) === normName(b);
+}
+
+export type SuggestionDraft = { name: string; summary: string; note: string };
+
+/** The unmatched people in a proposal, one per name (case-insensitive). */
+export function suggestionsFrom(people: ProposedPerson[]): SuggestionDraft[] {
+  const out: SuggestionDraft[] = [];
+  for (const p of people) {
+    const name = p.name.trim().replace(/\s+/g, " ");
+    if (p.personId || !name || out.some((o) => sameName(o.name, name))) continue;
+    out.push({ name: name.slice(0, 100), summary: p.summary, note: p.note || p.summary });
+  }
+  return out;
+}

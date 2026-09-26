@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { weekStart } from "@/lib/dating";
 import { toPersonDTO } from "@/lib/dating-server";
-import { DatingHome, type DatingCard } from "@/components/dating/dating-home";
+import { DatingHome, type DatingCard, type GranolaSuggestion } from "@/components/dating/dating-home";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,7 @@ export default async function DatingPage() {
   const sparkStart = weekStart(new Date());
   sparkStart.setDate(sparkStart.getDate() - 7 * (SPARK_WEEKS - 1));
 
-  const [people, counts, events, recent] = await Promise.all([
+  const [people, counts, events, recent, pending] = await Promise.all([
     prisma.datingPerson.findMany({
       where: { userId },
       orderBy: [{ lastMessageAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
@@ -28,7 +28,13 @@ export default async function DatingPage() {
       where: { userId, sentAt: { gte: sparkStart } },
       select: { personId: true, sentAt: true },
     }),
+    prisma.datingSuggestion.findMany({
+      where: { userId, status: "pending" },
+      orderBy: { occurredAt: "desc" },
+      select: { id: true, name: true, summary: true, title: true, url: true, occurredAt: true },
+    }),
   ]);
+  const suggestions: GranolaSuggestion[] = pending.map((s) => ({ ...s, occurredAt: s.occurredAt.toISOString() }));
 
   const countBy = new Map(counts.map((c) => [c.personId, c._count._all]));
   const cards: DatingCard[] = people.map((p) => {
@@ -49,5 +55,5 @@ export default async function DatingPage() {
     };
   });
 
-  return <DatingHome people={cards} />;
+  return <DatingHome people={cards} suggestions={suggestions} />;
 }

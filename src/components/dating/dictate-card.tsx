@@ -307,7 +307,8 @@ export function DictateCard({
               </div>
             );
           })}
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          {/* Left-aligned on phones so the floating + button (bottom right) can't cover Save. */}
+          <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
             <button onClick={() => setProposal(null)} disabled={busy} className={ghost}>
               Cancel
             </button>
