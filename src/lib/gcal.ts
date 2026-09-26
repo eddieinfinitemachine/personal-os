@@ -14,9 +14,9 @@ import { toDateInputValue } from "@/lib/utils";
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 // Todos live in their own calendar so they can be toggled/coloured apart from
 // real appointments. GOOGLE_CALENDAR_ID pins one explicitly; otherwise the
-// first sync finds (or creates) a calendar named "Kaizen" and caches its id
+// first sync finds (or creates) a calendar named "EC" and caches its id
 // for the life of the process.
-const KAIZEN_CALENDAR_NAME = "Kaizen";
+const CALENDAR_NAME = "EC";
 let cachedCalendarId: string | null = null;
 
 type CalendarListEntry = { id: string; summary?: string; accessRole?: string };
@@ -34,7 +34,7 @@ async function resolveCalendarId(token: string): Promise<string> {
     throw new Error(`calendarList failed (${listRes.status}): ${await listRes.text()}`);
   }
   const list = (await listRes.json()) as { items?: CalendarListEntry[] };
-  const existing = (list.items ?? []).find((c) => c.summary === KAIZEN_CALENDAR_NAME);
+  const existing = (list.items ?? []).find((c) => c.summary === CALENDAR_NAME);
   if (existing) {
     cachedCalendarId = existing.id;
     return existing.id;
@@ -43,13 +43,13 @@ async function resolveCalendarId(token: string): Promise<string> {
   const createRes = await fetch(`${CALENDAR_API}/calendars`, {
     method: "POST",
     headers: { ...auth, "Content-Type": "application/json" },
-    body: JSON.stringify({ summary: KAIZEN_CALENDAR_NAME, timeZone: "America/New_York" }),
+    body: JSON.stringify({ summary: CALENDAR_NAME, timeZone: "America/New_York" }),
   });
   if (!createRes.ok) {
     throw new Error(`calendar create failed (${createRes.status}): ${await createRes.text()}`);
   }
   const created = (await createRes.json()) as { id: string };
-  console.log(`[gcal] created calendar "${KAIZEN_CALENDAR_NAME}" (${created.id})`);
+  console.log(`[gcal] created calendar "${CALENDAR_NAME}" (${created.id})`);
   cachedCalendarId = created.id;
   return created.id;
 }
@@ -85,7 +85,7 @@ type CalendarEventBody = {
   status: "confirmed";
   start: { date: string };
   end: { date: string };
-  extendedProperties: { private: { kaizen: "1"; todoId: string } };
+  extendedProperties: { private: { ec: "1"; todoId: string } };
   reminders: { useDefault: false };
 };
 
@@ -125,7 +125,7 @@ function eventBody(todo: TodoForCalendar): CalendarEventBody {
     start: { date },
     end: { date: toDateInputValue(nextDay) },
     extendedProperties: {
-      private: { kaizen: "1", todoId: todo.id },
+      private: { ec: "1", todoId: todo.id },
     },
     reminders: { useDefault: false },
   };
@@ -284,7 +284,7 @@ export async function reconcileCalendar(): Promise<{
     do {
       const token = await getGoogleAccessToken();
       const url = new URL(await calendarEventsUrl(token));
-      url.searchParams.set("privateExtendedProperty", "kaizen=1");
+      url.searchParams.set("privateExtendedProperty", "ec=1");
       url.searchParams.set("showDeleted", "false");
       url.searchParams.set("maxResults", "250");
       url.searchParams.set("singleEvents", "true");

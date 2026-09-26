@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { HomeTiles, type HomeTile } from "@/components/home-tiles";
 import { NewListButton } from "@/components/new-list-button";
 import { ProjectCard, type ProjectCardData } from "@/components/project-card";
-import { KaizenLanding } from "@/components/kaizen-landing";
+import { EcLanding } from "@/components/ec-landing";
 import { CaptureInboxPill } from "@/components/capture-inbox";
 import { KeyboardListNav } from "@/components/keyboard-nav";
 import { prisma } from "@/lib/prisma";
@@ -20,7 +20,7 @@ export default async function HomePage() {
 
   if (!session) {
     if (isPrivateHost((await headers()).get("host"))) redirect("/login");
-    return <KaizenLanding />;
+    return <EcLanding />;
   }
   const userId = session.userId;
 

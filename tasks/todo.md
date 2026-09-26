@@ -224,7 +224,7 @@ Files: `src/app/api/people/parse/route.ts`, `src/app/api/people/bulk/route.ts`,
 
 ---
 
-# Kaizen — Multi-tenant + File Upload (✅ SHIPPED 2026-05-19)
+# EC — Multi-tenant + File Upload (✅ SHIPPED 2026-05-19)
 
 ## Review
 
@@ -232,7 +232,7 @@ Shipped in a single session. Codebase migrated from single-user password gate to
 
 **What landed:**
 - Auth: magic-link via Resend → 7-day JWT cookie. `signSession`/`verifySession`/`getCurrentUserId`/`requireUserId` in `lib/auth.ts`. Routes: `/api/auth/request-link`, `/verify`, `/logout`. Rate-limited (3/10min per email + IP). Optional anti-abuse: `MAX_SIGNUPS_PER_DAY`, `INVITE_TOKEN`.
-- UI: Kaizen-branded landing page at `/` (logged-out), dashboard (logged-in). `/signup` + `/login` magic-link forms with "Check your inbox" state. Settings page at `/settings` (email, storage usage, sign-out). Settings link added to sidebar. Mobile chrome + manifest rebranded.
+- UI: EC-branded landing page at `/` (logged-out), dashboard (logged-in). `/signup` + `/login` magic-link forms with "Check your inbox" state. Settings page at `/settings` (email, storage usage, sign-out). Settings link added to sidebar. Mobile chrome + manifest rebranded.
 - Multi-tenant data: `userId` FK added to all 30 Prisma models with index. Founder backfill ran cleanly (1,023 rows assigned to emcohen@me.com). All 67 API routes + 12 server pages + lib helpers updated to scope by userId. Bearer/cron/admin endpoints look up founder via `FOUNDER_EMAIL` env var.
 - File uploads: `POST /api/attachments/upload` writes to Vercel Blob under `users/{userId}/projects/{projectId}/…`. 1 GB per-user quota, 50 MB per-file cap. FilesPane has drag-drop zone + file picker. Blob deleted on attachment row delete.
 - Build: `next build --webpack` compiles clean. Zero TypeScript errors.
@@ -250,7 +250,7 @@ Shipped in a single session. Codebase migrated from single-user password gate to
 # (Original plan below for reference)
 
 
-**Product name**: Kaizen (改善, "continuous improvement"). Replaces the working name "Personal OS" on the landing page, in emails, and in the app header. Codebase / repo / Vercel project keep their existing names for now (rename later).
+**Product name**: EC. Replaces the working name "Personal OS" on the landing page, in emails, and in the app header. Codebase / repo / Vercel project keep their existing names for now (rename later).
 
 **Goal**: Replace single-password gate with public signup. Anyone with the link can land on a marketing page, enter their email, get a magic link, and have their own isolated account. Add real file upload to projects (Vercel Blob).
 
@@ -320,17 +320,17 @@ Magic-link auth (Resend) → JWT cookie. Same pattern as `infinite-machine-deale
 
 ## Decisions locked
 
-- **Name**: Kaizen
-- **Email sender**: dedicated Resend sender (need to register a sending domain — recommend `kaizen@mail.infinitemachine.com` or `hello@…` once a domain is picked; otherwise `onboarding@resend.dev` works as a stopgap)
+- **Name**: EC
+- **Email sender**: dedicated Resend sender (need to register a sending domain — recommend `ec@mail.infinitemachine.com` or `hello@…` once a domain is picked; otherwise `onboarding@resend.dev` works as a stopgap)
 - **Quick Todo Mac app**: stays hardcoded to founder (Eddie) — the capture endpoint will look up the founder user by env var and attach there
 - **Domain**: keep `personal-os-two-gold.vercel.app` for now (rename later)
 
 ## Landing page copy (draft — needs sign-off)
 
-> # Kaizen
+> # EC
 > *A little better, every day.*
 >
-> Kaizen holds the whole of your life in one calm, deliberate place — the tasks, the projects, the people you want to stay close to, the trips you're planning, the things you own, the things you've been meaning to read.
+> EC holds the whole of your life in one calm, deliberate place — the tasks, the projects, the people you want to stay close to, the trips you're planning, the things you own, the things you've been meaning to read.
 >
 > Not a productivity app. A place to be honest about what you're keeping track of, and to leave it a little better than you found it.
 >
@@ -507,7 +507,7 @@ all CSS (custom easing tokens, keyframes, @starting-style). Plan: ~/.claude/plan
 - [x] `src/lib/notify.ts` — `notifySharedListAdd()`: loads list owner+members, emails all
   participants except the creator; 5-min in-memory burst suppression per
   recipient+list+creator (multi-line paste → one email); never throws.
-- [x] `src/lib/email.ts` — `sendSharedListAddEmail()` + Kaizen-styled HTML template
+- [x] `src/lib/email.ts` — `sendSharedListAddEmail()` + EC-styled HTML template
   (subject: `{Creator} added "{title}" to {List}`, links to APP_URL).
 - [x] `src/app/api/todos/route.ts` — both create branches (top-level + subtask) call it via
   `after()` (post-response, zero added latency).
@@ -685,13 +685,13 @@ a ✓/✗ prefix (his call). No schema change — event ids are derived from tod
       (full scope, so the app can create its own calendar) for
       eddie@infinitemachine.com via Chrome consent; GOOGLE_REFRESH_TOKEN replaced
       in .env and Vercel prod (printf, byte-length verified); app auto-created the
-      "Kaizen" calendar; local backfill upserted 16 dated todos, verified via the
+      "EC" calendar; local backfill upserted 16 dated todos, verified via the
       Google Calendar connector.
 - Review: `syncRecentTodos` only upserts *dated* todos (a reorder bumps
   updatedAt on every row; issuing a Google DELETE per undated row would be
   dozens of wasted calls). Clearing a date → PATCH route calls
   `deleteTodoEvent` explicitly; the daily sweep also removes events whose todo
-  is gone or undated. Todos go to a dedicated auto-created "Kaizen" calendar (GOOGLE_CALENDAR_ID overrides). Event id prefix is `ka` (Google ids are base32hex:
+  is gone or undated. Todos go to a dedicated auto-created "EC" calendar (GOOGLE_CALENDAR_ID overrides). Event id prefix is `ka` (Google ids are base32hex:
   `[a-v0-9]`, so my planned `kz` was invalid — Sol caught it).
 
 

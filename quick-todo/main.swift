@@ -2,8 +2,10 @@ import AppKit
 import Carbon.HIToolbox
 import UserNotifications
 
-// Kaizen smart-capture endpoint (auto-classifies → asset/todo/person/trip/interaction).
+// EC smart-capture endpoint (auto-classifies → asset/todo/person/trip/interaction).
 let API_URL = "https://personal-os-two-gold.vercel.app/api/capture/smart/auto"
+// Mood board save — same capture token. Used for "add to board: <link>".
+let BOARD_URL = "https://personal-os-two-gold.vercel.app/api/board"
 let API_TOKEN = "nJpdojSLOrDa9q6rLgyDA5Sp9qA"
 
 // MARK: - Capture popup
@@ -12,7 +14,8 @@ final class CapturePopup: NSPanel, NSTextFieldDelegate {
     static let shared = CapturePopup()
 
     private let textField = NSTextField()
-    private let hintLabel = NSTextField(labelWithString: "↵ Add  ·  ⎋ Cancel")
+    private static let defaultHint = "↵ Add  ·  ⎋ Cancel"
+    private let hintLabel = NSTextField(labelWithString: CapturePopup.defaultHint)
 
     init() {
         super.init(
@@ -96,6 +99,7 @@ final class CapturePopup: NSPanel, NSTextFieldDelegate {
             setFrame(NSRect(x: x, y: y, width: w, height: h), display: true)
         }
         textField.stringValue = ""
+        hintLabel.stringValue = CapturePopup.defaultHint
         makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         textField.becomeFirstResponder()
@@ -105,7 +109,17 @@ final class CapturePopup: NSPanel, NSTextFieldDelegate {
         let title = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         orderOut(nil)
         guard !title.isEmpty else { return }
-        post(title: title)
+        if let save = boardSave(from: title) {
+            postToBoard(url: save.url, note: save.note)
+        } else {
+            post(title: title)
+        }
+    }
+
+    // Show where ↵ will send it as soon as the board prefix + link are typed.
+    func controlTextDidChange(_ obj: Notification) {
+        let routed = boardSave(from: textField.stringValue) != nil
+        hintLabel.stringValue = routed ? "↵ Add to board  ·  ⎋ Cancel" : CapturePopup.defaultHint
     }
 
     func control(_ control: NSControl, textView: NSTextView,
@@ -169,6 +183,48 @@ final class CapturePopup: NSPanel, NSTextFieldDelegate {
             }
         }.resume()
     }
+
+    private func postToBoard(url link: String, note: String?) {
+        guard let url = URL(string: BOARD_URL) else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        // The server fetches the page for a title and preview image.
+        req.timeoutInterval = 30
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(API_TOKEN)", forHTTPHeaderField: "Authorization")
+        var body: [String: Any] = ["url": link, "via": "shortcut"]
+        if let note { body["note"] = note }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        notify(title: "Adding to board…", body: link)
+
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            DispatchQueue.main.async {
+                let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                let ok = (response as? HTTPURLResponse).map { (200...299).contains($0.statusCode) } ?? false
+                if !ok {
+                    let reason = json?["error"] as? String ?? error?.localizedDescription ?? link
+                    notify(title: "Board save failed", body: reason)
+                    return
+                }
+                notify(title: json?["message"] as? String ?? "Saved to board", body: link)
+            }
+        }.resume()
+    }
+}
+
+// "add to board: <link> [note]" always goes to the board. "add: <link>" and
+// "board: <link>" do too, but only when there's a link. Otherwise nil, and the
+// text goes through smart capture as usual. Text around the link is the note.
+func boardSave(from text: String) -> (url: String, note: String?)? {
+    let lower = text.lowercased()
+    let prefixes = ["add to board", "add to my board", "board:", "add:"]
+    guard let prefix = prefixes.first(where: { lower.hasPrefix($0) }) else { return nil }
+    let rest = String(text.dropFirst(prefix.count))
+    guard let link = firstUrl(in: rest) else { return nil }
+    let note = rest.replacingOccurrences(of: link, with: " ")
+        .trimmingCharacters(in: CharacterSet(charactersIn: ":-–— ").union(.whitespacesAndNewlines))
+    return (link, note.isEmpty ? nil : note)
 }
 
 // Cheap URL extractor — first http(s):// match in the text, if any.

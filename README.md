@@ -1,4 +1,4 @@
-# Kaizen
+# EC
 
 *A little better, every day.*
 
@@ -30,7 +30,7 @@ src/
     login, signup      magic-link forms
     page.tsx           landing (logged-out) / dashboard (logged-in)
     settings/          account + storage + sign-out
-  components/          shared React components (kaizen-landing, auth-form, files-pane, ...)
+  components/          shared React components (ec-landing, auth-form, files-pane, ...)
   lib/
     auth.ts            sign/verify session, getCurrentUserId, requireUserId
     email.ts           branded magic-link Resend template
@@ -59,7 +59,7 @@ Required env (`.env`, gitignored — see `.env.example`):
 - `DATABASE_URL` — Neon pooled connection
 - `JWT_SECRET` — `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`
 - `RESEND_API_KEY` — for magic-link emails
-- `EMAIL_FROM` — sender, defaults to `Kaizen <onboarding@resend.dev>`
+- `EMAIL_FROM` — sender, defaults to `EC <onboarding@resend.dev>`
 - `APP_URL` — `http://localhost:3000` in dev, `https://…` in prod
 - `ANTHROPIC_API_KEY` — Claude API
 - `CAPTURE_TOKEN` — bearer for `/api/capture/todo`

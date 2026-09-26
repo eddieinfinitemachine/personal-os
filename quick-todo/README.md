@@ -7,6 +7,7 @@ A standalone Swift binary (single file, no dependencies beyond AppKit / Carbon /
 - Registers a global hotkey (default: **⌃Space**) via the Carbon HotKey API — immune to userland conflicts that break Apple Shortcuts.
 - Pops a centered HUD-style text input.
 - Posts the typed title to `https://personal-os-two-gold.vercel.app/api/capture/todo` with the bearer `CAPTURE_TOKEN`.
+- Starting with `add to board` (or `add:` / `board:` followed by a link) saves the link to the mood board via `/api/board` instead. Any other words become the item's note.
 - Shows a system notification on success / failure.
 - Sits in the menu bar with a tray icon; right-click to open the web app or quit.
 

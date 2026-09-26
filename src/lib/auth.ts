@@ -25,7 +25,7 @@ function jwtSecret(): Uint8Array {
   return (cachedJwtSecret ??= resolveJwtSecret());
 }
 
-export const SESSION_COOKIE = "kaizen-session";
+export const SESSION_COOKIE = "ec-session";
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
 
 export interface Session {

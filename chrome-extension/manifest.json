@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Kaizen Capture",
+  "name": "EC Capture",
   "version": "0.3.0",
-  "description": "Send the current tab to your Kaizen smart-capture inbox, Read Later (with optional Kindle delivery), or your mood Board. Right-click any image to save it to the Board.",
+  "description": "Send the current tab to your EC smart-capture inbox, Read Later (with optional Kindle delivery), or your mood Board. Right-click any image to save it to the Board.",
   "permissions": ["activeTab", "storage", "contextMenus", "notifications", "scripting"],
   "host_permissions": [
     "https://internal.eddiecohen.com/*",
@@ -10,7 +10,7 @@
     "https://personal-os-two-gold.vercel.app/*"
   ],
   "action": {
-    "default_title": "Capture to Kaizen",
+    "default_title": "Capture to EC",
     "default_popup": "popup.html"
   },
   "background": {
@@ -27,14 +27,14 @@
         "default": "Ctrl+Shift+K",
         "mac": "Command+Shift+L"
       },
-      "description": "Open Kaizen capture popup for current tab"
+      "description": "Open EC capture popup for current tab"
     },
     "quick-capture": {
       "suggested_key": {
         "default": "Ctrl+Shift+J",
         "mac": "Command+Shift+J"
       },
-      "description": "Send current tab to Kaizen (no popup)"
+      "description": "Send current tab to EC (no popup)"
     },
     "save-read-later": {
       "suggested_key": {

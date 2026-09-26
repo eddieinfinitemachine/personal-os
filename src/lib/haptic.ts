@@ -33,10 +33,10 @@ function ensureIosNodes(): { input: HTMLInputElement; label: HTMLLabelElement } 
     input.style.opacity = "0";
     input.style.pointerEvents = "none";
     input.style.left = "-9999px";
-    input.id = "kaizen-haptic-switch";
+    input.id = "ec-haptic-switch";
 
     const label = document.createElement("label");
-    label.htmlFor = "kaizen-haptic-switch";
+    label.htmlFor = "ec-haptic-switch";
     label.style.position = "fixed";
     label.style.opacity = "0";
     label.style.pointerEvents = "none";

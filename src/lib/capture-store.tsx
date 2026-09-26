@@ -35,7 +35,7 @@ export type CaptureStore = {
 };
 
 const Ctx = createContext<CaptureStore | null>(null);
-const STORAGE_KEY = "kaizen:capture-queue";
+const STORAGE_KEY = "ec:capture-queue";
 
 // Only persist captures that need user attention. Drop everything in-flight
 // (a refresh restarts the request anyway) and completed.

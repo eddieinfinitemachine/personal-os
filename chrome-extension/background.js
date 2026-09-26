@@ -1,4 +1,4 @@
-// Kaizen Capture — background service worker.
+// EC Capture — background service worker.
 //
 // Two entry points:
 //   1. Quick-capture command (⌘⇧J / Ctrl+Shift+J): send the current tab's
@@ -22,7 +22,7 @@ async function sendCapture({ text, url, defaultText }) {
   const { endpoint, token } = await getSettings();
   if (!token) {
     notify(
-      "Kaizen Capture — token missing",
+      "EC Capture — token missing",
       "Open the extension settings and paste your CAPTURE_TOKEN.",
     );
     chrome.runtime.openOptionsPage();
@@ -66,7 +66,7 @@ async function saveReadLater({ tab, linkUrl }) {
   const { endpoint, token } = await getSettings();
   if (!token) {
     notify(
-      "Kaizen Capture — token missing",
+      "EC Capture — token missing",
       "Open the extension settings and paste your CAPTURE_TOKEN.",
     );
     chrome.runtime.openOptionsPage();
@@ -144,7 +144,7 @@ async function saveToBoard({ url, imageUrl, note }) {
   const { endpoint, token } = await getSettings();
   if (!token) {
     notify(
-      "Kaizen Capture — token missing",
+      "EC Capture — token missing",
       "Open the extension settings and paste your CAPTURE_TOKEN.",
     );
     chrome.runtime.openOptionsPage();
@@ -222,35 +222,35 @@ chrome.commands.onCommand.addListener(async (command) => {
   });
 });
 
-// Right-click → "Send selection to Kaizen" on highlighted text.
+// Right-click → "Send selection to EC" on highlighted text.
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
-    id: "kaizen-send-selection",
-    title: "Send to Kaizen: \"%s\"",
+    id: "ec-send-selection",
+    title: "Send to EC: \"%s\"",
     contexts: ["selection"],
   });
   chrome.contextMenus.create({
-    id: "kaizen-send-page",
-    title: "Send this page to Kaizen",
+    id: "ec-send-page",
+    title: "Send this page to EC",
     contexts: ["page", "link"],
   });
   chrome.contextMenus.create({
-    id: "kaizen-read-later-page",
+    id: "ec-read-later-page",
     title: "Save page to Read Later",
     contexts: ["page"],
   });
   chrome.contextMenus.create({
-    id: "kaizen-read-later-link",
+    id: "ec-read-later-link",
     title: "Save link to Read Later",
     contexts: ["link"],
   });
   chrome.contextMenus.create({
-    id: "kaizen-board-image",
+    id: "ec-board-image",
     title: "Save image to Board",
     contexts: ["image"],
   });
   chrome.contextMenus.create({
-    id: "kaizen-board-page",
+    id: "ec-board-page",
     title: "Save to Board",
     contexts: ["page", "link", "video", "audio"],
   });
@@ -258,38 +258,38 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!tab) return;
-  if (info.menuItemId === "kaizen-send-selection") {
+  if (info.menuItemId === "ec-send-selection") {
     await sendCapture({
       text: info.selectionText || tab.title || "read this",
       url: tab.url,
     });
-  } else if (info.menuItemId === "kaizen-send-page") {
+  } else if (info.menuItemId === "ec-send-page") {
     await sendCapture({
       text: tab.title || "read this",
       url: tab.url,
     });
-  } else if (info.menuItemId === "kaizen-read-later-page") {
+  } else if (info.menuItemId === "ec-read-later-page") {
     const [activeTab] = await chrome.tabs.query({
       active: true,
       currentWindow: true,
     });
     if (!activeTab) return;
     await saveReadLater({ tab: activeTab });
-  } else if (info.menuItemId === "kaizen-read-later-link") {
+  } else if (info.menuItemId === "ec-read-later-link") {
     await saveReadLater({ tab, linkUrl: info.linkUrl });
-  } else if (info.menuItemId === "kaizen-board-image") {
+  } else if (info.menuItemId === "ec-board-image") {
     await saveToBoard({
       imageUrl: info.srcUrl,
       url: info.linkUrl || info.pageUrl || tab.url,
     });
-  } else if (info.menuItemId === "kaizen-board-page") {
+  } else if (info.menuItemId === "ec-board-page") {
     await saveToBoard({ url: info.linkUrl || info.pageUrl || tab.url });
   }
 });
 
 // Popup messages it to send.
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg?.type === "kaizen.readLater") {
+  if (msg?.type === "ec.readLater") {
     chrome.tabs
       .query({ active: true, currentWindow: true })
       .then(([activeTab]) =>
@@ -300,7 +300,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       .then(sendResponse);
     return true; // keep channel open for async sendResponse
   }
-  if (msg?.type === "kaizen.board") {
+  if (msg?.type === "ec.board") {
     chrome.tabs
       .query({ active: true, currentWindow: true })
       .then(([activeTab]) =>
@@ -311,7 +311,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       .then(sendResponse);
     return true;
   }
-  if (msg?.type !== "kaizen.capture") return;
+  if (msg?.type !== "ec.capture") return;
   sendCapture(msg.payload).then(sendResponse);
   return true; // keep channel open for async sendResponse
 });

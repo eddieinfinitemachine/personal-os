@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ImagePlus, Loader2, Plus, Search, Send, X } from "lucide-react";
+import { ImagePlus, Loader2, Plus, Search, Send, Sparkles, Trash2, X } from "lucide-react";
+import { ContextMenuPopover, useContextMenu } from "@/components/context-menu";
 import { compressImage } from "@/lib/image-compress";
 import { haptic } from "@/lib/haptic";
 import { displayHost, type BoardKind } from "@/lib/board-embed";
@@ -62,6 +63,8 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
   const [pending, setPending] = useState<Pending[]>([]);
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const ctx = useContextMenu();
   const [composer, setComposer] = useState(false);
   const [help, setHelp] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -450,7 +453,15 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
                   "pending" in entry ? (
                     <PendingTile key={entry.pending.id} p={entry.pending} />
                   ) : (
-                    <Tile key={entry.item.id} item={entry.item} onOpen={() => setOpenId(entry.item.id)} />
+                    <Tile
+                      key={entry.item.id}
+                      item={entry.item}
+                      onOpen={() => setOpenId(entry.item.id)}
+                      onContextMenu={(e) => {
+                        setMenuId(entry.item.id);
+                        ctx.handlers.onContextMenu(e);
+                      }}
+                    />
                   ),
                 )}
               </div>
@@ -460,6 +471,29 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
       </div>
 
         </>
+      )}
+
+      {menuId && (
+        <ContextMenuPopover
+          pos={ctx.pos}
+          onClose={ctx.close}
+          items={[
+            {
+              label: "More like this",
+              icon: <Sparkles className="size-4" />,
+              onSelect: () => moreLikeThis(menuId),
+            },
+            { separator: true },
+            {
+              label: "Remove",
+              icon: <Trash2 className="size-4" />,
+              destructive: true,
+              onSelect: () => {
+                if (confirm("Remove from your board?")) remove(menuId);
+              },
+            },
+          ]}
+        />
       )}
 
       {openIndex >= 0 && (
@@ -500,7 +534,15 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
   );
 }
 
-function Tile({ item, onOpen }: { item: BoardCard; onOpen: () => void }) {
+function Tile({
+  item,
+  onOpen,
+  onContextMenu,
+}: {
+  item: BoardCard;
+  onOpen: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+}) {
   const [loaded, setLoaded] = useState(false);
   const [broken, setBroken] = useState(false);
   const host = item.siteName ?? displayHost(item.url);
@@ -510,6 +552,7 @@ function Tile({ item, onOpen }: { item: BoardCard; onOpen: () => void }) {
     return (
       <button
         onClick={onOpen}
+        onContextMenu={onContextMenu}
         className="group text-left rounded-xl bg-[var(--color-fill)] p-4 hover:bg-[var(--color-accent)] transition pressable"
       >
         {item.kind === "note" ? (
@@ -532,6 +575,7 @@ function Tile({ item, onOpen }: { item: BoardCard; onOpen: () => void }) {
   return (
     <button
       onClick={onOpen}
+      onContextMenu={onContextMenu}
       className="group relative block w-full overflow-hidden rounded-xl text-left pressable"
       style={{ backgroundColor: item.color ?? "var(--color-fill)", aspectRatio: ratio }}
     >
