@@ -181,3 +181,23 @@ describe("safeFetch", () => {
     });
   });
 });
+
+describe("connection-time address check", () => {
+  it("blocks private answers in the socket's own lookup", async () => {
+    const { publicOnlyLookup } = await import("@/lib/safe-fetch");
+    const err = await new Promise<NodeJS.ErrnoException | null>((resolve) =>
+      publicOnlyLookup("localhost", { all: true }, (e) => resolve(e)),
+    );
+    expect(err?.message).toMatch(/blocked host: localhost/);
+  });
+
+  it("stops a rebinding host whose first answer looked public", async () => {
+    // The pre-check is fooled (lookup says public), but the real connection
+    // resolves "localhost" again and must be refused.
+    const err = await safeFetch("http://localhost:3000/", { lookup: publicLookup, timeoutMs: 5_000 }).catch(
+      (e: Error) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect(String((err as Error & { cause?: Error }).cause?.message ?? (err as Error).message)).toMatch(/blocked host/);
+  });
+});

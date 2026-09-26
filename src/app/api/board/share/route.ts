@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { parseBoardInput } from "@/lib/board-input";
+import { InputError, parseBoardInput } from "@/lib/board-input";
 import { saveToBoard } from "@/lib/board-save";
-import { MAX_IMAGE_BYTES } from "@/lib/board";
+import { MAX_UPLOAD_BYTES } from "@/lib/board";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -15,13 +15,13 @@ export async function POST(request: Request) {
   const back = new URL("/board", request.url);
   if (!session) return NextResponse.redirect(new URL("/login?from=/board", request.url), 303);
   try {
-    const input = await parseBoardInput(request, MAX_IMAGE_BYTES);
+    const input = await parseBoardInput(request, MAX_UPLOAD_BYTES);
     input.via = "share";
     const { item } = await saveToBoard(session.userId, input);
     back.searchParams.set("saved", item.id);
   } catch (e) {
     console.error("[board] share target save failed", e);
-    back.searchParams.set("error", e instanceof Error ? e.message : "Couldn't save that.");
+    back.searchParams.set("error", e instanceof InputError ? e.message : "Couldn't save that.");
   }
   return NextResponse.redirect(back, 303);
 }

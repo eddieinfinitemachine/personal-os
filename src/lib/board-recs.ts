@@ -10,9 +10,16 @@ import { BOARD_KINDS, type BoardKind } from "@/lib/board-embed";
 
 export const MIN_ITEMS_FOR_RECS = 5;
 const RECS_PER_RUN = 12;
+const SEEDED_RECS = 8;
 const BOARD_SAMPLE = 150;
-// A run past this is treated as dead (function timed out mid-generation).
-const STALE_RUN_MS = 6 * 60 * 1000;
+// The Claude call gets a hard deadline inside the 300 s function limit; a run
+// still "generating" past STALE_RUN_MS died with its function and is reported
+// as failed (and can be reclaimed).
+const CLAUDE_DEADLINE_MS = 220_000;
+export const STALE_RUN_MS = 320_000;
+
+// Errors whose message is safe and useful to show the user as-is.
+export class RecsError extends Error {}
 
 export type BoardSample = {
   kind: string;
@@ -56,7 +63,12 @@ function line(i: BoardSample): string {
   return `- ${parts.join(" ")}`;
 }
 
-export function buildRecsPrompt(items: BoardSample[], fb: Feedback, count = RECS_PER_RUN): string {
+export function buildRecsPrompt(
+  items: BoardSample[],
+  fb: Feedback,
+  count = RECS_PER_RUN,
+  seed?: BoardSample,
+): string {
   const kinds = new Map<string, number>();
   for (const i of items) kinds.set(i.kind, (kinds.get(i.kind) ?? 0) + 1);
   const mix = [...kinds.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(", ");
@@ -67,9 +79,15 @@ export function buildRecsPrompt(items: BoardSample[], fb: Feedback, count = RECS
   if (fb.saved.length) sections.push(`Past picks they saved (more like these):\n${fb.saved.map((t) => `- ${t}`).join("\n")}`);
   if (fb.dismissed.length) sections.push(`Past picks they dismissed (less like these):\n${fb.dismissed.map((t) => `- ${t}`).join("\n")}`);
   if (fb.shown.length) sections.push(`Already shown to them, don't repeat:\n${fb.shown.map((t) => `- ${t}`).join("\n")}`);
-  sections.push(
-    `Find ${count} recommendations. Roughly follow the board's mix of kinds, but include at least one or two kinds they save less of. Notes are what they said about an item, so weight them heavily.`,
-  );
+  if (seed) {
+    sections.push(
+      `They asked for more like this one item:\n${line(seed)}\n\nFind ${count} recommendations close to what makes it appealing, read through the lens of the rest of the board. Mostly the same kind of thing; one or two can cross over (a song for a video, an object for an image). Each reason should connect back to this item.`,
+    );
+  } else {
+    sections.push(
+      `Find ${count} recommendations. Roughly follow the board's mix of kinds, but include at least one or two kinds they save less of. Notes are what they said about an item, so weight them heavily.`,
+    );
+  }
   return sections.join("\n\n");
 }
 
@@ -91,11 +109,18 @@ function httpUrl(v: unknown): string | null {
 // Collect the final answer's text (citations split it across blocks), then
 // take the outermost JSON object.
 export function parseRecsReply(content: ClaudeResponseBlock[]): { taste: string | null; recs: RawRec[] } {
+  // Only the answer after the last search counts; earlier text is narration.
+  let from = 0;
+  content.forEach((b, i) => {
+    if (b.type === "web_search_tool_result") from = i + 1;
+  });
   const text = content
+    .slice(from)
     .filter((b) => b.type === "text" && typeof b.text === "string")
     .map((b) => b.text as string)
     .join("");
-  const start = text.lastIndexOf('{"taste"') >= 0 ? text.lastIndexOf('{"taste"') : text.indexOf("{");
+  const starts = [...text.matchAll(/\{\s*"taste"/g)];
+  const start = starts.length ? starts[starts.length - 1].index! : text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start < 0 || end <= start) throw new Error("no JSON in reply");
   const data = JSON.parse(text.slice(start, end + 1)) as { taste?: unknown; recs?: unknown };
@@ -152,10 +177,14 @@ export async function startRecsRun(userId: string): Promise<boolean> {
   return claimed.count === 1;
 }
 
-/** Generate a batch. Call after startRecsRun claimed the run. */
-export async function generateRecs(userId: string): Promise<number> {
+/**
+ * Generate a batch. Call after startRecsRun claimed the run. With `seedItemId`
+ * ("More like this") the batch centers on one board item and is added on top
+ * of the current picks instead of replacing them.
+ */
+export async function generateRecs(userId: string, opts: { seedItemId?: string } = {}): Promise<number> {
   try {
-    const [items, saved, dismissed, shown] = await Promise.all([
+    const [items, saved, dismissed, shown, seed] = await Promise.all([
       prisma.boardItem.findMany({
         where: { userId },
         orderBy: { savedAt: "desc" },
@@ -165,24 +194,36 @@ export async function generateRecs(userId: string): Promise<number> {
       prisma.boardRec.findMany({ where: { userId, status: "saved" }, orderBy: { createdAt: "desc" }, take: 40 }),
       prisma.boardRec.findMany({ where: { userId, status: "dismissed" }, orderBy: { createdAt: "desc" }, take: 60 }),
       prisma.boardRec.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 150, select: { title: true } }),
+      opts.seedItemId
+        ? prisma.boardItem.findFirst({
+            where: { id: opts.seedItemId, userId },
+            select: { kind: true, title: true, siteName: true, note: true, price: true, url: true },
+          })
+        : null,
     ]);
+    if (opts.seedItemId && !seed) throw new RecsError("That item is no longer on your board.");
     if (items.length < MIN_ITEMS_FOR_RECS) {
-      throw new Error(`Save at least ${MIN_ITEMS_FOR_RECS} things to your board first.`);
+      throw new RecsError(`Save at least ${MIN_ITEMS_FOR_RECS} things to your board first.`);
     }
     const label = (r: { title: string; creator: string | null }) => (r.creator ? `${r.title} by ${r.creator}` : r.title);
-    const { content } = await callClaudeWithServerTools({
+    const { content, stopReason } = await callClaudeWithServerTools({
       system: SYSTEM,
       user: buildRecsPrompt(items, {
         saved: saved.map(label),
         dismissed: dismissed.map(label),
         shown: shown.map((r) => r.title),
-      }),
+      }, seed ? SEEDED_RECS : RECS_PER_RUN, seed ?? undefined),
       tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 10 }],
       maxTokens: 16000,
       effort: "medium",
+      timeoutMs: CLAUDE_DEADLINE_MS,
     });
+    if (stopReason === "refusal") throw new RecsError("Claude declined this batch. Try again.");
+    if (stopReason === "max_tokens" || stopReason === "pause_turn") {
+      throw new RecsError("That batch ran long and got cut off. Try again.");
+    }
     const { taste, recs } = parseRecsReply(content);
-    if (!recs.length) throw new Error("No recommendations came back. Try again.");
+    if (!recs.length) throw new RecsError("No recommendations came back. Try again.");
 
     const boardUrls = new Set(items.map((i) => i.url).filter(Boolean));
     const fresh = recs.filter((r) => !r.url || !boardUrls.has(r.url));
@@ -212,12 +253,13 @@ export async function generateRecs(userId: string): Promise<number> {
     );
 
     await prisma.$transaction([
-      // Unanswered picks from the last run make way for the new batch.
-      prisma.boardRec.deleteMany({ where: { userId, status: "new" } }),
+      // A full run replaces unanswered picks; "More like this" adds to them.
+      ...(seed ? [] : [prisma.boardRec.deleteMany({ where: { userId, status: "new" } })]),
       prisma.boardRec.createMany({ data: enriched }),
       prisma.boardTaste.update({
         where: { userId },
-        data: { status: "idle", error: null, generatedAt: new Date(), ...(taste ? { profile: taste } : {}) },
+        // A seeded run's profile is skewed toward one item, so keep the old one.
+        data: { status: "idle", error: null, generatedAt: new Date(), ...(taste && !seed ? { profile: taste } : {}) },
       }),
     ]);
     return enriched.length;
@@ -226,7 +268,15 @@ export async function generateRecs(userId: string): Promise<number> {
     console.error("[board-recs] generation failed", { userId, message });
     await prisma.boardTaste.update({
       where: { userId },
-      data: { status: "error", error: message.startsWith("Claude error") ? "Couldn't reach Claude. Try again." : message },
+      data: {
+        status: "error",
+        error:
+          e instanceof RecsError
+            ? message
+            : e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")
+              ? "That took too long. Try again."
+              : "Couldn't get picks right now. Try again.",
+      },
     });
     return 0;
   }

@@ -26,15 +26,17 @@ export async function POST(request: Request, { params }: Ctx) {
   if (action !== "save") return NextResponse.json({ error: "unknown action" }, { status: 400 });
 
   try {
-    // Search-page fallbacks aren't the thing itself; save those as a note.
-    const isSearch = rec.url ? /\/(results|search)\b|[?&](q|search_query)=/.test(rec.url) : true;
+    // A pick whose link fell back to a search page isn't worth fetching;
+    // save it as a card that carries the name and opens that search.
+    const isSearch = !rec.url || /\/(results|search)\b|[?&](q|search_query)=/.test(rec.url);
     const title = rec.creator ? `${rec.title} · ${rec.creator}` : rec.title;
-    const { item } = await saveToBoard(
-      userId,
-      isSearch
-        ? { note: `${title}\n${rec.url ?? ""}`.trim(), via: "rec" }
-        : { url: rec.url!, title: rec.title, via: "rec" },
-    );
+    const { item } = isSearch
+      ? {
+          item: await prisma.boardItem.create({
+            data: { userId, kind: rec.kind, title, url: rec.url, price: rec.price, via: "rec" },
+          }),
+        }
+      : await saveToBoard(userId, { url: rec.url!, title: rec.title, via: "rec" });
     await prisma.boardRec.update({ where: { id }, data: { status: "saved", boardItemId: item.id } });
     return NextResponse.json({ ok: true, item });
   } catch (e) {

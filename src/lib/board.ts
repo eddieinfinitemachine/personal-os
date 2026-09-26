@@ -10,7 +10,10 @@ import { sniffImage } from "@/lib/board-sniff";
 // Server side of the mood board: turn a shared URL into a card (title, image,
 // kind, price) and re-host its image so the board survives expiring CDN links.
 
-export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 20 * 1024 * 1024; // images we fetch ourselves
+// Uploads: Vercel rejects function request bodies over 4.5 MB before the
+// route runs, so anything larger never reaches us anyway.
+export const MAX_UPLOAD_BYTES = Math.floor(4.4 * 1024 * 1024);
 const MAX_EDGE = 1600;
 
 export type PageMeta = {
@@ -304,11 +307,16 @@ export async function storeBoardImage(userId: string, raw: Buffer): Promise<Stor
   return { imageUrl, imageWidth: width, imageHeight: height, color };
 }
 
-export async function deleteBoardImage(imageUrl: string | null): Promise<void> {
+// Only deletes images this user's saves re-hosted. An item can also carry a
+// remote imageUrl (when re-hosting failed), which may point at a Blob file
+// that isn't theirs.
+export async function deleteBoardImage(userId: string, imageUrl: string | null): Promise<void> {
   if (!imageUrl) return;
   try {
-    if (imageUrl.startsWith("/uploads/")) await deleteFile(imageUrl);
-    else if (/\.blob\.vercel-storage\.com\//.test(imageUrl)) await del(imageUrl);
+    if (imageUrl.startsWith(`/uploads/board/${userId}/`)) await deleteFile(imageUrl);
+    else if (/^https:\/\/[^/]+\.blob\.vercel-storage\.com\//.test(imageUrl) && new URL(imageUrl).pathname.startsWith(`/users/${userId}/board/`)) {
+      await del(imageUrl);
+    }
   } catch (e) {
     console.error("[board] blob delete failed (orphaned)", imageUrl, e);
   }

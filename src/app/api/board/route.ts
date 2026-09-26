@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth";
 import { resolveCaptureUser } from "@/lib/capture-auth";
 import { InputError, parseBoardInput } from "@/lib/board-input";
 import { saveToBoard } from "@/lib/board-save";
-import { MAX_IMAGE_BYTES } from "@/lib/board";
+import { MAX_UPLOAD_BYTES } from "@/lib/board";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   try {
-    const input = await parseBoardInput(request, MAX_IMAGE_BYTES);
+    const input = await parseBoardInput(request, MAX_UPLOAD_BYTES);
     if (!session && input.via === "app") input.via = "shortcut";
     const { item, duplicate } = await saveToBoard(userId, input);
     const label = item.title ?? item.siteName ?? item.kind;

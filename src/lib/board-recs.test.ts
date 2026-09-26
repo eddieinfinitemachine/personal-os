@@ -21,6 +21,13 @@ describe("buildRecsPrompt", () => {
     expect(prompt).toContain("don't repeat:\n- Old pick");
     expect(prompt).toContain("Find 8 recommendations");
   });
+  it("centers a seeded run on one item", () => {
+    const seed = { kind: "video", title: "Koyaanisqatsi trailer", siteName: "YouTube", note: "the score", price: null, url: null };
+    const prompt = buildRecsPrompt([seed], { saved: [], dismissed: [], shown: [] }, 8, seed);
+    expect(prompt).toContain('more like this one item:\n- [video] Koyaanisqatsi trailer (YouTube) note: "the score"');
+    expect(prompt).toContain("Find 8 recommendations close to");
+    expect(prompt).not.toContain("board's mix of kinds");
+  });
   it("omits empty feedback sections", () => {
     const prompt = buildRecsPrompt([{ kind: "link", title: "A", siteName: null, note: null, price: null, url: null }], {
       saved: [],
@@ -57,6 +64,19 @@ describe("parseRecsReply", () => {
       { kind: "music", title: "Ethiopiques Vol. 4", creator: "Mulatu Astatke", reason: "Like Blue Train.", url: "https://open.spotify.com/album/abc" },
       { kind: "link", title: "Kinda odd", creator: null, reason: "Kind coerced.", url: null },
     ]);
+  });
+  it("ignores narration before the last search and handles pretty-printed JSON", () => {
+    const out = parseRecsReply([
+      { type: "text", text: 'Let me search. Example shape: {"taste": "draft", "recs": []}' },
+      { type: "server_tool_use", name: "web_search" },
+      { type: "web_search_tool_result", content: [] },
+      {
+        type: "text",
+        text: '{\n  "taste": "final",\n  "recs": [{"kind": "music", "title": "A", "reason": "B", "url": "https://x.test/a"}]\n}',
+      },
+    ]);
+    expect(out.taste).toBe("final");
+    expect(out.recs.map((r) => r.title)).toEqual(["A"]);
   });
   it("throws when there's no JSON", () => {
     expect(() => parseRecsReply([{ type: "text", text: "Sorry, no luck." }])).toThrow(/no JSON/);

@@ -32,6 +32,6 @@ export async function DELETE(request: Request, { params }: Ctx) {
   const item = await prisma.boardItem.findFirst({ where: { id, userId } });
   if (!item) return NextResponse.json({ error: "not found" }, { status: 404 });
   await prisma.boardItem.delete({ where: { id } });
-  await deleteBoardImage(item.imageUrl);
+  await deleteBoardImage(userId, item.imageUrl);
   return NextResponse.json({ ok: true });
 }

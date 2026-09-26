@@ -851,3 +851,13 @@ Eddie: "send anything I come across that I like (video, song, product) ... a moo
   - Weekly cron `/api/cron/board-recs` (Sat 15:00 UTC): up to 4 users with ≥5 items and picks older than 6 days, then a push "N new picks for you" deep-linking to `/board?view=for-you`
   - Verified: 135 unit tests (prompt, reply parsing incl. citation-split text, pause_turn resume, API errors), typecheck, prod build; scratch-DB run of the real pipeline with only the Anthropic call faked (YouTube/Spotify art resolved, dead link → search, on-board item filtered); route flow start/poll/error/cron/auth; browser screenshots desktop light + mobile dark, save + dismiss
   - NOT verified: a live Claude call (no API key in the build env). First real run on prod is the test
+- [x] Shipped 2026-09-26: PR #4 merged (main 1d1bd31); prod deploy confirmed (manifest share_target live, board routes gated, bearer save 401 without token, spoofed x-user-id 401). Waiting on Eddie: prod `pnpm db:push`
+- [x] Follow-up PR: "More like this" (lightbox → 8 picks centered on one item, added on top of current picks, taste profile untouched) + fixes from an independent review:
+  - recs can't get stuck "generating": 220 s deadline on the Claude turn, GET reports runs older than 320 s as failed, errors shown are friendly (internal messages hidden)
+  - weekly cron fans out one request per user (each its own 300 s function)
+  - reply parsing: only text after the last search, pretty-printed JSON, refusal / max_tokens handled
+  - board grid re-observes width after For you → Board (was stuck at 2 columns); dragging a tile no longer saves a copy; focus + visibility refresh deduped; failed delete restores without dropping new saves; paste/drop on For you jumps to Board
+  - uploads capped at 4.4 MB (Vercel body limit) with a client-side message; delete only removes blobs under the user's own `users/<id>/board/`
+  - share target redirect only carries user-facing error text
+  - search-fallback picks save as a clean card (name + search link), not a note with a raw URL
+  - safeFetch: DNS-rebinding fix, addresses re-checked in the socket's own lookup (undici Agent); verified a rebinding host is refused against a live localhost port. Also covers Read Later / Kindle fetches
