@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Kaizen Capture",
-  "version": "0.2.0",
-  "description": "Send the current tab to your Kaizen smart-capture inbox or Read Later, with optional Kindle delivery. Auto-classifies as bookmark / todo / person / place / etc.",
+  "version": "0.3.0",
+  "description": "Send the current tab to your Kaizen smart-capture inbox, Read Later (with optional Kindle delivery), or your mood Board. Right-click any image to save it to the Board.",
   "permissions": ["activeTab", "storage", "contextMenus", "notifications", "scripting"],
   "host_permissions": [
     "https://internal.eddiecohen.com/*",
@@ -42,6 +42,13 @@
         "mac": "Command+Shift+U"
       },
       "description": "Save this page to Read Later (sends to Kindle if enabled)"
+    },
+    "save-to-board": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "Save this page to your Board"
     }
   },
   "icons": {

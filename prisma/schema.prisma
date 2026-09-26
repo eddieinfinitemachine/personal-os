@@ -932,6 +932,7 @@ model User {
   // auto-generated back-references
   pushSubscriptions            PushSubscription[]
   readerItems                  ReaderItem[]
+  boardItems                   BoardItem[]
   highlights                   Highlight[]
   trips                        Trip[]
   tripItems                    TripItem[]
@@ -1064,6 +1065,30 @@ model ReaderItem {
   highlights  Highlight[]
 
   @@index([userId, archivedAt, savedAt])
+}
+
+// Mood board: anything you liked (image, video, song, product, link, note),
+// sent from the share sheet, the Chrome extension, or pasted in the app.
+// Remote images are re-hosted to Blob so the board never rots when a CDN
+// link expires; width/height/color let the grid lay out before images load.
+model BoardItem {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind        String // "image" | "video" | "music" | "product" | "link" | "note"
+  url         String? // source page
+  title       String?
+  note        String? // shared text or your own words
+  siteName    String?
+  imageUrl    String?
+  imageWidth  Int?
+  imageHeight Int?
+  color       String? // dominant color, "#rrggbb", placeholder while loading
+  price       String? // products: "$129.00"
+  via         String   @default("app") // "app" | "shortcut" | "extension" | "share"
+  savedAt     DateTime @default(now())
+
+  @@index([userId, savedAt])
 }
 
 model Highlight {

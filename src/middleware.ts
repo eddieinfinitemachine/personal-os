@@ -36,6 +36,9 @@ export async function middleware(req: NextRequest) {
   // Forward pathname so server components can branch.
   const fwd = new Headers(req.headers);
   fwd.set("x-pathname", pathname);
+  // x-user-id is only ever set below from a verified session. Drop any
+  // client-supplied copy so bearer passthrough routes can't be spoofed.
+  fwd.delete("x-user-id");
 
   const passthrough = (extra?: Record<string, string>) => {
     if (extra) for (const [k, v] of Object.entries(extra)) fwd.set(k, v);
@@ -66,7 +69,10 @@ export async function middleware(req: NextRequest) {
     // defaults to GET, so a GET carrying ?url= is a save too; a bare GET
     // (the in-app list) stays behind the session.
     (pathname === "/api/reader" &&
-      (req.method === "POST" || req.nextUrl.searchParams.has("url")))
+      (req.method === "POST" || req.nextUrl.searchParams.has("url"))) ||
+    // Mood board save: share-sheet Shortcut / extension (bearer) or the app
+    // (cookie); the route resolves either itself.
+    (pathname === "/api/board" && req.method === "POST")
   ) {
     return passthrough();
   }

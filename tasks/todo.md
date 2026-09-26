@@ -831,3 +831,15 @@ recommend a workout. timer, reps, visualizations of the exercises, etc." Built i
 - Not verified in a browser: the SMIL figure (headless screenshots wedged agent-browser; covered by an SSR markup test instead — same geometry as the rAF version that was screenshotted) and the plan-review page after a real upload (API verified by curl; component shares rows with the player)
 - [x] Shipped 2026-09-20: main 9803d52 + 57017d1 (reduced-motion) live on internal.eddiecohen.com — /workout 200, prod plan call with the kettlebell photo 200 in 22 s (3 warm-up, 4-exercise circuit, 3 cool-down)
 - Follow-ups: real iPhone pass (wake lock, camera capture, haptics); persist plans/sessions server-side if history should sync across devices (schema change → flag first)
+
+## Board: mood board of things you like (2026-09-26)
+Eddie: "send anything I come across that I like (video, song, product) ... a mood board page like cosmos". Easy sending first; recommendations later.
+- [x] `BoardItem` model (additive; needs prod `pnpm db:push` before merge)
+- [x] `POST /api/board`: session or capture token; forgiving input (JSON / form / multipart / raw image / text / query); byte-sniffs images; HEIC via heic-convert
+- [x] Link resolution: oEmbed (YouTube, Vimeo, Spotify, SoundCloud, TikTok) then og/JSON-LD (title, image, price); kind = image/video/music/product/link/note; images re-hosted to Blob as WebP with size + dominant color; re-sharing a URL bumps it to the top
+- [x] `/board`: masonry grid, filter chips, search, paste anywhere, drag and drop, lightbox with inline YouTube/Vimeo/Spotify/Apple Music player, notes, delete; refreshes on focus
+- [x] Sending: iOS Shortcut (3 actions, steps in "Ways to send"), Chrome extension v0.3.0 (image/page context menus, ⌘⇧Y, popup button), PWA share_target (Android/desktop)
+- [x] Middleware: drop client-supplied `x-user-id` (bearer passthrough routes could be spoofed)
+- [x] Verified locally: 128 unit tests, typecheck, prod build, scratch-DB e2e (YouTube, Spotify, Vimeo, product w/ price, direct image, HEIC, notes, dedupe, share target, PATCH/DELETE, auth), browser screenshots light/dark/mobile
+- [ ] Eddie: prod db push; build the Shortcut; reload the extension
+- [ ] Later: taste profile + recommendations from the board

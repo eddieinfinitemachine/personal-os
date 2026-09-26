@@ -5,6 +5,7 @@ const $note = document.getElementById("note");
 const $send = document.getElementById("send");
 const $cancel = document.getElementById("cancel");
 const $readLater = document.getElementById("readLater");
+const $board = document.getElementById("board");
 const $status = document.getElementById("status");
 const $settings = document.getElementById("settings");
 
@@ -90,7 +91,32 @@ async function readLater() {
   }
 }
 
+async function board() {
+  if (!activeTab) {
+    setStatus("No active tab.", "error");
+    return;
+  }
+  for (const b of [$send, $cancel, $readLater, $board]) b.disabled = true;
+  setStatus("Saving…");
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: "kaizen.board",
+      note: $note.value,
+    });
+    if (res?.ok) {
+      setStatus(res.message || "Saved to Board", "ok");
+      setTimeout(() => window.close(), 900);
+      return;
+    }
+    setStatus(res?.error || "Failed", "error");
+  } catch (e) {
+    setStatus(e?.message || "Failed", "error");
+  }
+  for (const b of [$send, $cancel, $readLater, $board]) b.disabled = false;
+}
+
 $send.addEventListener("click", send);
+$board.addEventListener("click", board);
 $cancel.addEventListener("click", () => window.close());
 $readLater.addEventListener("click", readLater);
 $settings.addEventListener("click", (e) => {

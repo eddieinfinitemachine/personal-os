@@ -7,6 +7,7 @@ import {
   BookOpen,
   Car,
   Dumbbell,
+  LayoutGrid,
   Lightbulb,
   MapPin,
   Package,
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 
 export type TemplateSlug =
+  | "board"
   | "reader"
   | "highlights"
   | "personal"
@@ -43,6 +45,13 @@ export type SidebarTemplate = {
 };
 
 export const TEMPLATES: SidebarTemplate[] = [
+  {
+    slug: "board",
+    href: "/board",
+    label: "Board",
+    description: "A mood board of everything you liked: images, videos, songs, products. Send from the share sheet.",
+    Icon: LayoutGrid,
+  },
   {
     slug: "reader",
     href: "/reader",
