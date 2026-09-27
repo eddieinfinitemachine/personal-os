@@ -22,10 +22,18 @@ import {
 // fileDatingNote asks Claude for a proposal (no writes), applyDatingProposal
 // writes one. The Granola capture route runs both back to back.
 
-export type NoteSource = "dictation" | "granola";
+export type NoteSource = "dictation" | "granola" | "journal";
 
 // Notes longer than this are cut before prompting (a long meeting transcript).
 export const NOTE_BUDGET = 40_000;
+
+// Extra instructions when the "note" is a person's own journal (their notes
+// field, written over months or years), filed by organizePersonNotes.
+const JOURNAL_RULES = `This is my journal about her, written over time, not a note from today. Organize it:
+- events: every date, milestone, call or conflict it describes, each on the exact date written in the text (e.g. 2025-01-31). Ignore the calendar of recent days above for these; never put a past event on today. Leave out any moment whose date the text doesn't give or clearly imply.
+- remember, greenFlags, redFlags, lessons: pull them out of the text in short phrases.
+- note: leave empty (the journal stays where it is). summary: empty.
+- stage: set it only when the journal clearly says where it stands now (e.g. "Status: ended").`;
 
 const SYSTEM = `You file one person's notes about their dating life. The note is free text: dictated, or from a meeting app, so expect transcription errors, filler and unrelated material.
 Work out which romantic interests or dates it talks about and what it says about each. Ignore colleagues, friends, family and business meetings unless they are one of the people listed as someone being dated.
@@ -66,6 +74,10 @@ export async function loadKnownPeople(userId: string): Promise<KnownWithEvents[]
   return prisma.datingPerson.findMany({ where: { userId }, select: knownSelect, orderBy: { createdAt: "asc" } });
 }
 
+export async function loadKnownPerson(userId: string, id: string): Promise<KnownWithEvents | null> {
+  return prisma.datingPerson.findFirst({ where: { id, userId }, select: knownSelect });
+}
+
 /**
  * Ask Claude what the note means for each person. Returns the validated
  * proposal and the note's day (YYYY-MM-DD). `personId` (already checked to be
@@ -104,9 +116,11 @@ export async function fileDatingNote(opts: {
         .join("\n")
     : "(nobody yet)";
 
+  const journal = opts.source === "journal";
   const user = [
     dateContext(day),
     opts.source === "granola" && `From a Granola meeting${opts.sourceLabel ? `: "${opts.sourceLabel}"` : ""}.`,
+    journal && JOURNAL_RULES,
     forced &&
       `This note is about ${forced.name} (id ${forced.id}). Attribute everything to her: return exactly one entry with that personId.`,
     `People I'm dating or have dated:\n${roster}`,
@@ -115,8 +129,8 @@ export async function fileDatingNote(opts: {
     .filter(Boolean)
     .join("\n\n");
 
-  const raw = await callClaudeJSON<unknown>({ system: SYSTEM, user, maxTokens: 4000 });
-  return { proposal: parseProposal(raw, { people, noteDay: day, personId: forced?.id }), day };
+  const raw = await callClaudeJSON<unknown>({ system: SYSTEM, user, maxTokens: journal ? 8000 : 4000 });
+  return { proposal: parseProposal(raw, { people, noteDay: day, personId: forced?.id, journal }), day };
 }
 
 export type AppliedPerson = { personId: string; name: string; created: boolean; eventIds: string[] };
@@ -136,6 +150,8 @@ export async function applyProposedPerson(
     sourceUrl?: string | null;
     /** Built from the person id once it is known (new people get one on create). */
     externalId?: (personId: string) => string;
+    /** Day to stamp endedAt with when the stage becomes "ended" (default: `day`). */
+    endedDay?: string;
   },
 ): Promise<AppliedPerson | null> {
   try {
@@ -215,7 +231,7 @@ export async function applyProposedPerson(
       }
       if (!created && item.stage && item.stage !== person.stage) {
         data.stage = item.stage;
-        if (item.stage === "ended") data.endedAt = noonUTC(opts.day);
+        if (item.stage === "ended") data.endedAt = noonUTC(opts.endedDay ?? opts.day);
       }
       if (Object.keys(data).length) await tx.datingPerson.update({ where: { id: person.id }, data });
 

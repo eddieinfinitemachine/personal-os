@@ -1,8 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
-import { Download, Loader2, RefreshCw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Download, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Batch = {
@@ -161,6 +161,122 @@ export function GranolaSync() {
           {text}
         </p>
       )}
+      <OrganizeAll />
     </section>
+  );
+}
+
+/** The browser's local YYYY-MM-DD. */
+function localDay(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+type OrganizeBatch = {
+  done: number;
+  remaining: number;
+  failed: string[];
+  results: { personId: string; name: string; status: string; summary: string }[];
+};
+
+/**
+ * "Organize everyone's notes with Claude": files each person's notes field
+ * into dated events, flags and lessons, a few people per request, looping
+ * until none are left. Hidden when nobody has unorganized notes.
+ */
+function OrganizeAll() {
+  const router = useRouter();
+  const [left, setLeft] = useState<number | null>(null);
+  const [running, setRunning] = useState(false);
+  const [line, setLine] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const stop = useRef(false);
+
+  useEffect(() => {
+    let live = true;
+    fetch("/api/dating/organize-all")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => live && d && setLeft(d.remaining))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const run = async () => {
+    setRunning(true);
+    setError(null);
+    stop.current = false;
+    const skip: string[] = [];
+    let organized = 0;
+    const total = left ?? 0;
+    setLine(`Organizing… 0 of ${total}`);
+    try {
+      for (let i = 0; i < 100 && !stop.current; i++) {
+        const res = await fetch("/api/dating/organize-all", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ skip, today: localDay() }),
+        });
+        const data = (await res.json().catch(() => ({}))) as Partial<OrganizeBatch> & { error?: string };
+        if (!res.ok) throw new Error(data.error ?? `Organize failed (${res.status})`);
+        const b = data as OrganizeBatch;
+        organized += b.done;
+        skip.push(...b.failed);
+        setLeft(b.remaining);
+        const last = b.results.filter((r) => r.status === "done").at(-1);
+        setLine(
+          [
+            `${organized} of ${total} organized`,
+            skip.length ? `${skip.length} failed` : null,
+            last ? `${last.name}: ${last.summary}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        );
+        if (b.remaining <= 0 || !b.results.length) break;
+      }
+      if (!stop.current) setLine((l) => `${l ?? ""} · done`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Organize failed");
+    } finally {
+      setRunning(false);
+      router.refresh();
+    }
+  };
+
+  if (!left && !line) return null;
+  return (
+    <div className="mt-3 border-t border-[var(--color-separator)] pt-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <p className="min-w-0 flex-1 basis-48 text-xs text-[var(--color-muted-foreground)]">
+          Turn everyone&apos;s notes into dates, flags and lessons.
+        </p>
+        <div className="flex flex-wrap items-center gap-1">
+          {!!left && (
+            <button onClick={run} disabled={running} className={ghost}>
+              {running ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+              Organize everyone&apos;s notes with Claude ({left} left)
+            </button>
+          )}
+          {running && (
+            <button onClick={() => (stop.current = true)} className={ghost}>
+              Stop
+            </button>
+          )}
+        </div>
+      </div>
+      {(line || error) && (
+        <p
+          role="status"
+          className={cn(
+            "mt-2 text-xs tabular-nums",
+            error ? "text-[var(--color-destructive)]" : "text-[var(--color-muted-foreground)]",
+          )}
+        >
+          {error ? [line, error].filter(Boolean).join(" · ") : line}
+        </p>
+      )}
+    </div>
   );
 }

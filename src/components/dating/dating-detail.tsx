@@ -2,19 +2,23 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useRef, useState } from "react";
-import { ChevronLeft, Instagram, Loader2, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronLeft, Instagram, Loader2, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   EVENT_KINDS,
   STAGES,
   daysSince,
+  fmtDuration,
   instagramUrl,
+  journalExternalId,
+  keyDates,
   normalizeInstagram,
   splitSourceLine,
   threadStats,
   type EventKind,
 } from "@/lib/dating";
+import { initials } from "@/lib/initials";
 import type { DatingEventDTO, DatingMessageDTO, DatingPersonDTO } from "@/lib/dating-server";
 import type { DatingPhotoDTO } from "@/lib/dating-photos";
 import { DictateCard } from "./dictate-card";
@@ -23,8 +27,8 @@ import { PhotoStrip } from "./photo-strip";
 import { RelationshipChart } from "./relationship-chart";
 import { SyncHelp } from "./sync-help";
 
-type Tab = "overview" | "timeline" | "messages" | "notes";
 type Meta = { sentAt: string; fromMe: boolean };
+type Patch = (fields: Partial<Record<keyof DatingPersonDTO, unknown>>) => Promise<void>;
 
 const input =
   "w-full rounded-md bg-[var(--color-fill-secondary)] px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-[var(--color-ring)]";
@@ -32,14 +36,20 @@ const card = "rounded-xl border border-[var(--color-card-border)] bg-[var(--colo
 const btn =
   "pressable inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium bg-[var(--color-foreground)] text-[var(--color-background)] disabled:opacity-50";
 const ghost =
-  "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]";
+  "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] disabled:opacity-50";
 
 const dateInput = (iso: string | null) => (iso ? iso.slice(0, 10) : "");
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 const fmtMin = (m: number | null) =>
   m === null ? "n/a" : m < 60 ? `${Math.round(m)}m` : m < 1440 ? `${(m / 60).toFixed(1)}h` : `${(m / 1440).toFixed(1)}d`;
+const byDay = (a: DatingEventDTO, b: DatingEventDTO) => a.occurredAt.localeCompare(b.occurredAt);
 
+/**
+ * One scrolling page per person: header with key dates, dictation, Claude's
+ * read, lists, the chart, timeline, notes, details and (collapsed) messages.
+ * Sections have ids (#timeline, #notes, #details, #messages) for links.
+ */
 export function DatingDetail({
   initialPerson,
   initialEvents,
@@ -60,12 +70,12 @@ export function DatingDetail({
   const [events, setEvents] = useState(initialEvents);
   const [meta, setMeta] = useState(initialMeta);
   const [photos, setPhotos] = useState(initialPhotos);
-  const [tab, setTab] = useState<Tab>("overview");
   const [error, setError] = useState<string | null>(null);
+  const [organized, setOrganized] = useState<string | null>(null);
   const first = person.name.split(/\s+/)[0];
 
-  const patch = useCallback(
-    async (fields: Partial<Record<keyof DatingPersonDTO, unknown>>) => {
+  const patch: Patch = useCallback(
+    async (fields) => {
       setPerson((p) => ({ ...p, ...(fields as Partial<DatingPersonDTO>) }));
       const res = await fetch(`/api/dating/${person.id}`, {
         method: "PATCH",
@@ -83,155 +93,129 @@ export function DatingDetail({
   const stats = useMemo(() => threadStats(meta), [meta]);
   const since = daysSince(person.lastMessageAt);
   const vibes = events.filter((e) => e.vibe).map((e) => e.vibe!);
-  const dates = events.filter((e) => e.kind === "date").length;
+  const journalDone = events.some((e) => e.externalId === journalExternalId(person.id));
 
   return (
-    <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6 max-w-5xl">
-      <Link href="/dating" className={cn(ghost, "-ml-2.5 mb-2")}>
-        <ChevronLeft className="size-4" /> Dating
-      </Link>
-      <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-large-title font-bold">{person.name}</h1>
-          <p className="text-sm text-[var(--color-muted-foreground)] mt-0.5">
-            {[
-              person.metVia && `Met via ${person.metVia}`,
-              person.metAt && fmtDate(person.metAt),
-              since !== null && (since === 0 ? "Texted today" : `Last text ${since}d ago`),
-            ]
-              .filter(Boolean)
-              .join(" · ") || "Add how you met in Notes"}
-          </p>
-          {person.instagram && (
-            <a
-              href={instagramUrl(person.instagram)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1 inline-flex items-center gap-1 text-sm text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] hover:underline"
-            >
-              <Instagram className="size-3.5" />@{person.instagram}
-            </a>
-          )}
-        </div>
-        <select
-          value={person.stage}
-          onChange={(e) => patch({ stage: e.target.value })}
-          aria-label="Stage"
-          className="rounded-md border border-[var(--color-card-border)] bg-[var(--color-card)] px-2.5 py-1.5 text-sm capitalize"
-        >
-          {STAGES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-      </header>
+    <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6 max-w-4xl space-y-8">
+      <div>
+        <Link href="/dating" className={cn(ghost, "-ml-2.5 mb-2")}>
+          <ChevronLeft className="size-4" /> Dating
+        </Link>
+        <header className="flex items-center gap-4">
+          <Avatar name={person.name} photo={photos[0]?.url} />
+          <div className="min-w-0 flex-1">
+            <h1 className="text-large-title font-bold break-words">{person.name}</h1>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <select
+                value={person.stage}
+                onChange={(e) => patch({ stage: e.target.value })}
+                aria-label="Stage"
+                className="rounded-full border border-[var(--color-card-border)] bg-[var(--color-card)] px-3 py-1 text-sm capitalize"
+              >
+                {STAGES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              {person.instagram && (
+                <a
+                  href={instagramUrl(person.instagram)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-w-0 items-center gap-1 text-sm text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] hover:underline"
+                >
+                  <Instagram className="size-3.5 shrink-0" />
+                  <span className="truncate">@{person.instagram}</span>
+                </a>
+              )}
+            </div>
+          </div>
+        </header>
+        <KeyDateRow person={person} events={events} since={since} vibes={vibes} />
+      </div>
 
-      <nav className="mb-5 flex gap-1 overflow-x-auto border-b border-[var(--color-separator)]" role="tablist">
-        {(["overview", "timeline", "messages", "notes"] as Tab[]).map((t) => (
-          <button
-            key={t}
-            role="tab"
-            aria-selected={tab === t}
-            onClick={() => setTab(t)}
-            className={cn(
-              "-mb-px shrink-0 border-b-2 px-3 py-2 text-sm capitalize transition",
-              tab === t
-                ? "border-[var(--color-foreground)] font-medium"
-                : "border-transparent text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]",
-            )}
-          >
-            {t}
-            {t === "timeline" && events.length > 0 && <span className="ml-1 text-xs opacity-60">{events.length}</span>}
-            {t === "messages" && stats.total > 0 && <span className="ml-1 text-xs opacity-60">{stats.total}</span>}
-          </button>
-        ))}
-      </nav>
+      <PhotoStrip personId={person.id} firstName={first} photos={photos} setPhotos={setPhotos} setError={setError} />
 
-      {error && (
-        <div className="mb-4 rounded-md bg-[var(--color-fill)] px-3 py-2 text-sm text-[var(--color-destructive)]">{error}</div>
+      {!!person.notes?.trim() && !journalDone && (
+        <OrganizeNotes
+          personId={person.id}
+          setError={setError}
+          onDone={(r) => {
+            setPerson(r.person);
+            setEvents([...r.events].sort(byDay));
+            setOrganized(r.summary);
+          }}
+        />
+      )}
+      {organized && (
+        <p role="status" className="-mt-4 flex items-center gap-1.5 text-sm text-[var(--color-muted-foreground)]">
+          <Sparkles className="size-4 shrink-0" /> Organized your notes. {organized}.
+        </p>
       )}
 
-      {tab === "overview" && (
-        <div className="space-y-4">
-          <PhotoStrip personId={person.id} firstName={first} photos={photos} setPhotos={setPhotos} setError={setError} />
+      <DictateCard
+        personId={person.id}
+        firstName={first}
+        onSaved={({ people, events: added }) => {
+          const updated = people.find((p) => p.id === person.id);
+          if (updated) setPerson(updated);
+          setEvents((list) => [...list.filter((e) => !added.some((a) => a.id === e.id)), ...added].sort(byDay));
+        }}
+      />
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <Stat label="Messages" value={stats.total ? stats.total.toLocaleString() : "0"} sub={stats.total ? `${Math.round((stats.mine / stats.total) * 100)}% from you` : "Sync or paste them"} />
+      <Insights person={person} setPerson={setPerson} patch={patch} setError={setError} />
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <ListEditor
+          title="Remember"
+          items={person.remember}
+          placeholder="Sister is Maya, hates cilantro"
+          onChange={(remember) => patch({ remember })}
+        />
+        <ListEditor
+          title="Green flags"
+          tone="good"
+          items={person.greenFlags}
+          placeholder="Plans the next date"
+          onChange={(greenFlags) => patch({ greenFlags })}
+        />
+        <ListEditor
+          title="Red flags"
+          tone="bad"
+          items={person.redFlags}
+          placeholder="Cancels last minute"
+          onChange={(redFlags) => patch({ redFlags })}
+        />
+      </div>
+
+      <Section id="chart" title="How it's going">
+        {stats.total > 0 && (
+          <div className="grid grid-cols-3 gap-2">
+            <Stat label="Messages" value={stats.total.toLocaleString()} sub={`${Math.round((stats.mine / stats.total) * 100)}% from you`} />
             <Stat
               label="You start"
               value={stats.iInitiate === null ? "n/a" : `${Math.round(stats.iInitiate * 100)}%`}
               sub={`of ${stats.conversations} conversations`}
             />
             <Stat label="Median reply" value={`${fmtMin(stats.myReplyMin)} / ${fmtMin(stats.theirReplyMin)}`} sub={`you / ${first}`} />
-            <Stat
-              label="Dates"
-              value={String(dates)}
-              sub={vibes.length ? `avg vibe ${(vibes.reduce((a, b) => a + b, 0) / vibes.length).toFixed(1)}` : "none rated yet"}
-            />
           </div>
-
-          <DictateCard
-            personId={person.id}
-            firstName={first}
-            onSaved={({ people, events: added }) => {
-              const updated = people.find((p) => p.id === person.id);
-              if (updated) setPerson(updated);
-              setEvents((list) =>
-                [...list.filter((e) => !added.some((a) => a.id === e.id)), ...added].sort((a, b) =>
-                  a.occurredAt.localeCompare(b.occurredAt),
-                ),
-              );
-            }}
-          />
-
-          <section className={card}>
-            <RelationshipChart messages={meta} events={events} name={first} metAt={person.metAt} />
-          </section>
-
-          <Insights person={person} setPerson={setPerson} patch={patch} setError={setError} />
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <ListEditor
-              title="Remember"
-              items={person.remember}
-              placeholder="Sister is Maya, hates cilantro"
-              onChange={(remember) => patch({ remember })}
-            />
-            <ListEditor
-              title="Green flags"
-              tone="good"
-              items={person.greenFlags}
-              placeholder="Plans the next date"
-              onChange={(greenFlags) => patch({ greenFlags })}
-            />
-            <ListEditor
-              title="Red flags"
-              tone="bad"
-              items={person.redFlags}
-              placeholder="Cancels last minute"
-              onChange={(redFlags) => patch({ redFlags })}
-            />
-          </div>
+        )}
+        <div className={card}>
+          <RelationshipChart messages={meta} events={events} name={first} metAt={person.metAt} />
         </div>
-      )}
+      </Section>
 
-      {tab === "timeline" && <Timeline personId={person.id} events={events} setEvents={setEvents} setError={setError} />}
+      <Section id="timeline" title="Timeline" count={events.length}>
+        <Timeline personId={person.id} events={events} setEvents={setEvents} setError={setError} />
+      </Section>
 
-      {tab === "messages" && (
-        <Messages
-          person={person}
-          first={first}
-          initialMessages={initialMessages}
-          initialMore={initialMore}
-          onImported={() => router.refresh()}
-          setMeta={setMeta}
-          setError={setError}
-        />
-      )}
+      <Section id="notes" title="Notes">
+        <Notes person={person} patch={patch} />
+      </Section>
 
-      {tab === "notes" && (
-        <NotesTab
+      <Section id="details" title="Details">
+        <Details
           person={person}
           patch={patch}
           setError={setError}
@@ -242,18 +226,222 @@ export function DatingDetail({
             else setError("Could not delete");
           }}
         />
+      </Section>
+
+      <MessagesSection count={stats.total}>
+        <Messages
+          person={person}
+          first={first}
+          initialMessages={initialMessages}
+          initialMore={initialMore}
+          onImported={() => router.refresh()}
+          setMeta={setMeta}
+          setError={setError}
+        />
+      </MessagesSection>
+
+      {error && (
+        <div
+          role="alert"
+          className="fixed inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-40 mx-auto flex max-w-md items-start gap-2 rounded-xl border border-[var(--color-card-border)] bg-[var(--color-card)] px-3 py-2.5 text-sm text-[var(--color-destructive)] shadow-lg"
+        >
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} aria-label="Dismiss" className="rounded p-0.5 text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]">
+            <X className="size-4" />
+          </button>
+        </div>
       )}
     </div>
   );
 }
 
+function Avatar({ name, photo }: { name: string; photo?: string }) {
+  return (
+    <div className="size-16 shrink-0 overflow-hidden rounded-full bg-[var(--color-fill)] flex items-center justify-center text-xl font-semibold text-[var(--color-muted-foreground)]">
+      {photo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={photo} alt="" className="size-full object-cover" />
+      ) : (
+        initials(name) || "?"
+      )}
+    </div>
+  );
+}
+
+function KeyDateRow({
+  person,
+  events,
+  since,
+  vibes,
+}: {
+  person: DatingPersonDTO;
+  events: DatingEventDTO[];
+  since: number | null;
+  vibes: number[];
+}) {
+  const k = keyDates(person, events);
+  const short = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const sameYear = k.from && k.to && new Date(k.from).getFullYear() === new Date(k.to).getFullYear();
+  const lastAgo = k.lastDate ? daysSince(k.lastDate.occurredAt) : null;
+  const facts: { label: string; value: string; sub?: string | null }[] = [
+    {
+      label: "Met",
+      value: k.met ? fmtDate(k.met) : "Not set",
+      sub: person.metVia ? `via ${person.metVia}` : null,
+    },
+    {
+      label: k.ongoing ? "Since" : "Together",
+      value: !k.from ? "n/a" : k.ongoing ? fmtDate(k.from) : `${sameYear ? short(k.from) : fmtDate(k.from)} – ${fmtDate(k.to ?? k.from)}`,
+      sub: k.days !== null ? fmtDuration(k.days) : null,
+    },
+    {
+      label: "Last date",
+      value: k.lastDate ? fmtDate(k.lastDate.occurredAt) : "None yet",
+      sub: k.lastDate
+        ? [k.lastDate.vibe && `vibe ${k.lastDate.vibe}/10`, lastAgo !== null && (lastAgo === 0 ? "today" : `${lastAgo}d ago`)]
+            .filter(Boolean)
+            .join(" · ")
+        : null,
+    },
+    {
+      label: "Dates",
+      value: String(k.dates),
+      sub: [
+        vibes.length ? `avg vibe ${(vibes.reduce((a, b) => a + b, 0) / vibes.length).toFixed(1)}` : null,
+        since !== null && (since === 0 ? "texted today" : `last text ${since}d ago`),
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    },
+  ];
+  return (
+    <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+      {facts.map((f) => (
+        <div key={f.label} className="min-w-0">
+          <dt className="text-caption uppercase tracking-wide text-[var(--color-label-tertiary)]">{f.label}</dt>
+          <dd className="text-sm font-medium tabular-nums">{f.value}</dd>
+          {f.sub && <dd className="truncate text-xs text-[var(--color-muted-foreground)]">{f.sub}</dd>}
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function Section({
+  id,
+  title,
+  count,
+  children,
+}: {
+  id: string;
+  title: string;
+  count?: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-4 space-y-3">
+      <h2 id={`${id}-title`} className="text-headline font-semibold">
+        {title}
+        {!!count && <span className="ml-1.5 font-normal text-[var(--color-label-tertiary)]">{count}</span>}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+// Messages start collapsed (they're long); #messages in the URL opens them.
+function MessagesSection({ count, children }: { count: number; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  // Mounted on first open and kept, so collapsing doesn't lose a search or paste.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const sync = () => {
+      if (window.location.hash === "#messages") {
+        setOpen(true);
+        setMounted(true);
+      }
+    };
+    sync();
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
+  return (
+    <section id="messages" className="scroll-mt-4 space-y-3">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="messages-body"
+        onClick={() => {
+          setOpen((o) => !o);
+          setMounted(true);
+        }}
+        className="flex w-full items-center justify-between gap-2 rounded-xl border border-[var(--color-card-border)] bg-[var(--color-card)] px-4 py-3 text-left hover:bg-[var(--color-fill-secondary)] transition"
+      >
+        <span className="text-headline font-semibold">
+          Messages
+          {count > 0 && <span className="ml-1.5 font-normal text-[var(--color-label-tertiary)]">{count.toLocaleString()}</span>}
+        </span>
+        <ChevronDown className={cn("size-4 text-[var(--color-muted-foreground)] transition-transform", open && "rotate-180")} />
+      </button>
+      <div id="messages-body" hidden={!open}>
+        {mounted && children}
+      </div>
+    </section>
+  );
+}
+
 function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
-    <div className={cn(card, "p-3")}>
+    <div className={cn(card, "min-w-0 p-3")}>
       <div className="text-xs text-[var(--color-muted-foreground)]">{label}</div>
-      <div className="text-xl font-semibold tabular-nums mt-0.5">{value}</div>
+      <div className="text-lg sm:text-xl font-semibold tabular-nums mt-0.5 truncate">{value}</div>
       <div className="text-xs text-[var(--color-label-tertiary)] mt-0.5 truncate">{sub}</div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+type Organized = { summary: string; person: DatingPersonDTO; events: DatingEventDTO[] };
+
+function OrganizeNotes({
+  personId,
+  onDone,
+  setError,
+}: {
+  personId: string;
+  onDone: (r: Organized) => void;
+  setError: (e: string | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const res = await fetch(`/api/dating/${personId}/organize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ today }),
+    }).catch(() => null);
+    const data = await res?.json().catch(() => ({}));
+    setBusy(false);
+    if (!res?.ok) return setError(data?.error ?? "Could not organize the notes");
+    setError(null);
+    onDone({ summary: data.result.summary, person: data.person, events: data.events });
+  };
+  return (
+    <section className={cn(card, "flex flex-wrap items-center gap-3")}>
+      <div className="min-w-0 flex-1 basis-56">
+        <div className="text-sm font-semibold">Organize notes with Claude</div>
+        <p className="text-xs text-[var(--color-muted-foreground)]">
+          Turns your notes into dates on the timeline, flags, things to remember and lessons. The notes stay as they are.
+        </p>
+      </div>
+      <button onClick={run} disabled={busy} className={btn}>
+        {busy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+        {busy ? "Organizing…" : "Organize"}
+      </button>
+    </section>
   );
 }
 
@@ -267,10 +455,11 @@ function Insights({
 }: {
   person: DatingPersonDTO;
   setPerson: (p: DatingPersonDTO) => void;
-  patch: (f: Partial<Record<keyof DatingPersonDTO, unknown>>) => Promise<void>;
+  patch: Patch;
   setError: (e: string | null) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
   const ins = person.insights;
   const run = async () => {
     setBusy(true);
@@ -279,6 +468,7 @@ function Insights({
     setBusy(false);
     if (!res.ok) return setError(data.error ?? "Could not read the thread");
     setPerson(data.person);
+    setOpen(true);
     setError(null);
   };
   const suggest = (title: string, items: string[] | undefined, field: "remember" | "greenFlags" | "redFlags") => {
@@ -306,21 +496,39 @@ function Insights({
     );
   };
   return (
-    <section className={card}>
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <h3 className="text-sm font-semibold">Claude&apos;s read</h3>
-        <button onClick={run} disabled={busy} className={ghost}>
+    <section id="insights" className={cn(card, "scroll-mt-4")}>
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-controls="insights-body"
+          disabled={!ins}
+          className="-my-1 flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left disabled:cursor-default"
+        >
+          <h3 className="text-sm font-semibold">Claude&apos;s read</h3>
+          {ins && (
+            <ChevronDown className={cn("size-4 text-[var(--color-muted-foreground)] transition-transform", open && "rotate-180")} />
+          )}
+        </button>
+        <button onClick={run} disabled={busy} className={cn(ghost, "-mr-2.5")}>
           {busy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
           {ins ? "Refresh" : "Read the thread"}
         </button>
       </div>
       {!ins ? (
-        <p className="text-sm text-[var(--color-muted-foreground)]">
+        <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">
           Reads your messages, timeline and notes, then pulls out details worth remembering, flags, date ideas and what
           this is teaching you.
         </p>
+      ) : !open ? (
+        ins.summary && (
+          <button type="button" onClick={() => setOpen(true)} className="mt-1 block w-full text-left text-sm leading-relaxed text-[var(--color-muted-foreground)] line-clamp-2">
+            {ins.summary}
+          </button>
+        )
       ) : (
-        <div className="space-y-3">
+        <div id="insights-body" className="mt-2 space-y-3">
           {ins.summary && <p className="text-sm leading-relaxed">{ins.summary}</p>}
           <div className="grid gap-3 md:grid-cols-3">
             {suggest("Remember", ins.remember, "remember")}
@@ -544,9 +752,14 @@ function Timeline({
 
 // Where a filed note came from; Granola notes link back to the meeting.
 function SourceBadge({ event }: { event: DatingEventDTO }) {
-  if (event.source !== "dictation" && event.source !== "granola") return null;
+  if (event.source !== "dictation" && event.source !== "granola" && event.source !== "journal") return null;
   const { label, url } = splitSourceLine(event.notes);
-  const text = event.source === "dictation" ? "dictated" : `from Granola${label && label !== "Granola" ? ` · ${label}` : ""}`;
+  const text =
+    event.source === "dictation"
+      ? "dictated"
+      : event.source === "journal"
+        ? "from your notes"
+        : `from Granola${label && label !== "Granola" ? ` · ${label}` : ""}`;
   const cls = "mt-1.5 inline-block max-w-full truncate rounded-full bg-[var(--color-fill)] px-2 py-0.5 text-[11px] text-[var(--color-muted-foreground)]";
   return url ? (
     <a href={url} target="_blank" rel="noopener noreferrer" className={cn(cls, "hover:text-[var(--color-foreground)] hover:underline")}>
@@ -710,14 +923,49 @@ function Messages({
 
 // ---------------------------------------------------------------------------
 
-function NotesTab({
+function Notes({ person, patch }: { person: DatingPersonDTO; patch: Patch }) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <section className={card}>
+        <h3 className="text-sm font-semibold mb-2" aria-hidden>
+          About her
+        </h3>
+        <textarea
+          defaultValue={person.notes ?? ""}
+          onBlur={(e) => e.target.value !== (person.notes ?? "") && patch({ notes: e.target.value })}
+          rows={12}
+          placeholder="Anything: her story, what she's into, what she's looking for, how you feel about it"
+          aria-label="About her"
+          className={input}
+        />
+      </section>
+      <section className={card}>
+        <h3 className="text-sm font-semibold mb-1">What this taught me</h3>
+        <p className="text-xs text-[var(--color-muted-foreground)] mb-2">
+          Lessons roll up on the Dating page so patterns across people show up.
+        </p>
+        <textarea
+          defaultValue={person.lessons ?? ""}
+          key={person.lessons ?? ""}
+          onBlur={(e) => e.target.value !== (person.lessons ?? "") && patch({ lessons: e.target.value })}
+          rows={9}
+          placeholder="What worked, what didn't, what you want next time"
+          aria-label="Lessons"
+          className={input}
+        />
+      </section>
+    </div>
+  );
+}
+
+function Details({
   person,
   patch,
   setError,
   onDelete,
 }: {
   person: DatingPersonDTO;
-  patch: (f: Partial<Record<keyof DatingPersonDTO, unknown>>) => Promise<void>;
+  patch: Patch;
   setError: (e: string | null) => void;
   onDelete: () => void;
 }) {
@@ -734,35 +982,8 @@ function NotesTab({
     </label>
   );
   return (
-    <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_300px]">
-      <div className="space-y-4">
-        <section className={card}>
-          <h3 className="text-sm font-semibold mb-2">Notes</h3>
-          <textarea
-            defaultValue={person.notes ?? ""}
-            onBlur={(e) => e.target.value !== (person.notes ?? "") && patch({ notes: e.target.value })}
-            rows={12}
-            placeholder="Anything: her story, what she's into, what she's looking for, how you feel about it"
-            className={input}
-          />
-        </section>
-        <section className={card}>
-          <h3 className="text-sm font-semibold mb-1">What this taught me</h3>
-          <p className="text-xs text-[var(--color-muted-foreground)] mb-2">
-            Lessons roll up on the Dating page so patterns across people show up.
-          </p>
-          <textarea
-            defaultValue={person.lessons ?? ""}
-            key={person.lessons ?? ""}
-            onBlur={(e) => e.target.value !== (person.lessons ?? "") && patch({ lessons: e.target.value })}
-            rows={6}
-            placeholder="What worked, what didn't, what you want next time"
-            className={input}
-          />
-        </section>
-      </div>
-      <aside className={cn(card, "space-y-2.5 h-fit")}>
-        <h3 className="text-sm font-semibold">Details</h3>
+    <div className={card}>
+      <div className="grid gap-x-4 gap-y-2.5 sm:grid-cols-2">
         {field("name", "Name", "Name")}
         <label className="block">
           <span className="text-xs text-[var(--color-muted-foreground)]">Phone or email (for iMessage sync)</span>
@@ -793,6 +1014,17 @@ function NotesTab({
             className={input}
           />
         </label>
+        {field("city", "City", "Brooklyn")}
+        {field("work", "Work", "Architect")}
+        <label className="block">
+          <span className="text-xs text-[var(--color-muted-foreground)]">Age</span>
+          <input
+            type="number"
+            defaultValue={person.age ?? ""}
+            onBlur={(e) => String(person.age ?? "") !== e.target.value && patch({ age: e.target.value ? Number(e.target.value) : null })}
+            className={input}
+          />
+        </label>
         {field("metVia", "Met via", "Hinge, friends, a bar")}
         <label className="block">
           <span className="text-xs text-[var(--color-muted-foreground)]">Met on</span>
@@ -803,21 +1035,12 @@ function NotesTab({
             className={input}
           />
         </label>
-        <label className="block">
-          <span className="text-xs text-[var(--color-muted-foreground)]">Age</span>
-          <input
-            type="number"
-            defaultValue={person.age ?? ""}
-            onBlur={(e) => String(person.age ?? "") !== e.target.value && patch({ age: e.target.value ? Number(e.target.value) : null })}
-            className={input}
-          />
-        </label>
-        {field("city", "City", "Brooklyn")}
-        {field("work", "Work", "Architect")}
-        <button onClick={onDelete} className={cn(ghost, "-ml-2.5 mt-2 hover:text-[var(--color-destructive)]")}>
-          <Trash2 className="size-4" /> Delete
+      </div>
+      <div className="mt-4 border-t border-[var(--color-separator)] pt-3">
+        <button onClick={onDelete} className={cn(ghost, "-ml-2.5 hover:text-[var(--color-destructive)]")}>
+          <Trash2 className="size-4" /> Delete {person.name.split(/\s+/)[0]}
         </button>
-      </aside>
+      </div>
     </div>
   );
 }

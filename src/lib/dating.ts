@@ -407,19 +407,32 @@ export function appendLessons(existing: string | null | undefined, add: string):
 
 const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
-function parseEvents(raw: unknown, noteDay: string): ProposedEvent[] {
+/**
+ * A journal event day: journals span years, so any real date from 1990 up to
+ * a year past the note is kept as written. Null (drop the event) otherwise,
+ * rather than piling undated moments onto today.
+ */
+export function resolveJournalDay(v: unknown, noteDay: string): string | null {
+  const day = validDay(v);
+  if (!day || day < "1990-01-01") return null;
+  return noonUTC(day).getTime() - noonUTC(noteDay).getTime() <= 366 * 86_400_000 ? day : null;
+}
+
+function parseEvents(raw: unknown, noteDay: string, journal = false): ProposedEvent[] {
   if (!Array.isArray(raw)) return [];
-  return raw.slice(0, 10).flatMap((e): ProposedEvent[] => {
+  return raw.slice(0, journal ? 60 : 10).flatMap((e): ProposedEvent[] => {
     if (!e || typeof e !== "object") return [];
     const r = e as Record<string, unknown>;
     const title = text(r.title, 200);
     if (!title || !(FILED_EVENT_KINDS as readonly unknown[]).includes(r.kind)) return [];
+    const day = journal ? resolveJournalDay(r.occurredAt, noteDay) : resolveEventDay(r.occurredAt, noteDay);
+    if (!day) return [];
     const v = Number(r.vibe);
     return [
       {
         kind: r.kind as FiledEventKind,
         title,
-        occurredAt: resolveEventDay(r.occurredAt, noteDay),
+        occurredAt: day,
         vibe: r.vibe !== null && Number.isInteger(v) && v >= 1 && v <= 10 ? v : null,
         notes: text(r.notes, 5000),
       },
@@ -435,11 +448,12 @@ function parseEvents(raw: unknown, noteDay: string): ProposedEvent[] {
  *
  * `strict` is for proposals coming back from the client: an id that isn't
  * one of `people` is dropped rather than turned into someone new, and new
- * people must be marked isNew.
+ * people must be marked isNew. `journal` keeps events on the (possibly years
+ * old) dates written in the text and drops undated ones; see resolveJournalDay.
  */
 export function parseProposal(
   raw: unknown,
-  opts: { people: KnownPerson[]; noteDay: string; personId?: string | null; strict?: boolean },
+  opts: { people: KnownPerson[]; noteDay: string; personId?: string | null; strict?: boolean; journal?: boolean },
 ): Proposal {
   const list = raw && typeof raw === "object" ? (raw as { people?: unknown }).people : null;
   if (!Array.isArray(list)) return { people: [] };
@@ -471,7 +485,7 @@ export function parseProposal(
       lessons: text(r.lessons, 5000),
       stage: isStage(r.stage) ? r.stage : null,
       instagram: normalizeInstagram(r.instagram),
-      events: parseEvents(r.events, opts.noteDay),
+      events: parseEvents(r.events, opts.noteDay, opts.journal),
     };
     const key = p.personId ?? `new:${p.name.toLowerCase()}`;
     const prev = merged.get(key);
@@ -558,4 +572,158 @@ export function suggestionsFrom(people: ProposedPerson[]): SuggestionDraft[] {
     out.push({ name: name.slice(0, 100), summary: p.summary, note: p.note || p.summary });
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Organizing a person's journal notes (the free-text DatingPerson.notes) into
+// timeline events, flags and lessons. See organizePersonNotes in
+// src/lib/dating-organize.ts.
+
+/** Idempotency key on the note event that marks a person's journal as organized. */
+export function journalExternalId(personId: string): string {
+  return `journal:${personId}`;
+}
+
+export const JOURNAL_TITLE = "From journal";
+
+/** What Claude reads: the notes, plus the lessons already written down. "" when there are no notes. */
+export function journalText(notes: string | null | undefined, lessons?: string | null): string {
+  const n = notes?.trim() ?? "";
+  if (!n) return "";
+  const l = lessons?.trim();
+  return l ? `${n}\n\nLessons I already wrote down:\n${l}` : n;
+}
+
+/** Ids of people with notes whose journal hasn't been organized yet, in the given order. */
+export function pendingJournalIds(
+  people: { id: string; notes: string | null }[],
+  organizedExternalIds: Iterable<string | null>,
+  skip: Iterable<string> = [],
+): string[] {
+  const done = new Set(organizedExternalIds);
+  const skipped = new Set(skip);
+  return people
+    .filter((p) => p.notes?.trim() && !done.has(journalExternalId(p.id)) && !skipped.has(p.id))
+    .map((p) => p.id);
+}
+
+export type OrganizeCounts = { dates: number; moments: number; flags: number; remember: number; lessons: number };
+
+/** What a (validated) proposal adds, counted for the "Added 4 dates, 3 flags" line. */
+export function organizeCounts(item: Pick<ProposedPerson, "events" | "greenFlags" | "redFlags" | "remember" | "lessons">): OrganizeCounts {
+  const dates = item.events.filter((e) => e.kind === "date").length;
+  return {
+    dates,
+    moments: item.events.length - dates,
+    flags: item.greenFlags.length + item.redFlags.length,
+    remember: item.remember.length,
+    lessons: item.lessons.split(/\n\s*\n|\n(?=\s*[-*•]\s)/).filter((l) => l.trim()).length,
+  };
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** "Added 4 dates, 3 flags, 2 lessons", or "Nothing new to add". */
+export function describeOrganize(c: OrganizeCounts): string {
+  const parts = [
+    c.dates && plural(c.dates, "date"),
+    c.moments && plural(c.moments, "moment"),
+    c.flags && plural(c.flags, "flag"),
+    c.remember && plural(c.remember, "detail"),
+    c.lessons && plural(c.lessons, "lesson"),
+  ].filter(Boolean);
+  return parts.length ? `Added ${parts.join(", ")}` : "Nothing new to add";
+}
+
+/** The proposal for this person, with the stage kept only when it's still the default. */
+export function journalItem(
+  person: { id: string; name: string; stage: string },
+  proposed: ProposedPerson | undefined,
+): ProposedPerson {
+  const item: ProposedPerson = proposed ?? {
+    personId: person.id,
+    name: person.name,
+    isNew: false,
+    summary: "",
+    note: "",
+    remember: [],
+    greenFlags: [],
+    redFlags: [],
+    lessons: "",
+    stage: null,
+    instagram: null,
+    events: [],
+  };
+  const stage = person.stage === "talking" && item.stage && item.stage !== "talking" ? item.stage : null;
+  return { ...item, personId: person.id, isNew: false, stage };
+}
+
+/** Latest event day (YYYY-MM-DD) in a proposal, or null. */
+export function lastEventDay(events: { occurredAt: string }[]): string | null {
+  return events.reduce<string | null>((max, e) => (max === null || e.occurredAt > max ? e.occurredAt : max), null);
+}
+
+// ---------------------------------------------------------------------------
+// Header key dates on a person page
+
+export type KeyDates = {
+  /** When we met: metAt, else the first logged moment. */
+  met: string | null;
+  /** Span of the thing: met (or first moment) to endedAt / last moment when over, else now. */
+  from: string | null;
+  to: string | null;
+  ongoing: boolean;
+  days: number | null;
+  lastDate: { occurredAt: string; vibe: number | null; title: string } | null;
+  dates: number;
+};
+
+export function keyDates(
+  person: { stage: string; metAt: string | null; endedAt: string | null },
+  events: { kind: string; occurredAt: string; vibe: number | null; title: string }[],
+  now: number = Date.now(),
+): KeyDates {
+  const moments = events.filter((e) => e.kind !== "note").sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+  const dates = moments.filter((e) => e.kind === "date");
+  const firstMoment = moments[0]?.occurredAt ?? null;
+  const lastMoment = moments[moments.length - 1]?.occurredAt ?? null;
+  const met = person.metAt ?? firstMoment;
+  const from = [person.metAt, firstMoment].filter((x): x is string => !!x).sort()[0] ?? null;
+  const ongoing = person.stage !== "ended";
+  const to = ongoing ? null : (person.endedAt ?? lastMoment);
+  const end = to ? new Date(to).getTime() : now;
+  const days = from ? Math.max(0, Math.round((end - new Date(from).getTime()) / DAY)) : null;
+  const last = dates[dates.length - 1];
+  return {
+    met,
+    from,
+    to,
+    ongoing,
+    days,
+    lastDate: last ? { occurredAt: last.occurredAt, vibe: last.vibe, title: last.title } : null,
+    dates: dates.length,
+  };
+}
+
+/** "5 days", "3 weeks", "4 months", "1 year 2 months". */
+export function fmtDuration(days: number): string {
+  if (days < 14) return plural(days, "day");
+  if (days < 60) return plural(Math.round(days / 7), "week");
+  const months = Math.round(days / 30.44);
+  if (months < 12) return plural(months, "month");
+  const y = Math.floor(months / 12);
+  const m = months % 12;
+  return m ? `${plural(y, "year")} ${plural(m, "month")}` : plural(y, "year");
+}
+
+/**
+ * The client's local day (YYYY-MM-DD) when it is within a day of the server's
+ * UTC day, so the "From journal" note lands on the user's today in the
+ * evening too. Anything else falls back to now.
+ */
+export function clientToday(v: unknown, now: Date = new Date()): Date | string {
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return now;
+  const d = new Date(`${v}T12:00:00Z`);
+  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== v) return now;
+  return Math.abs(d.getTime() - now.getTime()) <= 36 * 3_600_000 ? v : now;
 }
