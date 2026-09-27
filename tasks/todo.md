@@ -1000,15 +1000,16 @@ Ask (Eddie): "the page for each person is too complicated", and he couldn't find
 - [x] Configure EC personal-os private Blob store `personal-os-dating-private` and server-only `DATING_READ_WRITE_TOKEN` for Production/Preview/Development. Original public token preserved. Read-only production audit found zero dating photos, so no production data migration was needed.
 - [x] Independently review combined changes. Targeted PostgreSQL tests prove rollback/concurrency, complete timestamp-tie pagination, repeated-import dedup, ownership, and private image delivery. Real private Blob synthetic upload/read/delete and running-app HTTP checks passed; synthetic remote files were deleted.
 - [x] Final verification: 372 tests across 32 files passed (including 13 real-PostgreSQL integration tests), typecheck passed, production build passed.
-- [ ] Publish PR and verify deployment.
+- [x] Published PR #19, merged as fcc4161, and verified the production deployment Ready.
 
 No database schema changes. All verification database writes used isolated local PostgreSQL on port 55439; the live Mac sync checkout/job was untouched. Granola/Claude production imports were not triggered. Browser confirmed board controls; the in-app browser stalled on the native confirmation dialog, so confirmation/cancel/success/failure were verified with rendered-component tests and deletion with running-app HTTP checks instead. Identical undated imports dedupe going forward; old imports and overlapping/edited undated transcripts cannot be matched reliably. Migration CLI is dry-run by default with a restricted resumable manifest; no migration ran against production. Existing lint command remains broken independently of this change.
 
 ## Dating: date-aware person matching (2026-09-26, Codex)
-- [ ] Reproduce similarly named-person ambiguity and the parser's unmatched-name fallback.
-- [ ] Supply the filer each person's full activity window and note date, and prefer date-consistent matches.
-- [ ] Preserve ambiguous matches as reviewable suggestions; keep forced-person journal/dictation behavior.
-- [ ] Test two similar names, overlapping/unknown windows, date boundaries and real PostgreSQL loading/filing.
-- [ ] Run full checks, review, ship and verify the release.
+- [x] Reproduce similarly named-person ambiguity and the parser's unmatched-name fallback.
+- [x] Supply the filer each person's full activity window and note date, and prefer date-consistent matches.
+- [x] Preserve ambiguous matches as reviewable suggestions; keep forced-person journal/dictation behavior.
+- [x] Test two similar names, overlapping/unknown windows, date boundaries and real PostgreSQL loading/filing.
+- [x] Run full checks and independent review: 387 tests (including 9 real-PostgreSQL identity tests), typecheck and build passed. Six existing Granola transaction tests also passed separately. Three live Claude checks using invented people passed: current, explicitly historical, and ambiguous recollection.
+- Release: publish the reviewed branch and verify the production deployment; record its status in the takeover handoff.
 
 No schema changes or production data repair planned. The handoff says existing misfiled data was already corrected manually.

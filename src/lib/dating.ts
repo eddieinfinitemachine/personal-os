@@ -470,10 +470,12 @@ function parseEvents(raw: unknown, noteDay: string, journal = false): ProposedEv
  * one of `people` is dropped rather than turned into someone new, and new
  * people must be marked isNew. `journal` keeps events on the (possibly years
  * old) dates written in the text and drops undated ones; see resolveJournalDay.
+ * `preserveUnmatched` keeps unreviewed Granola abstentions as suggestions instead
+ * of snapping a null or unknown ID back to a matching name.
  */
 export function parseProposal(
   raw: unknown,
-  opts: { people: KnownPerson[]; noteDay: string; personId?: string | null; strict?: boolean; journal?: boolean },
+  opts: { people: KnownPerson[]; noteDay: string; personId?: string | null; strict?: boolean; journal?: boolean; preserveUnmatched?: boolean },
 ): Proposal {
   const list = raw && typeof raw === "object" ? (raw as { people?: unknown }).people : null;
   if (!Array.isArray(list)) return { people: [] };
@@ -491,7 +493,7 @@ export function parseProposal(
     const known =
       forced ??
       (typeof r.personId === "string" ? byId.get(r.personId) : undefined) ??
-      (name ? byName.get(name.toLowerCase()) : undefined);
+      (!opts.preserveUnmatched && name ? byName.get(name.toLowerCase()) : undefined);
     if (!known && !name) continue;
     const p: ProposedPerson = {
       personId: known?.id ?? null,
