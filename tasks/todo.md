@@ -1057,3 +1057,13 @@ Requested design: retain simple cards, separate Dating (including Exclusive), Pu
 - [x] Verify status movement/recovery, search and disclosure persistence with component tests; full suite506passed/41opt-in skipped; typecheck/build passed. Live mobile/desktop check follows deployment.
 - [x] Independent review approved with no findings.
 - [ ] Release and production desktop/mobile verification.
+
+## 2026-09-27 — Automatic dating intake and review inbox
+
+- [x] Reconcile live dating implementation, EC Pad source architecture and user-approved direction.
+- [x] Specify source adapters, evidence ownership, durable review decisions and concrete additive schema proposal.
+- [ ] Independently review the intake design and resolve findings.
+- [ ] Obtain approval for the documented three-table/additive-column schema change before schema edits.
+- [ ] Implement, verify and release intake/review; preserve outstanding reflection, summary and photo improvements as follow-up scope.
+
+No schema, code, installed-worker or production source changes in this design step. EC Pad is actively being edited in another task; do not overwrite its working tree. Spec: docs/superpowers/specs/2026-09-27-dating-intake-design.md.

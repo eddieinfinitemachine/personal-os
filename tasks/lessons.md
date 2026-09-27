@@ -117,3 +117,6 @@ synthetic KeyboardEvents via eval instead).
 ## 2026-09-27 — Separate relationship stages without restoring a board
 **Context**: Eddie asked for the current people to be broken out and Lessons to be hideable.
 **Rule**: Keep simple cards but group Dating and Pursuing under distinct headings. Make secondary lessons collapsible with a remembered choice; do not mix all current stages into one undifferentiated grid.
+
+## 2026-09-27 — Dating should be maintained from sources
+The user wants automatic intake from texts, EC Pad journals and Granola, with explicit approval for new people and durable dismissal/exclusion. A prettier roster or one-off manual import does not satisfy that goal. Track source coverage and last successful processing, preserve manual corrections, and keep source copies from counting as independent evidence. EC Pad is the current journal source; legacy Markdown imports are historical context only unless selected.
