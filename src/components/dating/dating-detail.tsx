@@ -3,13 +3,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronLeft, Instagram, Loader2, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, Instagram, Loader2, Pencil, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   EVENT_KINDS,
   STAGES,
-  daysSince,
-  fmtDuration,
+  datesLine,
   instagramUrl,
   journalExternalId,
   keyDates,
@@ -38,6 +37,8 @@ const btn =
   "pressable inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium bg-[var(--color-foreground)] text-[var(--color-background)] disabled:opacity-50";
 const ghost =
   "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] disabled:opacity-50";
+// Ghost buttons that sit alone get a 44px hit area on touch screens.
+const tap = "min-h-11 sm:min-h-0";
 
 const dateInput = (iso: string | null) => (iso ? iso.slice(0, 10) : "");
 const fmtDate = (iso: string) =>
@@ -46,10 +47,14 @@ const fmtMin = (m: number | null) =>
   m === null ? "n/a" : m < 60 ? `${Math.round(m)}m` : m < 1440 ? `${(m / 60).toFixed(1)}h` : `${(m / 1440).toFixed(1)}d`;
 const byDay = (a: DatingEventDTO, b: DatingEventDTO) => a.occurredAt.localeCompare(b.occurredAt);
 
+const MORE_KEY = "dating:detail-more-open";
+
 /**
- * One scrolling page per person: header with key dates, dictation, Claude's
- * read, lists, the chart, timeline, notes, details and (collapsed) messages.
- * Sections have ids (#timeline, #notes, #details, #messages) for links.
+ * One page per person, kept short: header (photo, name, stage, one line of
+ * dates), then Dictate, Summary and Timeline. Everything else (photos, stats,
+ * notes, details, messages) sits in one "More" disclosure. Sections keep their
+ * ids (#insights, #timeline, #photos, #chart, #notes, #details, #messages);
+ * a hash pointing inside More opens it.
  */
 export function DatingDetail({
   initialPerson,
@@ -91,27 +96,76 @@ export function DatingDetail({
     [person.id],
   );
 
+  // --- More disclosure -------------------------------------------------------
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [jump, setJump] = useState<string | null>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const toggleMore = () => {
+    const next = !moreOpen;
+    setMoreOpen(next);
+    try {
+      localStorage.setItem(MORE_KEY, next ? "1" : "0");
+    } catch {
+      // Private window or blocked storage: it just won't be remembered.
+    }
+  };
+  const openTo = (id: string) => {
+    setMoreOpen(true);
+    setJump(id);
+  };
+  useEffect(() => {
+    // Read after mount: the server render can't see localStorage.
+    try {
+      if (localStorage.getItem(MORE_KEY) === "1") setMoreOpen(true);
+    } catch {
+      // Ignore; More stays closed.
+    }
+    const sync = () => {
+      const id = decodeURIComponent(window.location.hash.slice(1));
+      const el = id ? document.getElementById(id) : null;
+      if (el && moreRef.current?.contains(el)) {
+        setMoreOpen(true);
+        setJump(id);
+      }
+    };
+    sync();
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
+  // Scroll once the section is visible (it was hidden when the browser tried).
+  useEffect(() => {
+    if (!jump || !moreOpen) return;
+    document.getElementById(jump)?.scrollIntoView({ block: "start" });
+    setJump(null);
+  }, [jump, moreOpen]);
+
   const stats = useMemo(() => threadStats(meta), [meta]);
-  const since = daysSince(person.lastMessageAt);
-  const vibes = events.filter((e) => e.vibe).map((e) => e.vibe!);
+  const line = datesLine(keyDates(person, events));
   const journalDone = events.some((e) => e.externalId === journalExternalId(person.id));
 
   return (
-    <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6 max-w-4xl space-y-8">
+    <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6 max-w-3xl space-y-10">
       <div>
-        <Link href="/dating" className={cn(ghost, "-ml-2.5 mb-2")}>
+        <Link href="/dating" className={cn(ghost, tap, "-ml-2.5 mb-3")}>
           <ChevronLeft className="size-4" /> Dating
         </Link>
-        <header className="flex items-center gap-4">
-          <Avatar name={person.name} photo={photos[0]?.url} />
+        <header className="flex items-start gap-4">
+          <button
+            type="button"
+            onClick={() => openTo("photos")}
+            aria-label={photos.length ? `Photos of ${first}` : `Add a photo of ${first}`}
+            className="pressable shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]"
+          >
+            <Avatar name={person.name} photo={photos[0]?.url} />
+          </button>
           <div className="min-w-0 flex-1">
-            <h1 className="text-large-title font-bold break-words">{person.name}</h1>
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <NameHeading name={person.name} onRename={(name) => patch({ name })} setError={setError} />
+            <div className="mt-1 flex flex-wrap items-center gap-x-1 gap-y-1">
               <select
                 value={person.stage}
                 onChange={(e) => patch({ stage: e.target.value })}
                 aria-label="Stage"
-                className="rounded-full border border-[var(--color-card-border)] bg-[var(--color-card)] px-3 py-1 text-sm capitalize"
+                className="h-11 rounded-full bg-[var(--color-fill-secondary)] px-3 text-sm capitalize outline-none focus:ring-2 focus:ring-[var(--color-ring)] sm:h-8"
               >
                 {STAGES.map((s) => (
                   <option key={s} value={s}>
@@ -124,36 +178,18 @@ export function DatingDetail({
                   href={instagramUrl(person.instagram)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex min-w-0 items-center gap-1 text-sm text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] hover:underline"
+                  aria-label={`@${person.instagram} on Instagram`}
+                  title={`@${person.instagram}`}
+                  className="inline-flex size-11 items-center justify-center rounded-full text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] sm:size-8"
                 >
-                  <Instagram className="size-3.5 shrink-0" />
-                  <span className="truncate">@{person.instagram}</span>
+                  <Instagram className="size-4" />
                 </a>
               )}
             </div>
           </div>
         </header>
-        <KeyDateRow person={person} events={events} since={since} vibes={vibes} />
+        {line && <p className="mt-3 text-sm tabular-nums text-[var(--color-muted-foreground)]">{line}</p>}
       </div>
-
-      <PhotoStrip personId={person.id} firstName={first} photos={photos} setPhotos={setPhotos} setError={setError} />
-
-      {!!person.notes?.trim() && !journalDone && (
-        <OrganizeNotes
-          personId={person.id}
-          setError={setError}
-          onDone={(r) => {
-            setPerson(r.person);
-            setEvents([...r.events].sort(byDay));
-            setOrganized(r.summary);
-          }}
-        />
-      )}
-      {organized && (
-        <p role="status" className="-mt-4 flex items-center gap-1.5 text-sm text-[var(--color-muted-foreground)]">
-          <Sparkles className="size-4 shrink-0" /> Organized your notes. {organized}.
-        </p>
-      )}
 
       <DictateCard
         personId={person.id}
@@ -165,81 +201,101 @@ export function DatingDetail({
         }}
       />
 
-      <Insights person={person} setPerson={setPerson} patch={patch} setError={setError} />
+      <Summary
+        person={person}
+        setPerson={setPerson}
+        patch={patch}
+        setError={setError}
+        organize={
+          <>
+            {!!person.notes?.trim() && !journalDone && (
+              <OrganizeNotes
+                personId={person.id}
+                setError={setError}
+                onDone={(r) => {
+                  setPerson(r.person);
+                  setEvents([...r.events].sort(byDay));
+                  setOrganized(r.summary);
+                }}
+              />
+            )}
+            {organized && (
+              <p role="status" className="flex items-center gap-1.5 text-sm text-[var(--color-muted-foreground)]">
+                <Sparkles className="size-4 shrink-0" /> Organized your notes. {organized}.
+              </p>
+            )}
+          </>
+        }
+      />
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <ListEditor
-          title="Remember"
-          items={person.remember}
-          placeholder="Sister is Maya, hates cilantro"
-          onChange={(remember) => patch({ remember })}
-        />
-        <ListEditor
-          title="Green flags"
-          tone="good"
-          items={person.greenFlags}
-          placeholder="Plans the next date"
-          onChange={(greenFlags) => patch({ greenFlags })}
-        />
-        <ListEditor
-          title="Red flags"
-          tone="bad"
-          items={person.redFlags}
-          placeholder="Cancels last minute"
-          onChange={(redFlags) => patch({ redFlags })}
-        />
-      </div>
+      <Timeline personId={person.id} events={events} setEvents={setEvents} setError={setError} />
 
-      <Section id="chart" title="How it's going">
-        {stats.total > 0 && (
-          <div className="grid grid-cols-3 gap-2">
-            <Stat label="Messages" value={stats.total.toLocaleString()} sub={`${Math.round((stats.mine / stats.total) * 100)}% from you`} />
-            <Stat
-              label="You start"
-              value={stats.iInitiate === null ? "n/a" : `${Math.round(stats.iInitiate * 100)}%`}
-              sub={`of ${stats.conversations} conversations`}
-            />
-            <Stat label="Median reply" value={`${fmtMin(stats.myReplyMin)} / ${fmtMin(stats.theirReplyMin)}`} sub={`you / ${first}`} />
+      <section id="more" className="scroll-mt-4 border-t border-[var(--color-separator)] pt-2">
+        <button
+          type="button"
+          aria-expanded={moreOpen}
+          aria-controls="more-body"
+          onClick={toggleMore}
+          className="flex min-h-11 w-full items-center gap-2 py-2 text-left"
+        >
+          <span className="text-headline font-semibold">More</span>
+          <span className="min-w-0 flex-1 truncate text-sm text-[var(--color-label-tertiary)]">
+            Photos, stats, notes, details, messages
+          </span>
+          <ChevronDown className={cn("size-4 shrink-0 text-[var(--color-muted-foreground)] transition-transform", moreOpen && "rotate-180")} />
+        </button>
+        {/* Always mounted (hidden when closed) so photo paste/drop and anchors keep working. */}
+        <div id="more-body" ref={moreRef} hidden={!moreOpen} className="mt-6 space-y-10">
+          <div id="photos" className="scroll-mt-4">
+            <PhotoStrip personId={person.id} firstName={first} photos={photos} setPhotos={setPhotos} setError={setError} />
           </div>
-        )}
-        <div className={card}>
-          <RelationshipChart messages={meta} events={events} name={first} metAt={person.metAt} />
+
+          <Section id="chart" title="How it's going">
+            {stats.total > 0 && (
+              <dl className="grid grid-cols-3 gap-4">
+                <Stat label="Messages" value={stats.total.toLocaleString()} sub={`${Math.round((stats.mine / stats.total) * 100)}% from you`} />
+                <Stat
+                  label="You start"
+                  value={stats.iInitiate === null ? "n/a" : `${Math.round(stats.iInitiate * 100)}%`}
+                  sub={`of ${stats.conversations} conversations`}
+                />
+                <Stat label="Median reply" value={`${fmtMin(stats.myReplyMin)} / ${fmtMin(stats.theirReplyMin)}`} sub={`you / ${first}`} />
+              </dl>
+            )}
+            <RelationshipChart messages={meta} events={events} name={first} metAt={person.metAt} />
+          </Section>
+
+          <Section id="notes" title="Notes & lessons">
+            <Notes person={person} patch={patch} />
+          </Section>
+
+          <Section id="details" title="Details">
+            <Details
+              person={person}
+              patch={patch}
+              setError={setError}
+              onDelete={async () => {
+                if (!confirm(`Delete ${person.name} and all notes, timeline and messages?`)) return;
+                const res = await fetch(`/api/dating/${person.id}`, { method: "DELETE" });
+                if (res.ok) router.push("/dating");
+                else setError("Could not delete");
+              }}
+            />
+          </Section>
+
+          <MessagesSection count={stats.total}>
+            <Messages
+              person={person}
+              first={first}
+              initialMessages={initialMessages}
+              initialMore={initialMore}
+              onImported={() => router.refresh()}
+              setMeta={setMeta}
+              setError={setError}
+            />
+          </MessagesSection>
         </div>
-      </Section>
-
-      <Section id="timeline" title="Timeline" count={events.length}>
-        <Timeline personId={person.id} events={events} setEvents={setEvents} setError={setError} />
-      </Section>
-
-      <Section id="notes" title="Notes">
-        <Notes person={person} patch={patch} />
-      </Section>
-
-      <Section id="details" title="Details">
-        <Details
-          person={person}
-          patch={patch}
-          setError={setError}
-          onDelete={async () => {
-            if (!confirm(`Delete ${person.name} and all notes, timeline and messages?`)) return;
-            const res = await fetch(`/api/dating/${person.id}`, { method: "DELETE" });
-            if (res.ok) router.push("/dating");
-            else setError("Could not delete");
-          }}
-        />
-      </Section>
-
-      <MessagesSection count={stats.total}>
-        <Messages
-          person={person}
-          first={first}
-          initialMessages={initialMessages}
-          initialMore={initialMore}
-          onImported={() => router.refresh()}
-          setMeta={setMeta}
-          setError={setError}
-        />
-      </MessagesSection>
+      </section>
 
       {error && (
         <div
@@ -269,62 +325,74 @@ function Avatar({ name, photo }: { name: string; photo?: string }) {
   );
 }
 
-function KeyDateRow({
-  person,
-  events,
-  since,
-  vibes,
+// The name is the page title; click it (or the pencil) to rename in place.
+// Enter or leaving the field saves, Esc cancels, an empty name is refused.
+function NameHeading({
+  name,
+  onRename,
+  setError,
 }: {
-  person: DatingPersonDTO;
-  events: DatingEventDTO[];
-  since: number | null;
-  vibes: number[];
+  name: string;
+  onRename: (name: string) => void;
+  setError: (e: string | null) => void;
 }) {
-  const k = keyDates(person, events);
-  const short = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  const sameYear = k.from && k.to && new Date(k.from).getFullYear() === new Date(k.to).getFullYear();
-  const lastAgo = k.lastDate ? daysSince(k.lastDate.occurredAt) : null;
-  const facts: { label: string; value: string; sub?: string | null }[] = [
-    {
-      label: "Met",
-      value: k.met ? fmtDate(k.met) : "Not set",
-      sub: person.metVia ? `via ${person.metVia}` : null,
-    },
-    {
-      label: k.ongoing ? "Since" : "Together",
-      value: !k.from ? "n/a" : k.ongoing ? fmtDate(k.from) : `${sameYear ? short(k.from) : fmtDate(k.from)} – ${fmtDate(k.to ?? k.from)}`,
-      sub: k.days !== null ? fmtDuration(k.days) : null,
-    },
-    {
-      label: "Last date",
-      value: k.lastDate ? fmtDate(k.lastDate.occurredAt) : "None yet",
-      sub: k.lastDate
-        ? [k.lastDate.vibe && `vibe ${k.lastDate.vibe}/10`, lastAgo !== null && (lastAgo === 0 ? "today" : `${lastAgo}d ago`)]
-            .filter(Boolean)
-            .join(" · ")
-        : null,
-    },
-    {
-      label: "Dates",
-      value: String(k.dates),
-      sub: [
-        vibes.length ? `avg vibe ${(vibes.reduce((a, b) => a + b, 0) / vibes.length).toFixed(1)}` : null,
-        since !== null && (since === 0 ? "texted today" : `last text ${since}d ago`),
-      ]
-        .filter(Boolean)
-        .join(" · "),
-    },
-  ];
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name);
+  // Set once Enter/Esc/blur has handled the edit, so the follow-up blur is a no-op.
+  const settled = useRef(false);
+  const start = () => {
+    setDraft(name);
+    settled.current = false;
+    setEditing(true);
+  };
+  const finish = (save: boolean) => {
+    if (settled.current) return;
+    settled.current = true;
+    setEditing(false);
+    if (!save) return;
+    const next = draft.trim();
+    if (!next) return setError("Name can't be empty");
+    if (next !== name) onRename(next);
+  };
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        maxLength={100}
+        onChange={(e) => setDraft(e.target.value)}
+        onFocus={(e) => e.target.select()}
+        onBlur={() => finish(true)}
+        onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing) return;
+          if (e.key === "Enter") {
+            e.preventDefault();
+            finish(true);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            finish(false);
+          }
+        }}
+        aria-label="Name"
+        className="-ml-2 w-[calc(100%+0.5rem)] min-w-0 rounded-md bg-[var(--color-fill-secondary)] px-2 text-large-title font-bold outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+      />
+    );
+  }
   return (
-    <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-      {facts.map((f) => (
-        <div key={f.label} className="min-w-0">
-          <dt className="text-caption uppercase tracking-wide text-[var(--color-label-tertiary)]">{f.label}</dt>
-          <dd className="text-sm font-medium tabular-nums">{f.value}</dd>
-          {f.sub && <dd className="truncate text-xs text-[var(--color-muted-foreground)]">{f.sub}</dd>}
-        </div>
-      ))}
-    </dl>
+    <div className="flex min-w-0 items-center">
+      <h1 onClick={start} className="min-w-0 cursor-text text-large-title font-bold break-words">
+        {name}
+      </h1>
+      <button
+        type="button"
+        onClick={start}
+        aria-label="Rename"
+        title="Rename"
+        className="ml-0.5 inline-flex size-11 shrink-0 items-center justify-center rounded-full text-[var(--color-label-tertiary)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] sm:size-8"
+      >
+        <Pencil className="size-4" />
+      </button>
+    </div>
   );
 }
 
@@ -332,19 +400,24 @@ function Section({
   id,
   title,
   count,
+  action,
   children,
 }: {
   id: string;
   title: string;
   count?: number;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-4 space-y-3">
-      <h2 id={`${id}-title`} className="text-headline font-semibold">
-        {title}
-        {!!count && <span className="ml-1.5 font-normal text-[var(--color-label-tertiary)]">{count}</span>}
-      </h2>
+      <div className="flex min-h-8 items-center justify-between gap-2">
+        <h2 id={`${id}-title`} className="text-headline font-semibold">
+          {title}
+          {!!count && <span className="ml-1.5 font-normal text-[var(--color-label-tertiary)]">{count}</span>}
+        </h2>
+        {action}
+      </div>
       {children}
     </section>
   );
@@ -376,7 +449,7 @@ function MessagesSection({ count, children }: { count: number; children: React.R
           setOpen((o) => !o);
           setMounted(true);
         }}
-        className="flex w-full items-center justify-between gap-2 rounded-xl border border-[var(--color-card-border)] bg-[var(--color-card)] px-4 py-3 text-left hover:bg-[var(--color-fill-secondary)] transition"
+        className="flex min-h-11 w-full items-center justify-between gap-2 text-left"
       >
         <span className="text-headline font-semibold">
           Messages
@@ -393,10 +466,10 @@ function MessagesSection({ count, children }: { count: number; children: React.R
 
 function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
-    <div className={cn(card, "min-w-0 p-3")}>
-      <div className="text-xs text-[var(--color-muted-foreground)]">{label}</div>
-      <div className="text-lg sm:text-xl font-semibold tabular-nums mt-0.5 truncate">{value}</div>
-      <div className="text-xs text-[var(--color-label-tertiary)] mt-0.5 truncate">{sub}</div>
+    <div className="min-w-0">
+      <dt className="text-xs text-[var(--color-muted-foreground)]">{label}</dt>
+      <dd className="text-lg sm:text-xl font-semibold tabular-nums mt-0.5 truncate">{value}</dd>
+      <dd className="text-xs text-[var(--color-label-tertiary)] mt-0.5 truncate">{sub}</dd>
     </div>
   );
 }
@@ -405,6 +478,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub: string
 
 type Organized = { summary: string; person: DatingPersonDTO; events: DatingEventDTO[] };
 
+// Shown only while there are journal notes Claude hasn't filed yet.
 function OrganizeNotes({
   personId,
   onDone,
@@ -431,36 +505,36 @@ function OrganizeNotes({
     onDone({ summary: data.result.summary, person: data.person, events: data.events });
   };
   return (
-    <section className={cn(card, "flex flex-wrap items-center gap-3")}>
-      <div className="min-w-0 flex-1 basis-56">
-        <div className="text-sm font-semibold">Organize notes with Claude</div>
-        <p className="text-xs text-[var(--color-muted-foreground)]">
-          Turns your notes into dates on the timeline, flags, things to remember and lessons. The notes stay as they are.
-        </p>
-      </div>
-      <button onClick={run} disabled={busy} className={btn}>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-[var(--color-fill-secondary)] px-3 py-2">
+      <p className="min-w-0 flex-1 basis-48 text-sm text-[var(--color-muted-foreground)]">
+        Your notes aren&apos;t on the timeline yet. Claude can turn them into dates, flags and lessons.
+      </p>
+      <button onClick={run} disabled={busy} className={cn(ghost, tap, "-mr-1.5 text-[var(--color-foreground)]")}>
         {busy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-        {busy ? "Organizing…" : "Organize"}
+        {busy ? "Organizing…" : "Organize notes"}
       </button>
-    </section>
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
 
-function Insights({
+// Claude's read up top, then the three lists it feeds. Claude's list
+// suggestions show inside each list until added.
+function Summary({
   person,
   setPerson,
   patch,
   setError,
+  organize,
 }: {
   person: DatingPersonDTO;
   setPerson: (p: DatingPersonDTO) => void;
   patch: Patch;
   setError: (e: string | null) => void;
+  organize: React.ReactNode;
 }) {
   const [busy, setBusy] = useState(false);
-  const [open, setOpen] = useState(false);
   const ins = person.insights;
   const run = async () => {
     setBusy(true);
@@ -469,103 +543,104 @@ function Insights({
     setBusy(false);
     if (!res.ok) return setError(data.error ?? "Could not read the thread");
     setPerson(data.person);
-    setOpen(true);
     setError(null);
   };
-  const suggest = (title: string, items: string[] | undefined, field: "remember" | "greenFlags" | "redFlags") => {
-    const fresh = (items ?? []).filter((i) => !person[field].includes(i));
-    if (!fresh.length) return null;
-    return (
-      <div>
-        <div className="text-xs font-medium text-[var(--color-muted-foreground)] mb-1">{title}</div>
-        <ul className="space-y-1">
-          {fresh.map((i) => (
-            <li key={i} className="flex items-start gap-2 text-sm">
-              <button
-                onClick={() => patch({ [field]: [...person[field], i] })}
-                aria-label="Add to notes"
-                title="Add to notes"
-                className="mt-0.5 rounded p-0.5 text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
-              >
-                <Plus className="size-3.5" />
-              </button>
-              <span className="flex-1">{i}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    );
-  };
+  const fresh = (items: string[] | undefined, have: string[]) => (items ?? []).filter((i) => !have.includes(i));
   return (
-    <section id="insights" className={cn(card, "scroll-mt-4")}>
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          aria-controls="insights-body"
-          disabled={!ins}
-          className="-my-1 flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left disabled:cursor-default"
-        >
-          <h3 className="text-sm font-semibold">Claude&apos;s read</h3>
-          {ins && (
-            <ChevronDown className={cn("size-4 text-[var(--color-muted-foreground)] transition-transform", open && "rotate-180")} />
-          )}
-        </button>
-        <button onClick={run} disabled={busy} className={cn(ghost, "-mr-2.5")}>
-          {busy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-          {ins ? "Refresh" : "Read the thread"}
-        </button>
-      </div>
-      {!ins ? (
-        <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">
-          Reads your messages, timeline and notes, then pulls out details worth remembering, flags, date ideas and what
-          this is teaching you.
-        </p>
-      ) : !open ? (
-        ins.summary && (
-          <button type="button" onClick={() => setOpen(true)} className="mt-1 block w-full text-left text-sm leading-relaxed text-[var(--color-muted-foreground)] line-clamp-2">
-            {ins.summary}
+    <Section
+      id="insights"
+      title="Summary"
+      action={
+        ins && (
+          <button onClick={run} disabled={busy} className={cn(ghost, tap, "-mr-2.5")}>
+            {busy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+            Refresh
           </button>
         )
-      ) : (
-        <div id="insights-body" className="mt-2 space-y-3">
-          {ins.summary && <p className="text-sm leading-relaxed">{ins.summary}</p>}
-          <div className="grid gap-3 md:grid-cols-3">
-            {suggest("Remember", ins.remember, "remember")}
-            {suggest("Green flags", ins.greenFlags, "greenFlags")}
-            {suggest("Red flags", ins.redFlags, "redFlags")}
-          </div>
-          {!!ins.ideas?.length && (
-            <div>
-              <div className="text-xs font-medium text-[var(--color-muted-foreground)] mb-1">Ideas</div>
-              <ul className="list-disc pl-5 text-sm space-y-0.5">
-                {ins.ideas.map((i) => (
-                  <li key={i}>{i}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {ins.lessons && (
-            <div>
-              <div className="text-xs font-medium text-[var(--color-muted-foreground)] mb-1">Lesson</div>
-              <p className="text-sm">{ins.lessons}</p>
-              {!person.lessons?.includes(ins.lessons) && (
-                <button
-                  onClick={() => patch({ lessons: [person.lessons, ins.lessons].filter(Boolean).join("\n\n") })}
-                  className={cn(ghost, "-ml-2.5 mt-1")}
-                >
-                  <Plus className="size-3.5" /> Add to my lessons
-                </button>
-              )}
-            </div>
-          )}
+      }
+    >
+      {ins ? (
+        <div className="space-y-1">
+          {ins.summary && <p className="text-[15px] leading-relaxed">{ins.summary}</p>}
           {person.insightsAt && (
-            <div className="text-xs text-[var(--color-label-tertiary)]">Read {fmtDate(person.insightsAt)}</div>
+            <p className="text-xs text-[var(--color-label-tertiary)]">Claude&apos;s read, {fmtDate(person.insightsAt)}</p>
           )}
         </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-sm text-[var(--color-muted-foreground)]">
+            Claude reads your messages, timeline and notes, sums up where things stand and suggests what to remember.
+          </p>
+          <button onClick={run} disabled={busy} className={cn(btn, tap)}>
+            {busy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+            {busy ? "Reading…" : "Read everything with Claude"}
+          </button>
+        </div>
       )}
-    </section>
+
+      {organize}
+
+      <div className="grid gap-5 pt-2 sm:grid-cols-3">
+        <ListEditor
+          title="Remember"
+          items={person.remember}
+          suggestions={fresh(ins?.remember, person.remember)}
+          placeholder="Sister is Maya, hates cilantro"
+          onChange={(remember) => patch({ remember })}
+        />
+        <ListEditor
+          title="Green flags"
+          tone="good"
+          items={person.greenFlags}
+          suggestions={fresh(ins?.greenFlags, person.greenFlags)}
+          placeholder="Plans the next date"
+          onChange={(greenFlags) => patch({ greenFlags })}
+        />
+        <ListEditor
+          title="Red flags"
+          tone="bad"
+          items={person.redFlags}
+          suggestions={fresh(ins?.redFlags, person.redFlags)}
+          placeholder="Cancels last minute"
+          onChange={(redFlags) => patch({ redFlags })}
+        />
+      </div>
+
+      {ins && (!!ins.ideas?.length || !!ins.lessons) && (
+        <details className="group pt-1">
+          <summary className={cn(ghost, tap, "-ml-2.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden")}>
+            <ChevronDown className="size-4 -rotate-90 transition-transform group-open:rotate-0" />
+            Ideas and a lesson from Claude
+          </summary>
+          <div className="mt-2 space-y-3 pl-1">
+            {!!ins.ideas?.length && (
+              <div>
+                <div className="text-xs font-medium text-[var(--color-muted-foreground)] mb-1">Ideas</div>
+                <ul className="list-disc pl-5 text-sm space-y-0.5">
+                  {ins.ideas.map((i) => (
+                    <li key={i}>{i}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {ins.lessons && (
+              <div>
+                <div className="text-xs font-medium text-[var(--color-muted-foreground)] mb-1">Lesson</div>
+                <p className="text-sm">{ins.lessons}</p>
+                {!person.lessons?.includes(ins.lessons) && (
+                  <button
+                    onClick={() => patch({ lessons: [person.lessons, ins.lessons].filter(Boolean).join("\n\n") })}
+                    className={cn(ghost, tap, "-ml-2.5 mt-1")}
+                  >
+                    <Plus className="size-3.5" /> Add to my lessons
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </details>
+      )}
+    </Section>
   );
 }
 
@@ -580,6 +655,7 @@ const emptyDraft = (): Draft => ({
   vibe: null,
 });
 
+// Newest first, one line each; tap a row to edit it. The form opens inline.
 function Timeline({
   personId,
   events,
@@ -591,12 +667,22 @@ function Timeline({
   setEvents: (fn: (e: DatingEventDTO[]) => DatingEventDTO[]) => void;
   setError: (e: string | null) => void;
 }) {
-  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
+  const year = new Date().getFullYear();
+  const short = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", ...(d.getFullYear() !== year && { year: "2-digit" }) });
+  };
+
+  const openForm = (d: Draft) => {
+    setDraft(d);
+    requestAnimationFrame(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+  };
 
   const save = async () => {
-    if (!draft.title.trim()) return;
+    if (!draft || !draft.title.trim()) return;
     setBusy(true);
     // Noon local keeps the day stable across time zones.
     const occurredAt = new Date(`${draft.occurredAt}T12:00:00`).toISOString();
@@ -607,147 +693,169 @@ function Timeline({
     const data = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) return setError(data.error ?? "Could not save");
-    setEvents((list) =>
-      [...list.filter((e) => e.id !== data.event.id), data.event].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt)),
-    );
-    setDraft(emptyDraft());
+    setEvents((list) => [...list.filter((e) => e.id !== data.event.id), data.event].sort(byDay));
+    setDraft(null);
     setError(null);
   };
 
   const remove = async (id: string) => {
     const res = await fetch(`/api/dating/events/${id}`, { method: "DELETE" });
-    if (res.ok) setEvents((list) => list.filter((e) => e.id !== id));
+    if (!res.ok) return setError("Could not delete");
+    setEvents((list) => list.filter((e) => e.id !== id));
+    setDraft(null);
   };
 
   return (
-    <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_320px]">
-      <ol className="space-y-2 order-2 md:order-1">
-        {!events.length && (
-          <li className="text-sm text-[var(--color-muted-foreground)]">
-            Nothing yet. Log first dates, milestones, fights, calls. Rate each one to plot how it&apos;s going.
-          </li>
-        )}
-        {[...events].reverse().map((e) => (
-          <li key={e.id} className={cn(card, "group p-3")}>
-            <div className="flex items-start gap-3">
-              <div className="w-16 shrink-0 text-center">
-                <div className="text-lg font-semibold tabular-nums leading-tight">{e.vibe ?? "·"}</div>
-                <div className="text-[10px] uppercase tracking-wide text-[var(--color-label-tertiary)]">{e.kind}</div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <button
-                  onClick={() => {
-                    setDraft({
-                      id: e.id,
-                      occurredAt: dateInput(e.occurredAt),
-                      kind: e.kind as EventKind,
-                      title: e.title,
-                      notes: e.notes ?? "",
-                      vibe: e.vibe,
-                    });
-                    formRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                  }}
-                  className="w-full text-left"
-                >
-                  <div className="text-sm font-medium">{e.title}</div>
-                  <div className="text-xs text-[var(--color-muted-foreground)]">{fmtDate(e.occurredAt)}</div>
-                  {e.notes && <p className="mt-1 text-sm whitespace-pre-wrap">{e.source ? splitSourceLine(e.notes).body : e.notes}</p>}
-                </button>
-                <SourceBadge event={e} />
-              </div>
-              <button
-                onClick={() => remove(e.id)}
-                aria-label="Delete"
-                className="opacity-0 group-hover:opacity-100 focus:opacity-100 rounded p-1 text-[var(--color-muted-foreground)] hover:text-[var(--color-destructive)]"
-              >
-                <Trash2 className="size-4" />
-              </button>
-            </div>
-          </li>
-        ))}
-      </ol>
-
-      <form
-        ref={formRef}
-        onSubmit={(e) => {
-          e.preventDefault();
-          save();
-        }}
-        className={cn(card, "space-y-2.5 h-fit order-1 md:order-2 md:sticky md:top-4")}
-      >
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">{draft.id ? "Edit moment" : "Add a moment"}</h3>
-          {draft.id && (
-            <button type="button" onClick={() => setDraft(emptyDraft())} className={ghost} aria-label="Cancel edit">
+    <Section
+      id="timeline"
+      title="Timeline"
+      count={events.length}
+      action={
+        !draft && (
+          <button type="button" onClick={() => openForm(emptyDraft())} className={cn(ghost, tap, "-mr-2.5")}>
+            <Plus className="size-4" /> Add
+          </button>
+        )
+      }
+    >
+      {draft && (
+        <form
+          ref={formRef}
+          onSubmit={(e) => {
+            e.preventDefault();
+            save();
+          }}
+          className={cn(card, "scroll-mt-4 space-y-2.5")}
+        >
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">{draft.id ? "Edit moment" : "Add a moment"}</h3>
+            <button type="button" onClick={() => setDraft(null)} className={cn(ghost, "-mr-2 -my-1")} aria-label="Cancel">
               <X className="size-4" />
             </button>
-          )}
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <input
-            type="date"
-            value={draft.occurredAt}
-            onChange={(e) => setDraft({ ...draft, occurredAt: e.target.value })}
-            className={input}
-            aria-label="Date"
-          />
-          <select
-            value={draft.kind}
-            onChange={(e) => setDraft({ ...draft, kind: e.target.value as EventKind })}
-            className={cn(input, "capitalize")}
-            aria-label="Kind"
-          >
-            {EVENT_KINDS.map((k) => (
-              <option key={k} value={k}>
-                {k}
-              </option>
-            ))}
-          </select>
-        </div>
-        <input
-          value={draft.title}
-          onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-          placeholder="Drinks at Bar Pisellino"
-          className={input}
-          aria-label="Title"
-        />
-        <textarea
-          value={draft.notes}
-          onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
-          placeholder="What happened, what you talked about, how you felt"
-          rows={4}
-          className={input}
-          aria-label="Notes"
-        />
-        <div>
-          <div className="flex items-center justify-between text-xs text-[var(--color-muted-foreground)] mb-1">
-            <span>How it felt</span>
-            <span className="tabular-nums">{draft.vibe ? `${draft.vibe}/10` : "not rated"}</span>
           </div>
-          <div className="grid grid-cols-10 gap-1">
-            {Array.from({ length: 10 }, (_, i) => i + 1).map((v) => (
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="date"
+              value={draft.occurredAt}
+              onChange={(e) => setDraft({ ...draft, occurredAt: e.target.value })}
+              className={input}
+              aria-label="Date"
+            />
+            <select
+              value={draft.kind}
+              onChange={(e) => setDraft({ ...draft, kind: e.target.value as EventKind })}
+              className={cn(input, "capitalize")}
+              aria-label="Kind"
+            >
+              {EVENT_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </select>
+          </div>
+          <input
+            autoFocus={!draft.id}
+            value={draft.title}
+            onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+            placeholder="Drinks at Bar Pisellino"
+            className={input}
+            aria-label="Title"
+          />
+          <textarea
+            value={draft.notes}
+            onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
+            placeholder="What happened, what you talked about, how you felt"
+            rows={3}
+            className={input}
+            aria-label="Notes"
+          />
+          <div>
+            <div className="flex items-center justify-between text-xs text-[var(--color-muted-foreground)] mb-1">
+              <span>How it felt</span>
+              <span className="tabular-nums">{draft.vibe ? `${draft.vibe}/10` : "not rated"}</span>
+            </div>
+            <div className="grid grid-cols-10 gap-1">
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((v) => (
+                <button
+                  type="button"
+                  key={v}
+                  onClick={() => setDraft({ ...draft, vibe: draft.vibe === v ? null : v })}
+                  className={cn(
+                    "rounded py-2 sm:py-1 text-xs tabular-nums transition",
+                    draft.vibe === v
+                      ? "bg-[var(--color-foreground)] text-[var(--color-background)]"
+                      : "bg-[var(--color-fill-secondary)] hover:bg-[var(--color-fill)]",
+                  )}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {draft.id && (
               <button
                 type="button"
-                key={v}
-                onClick={() => setDraft({ ...draft, vibe: draft.vibe === v ? null : v })}
-                className={cn(
-                  "rounded py-1 text-xs tabular-nums transition",
-                  draft.vibe === v
-                    ? "bg-[var(--color-foreground)] text-[var(--color-background)]"
-                    : "bg-[var(--color-fill-secondary)] hover:bg-[var(--color-fill)]",
-                )}
+                onClick={() => remove(draft.id!)}
+                className={cn(ghost, tap, "-ml-2.5 hover:text-[var(--color-destructive)]")}
               >
-                {v}
+                <Trash2 className="size-4" /> Delete
               </button>
-            ))}
+            )}
+            <button type="submit" disabled={busy || !draft.title.trim()} className={cn(btn, tap, "ml-auto justify-center px-5")}>
+              {busy && <Loader2 className="size-4 animate-spin" />}
+              {draft.id ? "Save" : "Add"}
+            </button>
           </div>
-        </div>
-        <button type="submit" disabled={busy || !draft.title.trim()} className={cn(btn, "w-full justify-center")}>
-          {busy && <Loader2 className="size-4 animate-spin" />}
-          {draft.id ? "Save" : "Add"}
-        </button>
-      </form>
-    </div>
+        </form>
+      )}
+
+      {!events.length && !draft && (
+        <p className="text-sm text-[var(--color-muted-foreground)]">
+          Nothing yet. Log dates, milestones, fights and calls, and rate each one to see how it&apos;s going.
+        </p>
+      )}
+      {!!events.length && (
+        <ol className="divide-y divide-[var(--color-separator)]">
+          {[...events].reverse().map((e) => (
+            <li key={e.id} className={cn("py-1", draft?.id === e.id && "opacity-50")}>
+              <button
+                type="button"
+                onClick={() =>
+                  openForm({
+                    id: e.id,
+                    occurredAt: dateInput(e.occurredAt),
+                    kind: e.kind as EventKind,
+                    title: e.title,
+                    notes: e.notes ?? "",
+                    vibe: e.vibe,
+                  })
+                }
+                className="flex min-h-11 w-full items-start gap-3 rounded-md py-2 text-left hover:bg-[var(--color-fill-secondary)] sm:-mx-2 sm:w-[calc(100%+1rem)] sm:px-2"
+              >
+                <span className="w-16 shrink-0 pt-px text-sm tabular-nums text-[var(--color-muted-foreground)]">{short(e.occurredAt)}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium break-words">{e.title}</span>
+                  <span className="block text-xs capitalize text-[var(--color-label-tertiary)]">
+                    {e.kind}
+                    {e.vibe !== null && ` · ${e.vibe}/10`}
+                  </span>
+                  {e.notes && (
+                    <span className="mt-0.5 block line-clamp-2 text-sm whitespace-pre-wrap text-[var(--color-muted-foreground)]">
+                      {e.source ? splitSourceLine(e.notes).body : e.notes}
+                    </span>
+                  )}
+                </span>
+              </button>
+              <div className="pl-[4.75rem]">
+                <SourceBadge event={e} />
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </Section>
   );
 }
 
@@ -761,7 +869,7 @@ function SourceBadge({ event }: { event: DatingEventDTO }) {
       : event.source === "journal"
         ? "from your notes"
         : `from Granola${label && label !== "Granola" ? ` · ${label}` : ""}`;
-  const cls = "mt-1.5 inline-block max-w-full truncate rounded-full bg-[var(--color-fill)] px-2 py-0.5 text-[11px] text-[var(--color-muted-foreground)]";
+  const cls = "mb-1.5 inline-block max-w-full truncate rounded-full bg-[var(--color-fill)] px-2 py-0.5 text-[11px] text-[var(--color-muted-foreground)]";
   return url ? (
     <a href={url} target="_blank" rel="noopener noreferrer" className={cn(cls, "hover:text-[var(--color-foreground)] hover:underline")}>
       {text}
@@ -940,21 +1048,21 @@ function Messages({
 
 function Notes({ person, patch }: { person: DatingPersonDTO; patch: Patch }) {
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <section className={card}>
+    <div className="grid gap-6 md:grid-cols-2">
+      <div>
         <h3 className="text-sm font-semibold mb-2" aria-hidden>
           About her
         </h3>
         <textarea
           defaultValue={person.notes ?? ""}
           onBlur={(e) => e.target.value !== (person.notes ?? "") && patch({ notes: e.target.value })}
-          rows={12}
+          rows={10}
           placeholder="Anything: her story, what she's into, what she's looking for, how you feel about it"
           aria-label="About her"
           className={input}
         />
-      </section>
-      <section className={card}>
+      </div>
+      <div>
         <h3 className="text-sm font-semibold mb-1">What this taught me</h3>
         <p className="text-xs text-[var(--color-muted-foreground)] mb-2">
           Lessons roll up on the Dating page so patterns across people show up.
@@ -963,16 +1071,17 @@ function Notes({ person, patch }: { person: DatingPersonDTO; patch: Patch }) {
           defaultValue={person.lessons ?? ""}
           key={person.lessons ?? ""}
           onBlur={(e) => e.target.value !== (person.lessons ?? "") && patch({ lessons: e.target.value })}
-          rows={9}
+          rows={7}
           placeholder="What worked, what didn't, what you want next time"
           aria-label="Lessons"
           className={input}
         />
-      </section>
+      </div>
     </div>
   );
 }
 
+// The name is edited in the page header, so it isn't repeated here.
 function Details({
   person,
   patch,
@@ -985,7 +1094,7 @@ function Details({
   onDelete: () => void;
 }) {
   // Text fields save on blur, only when changed.
-  const field = (key: "name" | "metVia" | "city" | "work", label: string, placeholder: string) => (
+  const field = (key: "metVia" | "city" | "work", label: string, placeholder: string) => (
     <label className="block">
       <span className="text-xs text-[var(--color-muted-foreground)]">{label}</span>
       <input
@@ -997,9 +1106,8 @@ function Details({
     </label>
   );
   return (
-    <div className={card}>
+    <div>
       <div className="grid gap-x-4 gap-y-2.5 sm:grid-cols-2">
-        {field("name", "Name", "Name")}
         <label className="block">
           <span className="text-xs text-[var(--color-muted-foreground)]">Phone or email (for iMessage sync)</span>
           <input
@@ -1051,8 +1159,8 @@ function Details({
           />
         </label>
       </div>
-      <div className="mt-4 border-t border-[var(--color-separator)] pt-3">
-        <button onClick={onDelete} className={cn(ghost, "-ml-2.5 hover:text-[var(--color-destructive)]")}>
+      <div className="mt-6">
+        <button onClick={onDelete} className={cn(ghost, tap, "-ml-2.5 hover:text-[var(--color-destructive)]")}>
           <Trash2 className="size-4" /> Delete {person.name.split(/\s+/)[0]}
         </button>
       </div>

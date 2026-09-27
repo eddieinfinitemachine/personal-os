@@ -213,7 +213,7 @@ export function DictateCard({
                 aria-label={listening ? "Stop dictating" : "Dictate"}
                 aria-pressed={listening}
                 className={cn(
-                  "pressable absolute right-2 top-2 rounded-full p-2 transition",
+                  "pressable absolute right-1 top-1 rounded-full p-3 transition sm:right-2 sm:top-2 sm:p-2",
                   listening
                     ? "bg-[var(--color-destructive)] text-white animate-pulse"
                     : "bg-[var(--color-fill)] text-[var(--color-foreground)] hover:bg-[var(--color-accent)]",
@@ -227,7 +227,7 @@ export function DictateCard({
             <p className="text-xs text-[var(--color-muted-foreground)]">
               {listening ? "Listening… tap stop when you're done." : "You'll see what gets filed before it's saved."}
             </p>
-            <button onClick={fileIt} disabled={busy || !text.trim()} className={btn}>
+            <button onClick={fileIt} disabled={busy || !text.trim()} className={cn(btn, "min-h-11 sm:min-h-0")}>
               {busy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} File it
             </button>
           </div>

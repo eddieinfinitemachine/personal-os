@@ -34,6 +34,9 @@ describe("quick add body", () => {
 
   it("rejects what can't be used", () => {
     expect(personPatchError({ instagram: "not a handle!" })).toMatch(/Instagram/);
+    expect(personPatchError({ name: "  " })).toBe("Name can't be empty");
+    expect(personPatchError({ name: null })).toBe("Name can't be empty");
+    expect(personPatchError({ name: "Maya" })).toBeNull();
     expect(newPersonError({ stage: "married" })).toBe("Unknown stage");
     expect(newPersonError({ handles: "call me" })).toMatch(/phone/);
     expect(newPersonError({ handles: 42 })).toMatch(/handles/);

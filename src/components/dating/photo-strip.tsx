@@ -163,7 +163,7 @@ export function PhotoStrip({
           Photos{photos.length > 0 && " "}
           {photos.length > 0 && <span className="font-normal text-[var(--color-label-tertiary)]">{photos.length}</span>}
         </h3>
-        <button type="button" onClick={() => fileRef.current?.click()} className={cn(ghost, "-mr-2.5")}>
+        <button type="button" onClick={() => fileRef.current?.click()} className={cn(ghost, "-mr-2.5 min-h-11 sm:min-h-0")}>
           <ImagePlus className="size-4" /> Add
         </button>
         <input

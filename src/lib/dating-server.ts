@@ -65,6 +65,8 @@ const date = (v: unknown) => {
  * bad value is a 400 instead of being dropped silently.
  */
 export function personPatchError(body: Record<string, unknown>): string | null {
+  // A rename to nothing would otherwise be dropped silently.
+  if ("name" in body && (typeof body.name !== "string" || !body.name.trim())) return "Name can't be empty";
   if ("instagram" in body && body.instagram !== null) {
     const v = body.instagram;
     if (typeof v !== "string") return "instagram must be a handle or profile link";
