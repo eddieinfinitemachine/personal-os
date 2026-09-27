@@ -113,3 +113,7 @@ synthetic KeyboardEvents via eval instead).
 **Rule**: Show a compact people grid with name, photo, status and one date line. Keep past relationships under a disclosure. Put detailed scores, activity metrics and editing on the person's page; do not model the overview as a pipeline unless explicitly requested.
 
 - 2026-09-27: Add-person entry should accept the user's natural paragraph first. Keep original context, derive only supported fields, and leave unknown dates blank. Show which sources are connected and automatically refresh derived summaries after new imported evidence; do not make the user repeatedly request source reading. Pursuing is broader than Talking.
+
+## 2026-09-27 — Separate relationship stages without restoring a board
+**Context**: Eddie asked for the current people to be broken out and Lessons to be hideable.
+**Rule**: Keep simple cards but group Dating and Pursuing under distinct headings. Make secondary lessons collapsible with a remembered choice; do not mix all current stages into one undifferentiated grid.

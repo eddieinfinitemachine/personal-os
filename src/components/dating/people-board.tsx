@@ -68,6 +68,11 @@ export function PeopleBoard({ people }: { people: DatingCard[] }) {
   const matches = visible.filter((p) => matchesPersonName(p.name, query));
   const current = matches.filter((p) => p.stage !== "ended").sort(byActivity);
   const past = matches.filter((p) => p.stage === "ended").sort(byPastRelationship);
+  const groups = [
+    { label: "Dating", people: current.filter((p) => p.stage === "dating" || p.stage === "exclusive") },
+    { label: "Pursuing", people: current.filter((p) => p.stage === "talking" || !isStage(p.stage)) },
+    { label: "Paused", people: current.filter((p) => p.stage === "paused") },
+  ].filter((group) => group.people.length > 0);
   const clearSearch = () => {
     setQuery("");
     searchInput.current?.focus();
@@ -148,7 +153,16 @@ export function PeopleBoard({ people }: { people: DatingCard[] }) {
         {searching ? `${matches.length} ${matches.length === 1 ? "person" : "people"} found` : ""}
       </p>
       {current.length > 0 ? (
-        <PeopleGrid people={current} label="Current relationships" {...actions} />
+        <section aria-label="Current relationships" className="space-y-6">
+          {groups.map((group) => (
+            <div key={group.label}>
+              <h3 className="mb-3 text-sm font-semibold text-[var(--color-muted-foreground)]">
+                {group.label} <span className="font-normal tabular-nums">({group.people.length})</span>
+              </h3>
+              <PeopleGrid people={group.people} label={group.label} {...actions} />
+            </div>
+          ))}
+        </section>
       ) : !searching ? (
         <p className="rounded-xl border border-dashed border-[var(--color-card-border)] px-5 py-6 text-sm text-[var(--color-muted-foreground)]">
           {past.length ? "No current relationships. Past relationships are below." : "Add someone to get started."}
