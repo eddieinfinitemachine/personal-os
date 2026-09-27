@@ -8,7 +8,7 @@ import { Sheet } from "./sheet";
 export type PickablePerson = { id: string; name: string; stage: string };
 
 const STAGE_LABEL: Record<string, string> = {
-  talking: "Talking",
+  talking: "Pursuing",
   dating: "Dating",
   exclusive: "Exclusive",
   paused: "Paused",

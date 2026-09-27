@@ -1035,3 +1035,15 @@ Eddie asked for improvements to be selected and implemented, preserving the simp
 No schema changes, automatic imports, production data repair or changes to the Mac sync job.
 
 Verification: 412 tests passed (22 unrelated opt-in database tests skipped), typecheck/build passed. Browser: accented/reordered search finds a collapsed past profile; clear restores collapsed preference; 390px viewport has no horizontal overflow; review buttons are 44px; native disclosure preserves draft and import date; no console errors. Component tests verify in-flight imports survive disclosure toggles and failed reviews release controls for retry. No real import or AI call was triggered. Existing build warnings remain; real iPhone/VoiceOver untested.
+
+## Dating: paragraph add and grounded enrichment (2026-09-27)
+Eddie wants to describe someone once, find saved contact details, and build their history without prompting for each source.
+- [ ] Save the supplied phone for the requested contact and import only her matching messages.
+- [x] Make Add person paragraph-first with editable inferred details, unknown dates blank, and duplicate detection.
+- [x] Resolve contact details from available owned sources with explicit identity evidence; expose unavailable Instagram connection honestly.
+- [x] Refresh summaries automatically after new message imports without overwriting user notes.
+- [x] Verify authentication, uncertain identity handling, network recovery, rendering and regression checks.
+- [ ] Publish, verify deployment, and update live sync checkout and handoff.
+No database schema changes. Tests use isolated local data; production data changes are limited to the requested requested contact/import.
+
+Verification so far: 523 tests passed (including scratch PostgreSQL capture/contact/insight tests), typecheck and production build passed. Browser with invented people verified paragraph extraction, explicit and unknown contact/date fields, original context, Pursuing status, 390px layout without overflow, save/navigation, and a summary generated automatically with honest source counts. Independent reviews found and fixed stale contact transfer when switching to manual entry, duplicate-name/concurrent contact assignment, and empty targeted-sync arguments. WhatsApp backfill verification and production release remain pending.

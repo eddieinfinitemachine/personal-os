@@ -62,10 +62,10 @@ describe("dating request recovery", () => {
     const fetch = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(ok({ person: { ...person, insights: { summary: "Recovered summary" } } }));
     vi.stubGlobal("fetch", fetch);
     await detail();
-    await click(button("Read everything with Claude"));
-    expect(button("Read everything with Claude").disabled).toBe(false);
+    await click(button("Generate summary"));
+    expect(button("Generate summary").disabled).toBe(false);
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not read");
-    await click(button("Read everything with Claude"));
+    await click(button("Generate summary"));
     expect(container.textContent).toContain("Recovered summary");
   });
 

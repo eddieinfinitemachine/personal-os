@@ -25,6 +25,7 @@ export function normalizeHandle(raw: string): string {
   if (s.includes("@")) return s.toLowerCase();
   const digits = s.replace(/[^\d]/g, "");
   if (digits.length < 7) return "";
+  if (s.startsWith("+")) return `+${digits}`;
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
   return `+${digits}`;

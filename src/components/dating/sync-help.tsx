@@ -17,7 +17,7 @@ export function SyncHelp({ compact = false, hasHandles = true }: { compact?: boo
       </button>
       {open && (
         <ol className="mt-2 list-decimal space-y-1 pl-5 text-[var(--color-muted-foreground)]">
-          {!hasHandles && <li>Add her phone number or email under Notes → Details.</li>}
+          {!hasHandles && <li>The Mac sync checks your saved Contacts directory for a unique full-name match. If none is found, add her phone number or email under Notes → Details.</li>}
           <li>
             In the repo on your Mac, set <code>CAPTURE_TOKEN</code> and <code>APP_URL</code> in <code>.env</code>.
           </li>
@@ -31,7 +31,7 @@ export function SyncHelp({ compact = false, hasHandles = true }: { compact?: boo
           </li>
           <li>
             WhatsApp Desktop is read too when installed (<code>--no-whatsapp</code> skips it). Only 1:1 threads with the
-            numbers you add here are read. Group chats and everyone else are skipped.
+            numbers saved here are read. Group chats and everyone else are skipped. New imports refresh the summary automatically.
           </li>
         </ol>
       )}

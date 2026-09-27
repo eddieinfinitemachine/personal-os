@@ -21,12 +21,14 @@ import { initials } from "@/lib/initials";
 import type { DatingEventDTO, DatingMessageDTO, DatingPersonDTO } from "@/lib/dating-server";
 import type { DatingPhotoDTO } from "@/lib/dating-photos";
 import { SOURCE_LABELS } from "@/lib/dating-message-sync";
+import { insightSourceLabel } from "@/lib/dating-insight-sources";
 import { DictateCard } from "./dictate-card";
 import { ListEditor } from "./list-editor";
 import { PhotoStrip } from "./photo-strip";
 import { RelationshipChart } from "./relationship-chart";
 import { SyncHelp } from "./sync-help";
 import { useDatingPerson } from "./use-dating-person";
+import { useDatingInsightsPoll } from "./use-dating-insights-poll";
 
 type Meta = { sentAt: string; fromMe: boolean };
 type Patch = (fields: Partial<Record<keyof DatingPersonDTO, unknown>>) => Promise<void>;
@@ -155,7 +157,7 @@ export function DatingDetail({
               >
                 {STAGES.map((s) => (
                   <option key={s} value={s}>
-                    {s}
+                    {s === "talking" ? "Pursuing" : s}
                   </option>
                 ))}
               </select>
@@ -535,6 +537,8 @@ function Summary({
 }) {
   const [busy, setBusy] = useState(false);
   const ins = person.insights;
+  const sourceLabel = insightSourceLabel(ins?.sources);
+  useDatingInsightsPoll({ personId: person.id, insightsAt: person.insightsAt, hasInsights: Boolean(ins), paused: busy, onUpdate: setPerson });
   const run = async () => {
     setBusy(true);
     try {
@@ -566,6 +570,7 @@ function Summary({
       {ins ? (
         <div className="space-y-1">
           {ins.summary && <p className="text-[15px] leading-relaxed">{ins.summary}</p>}
+          {sourceLabel && <p className="text-xs text-[var(--color-label-tertiary)]">{sourceLabel}</p>}
           {person.insightsAt && (
             <p className="text-xs text-[var(--color-label-tertiary)]">Claude&apos;s read, {fmtDate(person.insightsAt)}</p>
           )}
@@ -573,11 +578,11 @@ function Summary({
       ) : (
         <div className="space-y-2">
           <p className="text-sm text-[var(--color-muted-foreground)]">
-            Claude reads your messages, timeline and notes, sums up where things stand and suggests what to remember.
+            Summaries refresh after the Mac sync imports new messages. You can also generate one now from saved messages, timeline and notes.
           </p>
           <button onClick={run} disabled={busy} className={cn(btn, tap)}>
             {busy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-            {busy ? "Reading…" : "Read everything with Claude"}
+            {busy ? "Reading…" : "Generate summary"}
           </button>
         </div>
       )}

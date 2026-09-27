@@ -2,6 +2,16 @@ import type { DatingEvent, DatingMessage, DatingPerson } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { cleanList, isEventKind, isStage, normalizeInstagram, parseHandles } from "@/lib/dating";
 
+export type InsightSources = {
+  messageCount: number;
+  analyzedMessageCount: number;
+  messageSources: Record<string, number>;
+  analyzedMessageSources?: Record<string, number>;
+  timelineCount: number;
+  hasNotes: boolean;
+  newestMessageImportedAt: string | null;
+};
+
 export type DatingInsights = {
   summary?: string;
   remember?: string[];
@@ -9,6 +19,7 @@ export type DatingInsights = {
   redFlags?: string[];
   lessons?: string;
   ideas?: string[];
+  sources?: InsightSources;
 };
 
 export type DatingPersonDTO = Omit<

@@ -22,7 +22,7 @@ export type DatingCard = DatingPersonDTO & {
 
 const ENDED_KEY = "personalos:dating-ended-open";
 const LABEL: Record<Stage, string> = {
-  talking: "Talking",
+  talking: "Pursuing",
   dating: "Dating",
   exclusive: "Exclusive",
   paused: "Paused",
