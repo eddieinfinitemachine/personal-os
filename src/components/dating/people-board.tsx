@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
-import { ChevronDown, Ellipsis } from "lucide-react";
+import { ChevronDown, Ellipsis, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { STAGES, isStage, type Stage } from "@/lib/dating";
-import { byActivity, relationshipDates, withStage } from "@/lib/dating-board";
+import { byActivity, byPastRelationship, matchesPersonName, relationshipDates, withStage } from "@/lib/dating-board";
 import { initials } from "@/lib/initials";
 import type { DatingPersonDTO } from "@/lib/dating-server";
 
@@ -37,7 +37,9 @@ export function PeopleBoard({ people }: { people: DatingCard[] }) {
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const pending = useRef(new Set<string>());
   const [endedOpen, setEndedOpen] = useState(false);
-  const [moved, setMoved] = useState<Record<string, DatingCard>>({});
+  const [query, setQuery] = useState("");
+  const searchInput = useRef<HTMLInputElement>(null);
+  const [moved, setMoved] = useState<Record<string, Pick<DatingCard, "stage" | "endedAt">>>({});
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -61,9 +63,15 @@ export function PeopleBoard({ people }: { people: DatingCard[] }) {
     setBusy(new Set(pending.current));
   };
 
-  const visible = people.filter((p) => !removed.has(p.id)).map((p) => moved[p.id] ?? p).sort(byActivity);
-  const current = visible.filter((p) => p.stage !== "ended");
-  const past = visible.filter((p) => p.stage === "ended");
+  const visible = people.filter((p) => !removed.has(p.id)).map((p) => ({ ...p, ...moved[p.id] }));
+  const searching = query.trim().length > 0;
+  const matches = visible.filter((p) => matchesPersonName(p.name, query));
+  const current = matches.filter((p) => p.stage !== "ended").sort(byActivity);
+  const past = matches.filter((p) => p.stage === "ended").sort(byPastRelationship);
+  const clearSearch = () => {
+    setQuery("");
+    searchInput.current?.focus();
+  };
 
   const move = async (id: string, stage: Stage) => {
     const p = visible.find((x) => x.id === id);
@@ -71,7 +79,8 @@ export function PeopleBoard({ people }: { people: DatingCard[] }) {
     pending.current.add(id);
     setBusy(new Set(pending.current));
     const prev = moved[id];
-    setMoved((m) => ({ ...m, [id]: withStage(p, stage) }));
+    const optimistic = withStage(p, stage);
+    setMoved((m) => ({ ...m, [id]: { stage: optimistic.stage, endedAt: optimistic.endedAt } }));
     try {
       const res = await fetch(`/api/dating/${id}`, {
         method: "PATCH",
@@ -80,7 +89,7 @@ export function PeopleBoard({ people }: { people: DatingCard[] }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.person) throw new Error("Status update failed");
-      setMoved((m) => ({ ...m, [id]: { ...p, stage: data.person.stage, endedAt: data.person.endedAt } }));
+      setMoved((m) => ({ ...m, [id]: { stage: data.person.stage, endedAt: data.person.endedAt } }));
       if (stage === "ended") showToast(`${p.name} moved to past relationships.`, false);
     } catch {
       setMoved((m) => {
@@ -115,18 +124,45 @@ export function PeopleBoard({ people }: { people: DatingCard[] }) {
   const actions = { move, remove, busy };
   return (
     <section className="mb-8" aria-label="People">
-      <h2 className="mb-3 text-sm font-semibold text-[var(--color-muted-foreground)]">People</h2>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-[var(--color-muted-foreground)]">People</h2>
+        {people.length > 0 && (
+          <div className="relative w-full sm:w-64">
+            <Search aria-hidden className="pointer-events-none absolute left-3 top-3.5 size-4 text-[var(--color-muted-foreground)]" />
+            <input
+              ref={searchInput}
+              type="text"
+              inputMode="search"
+              aria-label="Search people"
+              placeholder="Search people"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); clearSearch(); } }}
+              className="min-h-11 w-full rounded-lg bg-[var(--color-fill-secondary)] pl-9 pr-11 text-sm outline-none focus:ring-2 focus:ring-[var(--color-ring)]"
+            />
+            {query && <button type="button" aria-label="Clear search" onClick={clearSearch} className="absolute right-0 top-0 grid size-11 place-items-center rounded-lg text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]"><X aria-hidden className="size-4" /></button>}
+          </div>
+        )}
+      </div>
+      <p aria-live="polite" aria-atomic="true" className={cn("text-xs text-[var(--color-muted-foreground)]", searching ? "mb-3" : "sr-only")}>
+        {searching ? `${matches.length} ${matches.length === 1 ? "person" : "people"} found` : ""}
+      </p>
       {current.length > 0 ? (
         <PeopleGrid people={current} label="Current relationships" {...actions} />
-      ) : (
+      ) : !searching ? (
         <p className="rounded-xl border border-dashed border-[var(--color-card-border)] px-5 py-6 text-sm text-[var(--color-muted-foreground)]">
           {past.length ? "No current relationships. Past relationships are below." : "Add someone to get started."}
         </p>
-      )}
+      ) : matches.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-[var(--color-card-border)] px-5 py-5 text-sm text-[var(--color-muted-foreground)]">
+          <p>No people match “{query.trim()}”.</p>
+          <button type="button" onClick={clearSearch} className="mt-1 min-h-11 underline underline-offset-4 hover:text-[var(--color-foreground)]">Show everyone</button>
+        </div>
+      ) : null}
 
       {past.length > 0 && (
         <div className="mt-5 border-t border-[var(--color-card-border)] pt-2">
-          <button
+          {searching ? <h3 className="mb-3 py-2 text-sm text-[var(--color-muted-foreground)]">Past relationships ({past.length})</h3> : <button
             type="button"
             aria-expanded={endedOpen}
             aria-controls={pastId}
@@ -135,9 +171,9 @@ export function PeopleBoard({ people }: { people: DatingCard[] }) {
           >
             <ChevronDown aria-hidden className={cn("size-4 transition-transform", !endedOpen && "-rotate-90")} />
             Past relationships <span className="tabular-nums">({past.length})</span>
-          </button>
-          <div id={pastId} hidden={!endedOpen}>
-            {endedOpen && <PeopleGrid people={past} label="Past relationships" {...actions} />}
+          </button>}
+          <div id={pastId} hidden={!searching && !endedOpen}>
+            {(searching || endedOpen) && <PeopleGrid people={past} label="Past relationships" {...actions} />}
           </div>
         </div>
       )}

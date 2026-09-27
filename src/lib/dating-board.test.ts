@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   byActivity,
+  byPastRelationship,
+  matchesPersonName,
   defaultView,
   duration,
   groupByStage,
@@ -162,5 +164,24 @@ describe("labels", () => {
     expect(vibeTone(8)).toBe("good");
     expect(vibeTone(5.5)).toBe("ok");
     expect(vibeTone(3)).toBe("low");
+  });
+});
+
+describe("overview search and history", () => {
+  it("matches all name fragments across punctuation, accents and international characters", () => {
+    expect(matchesPersonName("Renée Anne-Marie", "marie renee")).toBe(true);
+    expect(matchesPersonName("林 美玲", "美玲")).toBe(true);
+    expect(matchesPersonName("Renée", "renee different")).toBe(false);
+    expect(matchesPersonName("Renée", "   ")).toBe(true);
+    expect(matchesPersonName("Renée", "---")).toBe(false);
+  });
+  it("uses explicit past dates and leaves undated relationships last", () => {
+    const records = [
+      person({id:"unknown", stage:"ended", createdAt:"2026-09-27"}),
+      person({id:"older", stage:"ended", endedAt:"2025-01-01", lastEventAt:"2026-09-27"}),
+      person({id:"recent", stage:"ended", endedAt:"2026-01-01"}),
+      person({id:"start-only", stage:"ended", metAt:"2025-07-01", endedAt:"invalid"}),
+    ];
+    expect(records.sort(byPastRelationship).map((p)=>p.id)).toEqual(["recent","start-only","older","unknown"]);
   });
 });

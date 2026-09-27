@@ -55,7 +55,7 @@ export function LinkPicker({
   return (
     <Sheet title={`Add “${name}” to…`} onClose={onClose}>
       <p className="px-4 text-xs text-[var(--color-muted-foreground)]">
-        Files this meeting note, and any others about {name}, on her timeline.
+        Files only this meeting note on her timeline.
       </p>
       <div className="px-4 pt-2">
         <input

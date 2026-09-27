@@ -1020,6 +1020,18 @@ Eddie: the board is confusing; chose simple cards, with past relationships tucke
 - [x] Replace columns and view switching with a responsive current/past card layout.
 - [x] Keep status and confirmed-delete actions with request recovery.
 - [x] Verify transitions, desktop/mobile presentation, tests, typecheck and build.
-- [ ] Publish and verify deployment.
+- [x] Published PR #21 and verified EC production a064531 on both domains.
 
 Verified: 394 tests passed (22 unrelated opt-in database tests skipped), typecheck and production build passed; independent review approved. Browser checked synthetic local profiles on desktop and 390px mobile: no horizontal overflow, 44px menus, current/past status updates persisted through reload, past disclosure persisted, and profile navigation worked. No browser console errors. Real iPhone/VoiceOver not tested. No schema changes, production data writes, or Mac sync changes.
+
+## Dating: everyday overview usability (2026-09-26, Codex)
+Eddie asked for improvements to be selected and implemented, preserving the simpler cards.
+- [x] Add name search across current and past people; reveal past matches while searching without changing the saved disclosure preference. Clear and Escape restore the normal view; no-match state explains how to recover.
+- [x] Sort past relationships by recorded relationship dates, not the time an old note was imported; keep refreshed profile names/photos after a status change.
+- [x] Name the main action Add person. Keep everyday notes and Granola review visible; tuck import/sync tools into a collapsed disclosure while preserving mounted progress.
+- [x] Recover Add her / Dismiss failures, prevent concurrent duplicate review actions, and show review counts/errors near the relevant controls.
+- [x] Run regression tests, browser checks and independent review.
+- [ ] Publish and verify deployment.
+No schema changes, automatic imports, production data repair or changes to the Mac sync job.
+
+Verification: 412 tests passed (22 unrelated opt-in database tests skipped), typecheck/build passed. Browser: accented/reordered search finds a collapsed past profile; clear restores collapsed preference; 390px viewport has no horizontal overflow; review buttons are 44px; native disclosure preserves draft and import date; no console errors. Component tests verify in-flight imports survive disclosure toggles and failed reviews release controls for retry. No real import or AI call was triggered. Existing build warnings remain; real iPhone/VoiceOver untested.
