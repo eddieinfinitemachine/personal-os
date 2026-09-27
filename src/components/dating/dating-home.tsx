@@ -3,24 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Instagram, Loader2, Plus, Sparkles, X } from "lucide-react";
+import { Loader2, Plus, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { daysSince, instagramUrl } from "@/lib/dating";
-import type { DatingPersonDTO } from "@/lib/dating-server";
 import { SimpleMarkdown } from "@/components/simple-markdown";
 import { DictateCard } from "./dictate-card";
 import { GranolaSync } from "./granola-sync";
 import { SyncHelp } from "./sync-help";
+import { PeopleBoard, type DatingCard } from "./people-board";
 
-export type DatingCard = DatingPersonDTO & {
-  messageCount: number;
-  dateCount: number;
-  avgVibe: number | null;
-  /** Messages per week, last 12 weeks, oldest first. */
-  spark: number[];
-  /** Newest photo, shown as a small round avatar. */
-  avatarUrl: string | null;
-};
+export type { DatingCard };
 
 export type GranolaSuggestion = {
   id: string;
@@ -57,8 +48,6 @@ export function DatingHome({
   const [patterns, setPatterns] = useState<{ text: string; taste: string | null; photos: number } | null>(null);
   const [patternsBusy, setPatternsBusy] = useState(false);
 
-  const active = people.filter((p) => p.stage !== "ended");
-  const past = people.filter((p) => p.stage === "ended");
   const withLessons = people.filter((p) => p.lessons?.trim());
 
   const add = async () => {
@@ -86,7 +75,7 @@ export function DatingHome({
   };
 
   return (
-    <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6 max-w-5xl">
+    <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6 max-w-6xl">
       <header className="mb-6 flex items-end justify-between gap-3">
         <div>
           <h1 className="text-large-title font-bold">Dating</h1>
@@ -136,62 +125,64 @@ export function DatingHome({
         </form>
       )}
 
-      {granola && <GranolaSync />}
+      <PeopleBoard people={people} />
 
-      {suggestions.length > 0 && <Suggestions suggestions={suggestions} setError={setError} />}
+      {/* Everything below the people view keeps the narrower reading width. */}
+      <div className="max-w-5xl">
+        {granola && <GranolaSync />}
 
-      <div className="mb-6">
-        <DictateCard onSaved={() => router.refresh()} />
-      </div>
+        {suggestions.length > 0 && <Suggestions suggestions={suggestions} setError={setError} />}
 
-      <Section title="Now" people={active} empty="No one right now." />
-      {past.length > 0 && <Section title="Past" people={past} />}
-
-      <section className="mt-8">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">Lessons</h2>
-          <button onClick={findPatterns} disabled={patternsBusy} className={ghost}>
-            {patternsBusy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-            Find patterns
-          </button>
+        <div className="mb-6">
+          <DictateCard onSaved={() => router.refresh()} />
         </div>
-        {patterns && (
-          <div className={cn(card, "p-4 mb-3 text-sm")}>
-            <SimpleMarkdown text={patterns.text} />
-          </div>
-        )}
-        {patterns?.taste && (
-          <section className={cn(card, "p-4 mb-3 text-sm")} aria-label="Your taste">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-              <h3 className="text-base font-semibold">Your taste</h3>
-              <span className="text-xs text-[var(--color-label-tertiary)]">
-                {patterns.photos
-                  ? `Read with ${patterns.photos} photo${patterns.photos === 1 ? "" : "s"}`
-                  : "From notes only. Add photos for a fuller read."}
-              </span>
-            </div>
-            <SimpleMarkdown text={patterns.taste} />
-          </section>
-        )}
-        {withLessons.length ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {withLessons.map((p) => (
-              <Link key={p.id} href={`/dating/${p.id}`} className={cn(card, "block p-4 hover:bg-[var(--color-fill-secondary)] transition")}>
-                <div className="text-sm font-medium mb-1">{p.name}</div>
-                <p className="text-sm text-[var(--color-muted-foreground)] whitespace-pre-wrap line-clamp-6">{p.lessons}</p>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-[var(--color-muted-foreground)]">
-            Write what each one taught you under Notes. They collect here, and Find patterns reads across all of them.
-          </p>
-        )}
-      </section>
 
-      <section className={cn(card, "mt-8 p-4")}>
-        <SyncHelp compact />
-      </section>
+        <section className="mt-8">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">Lessons</h2>
+            <button onClick={findPatterns} disabled={patternsBusy} className={ghost}>
+              {patternsBusy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+              Find patterns
+            </button>
+          </div>
+          {patterns && (
+            <div className={cn(card, "p-4 mb-3 text-sm")}>
+              <SimpleMarkdown text={patterns.text} />
+            </div>
+          )}
+          {patterns?.taste && (
+            <section className={cn(card, "p-4 mb-3 text-sm")} aria-label="Your taste">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                <h3 className="text-base font-semibold">Your taste</h3>
+                <span className="text-xs text-[var(--color-label-tertiary)]">
+                  {patterns.photos
+                    ? `Read with ${patterns.photos} photo${patterns.photos === 1 ? "" : "s"}`
+                    : "From notes only. Add photos for a fuller read."}
+                </span>
+              </div>
+              <SimpleMarkdown text={patterns.taste} />
+            </section>
+          )}
+          {withLessons.length ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {withLessons.map((p) => (
+                <Link key={p.id} href={`/dating/${p.id}`} className={cn(card, "block p-4 hover:bg-[var(--color-fill-secondary)] transition")}>
+                  <div className="text-sm font-medium mb-1">{p.name}</div>
+                  <p className="text-sm text-[var(--color-muted-foreground)] whitespace-pre-wrap line-clamp-6">{p.lessons}</p>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-[var(--color-muted-foreground)]">
+              Write what each one taught you under Notes. They collect here, and Find patterns reads across all of them.
+            </p>
+          )}
+        </section>
+
+        <section className={cn(card, "mt-8 p-4")}>
+          <SyncHelp compact />
+        </section>
+      </div>
     </div>
   );
 }
@@ -259,85 +250,5 @@ function Suggestions({
         ))}
       </ul>
     </section>
-  );
-}
-
-function Section({ title, people, empty }: { title: string; people: DatingCard[]; empty?: string }) {
-  return (
-    <section className="mb-6">
-      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">{title}</h2>
-      {!people.length ? (
-        <p className="text-sm text-[var(--color-muted-foreground)]">{empty}</p>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {people.map((p) => (
-            <PersonCard key={p.id} p={p} />
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function PersonCard({ p }: { p: DatingCard }) {
-  const since = daysSince(p.lastMessageAt);
-  const max = Math.max(1, ...p.spark);
-  // The name link stretches over the whole card (after:inset-0) so the
-  // Instagram link can sit inside it without nesting <a>s.
-  return (
-    <div className={cn(card, "relative p-4 hover:bg-[var(--color-fill-secondary)] transition")}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2.5">
-          {p.avatarUrl && (
-            // Fixed size, so nothing moves while the image loads.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={p.avatarUrl} alt="" loading="lazy" className="size-9 shrink-0 rounded-full bg-[var(--color-fill)] object-cover" />
-          )}
-          <div className="min-w-0">
-            <Link href={`/dating/${p.id}`} className="block font-semibold truncate after:absolute after:inset-0 after:rounded-xl">
-              {p.name}
-            </Link>
-            <div className="text-xs text-[var(--color-muted-foreground)] truncate">
-              {[p.metVia, p.age, p.city].filter(Boolean).join(" · ") || " "}
-            </div>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {p.instagram && (
-            <a
-              href={instagramUrl(p.instagram)}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`@${p.instagram} on Instagram`}
-              title={`@${p.instagram}`}
-              className="relative z-10 -my-1 rounded-full p-1.5 text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
-            >
-              <Instagram className="size-4" />
-            </a>
-          )}
-          <span className="rounded-full bg-[var(--color-fill)] px-2 py-0.5 text-xs capitalize">{p.stage}</span>
-        </div>
-      </div>
-      {p.spark.some(Boolean) && (
-        <div className="mt-3 flex h-8 items-end gap-[2px]" aria-label="Messages per week, last 12 weeks">
-          {p.spark.map((n, i) => (
-            <div
-              key={i}
-              className="flex-1 rounded-t-[2px] bg-[var(--color-tint)]"
-              style={{ height: `${Math.max(n ? 8 : 0, (n / max) * 100)}%`, opacity: n ? 1 : 0 }}
-            />
-          ))}
-        </div>
-      )}
-      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-[var(--color-muted-foreground)] tabular-nums">
-        {since !== null && <span>{since === 0 ? "texted today" : `last text ${since}d ago`}</span>}
-        {p.messageCount > 0 && <span>{p.messageCount.toLocaleString()} msgs</span>}
-        {p.dateCount > 0 && <span>{p.dateCount} dates</span>}
-        {p.avgVibe !== null && <span>vibe {p.avgVibe.toFixed(1)}</span>}
-      </div>
-      {p.remember.length > 0 && (
-        <p className="mt-2 text-xs text-[var(--color-label-tertiary)] line-clamp-2">{p.remember.slice(0, 3).join(" · ")}</p>
-      )}
-    </div>
   );
 }

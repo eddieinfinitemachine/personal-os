@@ -97,3 +97,8 @@ synthetic KeyboardEvents via eval instead).
 **Context**: Verifying "Log to Personal" from the local dev server created a real FitnessSession row.
 **Mistake / surprise**: `.env` DATABASE_URL is production; an in-browser click on localhost is a prod write.
 **Rule**: Before exercising any write path from local dev, check where DATABASE_URL points; delete verification rows afterwards (by an unmistakable marker) and say so in the report.
+
+## 2026-09-26 — Playwright in this repo: match the browser build, and dismiss onboarding
+**Context**: Browser-verifying drag and drop on /dating with a freshly seeded scratch user.
+**Mistake / surprise**: Every drag silently did nothing. The first-run onboarding modal (`personalos:onboarding-completed`) covered the page for the new user, and raw `mouse.*` calls don't report that (only `locator.*` actionability logs under `DEBUG=pw:api` said "subtree intercepts pointer events").
+**Rule**: For a seeded test user, set `personalos:onboarding-completed=1` with `context.addInitScript` before loading any page. Use a `playwright-core` whose `browsers.json` revision matches the cached Chrome for Testing, and prefer `locator.dragTo` over raw mouse moves, because its actionability log explains a blocked input.
