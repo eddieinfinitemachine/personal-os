@@ -9,8 +9,8 @@ export const maxDuration = 300;
 // One Granola sync batch for the signed-in founder (the API key is personal,
 // so nobody else can use it). POST { since?: "YYYY-MM-DD" | ISO timestamp }
 // (default: 10 days ago). The /dating "Granola" control loops, passing back
-// `nextSince`, until `remaining` is 0.
-// → { processed, filed, suggestions, skipped, remaining, meetings, errors, nextSince }
+// `nextSince` and `nextAfterId` as since/afterId, until `remaining` is 0.
+// → { processed, filed, suggestions, skipped, remaining, meetings, errors, nextSince, nextAfterId }
 
 const DEFAULT_DAYS = 10;
 
@@ -22,7 +22,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "GRANOLA_API_KEY not set" }, { status: 503 });
   }
 
-  const body = (await request.json().catch(() => ({}))) as { since?: unknown };
+  const rawBody: unknown = await request.json().catch(() => ({}));
+  const body = (rawBody && typeof rawBody === "object" && !Array.isArray(rawBody) ? rawBody : {}) as {
+    since?: unknown; afterId?: unknown;
+  };
   let since = new Date(Date.now() - DEFAULT_DAYS * 24 * 60 * 60 * 1000);
   if (body.since !== undefined && body.since !== null && body.since !== "") {
     const raw = typeof body.since === "string" ? body.since.trim() : "";
@@ -33,8 +36,16 @@ export async function POST(request: Request) {
     since = parsed;
   }
 
+  const afterId = typeof body.afterId === "string" ? body.afterId.trim() : undefined;
+  if (body.afterId != null && (!afterId || afterId.length > 120)) {
+    return NextResponse.json({ error: "afterId must be a meeting id" }, { status: 400 });
+  }
+  if (afterId && !body.since) {
+    return NextResponse.json({ error: "afterId requires since" }, { status: 400 });
+  }
+
   try {
-    return NextResponse.json(await syncGranola(userId, { since }));
+    return NextResponse.json(await syncGranola(userId, { since, afterId }));
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
     console.error("granola sync failed:", error);

@@ -10,18 +10,21 @@ export const datingPhotoFolder = (personId: string) => `dating/${personId}`;
 
 export const MAX_CAPTION = 300;
 
+/** Only authenticated app URLs cross the server/client boundary. */
+export const datingPhotoUrl = (photoId: string) => `/api/dating/photos/${encodeURIComponent(photoId)}/content`;
+
 export function toPhotoDTO(p: PhotoRow): DatingPhotoDTO {
-  return { id: p.id, url: p.url, caption: p.caption, createdAt: p.createdAt.toISOString() };
+  return { id: p.id, url: datingPhotoUrl(p.id), caption: p.caption, createdAt: p.createdAt.toISOString() };
 }
 
 /** Newest photo's URL (the avatar on /dating cards), or null. */
-export function pickAvatar(photos: Array<{ url: string; createdAt: Date | string }>): string | null {
-  let best: { url: string; t: number } | null = null;
+export function pickAvatar(photos: Array<{ id: string; createdAt: Date | string }>): string | null {
+  let best: { id: string; t: number } | null = null;
   for (const p of photos) {
     const t = new Date(p.createdAt).getTime();
-    if (!best || t > best.t) best = { url: p.url, t };
+    if (!best || t > best.t) best = { id: p.id, t };
   }
-  return best?.url ?? null;
+  return best ? datingPhotoUrl(best.id) : null;
 }
 
 /** Normalize a caption from a request body: trimmed, capped, empty → null. */

@@ -17,7 +17,7 @@ export default async function DatingPage() {
     prisma.datingPerson.findMany({
       where: { userId },
       orderBy: [{ lastMessageAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
-      include: { photos: { orderBy: { createdAt: "desc" }, take: 1, select: { url: true, createdAt: true } } },
+      include: { photos: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, createdAt: true } } },
     }),
     prisma.datingEvent.findMany({
       where: { userId },

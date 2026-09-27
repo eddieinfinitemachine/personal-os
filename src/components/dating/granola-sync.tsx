@@ -12,6 +12,7 @@ type Batch = {
   remaining: number;
   errors: { meetingId: string; title: string | null; error: string }[];
   nextSince: string;
+  nextAfterId: string | null;
 };
 
 type Progress = { checked: number; total: number; filed: number; added: number; errors: number };
@@ -34,17 +35,17 @@ function describe(p: Progress): string {
     .join(" · ");
 }
 
-function status(p: Progress | null, done: boolean, error: string | null): string {
+function status(p: Progress | null, done: boolean, error: string | null, paused: boolean): string {
   if (error) return p?.checked ? `${describe(p)} · ${error}` : error;
   if (!p) return "";
-  if (p.total > 0) return done ? `${describe(p)} · done` : describe(p);
+  if (p.total > 0) return `${describe(p)}${done ? " · done" : paused ? " · paused" : ""}`;
   return done ? "Nothing new in that range." : "Listing meetings…";
 }
 
 /**
  * Pull Granola meetings onto /dating: "Sync now" (last 10 days) or
  * "Import since…" a date. Each request is one server batch; this loops,
- * passing back nextSince, until the server says nothing remains.
+ * passing back nextSince and nextAfterId, until the server says nothing remains.
  */
 export function GranolaSync() {
   const router = useRouter();
@@ -54,22 +55,28 @@ export function GranolaSync() {
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [paused, setPaused] = useState(false);
   const stop = useRef(false);
+  const [retry, setRetry] = useState<{ kind: "sync" | "import"; since: string; afterId?: string; action: "Retry" | "Continue" } | null>(null);
 
-  const run = async (kind: "sync" | "import", from: string) => {
+  const run = async (kind: "sync" | "import", from: string, fromId?: string) => {
     setRunning(kind);
     setError(null);
     setDone(false);
+    setPaused(false);
+    setRetry(null);
     stop.current = false;
     const p: Progress = { checked: 0, total: 0, filed: 0, added: 0, errors: 0 };
     setProgress({ ...p });
     let cursor = from;
+    let afterId = fromId;
+    let complete = false;
     try {
       for (let i = 0; i < MAX_BATCHES && !stop.current; i++) {
         const res = await fetch("/api/dating/granola/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ since: cursor }),
+          body: JSON.stringify({ since: cursor, afterId }),
         });
         const data = (await res.json().catch(() => ({}))) as Partial<Batch> & { error?: string };
         if (!res.ok) throw new Error(data.error ?? `Sync failed (${res.status})`);
@@ -80,12 +87,29 @@ export function GranolaSync() {
         p.added += b.suggestions;
         p.errors += b.errors.length;
         setProgress({ ...p });
-        if (b.remaining <= 0 || b.nextSince === cursor) break;
+        if (b.errors.length) {
+          cursor = b.nextSince;
+          afterId = b.nextAfterId ?? undefined;
+          throw new Error(`${b.errors[0].title || "Meeting"}: ${b.errors[0].error}. Retry to continue from here.`);
+        }
+        if (b.remaining <= 0) {
+          complete = true;
+          break;
+        }
+        if (b.nextSince === cursor && (b.nextAfterId ?? undefined) === afterId) {
+          throw new Error("Sync made no progress. Retry to continue from here.");
+        }
         cursor = b.nextSince;
+        afterId = b.nextAfterId ?? undefined;
       }
-      setDone(true);
-      setPicking(false);
+      setDone(complete);
+      if (complete) setPicking(false);
+      else {
+        setPaused(true);
+        setRetry({ kind, since: cursor, afterId, action: "Continue" });
+      }
     } catch (e) {
+      setRetry({ kind, since: cursor, afterId, action: "Retry" });
       setError(e instanceof Error ? e.message : "Sync failed");
     } finally {
       setRunning(null);
@@ -93,7 +117,7 @@ export function GranolaSync() {
     }
   };
 
-  const text = status(progress, done, error);
+  const text = status(progress, done, error, paused);
 
   return (
     <section className={cn(card, "mb-6 p-3")}>
@@ -105,6 +129,11 @@ export function GranolaSync() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1">
+          {retry && !running && (
+            <button onClick={() => run(retry.kind, retry.since, retry.afterId)} className={ghost}>
+              {retry.action}
+            </button>
+          )}
           <button onClick={() => run("sync", daysAgo(10))} disabled={running !== null} className={ghost}>
             {running === "sync" ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
             Sync now

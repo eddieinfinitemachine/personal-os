@@ -49,7 +49,7 @@ function fakeClient(notes: GranolaNoteSummary[], summaries: Record<string, strin
     const d = detail(s, summaries[id] ?? "");
     return opts?.transcript ? { ...d, transcript: [{ speaker: { source: "speaker" }, text: `transcript ${id}` }] } : d;
   });
-  const listNotes = vi.fn(async () => [...notes].reverse()); // API order doesn't matter
+  const listNotes = vi.fn(async (_opts?: { createdAfter?: Date }) => [...notes].reverse()); // API order doesn't matter
   return { client: { listNotes, getNote } satisfies GranolaClient, listNotes, getNote };
 }
 
@@ -141,6 +141,39 @@ describe("syncGranola", () => {
     expect(listNotes).toHaveBeenLastCalledWith({ createdAfter: new Date(r2.nextSince) });
   });
 
+  it("resumes tied timestamps even when the API's created_after is exclusive", async () => {
+    const notes = ["c", "a", "b"].map((id) => summary(id, "Therapy", 3));
+    const { client, listNotes } = fakeClient(notes);
+    listNotes.mockImplementation(async (opts?: { createdAfter?: Date }) =>
+      notes.filter((n) => Date.parse(n.created_at) > (opts?.createdAfter?.getTime() ?? 0)),
+    );
+    let cursor = since;
+    let afterId: string | undefined;
+    for (let i = 0; i < 3; i++) {
+      const res = await syncGranola("u1", { since: cursor, afterId, client, limit: 1, ownerEmail: null });
+      expect(res.processed).toBe(1);
+      expect(res.remaining).toBe(2 - i);
+      cursor = new Date(res.nextSince);
+      afterId = res.nextAfterId ?? undefined;
+    }
+    expect(filer.fileGranolaMeeting.mock.calls.map((c) => c[1].meetingId)).toEqual(["a", "b", "c"]);
+  });
+
+  it("leaves a failed historical note ahead of the cursor for retry", async () => {
+    const notes = ["a", "b", "c"].map((id) => summary(id, "Therapy", 3));
+    const { client } = fakeClient(notes);
+    filer.fileGranolaMeeting
+      .mockResolvedValueOnce({ status: "done", filed: [], suggestions: [], skipped: 0 })
+      .mockResolvedValueOnce({ status: "error", error: "temporary failure" });
+    const failed = await syncGranola("u1", { since, client, ownerEmail: null });
+    expect(failed).toMatchObject({ processed: 1, remaining: 2, nextAfterId: "a" });
+    const retried = await syncGranola("u1", {
+      since: new Date(failed.nextSince), afterId: failed.nextAfterId ?? undefined, client, ownerEmail: null,
+    });
+    expect(retried).toMatchObject({ processed: 2, remaining: 0, errors: [] });
+    expect(filer.fileGranolaMeeting.mock.calls.map((c) => c[1].meetingId)).toEqual(["a", "b", "b", "c"]);
+  });
+
   it("skips notes someone else owns when an owner email is set", async () => {
     const notes = [summary("not_mine", "Therapy", 3), summary("not_shared", "Therapy", 4, "boss@example.com")];
     const { client, getNote } = fakeClient(notes);
@@ -149,13 +182,14 @@ describe("syncGranola", () => {
     expect(res).toMatchObject({ processed: 2, skipped: 1, meetings: 1 });
   });
 
-  it("reports a failed note and carries on, but stops on auth / rate-limit errors", async () => {
+  it("reports a failed note without advancing, and stops on auth / rate-limit errors", async () => {
     const notes = [summary("not_a", "Therapy", 3), summary("not_b", "Therapy", 4)];
     const { client, getNote } = fakeClient(notes);
     filer.fileGranolaMeeting.mockResolvedValueOnce({ status: "error", error: "Claude could not file this one" });
     const res = await syncGranola("u1", { since, client, ownerEmail: null });
     expect(res.errors).toEqual([{ meetingId: "not_a", title: "Therapy", error: "Claude could not file this one" }]);
-    expect(res.filed).toBe(1);
+    expect(res.filed).toBe(0);
+    expect(res).toMatchObject({ nextSince: since.toISOString(), remaining: 2, processed: 0 });
 
     getNote.mockRejectedValueOnce(new GranolaError("Granola rejected GRANOLA_API_KEY (401)", 401));
     await expect(syncGranola("u1", { since, client, ownerEmail: null })).rejects.toThrow("401");

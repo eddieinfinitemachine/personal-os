@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
 import { sniffImage } from "@/lib/board-sniff";
-import { MAX_UPLOAD_BYTES, storeUserImage } from "@/lib/user-image";
+import { deleteUserImage, MAX_UPLOAD_BYTES, PrivateImageStorageUnavailable, storeUserImage } from "@/lib/user-image";
 import { cleanCaption, datingPhotoFolder, toPhotoDTO } from "@/lib/dating-photos";
 
 export const dynamic = "force-dynamic";
@@ -74,8 +74,19 @@ export async function POST(request: Request, { params }: Ctx) {
     return NextResponse.json({ error: `Up to ${MAX_PHOTOS_PER_PERSON} photos per person.` }, { status: 400 });
   }
 
-  const stored = await storeUserImage(userId, datingPhotoFolder(id), image);
+  let stored;
+  try {
+    stored = await storeUserImage(userId, datingPhotoFolder(id), image);
+  } catch (error) {
+    if (error instanceof PrivateImageStorageUnavailable) {
+      return NextResponse.json({ error: "Photo uploads are temporarily unavailable." }, { status: 503 });
+    }
+    throw error;
+  }
   if (!stored) return NextResponse.json({ error: "That file isn't an image we can read." }, { status: 415 });
-  const photo = await prisma.datingPhoto.create({ data: { userId, personId: id, url: stored.imageUrl, caption } });
+  const photo = await prisma.datingPhoto.create({ data: { userId, personId: id, url: stored.imageUrl, caption } }).catch(async (error) => {
+    await deleteUserImage(userId, datingPhotoFolder(id), stored.imageUrl);
+    throw error;
+  });
   return NextResponse.json({ photo: toPhotoDTO(photo) });
 }
