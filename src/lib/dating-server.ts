@@ -76,6 +76,23 @@ export function personPatchError(body: Record<string, unknown>): string | null {
 }
 
 /**
+ * Extra checks for creating someone (quick add): a stage, phone or met date
+ * that was given but can't be used is a 400 rather than silently dropped.
+ */
+export function newPersonError(body: Record<string, unknown>): string | null {
+  if (body.stage != null && body.stage !== "" && !isStage(body.stage)) return "Unknown stage";
+  if (body.handles != null && typeof body.handles !== "string" && !Array.isArray(body.handles)) {
+    return "handles must be text or a list";
+  }
+  const given = typeof body.handles === "string" ? body.handles.trim() : Array.isArray(body.handles) ? body.handles.length : 0;
+  if (given && !parseHandles(body.handles).length) {
+    return "That doesn't look like a phone number or email.";
+  }
+  if (typeof body.metAt === "string" && body.metAt && !date(body.metAt)) return "That met date isn't a valid date.";
+  return null;
+}
+
+/**
  * Whitelist the editable person fields out of a request body. Only keys
  * present in the body are returned, so PATCH leaves the rest alone.
  */
