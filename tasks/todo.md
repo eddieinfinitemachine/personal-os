@@ -1047,3 +1047,13 @@ Eddie wants to describe someone once, find saved contact details, and build thei
 No database schema changes. Tests use isolated local data; production data changes are limited to the requested requested contact/import.
 
 Verification so far: 523 tests passed (including scratch PostgreSQL capture/contact/insight tests), typecheck and production build passed. Browser with invented people verified paragraph extraction, explicit and unknown contact/date fields, original context, Pursuing status, 390px layout without overflow, save/navigation, and a summary generated automatically with honest source counts. Independent reviews found and fixed stale contact transfer when switching to manual entry, duplicate-name/concurrent contact assignment, and empty targeted-sync arguments. WhatsApp backfill verification and production release remain pending.
+
+## 2026-09-27 — Separate dating groups and hide lessons
+
+Requested design: retain simple cards, separate Dating (including Exclusive), Pursuing and Paused into labeled groups, and preserve the past disclosure/search. Make Lessons collapsible, initially closed, remembering the preference on this browser and preserving any generated results while hidden. Existing auth/data model unchanged.
+
+- [x] Inspect current components and explicit screenshot request; choose the small existing-style change above.
+- [x] Implement grouping and persisted lessons disclosure.
+- [x] Verify status movement/recovery, search and disclosure persistence with component tests; full suite506passed/41opt-in skipped; typecheck/build passed. Live mobile/desktop check follows deployment.
+- [x] Independent review approved with no findings.
+- [ ] Release and production desktop/mobile verification.

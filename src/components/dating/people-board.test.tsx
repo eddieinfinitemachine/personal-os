@@ -37,7 +37,7 @@ afterEach(async () => {
 async function render(people: DatingCard[] = [person]) {
   await act(async () => root.render(<PeopleBoard people={people} />));
 }
-const currentList = () => container.querySelector('ul[aria-label="Current relationships"]');
+const currentList = () => container.querySelector('section[aria-label="Current relationships"]');
 const pastList = () => container.querySelector('ul[aria-label="Past relationships"]');
 const pastToggle = () => [...container.querySelectorAll("button")].find((button) => /Past relationships/.test(button.textContent ?? ""))!;
 const card = (id: string, scope: ParentNode | null = container) => scope?.querySelector(`a[href="/dating/${id}"]`) ?? null;
@@ -66,11 +66,13 @@ function deferred() {
 
 // These verify the product's grouping, navigation and mutations, not grid CSS.
 describe("simple people overview", () => {
-  it("shows current and paused people together, with past relationships collapsed", async () => {
-    await render([paused, past, person]);
+  it("separates dating, pursuing and paused people, with past relationships collapsed", async () => {
+    await render([paused, past, person, { ...person, id: "dating", name: "Dating Person", stage: "dating" }, { ...person, id: "exclusive", name: "Exclusive Person", stage: "exclusive" }]);
     expect(container.querySelector('section[aria-label="People"] h2')?.textContent).toBe("People");
     expect(currentList()).not.toBeNull();
-    expect([...currentList()!.querySelectorAll('a[href^="/dating/"]')].map((link) => link.textContent)).toEqual([person.name, paused.name]);
+    expect([...currentList()!.querySelectorAll('a[href^="/dating/"]')].map((link) => link.textContent)).toEqual(["Dating Person", "Exclusive Person", person.name, paused.name]);
+    expect([...currentList()!.querySelectorAll("ul")].map((list) => list.getAttribute("aria-label"))).toEqual(["Dating", "Pursuing", "Paused"]);
+    expect(container.querySelector('ul[aria-label="Dating"]')?.querySelectorAll("li")).toHaveLength(2);
     expect(card(past.id)).toBeNull();
     expect(pastList()).toBeNull();
     expect(pastToggle().textContent).toMatch(/Past relationships\s*\(1\)/);
@@ -101,7 +103,7 @@ describe("simple people overview", () => {
     localStorage.setItem("personalos:dating-view", view);
     await render([person, paused, past]);
     expect(container.querySelector('[role="group"][aria-label="View"]')).toBeNull();
-    expect(container.querySelectorAll('ul[aria-label="Current relationships"]')).toHaveLength(1);
+    expect(container.querySelectorAll('section[aria-label="Current relationships"]')).toHaveLength(1);
     expect(currentList()!.querySelectorAll('a[href^="/dating/"]')).toHaveLength(2);
     expect(container.querySelector('[draggable="true"]')).toBeNull();
     expect(card(past.id)).toBeNull();
@@ -180,6 +182,8 @@ describe("changing relationship status", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(confirm).not.toHaveBeenCalled();
     expect(menu().disabled).toBe(true);
+    expect(card(person.id, container.querySelector('ul[aria-label="Dating"]'))).not.toBeNull();
+    expect(container.querySelector('ul[aria-label="Pursuing"]')).toBeNull();
     await act(async () => pending.resolve(savedStage("dating")));
     expect(menu().disabled).toBe(false);
     expect([...menu().options].some((option) => option.value === "dating")).toBe(false);

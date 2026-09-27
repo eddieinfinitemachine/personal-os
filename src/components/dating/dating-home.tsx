@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
-import { Link2, Loader2, Plus, Sparkles, X } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { ChevronDown, Link2, Loader2, Plus, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SimpleMarkdown } from "@/components/simple-markdown";
 import { DictateCard } from "./dictate-card";
@@ -27,6 +27,7 @@ export type GranolaSuggestion = {
 const card = "rounded-xl border border-[var(--color-card-border)] bg-[var(--color-card)]";
 const ghost =
   "inline-flex min-h-11 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] disabled:opacity-50";
+const LESSONS_OPEN_KEY = "personalos:dating-lessons-open";
 
 export function DatingHome({
   people,
@@ -43,6 +44,18 @@ export function DatingHome({
   const [error, setError] = useState<string | null>(null);
   const [patterns, setPatterns] = useState<{ text: string; taste: string | null; photos: number } | null>(null);
   const [patternsBusy, setPatternsBusy] = useState(false);
+  const [lessonsOpen, setLessonsOpen] = useState(false);
+  const lessonsId = useId();
+
+  useEffect(() => {
+    try { setLessonsOpen(localStorage.getItem(LESSONS_OPEN_KEY) === "1"); } catch {}
+  }, []);
+
+  const toggleLessons = () => {
+    const next = !lessonsOpen;
+    setLessonsOpen(next);
+    try { localStorage.setItem(LESSONS_OPEN_KEY, next ? "1" : "0"); } catch {}
+  };
 
   const withLessons = people.filter((p) => p.lessons?.trim());
 
@@ -91,46 +104,54 @@ export function DatingHome({
           <DictateCard onSaved={() => router.refresh()} />
         </div>
 
-        <section className="mt-8">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">Lessons</h2>
-            <button onClick={findPatterns} disabled={patternsBusy} className={ghost}>
-              {patternsBusy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-              Find patterns
+        <section className="mt-8 border-t border-[var(--color-card-border)] pt-2" aria-label="Lessons">
+          <h2>
+            <button type="button" onClick={toggleLessons} aria-expanded={lessonsOpen} aria-controls={lessonsId}
+              className="mb-1 flex min-h-11 items-center gap-2 rounded-md px-1 text-sm font-semibold text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]">
+              <ChevronDown aria-hidden className={cn("size-4 transition-transform", !lessonsOpen && "-rotate-90")} />
+              Lessons
             </button>
-          </div>
-          {patterns && (
-            <div className={cn(card, "p-4 mb-3 text-sm")}>
-              <SimpleMarkdown text={patterns.text} />
+          </h2>
+          <div id={lessonsId} hidden={!lessonsOpen}>
+            <div className="mb-2 flex justify-end">
+              <button onClick={findPatterns} disabled={patternsBusy} className={ghost}>
+                {patternsBusy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                Find patterns
+              </button>
             </div>
-          )}
-          {patterns?.taste && (
-            <section className={cn(card, "p-4 mb-3 text-sm")} aria-label="Your taste">
-              <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-                <h3 className="text-base font-semibold">Your taste</h3>
-                <span className="text-xs text-[var(--color-label-tertiary)]">
-                  {patterns.photos
-                    ? `Read with ${patterns.photos} photo${patterns.photos === 1 ? "" : "s"}`
-                    : "From notes only. Add photos for a fuller read."}
-                </span>
+            {patterns && (
+              <div className={cn(card, "p-4 mb-3 text-sm")}>
+                <SimpleMarkdown text={patterns.text} />
               </div>
-              <SimpleMarkdown text={patterns.taste} />
-            </section>
-          )}
-          {withLessons.length ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              {withLessons.map((p) => (
-                <Link key={p.id} href={`/dating/${p.id}`} className={cn(card, "block p-4 hover:bg-[var(--color-fill-secondary)] transition")}>
-                  <div className="text-sm font-medium mb-1">{p.name}</div>
-                  <p className="text-sm text-[var(--color-muted-foreground)] whitespace-pre-wrap line-clamp-6">{p.lessons}</p>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-[var(--color-muted-foreground)]">
-              Write what each one taught you under Notes. They collect here, and Find patterns reads across all of them.
-            </p>
-          )}
+            )}
+            {patterns?.taste && (
+              <section className={cn(card, "p-4 mb-3 text-sm")} aria-label="Your taste">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                  <h3 className="text-base font-semibold">Your taste</h3>
+                  <span className="text-xs text-[var(--color-label-tertiary)]">
+                    {patterns.photos
+                      ? `Read with ${patterns.photos} photo${patterns.photos === 1 ? "" : "s"}`
+                      : "From notes only. Add photos for a fuller read."}
+                  </span>
+                </div>
+                <SimpleMarkdown text={patterns.taste} />
+              </section>
+            )}
+            {withLessons.length ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                {withLessons.map((p) => (
+                  <Link key={p.id} href={`/dating/${p.id}`} className={cn(card, "block p-4 hover:bg-[var(--color-fill-secondary)] transition")}>
+                    <div className="text-sm font-medium mb-1">{p.name}</div>
+                    <p className="text-sm text-[var(--color-muted-foreground)] whitespace-pre-wrap line-clamp-6">{p.lessons}</p>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-[var(--color-muted-foreground)]">
+                Write what each one taught you under Notes. They collect here, and Find patterns reads across all of them.
+              </p>
+            )}
+          </div>
         </section>
 
         <details className={cn(card, "mt-8 p-4")}>

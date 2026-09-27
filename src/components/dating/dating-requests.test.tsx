@@ -113,11 +113,54 @@ describe("dating request recovery", () => {
   it("re-enables Find patterns after a rejected request", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(ok({ text: "Recovered patterns" })));
     await act(async () => root.render(<DatingHome people={[]} suggestions={[]} />));
+    await click(button("Lessons"));
     await click(button("Find patterns"));
     expect(button("Find patterns").disabled).toBe(false);
     expect(container.textContent).toContain("Could not find patterns");
     await click(button("Find patterns"));
     expect(container.textContent).toContain("Recovered patterns");
+  });
+
+  it("remembers hidden lessons and keeps a pending pattern result when collapsed", async () => {
+    let resolve!: (value: unknown) => void;
+    const fetch = vi.fn().mockReturnValue(new Promise((done) => { resolve = done; }));
+    vi.stubGlobal("fetch", fetch);
+    await act(async () => root.render(<DatingHome people={[]} suggestions={[]} />));
+    const toggle = () => button("Lessons");
+    const content = () => document.getElementById(toggle().getAttribute("aria-controls")!)!;
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    expect(content().hidden).toBe(true);
+    await click(toggle());
+    expect(localStorage.getItem("personalos:dating-lessons-open")).toBe("1");
+    await click(button("Find patterns"));
+    await click(toggle());
+    await act(async () => resolve(ok({ text: "A saved pattern result" })));
+    expect(content().hidden).toBe(true);
+    await click(toggle());
+    expect(content().textContent).toContain("A saved pattern result");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await click(toggle());
+    await act(async () => root.render(<DatingHome key="new-visit" people={[]} suggestions={[]} />));
+    expect(content().hidden).toBe(true);
+    expect(localStorage.getItem("personalos:dating-lessons-open")).toBe("0");
+  });
+
+  it("restores open lessons and still toggles if browser storage is unavailable", async () => {
+    localStorage.setItem("personalos:dating-lessons-open", "1");
+    await act(async () => root.render(<DatingHome people={[]} suggestions={[]} />));
+    expect(button("Lessons").getAttribute("aria-expanded")).toBe("true");
+    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
+    try {
+      await act(async () => root.render(<DatingHome key="blocked-storage" people={[]} suggestions={[]} />));
+      await click(button("Lessons"));
+      expect(button("Lessons").getAttribute("aria-expanded")).toBe("true");
+      await click(button("Lessons"));
+      expect(button("Lessons").getAttribute("aria-expanded")).toBe("false");
+    } finally {
+      read.mockRestore();
+      write.mockRestore();
+    }
   });
 
   it("keeps an existing moment after deletion fails and permits retry", async () => {
