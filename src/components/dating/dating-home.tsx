@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link2, Loader2, Plus, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SimpleMarkdown } from "@/components/simple-markdown";
@@ -26,7 +26,7 @@ export type GranolaSuggestion = {
 
 const card = "rounded-xl border border-[var(--color-card-border)] bg-[var(--color-card)]";
 const ghost =
-  "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] disabled:opacity-50";
+  "inline-flex min-h-11 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] disabled:opacity-50";
 
 export function DatingHome({
   people,
@@ -70,8 +70,8 @@ export function DatingHome({
             Remember the details, see how it&apos;s going, learn from each one.
           </p>
         </div>
-        <button onClick={() => setAdding(true)} className={ghost} aria-haspopup="dialog">
-          <Plus className="size-4" /> Add
+        <button onClick={() => setAdding(true)} className={cn(ghost, "min-h-11 shrink-0")} aria-haspopup="dialog">
+          <Plus className="size-4" /> Add person
         </button>
       </header>
 
@@ -85,9 +85,7 @@ export function DatingHome({
 
       {/* Everything below the people view keeps the narrower reading width. */}
       <div className="max-w-5xl">
-        {granola && <GranolaSync />}
-
-        {suggestions.length > 0 && <Suggestions suggestions={suggestions} people={people} setError={setError} />}
+        {suggestions.length > 0 && <Suggestions suggestions={suggestions} people={people} />}
 
         <div className="mb-6">
           <DictateCard onSaved={() => router.refresh()} />
@@ -135,9 +133,14 @@ export function DatingHome({
           )}
         </section>
 
-        <section className={cn(card, "mt-8 p-4")}>
-          <SyncHelp compact />
-        </section>
+        <details className={cn(card, "mt-8 p-4")}>
+          <summary className="min-h-11 cursor-pointer content-center text-sm font-semibold">Imports and sync</summary>
+          {/* Keep controls mounted: collapsing must not reset an active import. */}
+          <div className="pt-3">
+            {granola && <GranolaSync />}
+            <SyncHelp compact />
+          </div>
+        </details>
       </div>
     </div>
   );
@@ -147,57 +150,90 @@ export function DatingHome({
 function Suggestions({
   suggestions,
   people,
-  setError,
 }: {
   suggestions: GranolaSuggestion[];
   people: PickablePerson[];
-  setError: (e: string | null) => void;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
-  const [gone, setGone] = useState<Set<string>>(new Set());
+  const pending = useRef<string | null>(null);
+  const goneIds = useRef(new Set<string>());
+  const [gone, setGone] = useState(goneIds.current);
+  const [error, setError] = useState<string | null>(null);
   const [linking, setLinking] = useState<GranolaSuggestion | null>(null);
+
+  const begin = (s: GranolaSuggestion) => {
+    // Also guard callbacks from a picker that closed before this render.
+    if (pending.current || goneIds.current.has(s.id)) return false;
+    pending.current = s.id;
+    setBusy(s.id);
+    setLinking(null);
+    setError(null);
+    return true;
+  };
+  const finish = () => {
+    pending.current = null;
+    setBusy(null);
+  };
+  const hide = (id: string, hidden = true) => {
+    const next = new Set(goneIds.current);
+    if (hidden) next.add(id);
+    else next.delete(id);
+    goneIds.current = next;
+    setGone(next);
+  };
 
   // Only the selected note is reviewed; the same name may refer to someone else.
   const link = async (s: GranolaSuggestion, person: PickablePerson) => {
-    setLinking(null);
-    const ids = [s.id];
-    setGone((g) => new Set([...g, ...ids]));
-    const res = await fetch(`/api/dating/suggestions/${s.id}/link`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ personId: person.id }),
-    }).catch(() => null);
-    const data = res ? await res.json().catch(() => ({})) : {};
-    if (!res?.ok) {
-      setGone((g) => {
-        const next = new Set(g);
-        for (const id of ids) next.delete(id);
-        return next;
+    if (!begin(s)) return;
+    hide(s.id);
+    let failure = `Could not add ${s.name} to ${person.name}. Try again.`;
+    try {
+      const res = await fetch(`/api/dating/suggestions/${s.id}/link`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ personId: person.id }),
       });
-      return setError(`Could not add ${s.name} to ${person.name}: ${data.error ?? "network error"}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (typeof data.error === "string") failure = `${failure} ${data.error}`;
+        throw new Error("Link failed");
+      }
+      router.refresh();
+    } catch {
+      hide(s.id, false);
+      setError(failure);
+    } finally {
+      finish();
     }
-    setError(null);
-    router.refresh();
   };
   const act = async (s: GranolaSuggestion, action: "add" | "dismiss") => {
-    setBusy(s.id);
-    const res = await fetch(`/api/dating/suggestions/${s.id}/${action}`, { method: "POST" });
-    const data = await res.json().catch(() => ({}));
-    setBusy(null);
-    if (!res.ok) return setError(data.error ?? "Could not update");
-    setError(null);
-    if (action === "add") return router.push(`/dating/${data.person.id}`);
-    setGone((g) => new Set(g).add(s.id));
-    router.refresh();
+    if (!begin(s)) return;
+    let failure = `Could not ${action === "add" ? "add" : "dismiss"} ${s.name}. Try again.`;
+    try {
+      const res = await fetch(`/api/dating/suggestions/${s.id}/${action}`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || (action === "add" && typeof data.person?.id !== "string")) {
+        if (typeof data.error === "string") failure = `${failure} ${data.error}`;
+        throw new Error("Review failed");
+      }
+      hide(s.id);
+      if (action === "add") router.push(`/dating/${data.person.id}`);
+      else router.refresh();
+    } catch {
+      setError(failure);
+    } finally {
+      finish();
+    }
   };
   const visible = suggestions.filter((s) => !gone.has(s.id));
   if (!visible.length) return null;
   return (
-    <section className="mb-6">
+    <section className="mb-6" aria-label="Review from Granola">
       <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
-        Review from Granola
+        Review from Granola <span className="tabular-nums">({visible.length})</span>
       </h2>
+      {error && <p role="alert" className="mb-2 rounded-md bg-[var(--color-fill)] px-3 py-2 text-sm text-[var(--color-destructive)]">{error}</p>}
       <ul className="space-y-2">
         {visible.map((s) => (
           <li key={s.id} className={cn(card, "flex flex-wrap items-center gap-x-3 gap-y-2 p-3")}>
@@ -220,13 +256,13 @@ function Suggestions({
               <button
                 onClick={() => act(s, "add")}
                 disabled={busy !== null}
-                className="pressable inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium bg-[var(--color-foreground)] text-[var(--color-background)] disabled:opacity-50"
+                className="pressable inline-flex min-h-11 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium bg-[var(--color-foreground)] text-[var(--color-background)] disabled:opacity-50"
               >
                 {busy === s.id ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />} Add her
               </button>
               {people.length > 0 && (
                 <button
-                  onClick={() => setLinking(s)}
+                  onClick={() => { if (!pending.current && !goneIds.current.has(s.id)) setLinking(s); }}
                   disabled={busy !== null}
                   className={ghost}
                   aria-haspopup="dialog"

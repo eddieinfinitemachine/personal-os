@@ -141,3 +141,18 @@ export function relationshipDates(p: Pick<BoardPerson, "stage" | "metAt" | "ende
   }
   return start ? `Met ${fmt(start, { month: "short", year: "numeric" })}` : null;
 }
+
+/** Search names without requiring accents, punctuation or original word order. */
+export function matchesPersonName(name: string, query: string): boolean {
+  if (!query.trim()) return true;
+  const fold = (value: string) => value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const words = fold(query).split(" ").filter(Boolean);
+  const normalized = fold(name);
+  return words.length > 0 && words.every((word) => normalized.includes(word));
+}
+
+/** Past relationships follow their recorded dates; a fresh import isn't a fresh relationship. */
+export function byPastRelationship<T extends BoardPerson>(a: T, b: T): number {
+  const date = (p: BoardPerson) => [t(p.endedAt), t(p.metAt)].find(Number.isFinite) ?? 0;
+  return date(b) - date(a) || byActivity(a, b);
+}

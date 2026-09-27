@@ -273,3 +273,69 @@ describe("deleting a person", () => {
     expect(card(person.id)).toBeNull();
   });
 });
+
+async function search(query: string) {
+  await act(async () => {
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Search people"]')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, query);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+describe("finding people", () => {
+  it("finds past people across accents and word order without changing the collapsed preference", async () => {
+    await render([person, { ...past, name: "Renée Laurent" }]);
+    await search("LAURENT renee");
+    expect(card(person.id)).toBeNull();
+    expect(card(past.id, pastList())).not.toBeNull();
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe("1 person found");
+    expect(localStorage.getItem("personalos:dating-ended-open")).toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Clear search"]')!.click());
+    expect(card(person.id)).not.toBeNull();
+    expect(pastList()).toBeNull();
+    expect(document.activeElement).toBe(container.querySelector('input[aria-label="Search people"]'));
+  });
+
+  it("shows a recoverable no-match state and Escape restores the saved open section", async () => {
+    localStorage.setItem("personalos:dating-ended-open", "1");
+    await render([person, past]);
+    await search("Nobody matching");
+    expect(container.textContent).toContain("No people match");
+    expect(card(person.id)).toBeNull();
+    expect(card(past.id)).toBeNull();
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Search people"]')!;
+    await act(async () => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(input.value).toBe("");
+    expect(card(past.id, pastList())).not.toBeNull();
+    expect(pastToggle().getAttribute("aria-expanded")).toBe("true");
+    expect(localStorage.getItem("personalos:dating-ended-open")).toBe("1");
+  });
+
+  it("clears a no-match query with Show everyone", async () => {
+    await render([person, past]);
+    await search("Missing");
+    await act(async () => [...container.querySelectorAll("button")].find((b) => b.textContent === "Show everyone")!.click());
+    expect(card(person.id)).not.toBeNull();
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Search people"]')!.value).toBe("");
+  });
+
+  it("orders past cards by relationship dates despite later note imports", async () => {
+    localStorage.setItem("personalos:dating-ended-open", "1");
+    await render([
+      { ...past, id: "older", name: "Older", endedAt: "2024-01-01", lastEventAt: "2026-09-26" },
+      { ...past, id: "recent", name: "Recent", endedAt: "2026-01-01", lastEventAt: "2026-01-01" },
+    ]);
+    expect([...pastList()!.querySelectorAll("a")].map((a) => a.textContent)).toEqual(["Recent", "Older"]);
+  });
+
+  it("keeps refreshed names and photos after a status update", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(savedStage("dating")));
+    await render();
+    await actOn("dating");
+    await render([{ ...person, stage: "dating", name: "Updated Name", avatarUrl: "/api/dating/photos/new/content" }]);
+    expect(card(person.id)?.textContent).toBe("Updated Name");
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("/api/dating/photos/new/content");
+    await search("updated");
+    expect(card(person.id)).not.toBeNull();
+  });
+});
