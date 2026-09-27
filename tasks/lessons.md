@@ -102,3 +102,8 @@ synthetic KeyboardEvents via eval instead).
 **Context**: Browser-verifying drag and drop on /dating with a freshly seeded scratch user.
 **Mistake / surprise**: Every drag silently did nothing. The first-run onboarding modal (`personalos:onboarding-completed`) covered the page for the new user, and raw `mouse.*` calls don't report that (only `locator.*` actionability logs under `DEBUG=pw:api` said "subtree intercepts pointer events").
 **Rule**: For a seeded test user, set `personalos:onboarding-completed=1` with `context.addInitScript` before loading any page. Use a `playwright-core` whose `browsers.json` revision matches the cached Chrome for Testing, and prefer `locator.dragTo` over raw mouse moves, because its actionability log explains a blocked input.
+
+## 2026-09-26 — dating names alone are not identity
+**Context**: The updated handoff reports Granola confusing similarly named people whose relationships occurred in different periods.
+**Mistake / surprise**: The filer saw names and only recent events, and the proposal parser could reattach an explicitly unmatched name to an existing person.
+**Rule**: Include relationship activity bounds and the source note date in matching context; preserve unresolved identities for manual linking. Never silently pick between similar names when the temporal evidence is inconclusive.

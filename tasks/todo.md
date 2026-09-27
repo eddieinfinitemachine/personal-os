@@ -1003,3 +1003,12 @@ Ask (Eddie): "the page for each person is too complicated", and he couldn't find
 - [ ] Publish PR and verify deployment.
 
 No database schema changes. All verification database writes used isolated local PostgreSQL on port 55439; the live Mac sync checkout/job was untouched. Granola/Claude production imports were not triggered. Browser confirmed board controls; the in-app browser stalled on the native confirmation dialog, so confirmation/cancel/success/failure were verified with rendered-component tests and deletion with running-app HTTP checks instead. Identical undated imports dedupe going forward; old imports and overlapping/edited undated transcripts cannot be matched reliably. Migration CLI is dry-run by default with a restricted resumable manifest; no migration ran against production. Existing lint command remains broken independently of this change.
+
+## Dating: date-aware person matching (2026-09-26, Codex)
+- [ ] Reproduce similarly named-person ambiguity and the parser's unmatched-name fallback.
+- [ ] Supply the filer each person's full activity window and note date, and prefer date-consistent matches.
+- [ ] Preserve ambiguous matches as reviewable suggestions; keep forced-person journal/dictation behavior.
+- [ ] Test two similar names, overlapping/unknown windows, date boundaries and real PostgreSQL loading/filing.
+- [ ] Run full checks, review, ship and verify the release.
+
+No schema changes or production data repair planned. The handoff says existing misfiled data was already corrected manually.
