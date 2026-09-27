@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { callClaudeJSON } from "@/lib/claude";
+import { guardGranolaIdentities, relationshipWindow, type IdentityPerson } from "@/lib/dating-identity";
 import {
   appendLessons,
   dateContext,
@@ -9,7 +10,6 @@ import {
   granolaExternalId,
   noonUTC,
   parseProposal,
-  sameName,
   suggestionsFrom,
   withSourceLine,
   type KnownPerson,
@@ -39,7 +39,11 @@ const SYSTEM = `You file one person's notes about their dating life. The note is
 Work out which romantic interests or dates it talks about and what it says about each. Ignore colleagues, friends, family and business meetings unless they are one of the people listed as someone being dated.
 Rules:
 - Never invent facts. Only record what the note actually says.
-- Match names to the listed people even with transcription errors, misspellings or nicknames ("Anna" / "Ana", "Kat" / "Katherine"). Use their id. If someone is clearly new, set personId null and isNew true.
+- Match names using both identity and the relationship's activity window, never name similarity alone. Transcription errors, misspellings and nicknames ("Anna" / "Ana", "Kat" / "Katherine", "Margo" / "Margot" / "Margaux") can refer to DIFFERENT listed people.
+- For similar names, prefer the person active at the date being discussed. The note's date anchors current events; a clearly dated recollection uses its historical date instead. A past relationship can be discussed long after it ended. Do not move an old memory onto someone current.
+- met/ended dates are explicit bounds; first/last timeline activity is only observed evidence. Unknown dates do not prove someone was inactive. When dates overlap, are missing, span multiple relationships, or do not distinguish two near-identical names, return personId null and isNew true for manual matching. Do not guess an ID, even if one name is spelled closer.
+- A full name explicitly present in the ORIGINAL NOTE can identify someone regardless of the note date. Never invent or expand a surname as evidence. Set name to the name as written/heard in the note. If clearly new or ambiguous, use personId null and isNew true; Granola saves this as a suggestion, not an automatically created person.
+- matchDate: the YYYY-MM-DD reference date used to distinguish similar names. Use the note date for clearly contemporary discussion. Use a historical date only when explicitly written in the note (ISO or month/day/year); use null for unclear retrospectives, vague periods or mixed dates. An ambiguous first-name-only recollection must remain unmatched.
 - Resolve relative dates ("last night", "Saturday", "tomorrow") against the note's date using the calendar given. Dates are YYYY-MM-DD.
 - Skip anything already in that person's existing lists, and don't log an event that is already on their timeline.
 - note: a cleaned-up first-person summary of what was said about her, in my voice, keeping specifics (names, places, plans, preferences). summary: a short title for it, under 8 words.
@@ -47,13 +51,15 @@ Rules:
 - stage: set it when the note says the relationship changed: started dating, became exclusive, paused, or ended (broke up, ended it, it's over). Otherwise null.
 - instagram: her Instagram handle only when the note explicitly gives it ("her insta is @jane.doe", "she's jane.doe on Instagram"), without the @. Never guess one from her name. Null when the note doesn't state one or it matches the handle already listed.
 Reply with ONLY a JSON object:
-{"people":[{"personId":"<id or null>","name":"","isNew":false,"summary":"","note":"","remember":[],"greenFlags":[],"redFlags":[],"lessons":"","stage":"talking|dating|exclusive|paused|ended|null","instagram":null,"events":[{"kind":"date|milestone|call|conflict","title":"","occurredAt":"YYYY-MM-DD","vibe":null,"notes":""}]}]}
+{"people":[{"personId":"<id or null>","name":"","matchDate":null,"isNew":false,"summary":"","note":"","remember":[],"greenFlags":[],"redFlags":[],"lessons":"","stage":"talking|dating|exclusive|paused|ended|null","instagram":null,"events":[{"kind":"date|milestone|call|conflict","title":"","occurredAt":"YYYY-MM-DD","vibe":null,"notes":""}]}]}
 If nobody being dated is discussed, reply {"people":[]}.`;
 
 const knownSelect = {
   id: true,
   name: true,
   stage: true,
+  metAt: true,
+  endedAt: true,
   remember: true,
   greenFlags: true,
   redFlags: true,
@@ -68,14 +74,33 @@ const knownSelect = {
   },
 } satisfies Prisma.DatingPersonSelect;
 
-export type KnownWithEvents = KnownPerson & { events?: { occurredAt: Date; kind: string; title: string }[] };
+export type KnownWithEvents = KnownPerson & IdentityPerson & { events?: { occurredAt: Date; kind: string; title: string }[] };
+
+async function withActivityBounds(userId: string, people: KnownWithEvents[]): Promise<KnownWithEvents[]> {
+  if (!people.length) return [];
+  // All dated activity, not only the ten recent timeline entries sent below.
+  // Imported note timestamps must not extend an ex's relationship window.
+  const bounds = await prisma.datingEvent.groupBy({
+    by: ["personId"],
+    where: { userId, personId: { in: people.map((p) => p.id) }, kind: { not: "note" } },
+    _min: { occurredAt: true },
+    _max: { occurredAt: true },
+  });
+  const byPerson = new Map(bounds.map((row) => [row.personId, row]));
+  return people.map((p) => ({ ...p,
+    firstEventAt: byPerson.get(p.id)?._min.occurredAt ?? null,
+    lastEventAt: byPerson.get(p.id)?._max.occurredAt ?? null,
+  }));
+}
 
 export async function loadKnownPeople(userId: string): Promise<KnownWithEvents[]> {
-  return prisma.datingPerson.findMany({ where: { userId }, select: knownSelect, orderBy: { createdAt: "asc" } });
+  const people = await prisma.datingPerson.findMany({ where: { userId }, select: knownSelect, orderBy: { createdAt: "asc" } });
+  return withActivityBounds(userId, people);
 }
 
 export async function loadKnownPerson(userId: string, id: string): Promise<KnownWithEvents | null> {
-  return prisma.datingPerson.findFirst({ where: { id, userId }, select: knownSelect });
+  const person = await prisma.datingPerson.findFirst({ where: { id, userId }, select: knownSelect });
+  return person ? (await withActivityBounds(userId, [person]))[0] : null;
 }
 
 /**
@@ -103,6 +128,7 @@ export async function fileDatingNote(opts: {
         .map((p) =>
           [
             `- id ${p.id}: ${p.name}${p.stage ? ` (${p.stage})` : ""}`,
+            `  ${relationshipWindow(p)}`,
             p.instagram && `  instagram: @${p.instagram}`,
             p.remember.length && `  remember: ${p.remember.join("; ")}`,
             p.greenFlags.length && `  green flags: ${p.greenFlags.join("; ")}`,
@@ -130,7 +156,9 @@ export async function fileDatingNote(opts: {
     .join("\n\n");
 
   const raw = await callClaudeJSON<unknown>({ system: SYSTEM, user, maxTokens: journal ? 8000 : 4000 });
-  return { proposal: parseProposal(raw, { people, noteDay: day, personId: forced?.id, journal }), day };
+  const automatic = opts.source === "granola" && !forced;
+  const guarded = automatic ? guardGranolaIdentities(raw, people, opts.text.slice(0, NOTE_BUDGET), day) : raw;
+  return { proposal: parseProposal(guarded, { people, noteDay: day, personId: forced?.id, journal, preserveUnmatched: automatic }), day };
 }
 
 export type AppliedPerson = { personId: string; name: string; created: boolean; eventIds: string[] };
@@ -386,43 +414,25 @@ function firstWords(s: string, n = 8): string {
   return words.slice(0, n).join(" ") + (words.length > n ? "…" : "");
 }
 
-/**
- * "Add her" on a Granola suggestion: create the person and file the meeting
- * note to her, along with every other pending suggestion with the same name
- * so all the meetings about her land. Null when the suggestion isn't the
- * user's or is no longer pending.
- */
+/** Create a person from one reviewed suggestion. A shared name is not identity. */
 export async function addSuggestion(userId: string, id: string) {
   return prisma.$transaction(async (tx) => {
     const s = await tx.datingSuggestion.findFirst({ where: { id, userId, status: "pending" } });
     if (!s) return null;
+    // Claim the selected row atomically before creating anything. A competing
+    // add/link waits, then finds it no longer pending. Failure rolls this back.
+    const claimed = await tx.datingSuggestion.updateMany({ where: { id, userId, status: "pending" }, data: { status: "added" } });
+    if (!claimed.count) return null;
     const person = await tx.datingPerson.create({
       data: { userId, name: s.name, stage: "talking", metAt: s.occurredAt },
     });
-    const pending = await tx.datingSuggestion.findMany({
-      where: { userId, status: "pending", name: { equals: s.name, mode: "insensitive" } },
-      orderBy: { occurredAt: "asc" },
-    });
-    // The equals above is exact apart from case; sameName also folds spacing.
-    const same = pending.filter((p) => sameName(p.name, s.name));
-    for (const p of same) {
-      await tx.datingEvent.create({ data: suggestionNote(userId, person.id, p) });
-    }
-    await tx.datingSuggestion.updateMany({
-      where: { id: { in: same.map((p) => p.id) } },
-      data: { status: "added", personId: person.id },
-    });
-    return { person, filed: same.length };
+    await tx.datingEvent.create({ data: suggestionNote(userId, person.id, s) });
+    await tx.datingSuggestion.update({ where: { id }, data: { personId: person.id } });
+    return { person, filed: 1 };
   });
 }
 
-/**
- * "Add to…" on a Granola suggestion: file its note, and every other pending
- * suggestion's with the same name, onto a person who's already on /dating
- * (Granola heard "Margo", she's "Margaux"). Same notes as addSuggestion; a
- * meeting already filed to her is skipped. Null when the suggestion isn't
- * the user's or is no longer pending, or the person isn't the user's.
- */
+/** File only the selected suggestion onto its explicitly chosen person. */
 export async function linkSuggestion(userId: string, id: string, personId: string) {
   return prisma.$transaction(async (tx) => {
     const [s, person] = await Promise.all([
@@ -430,22 +440,15 @@ export async function linkSuggestion(userId: string, id: string, personId: strin
       tx.datingPerson.findFirst({ where: { id: personId, userId } }),
     ]);
     if (!s || !person) return null;
-    const pending = await tx.datingSuggestion.findMany({
-      where: { userId, status: "pending", name: { equals: s.name, mode: "insensitive" } },
-      orderBy: { occurredAt: "asc" },
+    const claimed = await tx.datingSuggestion.updateMany({
+      where: { id, userId, status: "pending" }, data: { status: "added", personId },
     });
-    const same = pending.filter((p) => sameName(p.name, s.name));
-    // Insert-only on the (userId, externalId) index, so a meeting that already
-    // filed a note to her doesn't get a second one.
+    if (!claimed.count) return null;
     const { count } = await tx.datingEvent.createMany({
-      data: same.map((p) => suggestionNote(userId, person.id, p)),
+      data: [suggestionNote(userId, person.id, s)],
       skipDuplicates: true,
     });
-    await tx.datingSuggestion.updateMany({
-      where: { id: { in: same.map((p) => p.id) } },
-      data: { status: "added", personId: person.id },
-    });
-    return { person, filed: count, linked: same.map((p) => p.id) };
+    return { person, filed: count, linked: [s.id] };
   });
 }
 

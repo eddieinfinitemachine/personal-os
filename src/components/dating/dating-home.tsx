@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Link2, Loader2, Plus, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { sameName } from "@/lib/dating";
 import { SimpleMarkdown } from "@/components/simple-markdown";
 import { DictateCard } from "./dictate-card";
 import { GranolaSync } from "./granola-sync";
@@ -159,11 +158,10 @@ function Suggestions({
   const [gone, setGone] = useState<Set<string>>(new Set());
   const [linking, setLinking] = useState<GranolaSuggestion | null>(null);
 
-  // Optimistic: every pending row with her name goes (the server files them
-  // all); they come back with an error if it fails.
+  // Only the selected note is reviewed; the same name may refer to someone else.
   const link = async (s: GranolaSuggestion, person: PickablePerson) => {
     setLinking(null);
-    const ids = suggestions.filter((x) => sameName(x.name, s.name)).map((x) => x.id);
+    const ids = [s.id];
     setGone((g) => new Set([...g, ...ids]));
     const res = await fetch(`/api/dating/suggestions/${s.id}/link`, {
       method: "POST",
@@ -198,7 +196,7 @@ function Suggestions({
   return (
     <section className="mb-6">
       <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
-        New from Granola
+        Review from Granola
       </h2>
       <ul className="space-y-2">
         {visible.map((s) => (
@@ -207,7 +205,7 @@ function Suggestions({
               <div className="text-sm font-semibold">{s.name}</div>
               {s.summary && <p className="text-sm text-[var(--color-muted-foreground)]">{s.summary}</p>}
               <div className="mt-0.5 text-xs text-[var(--color-label-tertiary)]">
-                {new Date(s.occurredAt).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })}
+                {new Date(s.occurredAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
                 {" · "}
                 {s.url ? (
                   <a href={s.url} target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-[var(--color-foreground)]">
