@@ -2,6 +2,8 @@
 
 Base: origin/main b5ba3e6 (PR18 simpler person page). Implementation branch: codex/dating-outstanding. Worktree: /Users/eddie/Code/.worktrees/personal-os-dating-outstanding.
 
+PR19 https://github.com/eddieinfinitemachine/personal-os/pull/19 merged as fcc41618cd86aa9ecf0896f13ca00127fcb01ca8. Production deployment dpl_B3ap4Z9BHaEf9MMwd8nv9yRu991U verified Ready on both domains, with new menus confirmed on a fresh signed-in page.
+
 ## Changes
 
 - PeopleBoard now has an Actions menu with stage moves and confirmed Delete person. Failed requests preserve the card; successful deletion refreshes parent data.
