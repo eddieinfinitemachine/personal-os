@@ -1023,3 +1023,12 @@ Eddie: the board is confusing; chose simple cards, with past relationships tucke
 - [ ] Publish and verify deployment.
 
 Verified: 394 tests passed (22 unrelated opt-in database tests skipped), typecheck and production build passed; independent review approved. Browser checked synthetic local profiles on desktop and 390px mobile: no horizontal overflow, 44px menus, current/past status updates persisted through reload, past disclosure persisted, and profile navigation worked. No browser console errors. Real iPhone/VoiceOver not tested. No schema changes, production data writes, or Mac sync changes.
+
+## Dating: everyday overview usability (2026-09-26, Codex)
+Eddie asked for improvements to be selected and implemented, preserving the simpler cards.
+- [ ] Add name search across current and past people; reveal past matches while searching without changing the saved disclosure preference. Clear and Escape restore the normal view; no-match state explains how to recover.
+- [ ] Sort past relationships by recorded relationship dates, not the time an old note was imported; keep refreshed profile names/photos after a status change.
+- [ ] Name the main action Add person. Keep everyday notes and Granola review visible; tuck import/sync tools into a collapsed disclosure while preserving mounted progress.
+- [ ] Recover Add her / Dismiss failures, prevent concurrent duplicate review actions, and show review counts/errors near the relevant controls.
+- [ ] Run regression tests, browser checks and review; publish and verify deployment.
+No schema changes, automatic imports, production data repair or changes to the Mac sync job.
