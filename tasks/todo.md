@@ -1013,3 +1013,13 @@ No database schema changes. All verification database writes used isolated local
 - Release: publish the reviewed branch and verify the production deployment; record its status in the takeover handoff.
 
 No schema changes or production data repair planned. The handoff says existing misfiled data was already corrected manually.
+
+## Dating: simple people cards (2026-09-26, Codex)
+Eddie: the board is confusing; chose simple cards, with past relationships tucked below.
+- [x] Review existing board and agree on simple-card direction.
+- [x] Replace columns and view switching with a responsive current/past card layout.
+- [x] Keep status and confirmed-delete actions with request recovery.
+- [x] Verify transitions, desktop/mobile presentation, tests, typecheck and build.
+- [ ] Publish and verify deployment.
+
+Verified: 394 tests passed (22 unrelated opt-in database tests skipped), typecheck and production build passed; independent review approved. Browser checked synthetic local profiles on desktop and 390px mobile: no horizontal overflow, 44px menus, current/past status updates persisted through reload, past disclosure persisted, and profile navigation worked. No browser console errors. Real iPhone/VoiceOver not tested. No schema changes, production data writes, or Mac sync changes.
