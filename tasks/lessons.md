@@ -107,3 +107,7 @@ synthetic KeyboardEvents via eval instead).
 **Context**: The updated handoff reports Granola confusing similarly named people whose relationships occurred in different periods.
 **Mistake / surprise**: The filer saw names and only recent events, and the proposal parser could reattach an explicitly unmatched name to an existing person.
 **Rule**: Include relationship activity bounds and the source note date in matching context; preserve unresolved identities for manual linking. Never silently pick between similar names when the temporal evidence is inconclusive.
+
+## 2026-09-26 — dating overview should center people
+**Context**: Eddie found the five-column dating board confusing and chose simple cards.
+**Rule**: Show a compact people grid with name, photo, status and one date line. Keep past relationships under a disclosure. Put detailed scores, activity metrics and editing on the person's page; do not model the overview as a pipeline unless explicitly requested.

@@ -1013,3 +1013,11 @@ No database schema changes. All verification database writes used isolated local
 - Release: publish the reviewed branch and verify the production deployment; record its status in the takeover handoff.
 
 No schema changes or production data repair planned. The handoff says existing misfiled data was already corrected manually.
+
+## Dating: simple people cards (2026-09-26, Codex)
+Eddie: the board is confusing; chose simple cards, with past relationships tucked below.
+- [x] Review existing board and agree on simple-card direction.
+- [ ] Replace columns and view switching with a responsive current/past card layout.
+- [ ] Keep status and confirmed-delete actions with request recovery.
+- [ ] Verify transitions, desktop/mobile presentation, tests, typecheck and build.
+- [ ] Publish and verify deployment.
