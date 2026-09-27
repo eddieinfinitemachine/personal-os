@@ -990,11 +990,16 @@ Ask (Eddie): "the page for each person is too complicated", and he couldn't find
 - NOT verified: iOS Safari / real touch, VoiceOver, `pnpm lint` (broken before this change)
 - Pre-existing, not fixed: timeline "Add" date defaults to the UTC day (tomorrow in US evenings)
 
-## Dating: outstanding reliability and board controls (2026-09-26, Codex)
-- [ ] Add confirmed person deletion to board and rows, preserve cards on failure.
-- [ ] Make Granola meeting writes atomic and make batch cursors safe for timestamp ties and retries.
-- [ ] Deduplicate repeated undated pasted chats; paginate messages without dropping timestamp ties.
-- [ ] Verify regressions, real scratch PostgreSQL behavior, UI, typecheck and build.
-- [ ] Review changes, document remaining limitations and prepare the changes for shipping.
+## Dating: outstanding reliability, privacy and board controls (2026-09-26, Codex)
+- [x] Add confirmed person deletion to board and rows; keep the card and show an error on failure.
+- [x] Make all Granola meeting writes atomic. Explicit completion markers let historical partial meetings recover without overwriting previously filed per-person records.
+- [x] Use timestamp + meeting ID for Granola batches, preserve the cursor on error/Stop/batch cap, and offer Retry/Continue.
+- [x] Deduplicate identical undated pasted transcripts while retaining repeated lines; paginate messages with timestamp + ID so ties are not dropped.
+- [x] Serialize profile saves, roll back failed changes without discarding later edits, and recover busy states/drafts after failed requests.
+- [x] Store dating photos privately and serve only through a signed-session, owner-checked content route. Local dating files stay outside public. Mood-board uploads keep their existing storage.
+- [x] Configure EC personal-os private Blob store `personal-os-dating-private` and server-only `DATING_READ_WRITE_TOKEN` for Production/Preview/Development. Original public token preserved. Read-only production audit found zero dating photos, so no production data migration was needed.
+- [x] Independently review combined changes. Targeted PostgreSQL tests prove rollback/concurrency, complete timestamp-tie pagination, repeated-import dedup, ownership, and private image delivery. Real private Blob synthetic upload/read/delete and running-app HTTP checks passed; synthetic remote files were deleted.
+- [x] Final verification: 372 tests across 32 files passed (including 13 real-PostgreSQL integration tests), typecheck passed, production build passed.
+- [ ] Publish PR and verify deployment.
 
-No database schema changes planned. All verification writes use an isolated local database.
+No database schema changes. All verification database writes used isolated local PostgreSQL on port 55439; the live Mac sync checkout/job was untouched. Granola/Claude production imports were not triggered. Browser confirmed board controls; the in-app browser stalled on the native confirmation dialog, so confirmation/cancel/success/failure were verified with rendered-component tests and deletion with running-app HTTP checks instead. Identical undated imports dedupe going forward; old imports and overlapping/edited undated transcripts cannot be matched reliably. Migration CLI is dry-run by default with a restricted resumable manifest; no migration ran against production. Existing lint command remains broken independently of this change.

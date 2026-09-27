@@ -17,7 +17,7 @@ import {
 // ones already handled with no Granola detail fetch or Claude call, screens
 // the rest and files at most `limit` of them. It returns `nextSince` (the last
 // note it looked at) and `remaining`, so a caller loops with
-// since = nextSince until remaining is 0.
+// since = nextSince, afterId = nextAfterId until remaining is 0.
 
 export const DEFAULT_SYNC_LIMIT = 4;
 /** Stop starting new Claude calls after this long (functions get 300 s). */
@@ -39,6 +39,8 @@ export type GranolaSyncResult = {
   errors: { meetingId: string; title: string | null; error: string }[];
   /** Pass as `since` for the next batch. */
   nextSince: string;
+  /** Tie breaker paired with nextSince; pass as afterId on the next batch. */
+  nextAfterId: string | null;
 };
 
 export class GranolaNotConfigured extends Error {
@@ -51,6 +53,7 @@ export async function syncGranola(
   userId: string,
   opts: {
     since: Date;
+    afterId?: string;
     limit?: number;
     client?: GranolaClient;
     /** Only file notes owned by this email (GRANOLA_OWNER_EMAIL); unset = every note the key can see. */
@@ -66,11 +69,12 @@ export async function syncGranola(
     ?.trim()
     .toLowerCase();
 
-  // created_after may or may not be inclusive; keep it strict so nextSince
-  // never hands back the note a batch ended on.
+  // Fetch one millisecond before a compound cursor, then apply our own
+  // ordering: Granola may interpret created_after as an exclusive boundary.
   const sinceMs = opts.since.getTime();
-  const notes = (await client.listNotes({ createdAfter: opts.since }))
-    .filter((n) => Date.parse(n.created_at) > sinceMs)
+  const notes = (await client.listNotes({ createdAfter: opts.afterId ? new Date(sinceMs - 1) : opts.since }))
+    .filter((n) => Date.parse(n.created_at) > sinceMs ||
+      (Date.parse(n.created_at) === sinceMs && !!opts.afterId && n.id.localeCompare(opts.afterId) > 0))
     .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at) || a.id.localeCompare(b.id));
 
   const done = await granolaMeetingsDone(userId, notes.map((n) => n.id));
@@ -85,6 +89,7 @@ export async function syncGranola(
     meetings: 0,
     errors: [],
     nextSince: opts.since.toISOString(),
+    nextAfterId: opts.afterId ?? null,
   };
 
   let screened = 0; // notes that cost a Granola fetch this batch
@@ -128,8 +133,10 @@ export async function syncGranola(
         { markEmpty: true },
       );
       if (res.status === "skipped") out.skipped++;
-      else if (res.status === "error") out.errors.push({ meetingId: n.id, title: n.title, error: res.error });
-      else {
+      else if (res.status === "error") {
+        out.errors.push({ meetingId: n.id, title: n.title, error: res.error });
+        break; // Leave this note ahead of the cursor, including old backfills.
+      } else {
         out.filed += res.filed.length;
         out.suggestions += res.suggestions.length;
       }
@@ -138,11 +145,15 @@ export async function syncGranola(
       if (e instanceof GranolaError && [401, 403, 429].includes(e.status)) throw e;
       console.error("granola sync: note failed", n.id, e);
       out.errors.push({ meetingId: n.id, title: n.title, error: e instanceof Error ? e.message : String(e) });
+      break;
     }
   }
 
   out.processed = i;
   out.remaining = notes.length - i;
-  if (i > 0) out.nextSince = notes[i - 1].created_at;
+  if (i > 0) {
+    out.nextSince = notes[i - 1].created_at;
+    out.nextAfterId = notes[i - 1].id;
+  }
   return out;
 }

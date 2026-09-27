@@ -49,12 +49,17 @@ export function DatingHome({
 
   const findPatterns = async () => {
     setPatternsBusy(true);
-    const res = await fetch("/api/dating/patterns", { method: "POST" });
-    const data = await res.json().catch(() => ({}));
-    setPatternsBusy(false);
-    if (!res.ok) return setError(data.error ?? "Could not find patterns");
-    setPatterns({ text: data.text ?? "", taste: data.taste ?? null, photos: data.photos ?? 0 });
-    setError(null);
+    try {
+      const res = await fetch("/api/dating/patterns", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return setError(data.error ?? "Could not find patterns");
+      setPatterns({ text: data.text ?? "", taste: data.taste ?? null, photos: data.photos ?? 0 });
+      setError(null);
+    } catch {
+      setError("Could not find patterns. Try again.");
+    } finally {
+      setPatternsBusy(false);
+    }
   };
 
   return (

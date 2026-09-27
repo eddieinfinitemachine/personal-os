@@ -155,93 +155,100 @@ export async function applyProposedPerson(
   },
 ): Promise<AppliedPerson | null> {
   try {
-    return await prisma.$transaction(async (tx) => {
-      let person = item.personId
-        ? await tx.datingPerson.findFirst({ where: { id: item.personId, userId } })
-        : null;
-      if (item.personId && !person) return null;
-      let created = false;
-      if (!person) {
-        if (!item.isNew || !item.name) return null;
-        person = await tx.datingPerson.create({
-          data: {
-            userId,
-            name: item.name,
-            stage: item.stage ?? "talking",
-            metAt: noonUTC(opts.day),
-            instagram: item.instagram,
-          },
-        });
-        created = true;
-      }
-
-      const externalId = opts.externalId?.(person.id) ?? null;
-      if (externalId && (await tx.datingEvent.findFirst({ where: { userId, externalId }, select: { id: true } }))) {
-        return null;
-      }
-
-      const eventIds: string[] = [];
-      const noteBody = item.note || item.summary;
-      if (noteBody) {
-        const note = await tx.datingEvent.create({
-          data: {
-            userId,
-            personId: person.id,
-            kind: "note",
-            occurredAt: noonUTC(opts.day),
-            title: (item.summary || firstWords(noteBody)).slice(0, 200),
-            notes: withSourceLine(noteBody, opts.sourceLabel, opts.sourceUrl).slice(0, 20_000),
-            source: opts.source,
-            externalId,
-          },
-        });
-        eventIds.push(note.id);
-      }
-      for (const e of item.events) {
-        const ev = await tx.datingEvent.create({
-          data: {
-            userId,
-            personId: person.id,
-            kind: e.kind,
-            occurredAt: noonUTC(e.occurredAt),
-            title: e.title,
-            notes: e.notes || null,
-            vibe: e.vibe,
-            source: opts.source,
-            // The note carries the idempotency key; with no note, the first event does.
-            externalId: !noteBody && eventIds.length === 0 ? externalId : null,
-          },
-        });
-        eventIds.push(ev.id);
-      }
-
-      const data: Prisma.DatingPersonUpdateInput = {};
-      const remember = freshItems(person.remember, item.remember);
-      const greenFlags = freshItems(person.greenFlags, item.greenFlags);
-      const redFlags = freshItems(person.redFlags, item.redFlags);
-      if (remember.length) data.remember = [...person.remember, ...remember];
-      if (greenFlags.length) data.greenFlags = [...person.greenFlags, ...greenFlags];
-      if (redFlags.length) data.redFlags = [...person.redFlags, ...redFlags];
-      const lessons = appendLessons(person.lessons, item.lessons);
-      if (lessons !== (person.lessons?.trim() || null)) data.lessons = lessons;
-      // A reviewed dictation replaces the handle (the note gave a new one);
-      // unreviewed Granola filing only fills an empty one.
-      if (!created && item.instagram && item.instagram !== person.instagram) {
-        if (opts.source === "dictation" || !person.instagram) data.instagram = item.instagram;
-      }
-      if (!created && item.stage && item.stage !== person.stage) {
-        data.stage = item.stage;
-        if (item.stage === "ended") data.endedAt = noonUTC(opts.endedDay ?? opts.day);
-      }
-      if (Object.keys(data).length) await tx.datingPerson.update({ where: { id: person.id }, data });
-
-      return { personId: person.id, name: person.name, created, eventIds };
-    });
+    return await prisma.$transaction((tx) => applyProposedPersonInTransaction(tx, userId, item, opts));
   } catch (e) {
-    // Two runs filing the same meeting at once: the unique index catches it.
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return null;
     throw e;
   }
+}
+
+// Shared by standalone reviewed proposals and an atomic whole-meeting write.
+async function applyProposedPersonInTransaction(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  item: ProposedPerson,
+  opts: Parameters<typeof applyProposedPerson>[2],
+): Promise<AppliedPerson | null> {
+  let person = item.personId
+    ? await tx.datingPerson.findFirst({ where: { id: item.personId, userId } })
+    : null;
+  if (item.personId && !person) return null;
+  let created = false;
+  if (!person) {
+    if (!item.isNew || !item.name) return null;
+    person = await tx.datingPerson.create({
+      data: {
+        userId,
+        name: item.name,
+        stage: item.stage ?? "talking",
+        metAt: noonUTC(opts.day),
+        instagram: item.instagram,
+      },
+    });
+    created = true;
+  }
+
+  const externalId = opts.externalId?.(person.id) ?? null;
+  if (externalId && (await tx.datingEvent.findFirst({ where: { userId, externalId }, select: { id: true } }))) {
+    return null;
+  }
+
+  const eventIds: string[] = [];
+  const noteBody = item.note || item.summary;
+  if (noteBody) {
+    const note = await tx.datingEvent.create({
+      data: {
+        userId,
+        personId: person.id,
+        kind: "note",
+        occurredAt: noonUTC(opts.day),
+        title: (item.summary || firstWords(noteBody)).slice(0, 200),
+        notes: withSourceLine(noteBody, opts.sourceLabel, opts.sourceUrl).slice(0, 20_000),
+        source: opts.source,
+        externalId,
+      },
+    });
+    eventIds.push(note.id);
+  }
+  for (const e of item.events) {
+    const ev = await tx.datingEvent.create({
+      data: {
+        userId,
+        personId: person.id,
+        kind: e.kind,
+        occurredAt: noonUTC(e.occurredAt),
+        title: e.title,
+        notes: e.notes || null,
+        vibe: e.vibe,
+        source: opts.source,
+        // The note carries the idempotency key; with no note, the first event does.
+        externalId: !noteBody && eventIds.length === 0 ? externalId : null,
+      },
+    });
+    eventIds.push(ev.id);
+  }
+
+  const data: Prisma.DatingPersonUpdateInput = {};
+  const remember = freshItems(person.remember, item.remember);
+  const greenFlags = freshItems(person.greenFlags, item.greenFlags);
+  const redFlags = freshItems(person.redFlags, item.redFlags);
+  if (remember.length) data.remember = [...person.remember, ...remember];
+  if (greenFlags.length) data.greenFlags = [...person.greenFlags, ...greenFlags];
+  if (redFlags.length) data.redFlags = [...person.redFlags, ...redFlags];
+  const lessons = appendLessons(person.lessons, item.lessons);
+  if (lessons !== (person.lessons?.trim() || null)) data.lessons = lessons;
+  // A reviewed dictation replaces the handle (the note gave a new one);
+  // unreviewed Granola filing only fills an empty one.
+  if (!created && item.instagram && item.instagram !== person.instagram) {
+    if (opts.source === "dictation" || !person.instagram) data.instagram = item.instagram;
+  }
+  if (!created && item.stage && item.stage !== person.stage) {
+    data.stage = item.stage;
+    if (item.stage === "ended") data.endedAt = noonUTC(opts.endedDay ?? opts.day);
+  }
+  if (Object.keys(data).length) await tx.datingPerson.update({ where: { id: person.id }, data });
+
+  return { personId: person.id, name: person.name, created, eventIds };
 }
 
 // ---------------------------------------------------------------------------
@@ -278,36 +285,26 @@ export type GranolaMeetingResult =
  */
 export const NOTHING_FOUND = "(nothing to file)";
 
-/**
- * Meetings (of `meetingIds`) that were already handled: any event filed from
- * them, or any suggestion row (pending, added, dismissed or the
- * nothing-found marker). Checked before any Granola detail fetch or Claude call.
- */
+// A separate marker distinguishes a fully committed meeting from legacy
+// partial writes. Hidden from the pending-suggestions UI; no schema change.
+const FILING_COMPLETE = "(filing complete)";
+
+/** Only explicit completion markers prove that every person was filed. */
 export async function granolaMeetingsDone(userId: string, meetingIds: string[]): Promise<Set<string>> {
   const ids = [...new Set(meetingIds.map((m) => m.trim().slice(0, 120)).filter(Boolean))];
   if (!ids.length) return new Set();
-  const [events, suggestions] = await Promise.all([
-    prisma.datingEvent.findMany({
-      where: { userId, OR: ids.map((m) => ({ externalId: { startsWith: granolaExternalId(m, "") } })) },
-      select: { externalId: true },
-    }),
-    prisma.datingSuggestion.findMany({ where: { userId, meetingId: { in: ids } }, select: { meetingId: true } }),
-  ]);
-  const done = new Set(suggestions.map((s) => s.meetingId));
-  for (const e of events) {
-    const key = e.externalId ?? "";
-    const hit = ids.find((m) => key.startsWith(granolaExternalId(m, "")));
-    if (hit) done.add(hit);
-  }
-  return done;
+  const markers = await prisma.datingSuggestion.findMany({
+    where: { userId, meetingId: { in: ids }, status: "dismissed", name: { in: [FILING_COMPLETE, NOTHING_FOUND] } },
+    select: { meetingId: true },
+  });
+  return new Set(markers.map((s) => s.meetingId));
 }
 
 /**
- * File one Granola meeting: skip it when it was already handled, else ask
- * Claude, auto-apply notes for people already on /dating (source "granola",
- * keyed granola:<meeting>:<person>) and store anyone new as a pending
- * suggestion. With `markEmpty`, a meeting that yields nothing leaves a
- * dismissed NOTHING_FOUND suggestion so it's skipped next time.
+ * File one Granola meeting atomically: auto-apply known people and save new
+ * people as suggestions, then commit together with a completion marker.
+ * Legacy partial meetings are replayable; per-person keys preserve old writes.
+ * With `markEmpty`, empty proposals also get a completion marker.
  */
 export async function fileGranolaMeeting(
   userId: string,
@@ -333,52 +330,55 @@ export async function fileGranolaMeeting(
     return { status: "error", error: "Claude could not file this one" };
   }
 
-  const suggestions: GranolaSuggested[] = [];
   const drafts = suggestionsFrom(result.proposal.people);
-  if (drafts.length) {
-    // Insert-only: an existing row (pending, added or dismissed) is left alone.
-    await prisma.datingSuggestion.createMany({
-      data: drafts.map((d) => ({ userId, meetingId, title, url, occurredAt: noonUTC(result.day), ...d })),
+  if (!opts.markEmpty && !result.proposal.people.length) {
+    return { status: "done", filed: [], suggestions: [], skipped: 0 };
+  }
+
+  return prisma.$transaction(async (tx) => {
+    // Claim first inside the same transaction. Concurrent runs wait on this
+    // unique key; a rollback removes the claim and lets the next run retry.
+    const claim = await tx.datingSuggestion.createMany({
+      data: [{
+        userId, meetingId, title, url, occurredAt: noonUTC(result.day),
+        name: FILING_COMPLETE, summary: "", note: "", status: "dismissed",
+      }],
       skipDuplicates: true,
     });
-    for (const d of drafts) suggestions.push({ meetingId, title, url, occurredAt: result.day, ...d });
-  }
+    if (!claim.count) return { status: "skipped" };
 
-  const filed: GranolaFiled[] = [];
-  let skipped = 0;
-  for (const item of result.proposal.people) {
-    if (!item.personId) continue;
-    const applied = await applyProposedPerson(userId, item, {
-      day: result.day,
-      source: "granola",
-      sourceLabel: title ?? "Granola",
-      sourceUrl: url,
-      externalId: (personId) => granolaExternalId(meetingId, personId),
-    });
-    if (applied) filed.push({ meetingId, personId: applied.personId, name: applied.name, eventIds: applied.eventIds });
-    else skipped++;
-  }
+    const suggestions: GranolaSuggested[] = [];
+    if (drafts.length) {
+      // Preserve existing pending, added and dismissed historical suggestions.
+      const existing = new Set((await tx.datingSuggestion.findMany({
+        where: { userId, meetingId, name: { in: drafts.map((d) => d.name) } },
+        select: { name: true },
+      })).map((s) => s.name));
+      await tx.datingSuggestion.createMany({
+        data: drafts.map((d) => ({ userId, meetingId, title, url, occurredAt: noonUTC(result.day), ...d })),
+        skipDuplicates: true,
+      });
+      for (const d of drafts) {
+        if (!existing.has(d.name)) suggestions.push({ meetingId, title, url, occurredAt: result.day, ...d });
+      }
+    }
 
-  if (opts.markEmpty && !drafts.length && !filed.length && !skipped) {
-    await prisma.datingSuggestion.createMany({
-      data: [
-        {
-          userId,
-          meetingId,
-          title,
-          url,
-          occurredAt: noonUTC(result.day),
-          name: NOTHING_FOUND,
-          summary: "",
-          note: "",
-          status: "dismissed",
-        },
-      ],
-      skipDuplicates: true,
-    });
-  }
-
-  return { status: "done", filed, suggestions, skipped };
+    const filed: GranolaFiled[] = [];
+    let skipped = 0;
+    for (const item of result.proposal.people) {
+      if (!item.personId) continue;
+      const applied = await applyProposedPersonInTransaction(tx, userId, item, {
+        day: result.day,
+        source: "granola",
+        sourceLabel: title ?? "Granola",
+        sourceUrl: url,
+        externalId: (personId) => granolaExternalId(meetingId, personId),
+      });
+      if (applied) filed.push({ meetingId, personId: applied.personId, name: applied.name, eventIds: applied.eventIds });
+      else skipped++;
+    }
+    return { status: "done", filed, suggestions, skipped };
+  }, { timeout: 30_000 });
 }
 
 function firstWords(s: string, n = 8): string {

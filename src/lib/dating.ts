@@ -84,7 +84,7 @@ export function cleanList(input: unknown, max = 100): string[] {
 // ---------------------------------------------------------------------------
 // Pasted transcripts
 
-export type ParsedMessage = { sentAt: Date; fromMe: boolean; text: string; sender: string };
+export type ParsedMessage = { sentAt: Date; fromMe: boolean; text: string; sender: string; timestampMissing?: true };
 
 // WhatsApp iOS:     [1/2/24, 9:41:03 PM] Name: text
 // WhatsApp Android: 1/2/24, 21:41 - Name: text
@@ -148,6 +148,7 @@ export function parseTranscript(
       fromMe: isMe(r.sender),
       text: r.text.replace(/^‎/, "").trim(),
       sender: r.sender,
+      ...(r.sentAt ? {} : { timestampMissing: true as const }),
     }))
     .filter((m) => m.text && !/^<(media|attached).*>$/i.test(m.text));
 }
@@ -173,12 +174,31 @@ function whatsappDate(m: RegExpMatchArray): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Stable id for a pasted message so re-pasting the same chat dedupes. */
+/** Stable id for a timestamped pasted message (retains the original ID format). */
 export async function pasteExternalId(m: { sentAt: Date; fromMe: boolean; text: string }, personId: string) {
-  const data = new TextEncoder().encode(`${personId}|${m.sentAt.toISOString()}|${m.fromMe ? 1 : 0}|${m.text}`);
+  return `paste:${await pasteHash(`${personId}|${m.sentAt.toISOString()}|${m.fromMe ? 1 : 0}|${m.text}`)}`;
+}
+
+/**
+ * Undated messages use the normalized transcript and their position, not the
+ * import date. This preserves repeated identical lines without merging common
+ * replies from different chats. Edited/overlapping undated transcripts cannot
+ * be safely deduped; dated messages retain their existing external IDs.
+ */
+export async function pasteExternalIds(messages: ParsedMessage[], personId: string): Promise<string[]> {
+  const transcript = messages.some((m) => m.timestampMissing)
+    ? await pasteHash(JSON.stringify(messages.map((m) => [m.timestampMissing ? null : m.sentAt.toISOString(), m.fromMe, m.text])))
+    : null;
+  return Promise.all(messages.map((m, i) => m.timestampMissing
+    ? pasteHash(JSON.stringify([personId, transcript, i])).then((hash) => `paste:undated:${hash}`)
+    : pasteExternalId(m, personId)));
+}
+
+async function pasteHash(value: string): Promise<string> {
+  const data = new TextEncoder().encode(value);
   const digest = await crypto.subtle.digest("SHA-256", data);
   const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return `paste:${hex.slice(0, 32)}`;
+  return hex.slice(0, 32);
 }
 
 // ---------------------------------------------------------------------------

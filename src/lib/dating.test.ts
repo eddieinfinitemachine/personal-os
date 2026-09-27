@@ -6,6 +6,7 @@ import {
   parseHandles,
   parseTranscript,
   pasteExternalId,
+  pasteExternalIds,
   threadStats,
   weekStart,
   weeklyVolume,
@@ -108,6 +109,30 @@ describe("parseTranscript", () => {
     const m = { sentAt: new Date(0), fromMe: true, text: "hi" };
     expect(await pasteExternalId(m, "p1")).toBe(await pasteExternalId({ ...m }, "p1"));
     expect(await pasteExternalId(m, "p1")).not.toBe(await pasteExternalId(m, "p2"));
+  });
+
+  it("dedupes undated re-pastes across import dates without losing repeated lines", async () => {
+    const raw = "Ana: hello\nMe: hi\nAna: hello";
+    const first = parseTranscript(raw, { fallbackStart: new Date("2026-09-01T12:00:00Z") });
+    const later = parseTranscript(raw.replaceAll("\n", "\r\n"), { fallbackStart: new Date("2026-09-26T12:00:00Z") });
+    const ids = await pasteExternalIds(first, "p1");
+    expect(ids).toEqual(await pasteExternalIds(later, "p1"));
+    expect(new Set(ids).size).toBe(3);
+    expect(first[0].sentAt).not.toEqual(later[0].sentAt);
+    expect(ids).not.toEqual(await pasteExternalIds(first, "p2"));
+  });
+
+  it("keeps dated paste IDs compatible and actual timestamps intact", async () => {
+    const parsed = parseTranscript("[1/2/24, 9:41:03 PM] Ana: hello\nMe: hi");
+    const ids = await pasteExternalIds(parsed, "p1");
+    expect(ids[0]).toBe(await pasteExternalId(parsed[0], "p1"));
+    expect(parsed[0].sentAt).toEqual(new Date(2024, 0, 2, 21, 41, 3));
+  });
+
+  it("does not merge common undated replies from different transcripts", async () => {
+    const one = await pasteExternalIds(parseTranscript("Ana: dinner?\nMe: yes"), "p1");
+    const two = await pasteExternalIds(parseTranscript("Ana: coffee?\nMe: yes"), "p1");
+    expect(one[1]).not.toBe(two[1]);
   });
 });
 

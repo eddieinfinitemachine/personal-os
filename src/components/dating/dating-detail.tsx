@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronLeft, Instagram, Loader2, Pencil, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -26,6 +26,7 @@ import { ListEditor } from "./list-editor";
 import { PhotoStrip } from "./photo-strip";
 import { RelationshipChart } from "./relationship-chart";
 import { SyncHelp } from "./sync-help";
+import { useDatingPerson } from "./use-dating-person";
 
 type Meta = { sentAt: string; fromMe: boolean };
 type Patch = (fields: Partial<Record<keyof DatingPersonDTO, unknown>>) => Promise<void>;
@@ -72,29 +73,14 @@ export function DatingDetail({
   meta: Meta[];
 }) {
   const router = useRouter();
-  const [person, setPerson] = useState(initialPerson);
   const [events, setEvents] = useState(initialEvents);
   const [meta, setMeta] = useState(initialMeta);
   const [photos, setPhotos] = useState(initialPhotos);
   const [error, setError] = useState<string | null>(null);
+  const { person, setPerson, patch } = useDatingPerson(initialPerson, setError);
+  const [deleting, setDeleting] = useState(false);
   const [organized, setOrganized] = useState<string | null>(null);
   const first = person.name.split(/\s+/)[0];
-
-  const patch: Patch = useCallback(
-    async (fields) => {
-      setPerson((p) => ({ ...p, ...(fields as Partial<DatingPersonDTO>) }));
-      const res = await fetch(`/api/dating/${person.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(fields),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return setError(data.error ?? "Could not save");
-      setPerson(data.person);
-      setError(null);
-    },
-    [person.id],
-  );
 
   // --- More disclosure -------------------------------------------------------
   const [moreOpen, setMoreOpen] = useState(false);
@@ -274,11 +260,19 @@ export function DatingDetail({
               person={person}
               patch={patch}
               setError={setError}
+              deleting={deleting}
               onDelete={async () => {
                 if (!confirm(`Delete ${person.name} and all notes, timeline and messages?`)) return;
-                const res = await fetch(`/api/dating/${person.id}`, { method: "DELETE" });
-                if (res.ok) router.push("/dating");
-                else setError("Could not delete");
+                setDeleting(true);
+                try {
+                  const res = await fetch(`/api/dating/${person.id}`, { method: "DELETE" });
+                  if (res.ok) router.push("/dating");
+                  else setError("Could not delete. Try again.");
+                } catch {
+                  setError("Could not delete. Try again.");
+                } finally {
+                  setDeleting(false);
+                }
               }}
             />
           </Section>
@@ -491,18 +485,23 @@ function OrganizeNotes({
   const [busy, setBusy] = useState(false);
   const run = async () => {
     setBusy(true);
-    const d = new Date();
-    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    const res = await fetch(`/api/dating/${personId}/organize`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ today }),
-    }).catch(() => null);
-    const data = await res?.json().catch(() => ({}));
-    setBusy(false);
-    if (!res?.ok) return setError(data?.error ?? "Could not organize the notes");
-    setError(null);
-    onDone({ summary: data.result.summary, person: data.person, events: data.events });
+    try {
+      const d = new Date();
+      const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const res = await fetch(`/api/dating/${personId}/organize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ today }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return setError(data.error ?? "Could not organize the notes");
+      onDone({ summary: data.result.summary, person: data.person, events: data.events });
+      setError(null);
+    } catch {
+      setError("Could not organize the notes. Try again.");
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-[var(--color-fill-secondary)] px-3 py-2">
@@ -529,7 +528,7 @@ function Summary({
   organize,
 }: {
   person: DatingPersonDTO;
-  setPerson: (p: DatingPersonDTO) => void;
+  setPerson: (p: Partial<DatingPersonDTO>) => void;
   patch: Patch;
   setError: (e: string | null) => void;
   organize: React.ReactNode;
@@ -538,12 +537,17 @@ function Summary({
   const ins = person.insights;
   const run = async () => {
     setBusy(true);
-    const res = await fetch(`/api/dating/${person.id}/insights`, { method: "POST" });
-    const data = await res.json().catch(() => ({}));
-    setBusy(false);
-    if (!res.ok) return setError(data.error ?? "Could not read the thread");
-    setPerson(data.person);
-    setError(null);
+    try {
+      const res = await fetch(`/api/dating/${person.id}/insights`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return setError(data.error ?? "Could not read the thread");
+      setPerson({ insights: data.person.insights, insightsAt: data.person.insightsAt });
+      setError(null);
+    } catch {
+      setError("Could not read the thread. Try again.");
+    } finally {
+      setBusy(false);
+    }
   };
   const fresh = (items: string[] | undefined, have: string[]) => (items ?? []).filter((i) => !have.includes(i));
   return (
@@ -682,27 +686,42 @@ function Timeline({
   };
 
   const save = async () => {
-    if (!draft || !draft.title.trim()) return;
+    if (busy || !draft || !draft.title.trim()) return;
     setBusy(true);
-    // Noon local keeps the day stable across time zones.
-    const occurredAt = new Date(`${draft.occurredAt}T12:00:00`).toISOString();
-    const body = JSON.stringify({ ...draft, occurredAt });
-    const res = draft.id
-      ? await fetch(`/api/dating/events/${draft.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body })
-      : await fetch(`/api/dating/${personId}/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
-    const data = await res.json().catch(() => ({}));
-    setBusy(false);
-    if (!res.ok) return setError(data.error ?? "Could not save");
-    setEvents((list) => [...list.filter((e) => e.id !== data.event.id), data.event].sort(byDay));
-    setDraft(null);
-    setError(null);
+    try {
+      // Noon local keeps the day stable across time zones.
+      const date = new Date(`${draft.occurredAt}T12:00:00`);
+      if (Number.isNaN(date.getTime())) return setError("Choose a valid date");
+      const body = JSON.stringify({ ...draft, occurredAt: date.toISOString() });
+      const res = draft.id
+        ? await fetch(`/api/dating/events/${draft.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body })
+        : await fetch(`/api/dating/${personId}/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return setError(data.error ?? "Could not save");
+      setEvents((list) => [...list.filter((e) => e.id !== data.event.id), data.event].sort(byDay));
+      setDraft(null);
+      setError(null);
+    } catch {
+      setError("Could not save the moment. Try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const remove = async (id: string) => {
-    const res = await fetch(`/api/dating/events/${id}`, { method: "DELETE" });
-    if (!res.ok) return setError("Could not delete");
-    setEvents((list) => list.filter((e) => e.id !== id));
-    setDraft(null);
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/dating/events/${id}`, { method: "DELETE" });
+      if (!res.ok) return setError("Could not delete the moment. Try again.");
+      setEvents((list) => list.filter((e) => e.id !== id));
+      setDraft(null);
+      setError(null);
+    } catch {
+      setError("Could not delete the moment. Try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -729,19 +748,21 @@ function Timeline({
         >
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">{draft.id ? "Edit moment" : "Add a moment"}</h3>
-            <button type="button" onClick={() => setDraft(null)} className={cn(ghost, "-mr-2 -my-1")} aria-label="Cancel">
+            <button type="button" disabled={busy} onClick={() => setDraft(null)} className={cn(ghost, "-mr-2 -my-1")} aria-label="Cancel">
               <X className="size-4" />
             </button>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <input
               type="date"
+              disabled={busy}
               value={draft.occurredAt}
               onChange={(e) => setDraft({ ...draft, occurredAt: e.target.value })}
               className={input}
               aria-label="Date"
             />
             <select
+              disabled={busy}
               value={draft.kind}
               onChange={(e) => setDraft({ ...draft, kind: e.target.value as EventKind })}
               className={cn(input, "capitalize")}
@@ -755,6 +776,7 @@ function Timeline({
             </select>
           </div>
           <input
+            disabled={busy}
             autoFocus={!draft.id}
             value={draft.title}
             onChange={(e) => setDraft({ ...draft, title: e.target.value })}
@@ -763,6 +785,7 @@ function Timeline({
             aria-label="Title"
           />
           <textarea
+            disabled={busy}
             value={draft.notes}
             onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
             placeholder="What happened, what you talked about, how you felt"
@@ -780,6 +803,7 @@ function Timeline({
                 <button
                   type="button"
                   key={v}
+                  disabled={busy}
                   onClick={() => setDraft({ ...draft, vibe: draft.vibe === v ? null : v })}
                   className={cn(
                     "rounded py-2 sm:py-1 text-xs tabular-nums transition",
@@ -798,6 +822,7 @@ function Timeline({
               <button
                 type="button"
                 onClick={() => remove(draft.id!)}
+                disabled={busy}
                 className={cn(ghost, tap, "-ml-2.5 hover:text-[var(--color-destructive)]")}
               >
                 <Trash2 className="size-4" /> Delete
@@ -822,6 +847,7 @@ function Timeline({
             <li key={e.id} className={cn("py-1", draft?.id === e.id && "opacity-50")}>
               <button
                 type="button"
+                disabled={busy}
                 onClick={() =>
                   openForm({
                     id: e.id,
@@ -901,42 +927,59 @@ function Messages({
   const [messages, setMessages] = useState(initialMessages);
   const [more, setMore] = useState(initialMore);
   const [q, setQ] = useState("");
+  const [activeQuery, setActiveQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [paste, setPaste] = useState(!initialMessages.length);
   const [pasteText, setPasteText] = useState("");
   const [myName, setMyName] = useState("");
   const [result, setResult] = useState<string | null>(null);
 
-  const load = async (opts: { before?: string; query?: string }) => {
+  const load = async (opts: { before?: Pick<DatingMessageDTO, "id" | "sentAt">; query?: string }) => {
     setLoading(true);
     const params = new URLSearchParams();
-    if (opts.before) params.set("before", opts.before);
+    if (opts.before) {
+      params.set("before", opts.before.sentAt);
+      params.set("beforeId", opts.before.id);
+    }
     if (opts.query) params.set("q", opts.query);
-    const res = await fetch(`/api/dating/${person.id}/messages?${params}`);
-    const data = await res.json().catch(() => ({}));
-    setLoading(false);
-    if (!res.ok) return setError(data.error ?? "Could not load messages");
-    setMessages((cur) => (opts.before ? [...data.messages, ...cur] : data.messages));
-    setMore(data.more);
+    try {
+      const res = await fetch(`/api/dating/${person.id}/messages?${params}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return setError(data.error ?? "Could not load messages");
+      setMessages((cur) => (opts.before ? [...data.messages, ...cur] : data.messages));
+      setMore(data.more);
+      if (!opts.before) setActiveQuery(opts.query ?? "");
+      setError(null);
+    } catch {
+      setError("Could not load messages. Try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const importPaste = async () => {
     setLoading(true);
-    const res = await fetch(`/api/dating/${person.id}/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: pasteText, myName: myName || undefined }),
-    });
-    const data = await res.json().catch(() => ({}));
-    setLoading(false);
-    if (!res.ok) return setError(data.error ?? "Could not import");
-    setResult(`Found ${data.parsed} messages, ${data.added} new. Senders: ${data.senders.join(", ")}.`);
-    setPasteText("");
-    setError(null);
-    await load({});
-    const metaRes = await fetch(`/api/dating/${person.id}/messages/meta`);
-    if (metaRes.ok) setMeta((await metaRes.json()).meta);
-    onImported();
+    try {
+      const res = await fetch(`/api/dating/${person.id}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: pasteText, myName: myName || undefined }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return setError(data.error ?? "Could not import");
+      setResult(`Found ${data.parsed} messages, ${data.added} new. Senders: ${data.senders.join(", ")}.`);
+      setPasteText("");
+      setQ("");
+      setError(null);
+      await load({});
+      const metaRes = await fetch(`/api/dating/${person.id}/messages/meta`);
+      if (metaRes.ok) setMeta((await metaRes.json()).meta);
+      onImported();
+    } catch {
+      setError("Could not finish importing messages. Try again; identical re-pastes skip duplicates.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   let lastDay = "";
@@ -947,7 +990,7 @@ function Messages({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            load({ query: q });
+            if (!loading) load({ query: q });
           }}
           className="relative flex-1 min-w-[200px]"
         >
@@ -991,14 +1034,14 @@ function Messages({
       <div className={cn(card, "space-y-1")}>
         {more && (
           <div className="text-center pb-2">
-            <button onClick={() => load({ before: messages[0]?.sentAt, query: q })} disabled={loading} className={ghost}>
+            <button onClick={() => load({ before: messages[0], query: activeQuery })} disabled={loading} className={ghost}>
               {loading ? <Loader2 className="size-4 animate-spin" /> : null} Load older
             </button>
           </div>
         )}
         {!messages.length && (
           <p className="text-sm text-[var(--color-muted-foreground)] py-6 text-center">
-            {q ? "No matches." : "No messages yet. Paste a chat, or sync iMessage and WhatsApp from your Mac."}
+            {activeQuery ? "No matches." : "No messages yet. Paste a chat, or sync iMessage and WhatsApp from your Mac."}
           </p>
         )}
         {messages.map((m) => {
@@ -1087,11 +1130,13 @@ function Details({
   patch,
   setError,
   onDelete,
+  deleting,
 }: {
   person: DatingPersonDTO;
   patch: Patch;
   setError: (e: string | null) => void;
   onDelete: () => void;
+  deleting: boolean;
 }) {
   // Text fields save on blur, only when changed.
   const field = (key: "metVia" | "city" | "work", label: string, placeholder: string) => (
@@ -1160,7 +1205,7 @@ function Details({
         </label>
       </div>
       <div className="mt-6">
-        <button onClick={onDelete} className={cn(ghost, tap, "-ml-2.5 hover:text-[var(--color-destructive)]")}>
+        <button onClick={onDelete} disabled={deleting} className={cn(ghost, tap, "-ml-2.5 hover:text-[var(--color-destructive)]")}>
           <Trash2 className="size-4" /> Delete {person.name.split(/\s+/)[0]}
         </button>
       </div>

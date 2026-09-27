@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type DragEvent } from "react";
-import { ArrowRightLeft, ChevronDown, ChevronRight, Columns3, Instagram, Rows3 } from "lucide-react";
+import { Ellipsis, ChevronDown, ChevronRight, Columns3, Instagram, Rows3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { STAGES, instagramUrl, isStage, type Stage } from "@/lib/dating";
 import {
@@ -68,6 +69,10 @@ function writeStorage(key: string, value: string) {
  * card) PATCHes the stage optimistically and reverts with a toast if it fails.
  */
 export function PeopleBoard({ people }: { people: DatingCard[] }) {
+  const router = useRouter();
+  const [removed, setRemoved] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState<Set<string>>(new Set());
+  const pendingDeletes = useRef(new Set<string>());
   // null until mounted: the server can't know the width, so both views render
   // and CSS picks one (board ≥ lg). A saved choice replaces that after mount.
   const [view, setView] = useState<BoardView | null>(null);
@@ -109,7 +114,7 @@ export function PeopleBoard({ people }: { people: DatingCard[] }) {
     toastTimer.current = setTimeout(() => setToast(null), 3200);
   };
 
-  const current = people.map((p) => moved[p.id] ?? p);
+  const current = people.filter((p) => !removed.has(p.id)).map((p) => moved[p.id] ?? p);
   const groups = groupByStage(current);
 
   const move = async (id: string, stage: Stage) => {
@@ -137,7 +142,25 @@ export function PeopleBoard({ people }: { people: DatingCard[] }) {
     showToast(`Couldn't move ${p.name} to ${LABEL[stage]}${data.error ? `: ${data.error}` : ""}`);
   };
 
-  const shared = { groups, move, endedOpen, toggleEnded };
+  const remove = async (p: DatingCard) => {
+    if (pendingDeletes.current.has(p.id)) return;
+    if (!confirm(`Delete ${p.name} and all photos, notes, timeline and messages? This cannot be undone.`)) return;
+    pendingDeletes.current.add(p.id);
+    setDeleting(new Set(pendingDeletes.current));
+    try {
+      const res = await fetch(`/api/dating/${p.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+      setRemoved((ids) => new Set([...ids, p.id]));
+      router.refresh();
+    } catch {
+      showToast(`Couldn't delete ${p.name}. Please try again.`);
+    } finally {
+      pendingDeletes.current.delete(p.id);
+      setDeleting(new Set(pendingDeletes.current));
+    }
+  };
+
+  const shared = { groups, move, remove, deleting, endedOpen, toggleEnded };
 
   return (
     <section className="mb-8" aria-label="People">
@@ -198,11 +221,13 @@ export function PeopleBoard({ people }: { people: DatingCard[] }) {
 type ViewProps = {
   groups: Record<Stage, DatingCard[]>;
   move: (id: string, stage: Stage) => void;
+  remove: (p: DatingCard) => void;
+  deleting: Set<string>;
   endedOpen: boolean;
   toggleEnded: () => void;
 };
 
-function Board({ groups, move, endedOpen, toggleEnded }: ViewProps) {
+function Board({ groups, move, remove, deleting, endedOpen, toggleEnded }: ViewProps) {
   const [over, setOver] = useState<Stage | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
 
@@ -262,7 +287,7 @@ function Board({ groups, move, endedOpen, toggleEnded }: ViewProps) {
                   {people.map((p) => (
                     <li
                       key={p.id}
-                      draggable
+                      draggable={!deleting.has(p.id)}
                       onDragStart={(e) => {
                         e.dataTransfer.setData(DRAG_TYPE, p.id);
                         e.dataTransfer.effectAllowed = "move";
@@ -274,7 +299,7 @@ function Board({ groups, move, endedOpen, toggleEnded }: ViewProps) {
                       }}
                       className={cn("cursor-grab active:cursor-grabbing", dragging === p.id && "opacity-40")}
                     >
-                      <PersonCard p={p} move={move} />
+                      <PersonCard p={p} move={move} remove={remove} deleting={deleting.has(p.id)} />
                     </li>
                   ))}
                   {!people.length && (
@@ -292,7 +317,7 @@ function Board({ groups, move, endedOpen, toggleEnded }: ViewProps) {
   );
 }
 
-function Rows({ groups, move, endedOpen, toggleEnded }: ViewProps) {
+function Rows({ groups, move, remove, deleting, endedOpen, toggleEnded }: ViewProps) {
   return (
     <div className="space-y-5">
       {STAGES.map((stage) => {
@@ -324,7 +349,7 @@ function Rows({ groups, move, endedOpen, toggleEnded }: ViewProps) {
               <ul className="-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:scroll-px-6 sm:px-6 md:-mx-8 md:scroll-px-8 md:px-8">
                 {people.map((p) => (
                   <li key={p.id} className="w-64 shrink-0 snap-start">
-                    <PersonCard p={p} move={move} />
+                    <PersonCard p={p} move={move} remove={remove} deleting={deleting.has(p.id)} />
                   </li>
                 ))}
               </ul>
@@ -342,14 +367,16 @@ const TONE = {
   low: "bg-[var(--color-destructive)]",
 } as const;
 
-function PersonCard({ p, move }: { p: DatingCard; move: (id: string, stage: Stage) => void }) {
+type CardActions = { p: DatingCard; move: ViewProps["move"]; remove: ViewProps["remove"]; deleting: boolean };
+
+function PersonCard({ p, move, remove, deleting }: CardActions) {
   const remember = p.remember[0];
   const facts = [
     p.lastMessageAt && `Texted ${shortDate(p.lastMessageAt)}`,
     p.dateCount > 0 && `${p.dateCount} date${p.dateCount === 1 ? "" : "s"}`,
   ].filter(Boolean);
   // The name link stretches over the whole card (after:inset-0) so the
-  // Instagram link and stage menu can sit inside it without nesting.
+  // Instagram link and actions menu can sit inside it without nesting.
   return (
     <div className={cn(card, "relative p-3 transition hover:bg-[var(--color-fill-secondary)]")}>
       <div className="flex items-start gap-2.5">
@@ -393,7 +420,7 @@ function PersonCard({ p, move }: { p: DatingCard; move: (id: string, stage: Stag
               <Instagram className="size-4" />
             </a>
           )}
-          <StageMenu p={p} move={move} />
+          <PersonMenu p={p} move={move} remove={remove} deleting={deleting} />
         </div>
       </div>
 
@@ -429,29 +456,34 @@ function PersonCard({ p, move }: { p: DatingCard; move: (id: string, stage: Stag
 
 // A native <select> under an icon: keyboard and touch friendly for free, and
 // the phone's own picker on mobile. Also the non-drag way to move a card.
-function StageMenu({ p, move }: { p: DatingCard; move: (id: string, stage: Stage) => void }) {
+function PersonMenu({ p, move, remove, deleting }: CardActions) {
   return (
     <label
-      title="Move to…"
+      title={deleting ? "Deleting…" : "Actions"}
       className="relative z-10 grid size-11 place-items-center rounded-full text-[var(--color-muted-foreground)] focus-within:ring-2 focus-within:ring-[var(--color-ring)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] md:size-8"
     >
-      <ArrowRightLeft className="size-4" />
-      <span className="sr-only">Move {p.name} to…</span>
+      <Ellipsis className="size-4" />
+      <span className="sr-only">Actions for {p.name}</span>
       <select
         value=""
+        disabled={deleting}
         onChange={(e) => {
-          if (isStage(e.target.value)) move(p.id, e.target.value);
+          if (e.target.value === "delete") remove(p);
+          else if (isStage(e.target.value)) move(p.id, e.target.value);
         }}
         className="absolute inset-0 cursor-pointer opacity-0"
       >
         <option value="" disabled>
-          Move to…
+          {deleting ? "Deleting…" : "Actions…"}
         </option>
-        {STAGES.filter((s) => s !== p.stage).map((s) => (
-          <option key={s} value={s}>
-            {LABEL[s]}
-          </option>
-        ))}
+        <optgroup label="Move to…">
+          {STAGES.filter((s) => s !== p.stage).map((s) => (
+            <option key={s} value={s}>
+              {LABEL[s]}
+            </option>
+          ))}
+        </optgroup>
+        <option value="delete">Delete person…</option>
       </select>
     </label>
   );

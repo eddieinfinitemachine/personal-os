@@ -1,15 +1,15 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { del, put } from "@vercel/blob";
+import { del, get, put } from "@vercel/blob";
 import sharp from "sharp";
 import heicConvert from "heic-convert";
-import { deleteFile, saveFile } from "@/lib/storage";
+import { saveFile } from "@/lib/storage";
 import { sniffImage } from "@/lib/board-sniff";
 
 // Re-hosted user images (mood board, dating photos). Blob keys live under
 // users/<userId>/<folder>/, e.g. folder "board" or "dating/<personId>". Without
-// a Blob token (local dev) files land in public/uploads/<head>/<userId>/<rest>,
-// which keeps the board's existing /uploads/board/<userId>/ paths.
+// a Blob token, board files retain public/uploads paths. Dating files always
+// use a separate private Blob store, or nonpublic local storage in development.
 
 // Uploads: Vercel rejects function request bodies over 4.5 MB before the
 // route runs, so anything larger never reaches us anyway.
@@ -24,6 +24,26 @@ export type StoredImage = {
 };
 
 const SEGMENT = /^[A-Za-z0-9_-]+$/;
+const PRIVATE_LOCAL = "private-local:/";
+const isDatingFolder = (folder: string) => folder.startsWith("dating/");
+
+export class PrivateImageStorageUnavailable extends Error {
+  constructor() { super("Private dating photo storage is not configured"); }
+}
+
+function privateToken(): string {
+  const token = process.env.DATING_READ_WRITE_TOKEN;
+  if (!token) throw new PrivateImageStorageUnavailable();
+  return token;
+}
+
+export function isPrivateUserImage(url: string): boolean {
+  return url.startsWith(PRIVATE_LOCAL) || /^https:\/\/[a-zA-Z0-9-]+\.private\.blob\.vercel-storage\.com\//.test(url);
+}
+
+function privateLocalPath(url: string): string {
+  return join(process.cwd(), ".private-uploads", url.slice(PRIVATE_LOCAL.length));
+}
 
 function checkFolder(folder: string): string[] {
   const parts = folder.split("/");
@@ -33,6 +53,7 @@ function checkFolder(folder: string): string[] {
 
 /** Local-dev scope under public/uploads for a user's folder. */
 function localScope(userId: string, folder: string): string {
+  if (!SEGMENT.test(userId)) throw new Error("bad image user");
   const [head, ...rest] = checkFolder(folder);
   return [head, userId, ...rest].join("/");
 }
@@ -44,7 +65,7 @@ function localScope(userId: string, folder: string): string {
  * URL, a path with `..`) is false, so it is never deleted or fetched.
  */
 export function ownsUserImage(userId: string, folder: string, url: string | null | undefined): boolean {
-  if (!url || !userId || !SEGMENT.test(userId) || url.includes("..") || url.includes("\\")) return false;
+  if (!url || !userId || !SEGMENT.test(userId) || url.includes("..") || url.includes("\\") || /[%?#]/.test(url)) return false;
   let scope: string;
   try {
     scope = localScope(userId, folder);
@@ -52,7 +73,8 @@ export function ownsUserImage(userId: string, folder: string, url: string | null
     return false;
   }
   if (url.startsWith("/")) return url.startsWith(`/uploads/${scope}/`);
-  if (!/^https:\/\/[^/]+\.blob\.vercel-storage\.com\//.test(url)) return false;
+  if (url.startsWith(PRIVATE_LOCAL)) return isDatingFolder(folder) && url.startsWith(`${PRIVATE_LOCAL}${scope}/`);
+  if (!/^https:\/\/[a-zA-Z0-9.-]+\.blob\.vercel-storage\.com\//.test(url)) return false;
   try {
     return new URL(url).pathname.startsWith(`/users/${userId}/${folder}/`);
   } catch {
@@ -69,6 +91,11 @@ function hex(n: number): string {
 // HEVC decoder). Returns null when the bytes aren't a decodable image.
 export async function storeUserImage(userId: string, folder: string, raw: Buffer): Promise<StoredImage | null> {
   const scope = localScope(userId, folder);
+  const dating = isDatingFolder(folder);
+  const token = dating ? process.env.DATING_READ_WRITE_TOKEN : process.env.BLOB_READ_WRITE_TOKEN;
+  if (dating && !token && (process.env.NODE_ENV === "production" || process.env.VERCEL)) {
+    throw new PrivateImageStorageUnavailable();
+  }
   let input = raw;
   if (sniffImage(raw) === "heic") {
     try {
@@ -102,13 +129,19 @@ export async function storeUserImage(userId: string, folder: string, raw: Buffer
 
   const name = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.webp`;
   let imageUrl: string;
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
+  if (token) {
     const blob = await put(`users/${userId}/${folder}/${name}`, out, {
-      access: "public",
+      access: dating ? "private" : "public",
+      token,
       addRandomSuffix: false,
       contentType: "image/webp",
     });
     imageUrl = blob.url;
+  } else if (dating) {
+    imageUrl = `${PRIVATE_LOCAL}${scope}/${name}`;
+    const dir = join(process.cwd(), ".private-uploads", scope);
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    await writeFile(privateLocalPath(imageUrl), out, { mode: 0o600, flag: "wx" });
   } else {
     imageUrl = await saveFile(scope, name, out);
   }
@@ -118,12 +151,25 @@ export async function storeUserImage(userId: string, folder: string, raw: Buffer
 // Only deletes images this user's uploads stored under `folder`; anything
 // else (a remote URL, another user's blob) is left alone.
 export async function deleteUserImage(userId: string, folder: string, url: string | null): Promise<void> {
-  if (!url || !ownsUserImage(userId, folder, url)) return;
   try {
-    if (url.startsWith("/uploads/")) await deleteFile(url);
-    else await del(url);
+    await deleteUserImageStrict(userId, folder, url);
   } catch (e) {
     console.error("[image] delete failed (orphaned)", url, e);
+  }
+}
+
+/** Migration uses strict deletion so a failed cleanup remains retryable. */
+export async function deleteUserImageStrict(userId: string, folder: string, url: string | null): Promise<void> {
+  if (!url || !ownsUserImage(userId, folder, url)) return;
+  if (url.startsWith(PRIVATE_LOCAL)) {
+    await unlink(privateLocalPath(url)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
+  } else if (url.startsWith("/uploads/")) {
+    // Unlike the board helper, do not swallow permission/disk errors.
+    await unlink(join(process.cwd(), "public", url)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
+  } else if (isPrivateUserImage(url)) {
+    await del(url, { token: privateToken() });
+  } else {
+    await del(url);
   }
 }
 
@@ -136,7 +182,13 @@ export async function readUserImage(
 ): Promise<Buffer | null> {
   if (!ownsUserImage(userId, folder, url)) return null;
   try {
+    if (url.startsWith(PRIVATE_LOCAL)) return await readFile(privateLocalPath(url));
     if (url.startsWith("/uploads/")) return await readFile(join(process.cwd(), "public", url));
+    if (isPrivateUserImage(url)) {
+      const result = await get(url, { access: "private", token: privateToken(), abortSignal: AbortSignal.timeout(timeoutMs) });
+      if (!result || result.statusCode !== 200) return null;
+      return Buffer.from(await new Response(result.stream).arrayBuffer());
+    }
     const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) return null;
     return Buffer.from(await res.arrayBuffer());

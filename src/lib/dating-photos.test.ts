@@ -59,8 +59,8 @@ describe("selectTastePhotos", () => {
 describe("pickAvatar", () => {
   it("is the newest photo, or null without photos", () => {
     expect(pickAvatar([])).toBeNull();
-    expect(pickAvatar([{ url: "old", createdAt: at(1) }, { url: "new", createdAt: at(9) }, { url: "mid", createdAt: at(4) }])).toBe("new");
-    expect(pickAvatar([{ url: "iso", createdAt: at(3).toISOString() }])).toBe("iso");
+    expect(pickAvatar([{ id: "old", createdAt: at(1) }, { id: "new", createdAt: at(9) }, { id: "mid", createdAt: at(4) }])).toBe("/api/dating/photos/new/content");
+    expect(pickAvatar([{ id: "iso", createdAt: at(3).toISOString() }])).toBe("/api/dating/photos/iso/content");
   });
 });
 
@@ -68,7 +68,7 @@ describe("toPhotoDTO / cleanCaption", () => {
   it("serializes dates and normalizes captions", () => {
     expect(toPhotoDTO({ id: "1", url: "u", caption: null, createdAt: at(2) })).toEqual({
       id: "1",
-      url: "u",
+      url: "/api/dating/photos/1/content",
       caption: null,
       createdAt: "2026-01-02T00:00:00.000Z",
     });
@@ -106,6 +106,8 @@ describe("ownsUserImage (delete/fetch prefix guard)", () => {
 
   it("accepts this user's own dating blobs and local uploads", () => {
     expect(ownsUserImage(u, folder, `${blob}/users/cuser1/dating/cperson1/1-x.webp`)).toBe(true);
+    expect(ownsUserImage(u, folder, "https://abc.private.blob.vercel-storage.com/users/cuser1/dating/cperson1/1.webp")).toBe(true);
+    expect(ownsUserImage(u, folder, "private-local:/dating/cuser1/cperson1/1.webp")).toBe(true);
     expect(ownsUserImage(u, folder, "/uploads/dating/cuser1/cperson1/1-x.webp")).toBe(true);
     expect(ownsUserImage(u, "board", `${blob}/users/cuser1/board/1.webp`)).toBe(true);
     expect(ownsUserImage(u, "board", "/uploads/board/cuser1/1.webp")).toBe(true);
@@ -129,5 +131,7 @@ describe("ownsUserImage (delete/fetch prefix guard)", () => {
     expect(ownsUserImage("cuser", folder, `${blob}/users/cuser1/dating/cperson1/x.webp`)).toBe(false);
     expect(ownsUserImage(u, "dating/../board", `${blob}/users/cuser1/board/x.webp`)).toBe(false);
     expect(ownsUserImage("../x", folder, "/uploads/dating/../x/cperson1/a.webp")).toBe(false);
+    expect(ownsUserImage(u, folder, "private-local:/dating/cuser1/cperson1/%2e%2e/secret")).toBe(false);
+    expect(ownsUserImage(u, folder, "private-local:/dating/cuser1/cperson2/a.webp")).toBe(false);
   });
 });

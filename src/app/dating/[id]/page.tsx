@@ -20,8 +20,8 @@ export default async function DatingPersonPage({ params }: { params: Promise<{ i
     prisma.datingEvent.findMany({ where: { personId: id }, orderBy: { occurredAt: "asc" } }),
     prisma.datingMessage.findMany({
       where: { personId: id },
-      orderBy: { sentAt: "desc" },
-      take: PAGE,
+      orderBy: [{ sentAt: "desc" }, { id: "desc" }],
+      take: PAGE + 1,
       select: { id: true, fromMe: true, text: true, source: true, sentAt: true },
     }),
     prisma.datingMessage.findMany({
@@ -37,8 +37,8 @@ export default async function DatingPersonPage({ params }: { params: Promise<{ i
       key={person.id}
       initialPerson={toPersonDTO(person)}
       initialEvents={events.map(toEventDTO)}
-      initialMessages={recent.reverse().map(toMessageDTO)}
-      initialMore={recent.length === PAGE}
+      initialMessages={recent.slice(0, PAGE).reverse().map(toMessageDTO)}
+      initialMore={recent.length > PAGE}
       initialPhotos={photos.map(toPhotoDTO)}
       meta={meta.map((m) => ({ sentAt: m.sentAt.toISOString(), fromMe: m.fromMe }))}
     />
