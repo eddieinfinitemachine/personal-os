@@ -989,3 +989,12 @@ Ask (Eddie): "the page for each person is too complicated", and he couldn't find
 - [x] Verified: new unit tests for `datesLine` and the empty-name check (305 total pass), typecheck, prod build. Browser (Playwright + Chrome for Testing, scratch PG, rich + empty person): 34/34 checks: rename via Enter persists in DB and after reload, Esc cancels, blank refused (UI + API 400), blur saves; list add / remove / suggestion add; timeline add / edit / delete; dates line updates; More collapsed by default, opens, open + closed state survive reload; Details city saves; #messages opens More + thread and scrolls; #details opens More; #timeline doesn't; avatar opens Photos; chart renders inside More; stage change; Organize button shown; ideas disclosure; notes save; no horizontal scroll at 390px; no mobile targets under 40px; no console errors. Before/after screenshots light/dark, 390px + desktop
 - NOT verified: iOS Safari / real touch, VoiceOver, `pnpm lint` (broken before this change)
 - Pre-existing, not fixed: timeline "Add" date defaults to the UTC day (tomorrow in US evenings)
+
+## Dating: outstanding reliability and board controls (2026-09-26, Codex)
+- [ ] Add confirmed person deletion to board and rows, preserve cards on failure.
+- [ ] Make Granola meeting writes atomic and make batch cursors safe for timestamp ties and retries.
+- [ ] Deduplicate repeated undated pasted chats; paginate messages without dropping timestamp ties.
+- [ ] Verify regressions, real scratch PostgreSQL behavior, UI, typecheck and build.
+- [ ] Review changes, document remaining limitations and prepare the changes for shipping.
+
+No database schema changes planned. All verification writes use an isolated local database.
