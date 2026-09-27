@@ -406,18 +406,7 @@ export async function addSuggestion(userId: string, id: string) {
     // The equals above is exact apart from case; sameName also folds spacing.
     const same = pending.filter((p) => sameName(p.name, s.name));
     for (const p of same) {
-      await tx.datingEvent.create({
-        data: {
-          userId,
-          personId: person.id,
-          kind: "note",
-          occurredAt: p.occurredAt,
-          title: (p.summary || `From ${p.title ?? "Granola"}`).slice(0, 200),
-          notes: withSourceLine(p.note || p.summary, p.title ?? "Granola", p.url).slice(0, 20_000),
-          source: "granola",
-          externalId: granolaExternalId(p.meetingId, person.id),
-        },
-      });
+      await tx.datingEvent.create({ data: suggestionNote(userId, person.id, p) });
     }
     await tx.datingSuggestion.updateMany({
       where: { id: { in: same.map((p) => p.id) } },
@@ -425,5 +414,56 @@ export async function addSuggestion(userId: string, id: string) {
     });
     return { person, filed: same.length };
   });
+}
+
+/**
+ * "Add to…" on a Granola suggestion: file its note, and every other pending
+ * suggestion's with the same name, onto a person who's already on /dating
+ * (Granola heard "Margo", she's "Margaux"). Same notes as addSuggestion; a
+ * meeting already filed to her is skipped. Null when the suggestion isn't
+ * the user's or is no longer pending, or the person isn't the user's.
+ */
+export async function linkSuggestion(userId: string, id: string, personId: string) {
+  return prisma.$transaction(async (tx) => {
+    const [s, person] = await Promise.all([
+      tx.datingSuggestion.findFirst({ where: { id, userId, status: "pending" } }),
+      tx.datingPerson.findFirst({ where: { id: personId, userId } }),
+    ]);
+    if (!s || !person) return null;
+    const pending = await tx.datingSuggestion.findMany({
+      where: { userId, status: "pending", name: { equals: s.name, mode: "insensitive" } },
+      orderBy: { occurredAt: "asc" },
+    });
+    const same = pending.filter((p) => sameName(p.name, s.name));
+    // Insert-only on the (userId, externalId) index, so a meeting that already
+    // filed a note to her doesn't get a second one.
+    const { count } = await tx.datingEvent.createMany({
+      data: same.map((p) => suggestionNote(userId, person.id, p)),
+      skipDuplicates: true,
+    });
+    await tx.datingSuggestion.updateMany({
+      where: { id: { in: same.map((p) => p.id) } },
+      data: { status: "added", personId: person.id },
+    });
+    return { person, filed: count, linked: same.map((p) => p.id) };
+  });
+}
+
+// The kind "note" event a Granola suggestion files onto a person.
+function suggestionNote(
+  userId: string,
+  personId: string,
+  p: { meetingId: string; occurredAt: Date; title: string | null; url: string | null; summary: string; note: string },
+) {
+  return {
+    userId,
+    personId,
+    kind: "note",
+    occurredAt: p.occurredAt,
+    title: (p.summary || `From ${p.title ?? "Granola"}`).slice(0, 200),
+    notes: withSourceLine(p.note || p.summary, p.title ?? "Granola", p.url).slice(0, 20_000),
+    source: "granola",
+    externalId: granolaExternalId(p.meetingId, personId),
+  } satisfies Prisma.DatingEventUncheckedCreateInput;
 }
 

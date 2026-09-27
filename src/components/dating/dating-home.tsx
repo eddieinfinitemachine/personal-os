@@ -3,13 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Loader2, Plus, Sparkles, X } from "lucide-react";
+import { Link2, Loader2, Plus, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { sameName } from "@/lib/dating";
 import { SimpleMarkdown } from "@/components/simple-markdown";
 import { DictateCard } from "./dictate-card";
 import { GranolaSync } from "./granola-sync";
 import { SyncHelp } from "./sync-help";
 import { PeopleBoard, type DatingCard } from "./people-board";
+import { LinkPicker, type PickablePerson } from "./link-picker";
+import { QuickAdd } from "./quick-add";
 
 export type { DatingCard };
 
@@ -22,8 +25,6 @@ export type GranolaSuggestion = {
   occurredAt: string;
 };
 
-const input =
-  "rounded-md bg-[var(--color-fill-secondary)] px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-[var(--color-ring)]";
 const card = "rounded-xl border border-[var(--color-card-border)] bg-[var(--color-card)]";
 const ghost =
   "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] disabled:opacity-50";
@@ -39,30 +40,12 @@ export function DatingHome({
   granola?: boolean;
 }) {
   const router = useRouter();
-  const [adding, setAdding] = useState(people.length === 0);
-  const [name, setName] = useState("");
-  const [handles, setHandles] = useState("");
-  const [metVia, setMetVia] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [patterns, setPatterns] = useState<{ text: string; taste: string | null; photos: number } | null>(null);
   const [patternsBusy, setPatternsBusy] = useState(false);
 
   const withLessons = people.filter((p) => p.lessons?.trim());
-
-  const add = async () => {
-    if (!name.trim()) return;
-    setBusy(true);
-    const res = await fetch("/api/dating", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, handles, metVia, metAt: new Date().toISOString() }),
-    });
-    const data = await res.json().catch(() => ({}));
-    setBusy(false);
-    if (!res.ok) return setError(data.error ?? "Could not add");
-    router.push(`/dating/${data.person.id}`);
-  };
 
   const findPatterns = async () => {
     setPatternsBusy(true);
@@ -83,46 +66,15 @@ export function DatingHome({
             Remember the details, see how it&apos;s going, learn from each one.
           </p>
         </div>
-        {!adding && (
-          <button onClick={() => setAdding(true)} className={ghost}>
-            <Plus className="size-4" /> Add
-          </button>
-        )}
+        <button onClick={() => setAdding(true)} className={ghost} aria-haspopup="dialog">
+          <Plus className="size-4" /> Add
+        </button>
       </header>
+
+      {adding && <QuickAdd onClose={() => setAdding(false)} />}
 
       {error && (
         <div className="mb-4 rounded-md bg-[var(--color-fill)] px-3 py-2 text-sm text-[var(--color-destructive)]">{error}</div>
-      )}
-
-      {adding && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            add();
-          }}
-          className={cn(card, "mb-6 p-4 flex flex-wrap items-center gap-2")}
-        >
-          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" className={cn(input, "flex-1 min-w-[140px]")} />
-          <input
-            value={handles}
-            onChange={(e) => setHandles(e.target.value)}
-            placeholder="Phone (for iMessage)"
-            className={cn(input, "flex-1 min-w-[160px]")}
-          />
-          <input value={metVia} onChange={(e) => setMetVia(e.target.value)} placeholder="Met via" className={cn(input, "w-36")} />
-          <button
-            type="submit"
-            disabled={busy || !name.trim()}
-            className="pressable inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium bg-[var(--color-foreground)] text-[var(--color-background)] disabled:opacity-50"
-          >
-            {busy && <Loader2 className="size-4 animate-spin" />} Add
-          </button>
-          {people.length > 0 && (
-            <button type="button" onClick={() => setAdding(false)} className={ghost}>
-              Cancel
-            </button>
-          )}
-        </form>
       )}
 
       <PeopleBoard people={people} />
@@ -131,7 +83,7 @@ export function DatingHome({
       <div className="max-w-5xl">
         {granola && <GranolaSync />}
 
-        {suggestions.length > 0 && <Suggestions suggestions={suggestions} setError={setError} />}
+        {suggestions.length > 0 && <Suggestions suggestions={suggestions} people={people} setError={setError} />}
 
         <div className="mb-6">
           <DictateCard onSaved={() => router.refresh()} />
@@ -190,14 +142,41 @@ export function DatingHome({
 // People Granola meetings talked about who aren't here yet.
 function Suggestions({
   suggestions,
+  people,
   setError,
 }: {
   suggestions: GranolaSuggestion[];
+  people: PickablePerson[];
   setError: (e: string | null) => void;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [gone, setGone] = useState<Set<string>>(new Set());
+  const [linking, setLinking] = useState<GranolaSuggestion | null>(null);
+
+  // Optimistic: every pending row with her name goes (the server files them
+  // all); they come back with an error if it fails.
+  const link = async (s: GranolaSuggestion, person: PickablePerson) => {
+    setLinking(null);
+    const ids = suggestions.filter((x) => sameName(x.name, s.name)).map((x) => x.id);
+    setGone((g) => new Set([...g, ...ids]));
+    const res = await fetch(`/api/dating/suggestions/${s.id}/link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ personId: person.id }),
+    }).catch(() => null);
+    const data = res ? await res.json().catch(() => ({})) : {};
+    if (!res?.ok) {
+      setGone((g) => {
+        const next = new Set(g);
+        for (const id of ids) next.delete(id);
+        return next;
+      });
+      return setError(`Could not add ${s.name} to ${person.name}: ${data.error ?? "network error"}`);
+    }
+    setError(null);
+    router.refresh();
+  };
   const act = async (s: GranolaSuggestion, action: "add" | "dismiss") => {
     setBusy(s.id);
     const res = await fetch(`/api/dating/suggestions/${s.id}/${action}`, { method: "POST" });
@@ -234,7 +213,7 @@ function Suggestions({
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1">
               <button
                 onClick={() => act(s, "add")}
                 disabled={busy !== null}
@@ -242,6 +221,17 @@ function Suggestions({
               >
                 {busy === s.id ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />} Add her
               </button>
+              {people.length > 0 && (
+                <button
+                  onClick={() => setLinking(s)}
+                  disabled={busy !== null}
+                  className={ghost}
+                  aria-haspopup="dialog"
+                  aria-label={`Add ${s.name} to someone already here`}
+                >
+                  <Link2 className="size-4" /> Add to…
+                </button>
+              )}
               <button onClick={() => act(s, "dismiss")} disabled={busy !== null} className={ghost} aria-label={`Dismiss ${s.name}`}>
                 <X className="size-4" /> Dismiss
               </button>
@@ -249,6 +239,14 @@ function Suggestions({
           </li>
         ))}
       </ul>
+      {linking && (
+        <LinkPicker
+          name={linking.name}
+          people={people}
+          onPick={(p) => link(linking, p)}
+          onClose={() => setLinking(null)}
+        />
+      )}
     </section>
   );
 }
