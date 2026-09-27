@@ -1062,7 +1062,7 @@ Requested design: retain simple cards, separate Dating (including Exclusive), Pu
 
 - [x] Reconcile live dating implementation, EC Pad source architecture and user-approved direction.
 - [x] Specify source adapters, evidence ownership, durable review decisions and concrete additive schema proposal.
-- [ ] Independently review the intake design and resolve findings.
+- [x] Independently review the intake design and resolve findings; final review approved after clarifying undated evidence, serialized alias resolution and retention limits.
 - [ ] Obtain approval for the documented three-table/additive-column schema change before schema edits.
 - [ ] Implement, verify and release intake/review; preserve outstanding reflection, summary and photo improvements as follow-up scope.
 
