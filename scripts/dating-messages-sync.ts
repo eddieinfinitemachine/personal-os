@@ -1,22 +1,52 @@
 #!/usr/bin/env node
 /**
  * dating-messages-sync.ts
- * Purpose: Copy iMessage threads for the people on /dating into EC.
+ * Purpose: Copy iMessage and WhatsApp threads for the people on /dating into EC.
  * Privacy: reads message text ONLY for 1:1 chats with handles you added to a
- * person on /dating. Every other thread is never selected.
- * Usage: pnpm dlx tsx scripts/dating-messages-sync.ts [--dry-run] [--full] [--install-launchd]
- *   --full             ignore the last-synced time and resend everything (deduped server-side)
+ * person on /dating. Group chats, broadcasts/status and every other thread are
+ * never selected.
+ * Usage: pnpm dlx tsx scripts/dating-messages-sync.ts [--dry-run] [--full] [--no-whatsapp] [--install-launchd]
+ *   --dry-run          read and count, send nothing
+ *   --full             ignore the last-synced times and resend everything (deduped server-side)
+ *   --no-whatsapp      skip WhatsApp (on by default; skipped with a log line if WhatsApp Desktop isn't installed)
  *   --install-launchd  run every 30 minutes in the background
  * Env (.env): CAPTURE_TOKEN, and DATING_SYNC_URL or APP_URL (the EC base URL).
- * Needs Full Disk Access for the terminal running it.
+ *   DATING_SYNC_CHATDB / DATING_SYNC_WADB override the database paths (testing).
+ *
+ * Full Disk Access: both ~/Library/Messages and WhatsApp's app-group container
+ * (~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared) are covered
+ * by Full Disk Access; one grant covers both. Run by hand, the terminal app
+ * needs it. The launchd job (/bin/zsh -lc "... pnpm dlx tsx ...") reads the
+ * databases from the node binary, so grant Full Disk Access to that binary
+ * (the error message prints its exact resolved path; re-grant after a node
+ * upgrade). If launchd runs still fail, also grant /bin/zsh, the job's program.
  */
 
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
-import { normalizeHandle } from "../src/lib/dating";
-import { decodeAttributedBody } from "../src/lib/imessage-body";
+import {
+  CHAT_DB,
+  WHATSAPP_DB,
+  FullDiskAccessError,
+  dbStatus,
+  fullDiskAccessHelp,
+  iMessageHandleIndex,
+  readIMessages,
+  readWhatsAppMessages,
+  snapshotDb,
+  whatsAppSchemaProblems,
+  whatsAppSessions,
+} from "../src/lib/dating-message-readers";
+import {
+  summaryLine,
+  toAppleNs,
+  toCoreDataSeconds,
+  type CaptureSource,
+  type SyncedMessage,
+  type WhatsAppSession,
+} from "../src/lib/dating-message-sync";
 
 try {
   const env = readFileSync(".env", "utf8");
@@ -28,33 +58,17 @@ try {
 
 const dryRun = process.argv.includes("--dry-run");
 const full = process.argv.includes("--full");
+const noWhatsApp = process.argv.includes("--no-whatsapp");
 const installLaunchd = process.argv.includes("--install-launchd");
 
 const BASE = (process.env.DATING_SYNC_URL ?? process.env.APP_URL ?? "").replace(/\/$/, "");
 const TOKEN = process.env.CAPTURE_TOKEN ?? "";
-const APPLE_EPOCH_MS = 978307200000;
+const CHAT_DB_PATH = process.env.DATING_SYNC_CHATDB || CHAT_DB;
+const WA_DB_PATH = process.env.DATING_SYNC_WADB || WHATSAPP_DB;
 const BATCH = 1000;
+const DAY_S = 86_400;
 
-type Target = { id: string; name: string; handles: string[]; since: string | null };
-type Row = { guid: string; date: number; from_me: number; text: string | null; body: string | null };
-
-function appleDate(date: number): Date {
-  // Pre-High Sierra rows are seconds, later ones nanoseconds.
-  return date < 1e12 ? new Date(APPLE_EPOCH_MS + date * 1000) : new Date(APPLE_EPOCH_MS + date / 1e6);
-}
-
-function toAppleNs(iso: string): number {
-  return (new Date(iso).getTime() - APPLE_EPOCH_MS) * 1e6;
-}
-
-function sqlite(db: string, sql: string): unknown[] {
-  const out = execFileSync("/usr/bin/sqlite3", ["-json", db, sql], {
-    encoding: "utf8",
-    maxBuffer: 1024 * 1024 * 1024,
-  });
-  // sqlite3 -json prints nothing at all for an empty result set.
-  return out.trim() ? (JSON.parse(out) as unknown[]) : [];
-}
+type Target = { id: string; name: string; handles: string[]; since: string | null; whatsappSince?: string | null };
 
 async function api(path: string, init?: RequestInit) {
   const res = await fetch(`${BASE}${path}`, {
@@ -64,6 +78,27 @@ async function api(path: string, init?: RequestInit) {
   const body = await res.text();
   if (!res.ok) throw new Error(`${init?.method ?? "GET"} ${path} → ${res.status}: ${body.slice(0, 300)}`);
   return JSON.parse(body);
+}
+
+async function send(personId: string, source: CaptureSource, messages: SyncedMessage[]): Promise<number> {
+  let added = 0;
+  for (let i = 0; i < messages.length; i += BATCH) {
+    const res = (await api("/api/capture/dating", {
+      method: "POST",
+      body: JSON.stringify({ personId, source, messages: messages.slice(i, i + BATCH) }),
+    })) as { added: number };
+    added += res.added;
+  }
+  return added;
+}
+
+/** Snapshot a db into tempDir, or null (with a log line) when it isn't there. */
+function open(label: string, path: string, tempDir: string): string | null {
+  if (dbStatus(path) === "missing") {
+    console.log(`${label} database not found at ${path}; skipping ${label}.`);
+    return null;
+  }
+  return snapshotDb(path, tempDir);
 }
 
 async function main() {
@@ -81,80 +116,43 @@ async function main() {
 
   const tempDir = execFileSync("mktemp", ["-d"], { encoding: "utf8" }).trim();
   try {
-    const src = join(homedir(), "Library/Messages/chat.db");
-    try {
-      cpSync(src, join(tempDir, "chat.db"));
-      for (const ext of ["-wal", "-shm"]) {
-        if (existsSync(src + ext)) cpSync(src + ext, join(tempDir, `chat.db${ext}`));
+    mkdirSync(join(tempDir, "imessage"));
+    mkdirSync(join(tempDir, "whatsapp"));
+    const chatDb = open("iMessage", CHAT_DB_PATH, join(tempDir, "imessage"));
+    let waDb = noWhatsApp ? null : open("WhatsApp", WA_DB_PATH, join(tempDir, "whatsapp"));
+    if (waDb) {
+      const problems = whatsAppSchemaProblems(waDb);
+      if (problems.length) {
+        console.log(`WhatsApp database has an unexpected schema (missing ${problems.join(", ")}); skipping WhatsApp.`);
+        waDb = null;
       }
-    } catch (e: unknown) {
-      const err = e as NodeJS.ErrnoException;
-      if (err.code === "EACCES" || err.code === "EPERM") {
-        console.error(
-          "Full Disk Access is required: System Settings → Privacy & Security → Full Disk Access → enable your terminal, then restart it.",
-        );
-        process.exit(2);
-      }
-      throw e;
     }
-    const db = join(tempDir, "chat.db");
+    if (!chatDb && !waDb) return;
 
-    // Handle ids only (no content) so we can match normalized phones/emails.
-    const handles = sqlite(db, "SELECT ROWID AS rowid, id FROM handle") as { rowid: number; id: string }[];
-    const byHandle = new Map<string, number[]>();
-    for (const h of handles) {
-      const n = normalizeHandle(h.id);
-      if (!n) continue;
-      byHandle.set(n, [...(byHandle.get(n) ?? []), h.rowid]);
-    }
+    const byHandle = chatDb ? iMessageHandleIndex(chatDb) : new Map<string, number[]>();
+    const sessions: WhatsAppSession[] = waDb ? whatsAppSessions(waDb) : [];
 
     for (const p of people) {
-      const rowids = p.handles.flatMap((h) => byHandle.get(h) ?? []);
-      if (!rowids.length) {
-        console.log(`${p.name}: no iMessage thread for ${p.handles.join(", ")}`);
-        continue;
-      }
-      // Back off a day from the last sync; the server dedupes by guid.
-      const since = !full && p.since ? Math.max(0, toAppleNs(p.since) - 86_400e9) : 0;
-      const ids = rowids.map(Number).join(",");
-      const rows = sqlite(
-        db,
-        `SELECT m.guid, m.date, m.is_from_me AS from_me, m.text, hex(m.attributedBody) AS body
-         FROM message m
-         JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
-         WHERE cmj.chat_id IN (
-           SELECT chat_id FROM chat_handle_join
-           WHERE handle_id IN (${ids})
-             AND chat_id IN (SELECT chat_id FROM chat_handle_join GROUP BY chat_id HAVING COUNT(*) = 1)
-         )
-           AND m.associated_message_type = 0
-           AND m.date > ${Math.floor(since)}
-         ORDER BY m.date`,
-      ) as Row[];
-
-      const seen = new Set<string>();
-      const messages = rows.flatMap((r) => {
-        if (seen.has(r.guid)) return [];
-        seen.add(r.guid);
-        const text = (r.text?.replace(/￼/g, "").trim() || null) ?? decodeAttributedBody(r.body ? Buffer.from(r.body, "hex") : null);
-        if (!text) return [];
-        return [{ guid: r.guid, sentAt: appleDate(r.date).toISOString(), fromMe: r.from_me === 1, text }];
-      });
+      // Back off a day from each source's last sync; the server dedupes by guid.
+      const imSince = !full && p.since ? toAppleNs(p.since) - DAY_S * 1e9 : 0;
+      const waSince = !full && p.whatsappSince ? toCoreDataSeconds(p.whatsappSince) - DAY_S : 0;
+      const imessages = chatDb ? readIMessages(chatDb, p.handles.flatMap((h) => byHandle.get(h) ?? []), imSince) : [];
+      const whatsapp = waDb ? readWhatsAppMessages(waDb, sessions, p.handles, waSince) : [];
 
       if (dryRun) {
-        console.log(`${p.name}: ${messages.length} messages would be sent`);
+        console.log(summaryLine(p.name, imessages.length, whatsapp.length, null));
         continue;
       }
-      let added = 0;
-      for (let i = 0; i < messages.length; i += BATCH) {
-        const res = (await api("/api/capture/dating", {
-          method: "POST",
-          body: JSON.stringify({ personId: p.id, messages: messages.slice(i, i + BATCH) }),
-        })) as { added: number };
-        added += res.added;
-      }
-      console.log(`${p.name}: ${messages.length} read, ${added} new`);
+      const added = (await send(p.id, "imessage", imessages)) + (await send(p.id, "whatsapp", whatsapp));
+      console.log(summaryLine(p.name, imessages.length, whatsapp.length, added));
     }
+  } catch (e) {
+    if (e instanceof FullDiskAccessError) {
+      console.error(fullDiskAccessHelp(e.path));
+      process.exitCode = 2; // not process.exit(): `finally` must delete the snapshots
+      return;
+    }
+    throw e;
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
