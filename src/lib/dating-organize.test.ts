@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   clientToday,
+  datesLine,
   describeOrganize,
   fmtDuration,
   journalExternalId,
@@ -175,6 +176,26 @@ describe("keyDates / fmtDuration", () => {
     expect(k.to).toBeNull();
     expect(k.days).toBe(25);
     expect(keyDates({ stage: "talking", metAt: null, endedAt: null }, [], now)).toMatchObject({ met: null, days: null, dates: 0, lastDate: null });
+  });
+
+  it("builds the one-line dates summary, leaving out empty parts", () => {
+    const k = keyDates(
+      { stage: "dating", metAt: "2026-01-26T12:00:00.000Z", endedAt: null },
+      [ev("date", "2026-03-01", 6), ev("date", "2026-06-01"), ev("call", "2026-09-20"), ev("date", "2026-09-12", 8)],
+      now,
+    );
+    expect(datesLine(k, now)).toBe("Met Jan 26 · 8 months · 3 dates · last Sep 12 (8/10)");
+    // No vibe on the last date, and an earlier year gets its year.
+    const old = keyDates(
+      { stage: "ended", metAt: "2025-11-02T12:00:00.000Z", endedAt: "2026-01-02T12:00:00.000Z" },
+      [ev("date", "2025-12-01")],
+      now,
+    );
+    expect(datesLine(old, now)).toBe("Met Nov 2, 2025 · 2 months · 1 date · last Dec 1, 2025");
+    // Met today: zero days is left out.
+    const today = keyDates({ stage: "talking", metAt: "2026-09-26T12:00:00.000Z", endedAt: null }, [], now);
+    expect(datesLine(today, now)).toBe("Met Sep 26");
+    expect(datesLine(keyDates({ stage: "talking", metAt: null, endedAt: null }, [], now), now)).toBe("");
   });
 
   it("formats durations", () => {

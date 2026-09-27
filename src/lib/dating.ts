@@ -717,6 +717,32 @@ export function fmtDuration(days: number): string {
 }
 
 /**
+ * One quiet line for the person header: "Met Jan 26 · 8 months · 3 dates ·
+ * last Sep 12 (8/10)". Empty parts are left out. Days are read in UTC (dates
+ * are stored at noon) so server and browser render the same text.
+ */
+export function datesLine(k: KeyDates, now: number = Date.now()): string {
+  const year = new Date(now).getUTCFullYear();
+  const day = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      ...(d.getUTCFullYear() !== year && { year: "numeric" }),
+      timeZone: "UTC",
+    });
+  };
+  return [
+    k.met && `Met ${day(k.met)}`,
+    !!k.days && fmtDuration(k.days),
+    k.dates > 0 && plural(k.dates, "date"),
+    k.lastDate && `last ${day(k.lastDate.occurredAt)}${k.lastDate.vibe ? ` (${k.lastDate.vibe}/10)` : ""}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
  * The client's local day (YYYY-MM-DD) when it is within a day of the server's
  * UTC day, so the "From journal" note lands on the user's today in the
  * evening too. Anything else falls back to now.
