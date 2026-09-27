@@ -7,6 +7,7 @@ import {
   lastActivity,
   monthRange,
   parseView,
+  relationshipDates,
   shortDate,
   spanLabel,
   vibeTone,
@@ -26,6 +27,22 @@ const person = (over: Partial<BoardPerson> & { id: string }): BoardPerson => ({
 });
 
 const NOW = new Date("2026-09-26T12:00:00.000Z");
+
+describe("simple card dates", () => {
+  it("shows recorded dates without implying that a paused relationship continues", () => {
+    expect(relationshipDates(person({ id: "a", stage: "paused", metAt: "2025-07-01" }))).toBe("Met Jul 2025");
+    expect(relationshipDates(person({ id: "a", stage: "ended", metAt: "2025-07-01", endedAt: "2026-02-01" }))).toBe("Jul 2025–Feb 2026");
+  });
+  it("does not use imported activity or creation dates as relationship boundaries", () => {
+    expect(relationshipDates(person({ id: "a", firstEventAt: "2025-07-01", lastEventAt: "2026-02-01" }))).toBeNull();
+    expect(relationshipDates(person({ id: "a", stage: "ended", metAt: "2025-07-01", lastEventAt: "2026-02-01" }))).toBe("Met Jul 2025");
+  });
+  it("handles missing, invalid, or inconsistent boundaries without invalid date ranges", () => {
+    expect(relationshipDates(person({ id: "a", stage: "ended", endedAt: "2025-03-01" }))).toBe("Ended Mar 2025");
+    expect(relationshipDates(person({ id: "a", stage: "ended", metAt: "2026-01-01", endedAt: "2025-03-01" }))).toBe("Ended Mar 2025");
+    expect(relationshipDates(person({ id: "a", metAt: "invalid" }))).toBeNull();
+  });
+});
 
 describe("lastActivity", () => {
   it("takes the newest of text, event and creation", () => {

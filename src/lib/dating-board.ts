@@ -130,3 +130,14 @@ export function spanLabel(p: BoardPerson, now = new Date()): string {
 export function vibeTone(v: number): "good" | "ok" | "low" {
   return v >= 7 ? "good" : v >= 5 ? "ok" : "low";
 }
+
+/** Concise, explicit relationship dates; imported activity is not a boundary. */
+export function relationshipDates(p: Pick<BoardPerson, "stage" | "metAt" | "endedAt">): string | null {
+  const start = Number.isFinite(t(p.metAt)) ? p.metAt : null;
+  const end = Number.isFinite(t(p.endedAt)) ? p.endedAt : null;
+  if (p.stage === "ended" && end) {
+    if (start && t(start) <= t(end)) return monthRange(start, end);
+    return `Ended ${fmt(end, { month: "short", year: "numeric" })}`;
+  }
+  return start ? `Met ${fmt(start, { month: "short", year: "numeric" })}` : null;
+}
