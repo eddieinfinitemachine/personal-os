@@ -147,7 +147,7 @@ export type IncomingMessage = {
   sentAt: Date;
   fromMe: boolean;
   text: string;
-  source: "imessage" | "paste";
+  source: "imessage" | "whatsapp" | "paste";
 };
 
 /** Insert messages (deduped by externalId) and bump the person's lastMessageAt. */

@@ -21,6 +21,7 @@ import {
 import { initials } from "@/lib/initials";
 import type { DatingEventDTO, DatingMessageDTO, DatingPersonDTO } from "@/lib/dating-server";
 import type { DatingPhotoDTO } from "@/lib/dating-photos";
+import { SOURCE_LABELS } from "@/lib/dating-message-sync";
 import { DictateCard } from "./dictate-card";
 import { ListEditor } from "./list-editor";
 import { PhotoStrip } from "./photo-strip";
@@ -831,6 +832,7 @@ function Messages({
   };
 
   let lastDay = "";
+  let lastSource = "";
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -888,21 +890,34 @@ function Messages({
         )}
         {!messages.length && (
           <p className="text-sm text-[var(--color-muted-foreground)] py-6 text-center">
-            {q ? "No matches." : "No messages yet. Paste a chat, or sync iMessage from your Mac."}
+            {q ? "No matches." : "No messages yet. Paste a chat, or sync iMessage and WhatsApp from your Mac."}
           </p>
         )}
         {messages.map((m) => {
           const day = new Date(m.sentAt).toDateString();
           const header = day !== lastDay;
+          // Label the source (iMessage / WhatsApp / Pasted) at the start of each run.
+          const sourceLabel = header || m.source !== lastSource ? (SOURCE_LABELS[m.source] ?? m.source) : null;
           lastDay = day;
+          lastSource = m.source;
           return (
             <div key={m.id}>
               {header && (
                 <div className="text-center text-[11px] text-[var(--color-label-tertiary)] pt-3 pb-1">{fmtDate(m.sentAt)}</div>
               )}
+              {sourceLabel && (
+                <div
+                  className={cn(
+                    "px-1 pb-0.5 text-[10px] text-[var(--color-label-tertiary)]",
+                    m.fromMe ? "text-right" : "text-left",
+                  )}
+                >
+                  {sourceLabel}
+                </div>
+              )}
               <div className={cn("flex", m.fromMe ? "justify-end" : "justify-start")}>
                 <div
-                  title={new Date(m.sentAt).toLocaleString()}
+                  title={`${new Date(m.sentAt).toLocaleString()} · ${SOURCE_LABELS[m.source] ?? m.source}`}
                   className={cn(
                     "max-w-[80%] rounded-2xl px-3 py-1.5 text-sm whitespace-pre-wrap break-words",
                     m.fromMe
