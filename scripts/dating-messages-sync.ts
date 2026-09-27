@@ -6,6 +6,8 @@
  * person on /dating. Group chats, broadcasts/status and every other thread are
  * never selected.
  * Usage: pnpm dlx tsx scripts/dating-messages-sync.ts [--dry-run] [--full] [--no-whatsapp] [--install-launchd]
+ *   --person-id=ID     limit all lookup/import/summary work to one saved person
+ *   --diagnose-whatsapp log schema and exact-number match counts, never message text
  *   --dry-run          read and count, send nothing
  *   --full             ignore the last-synced times and resend everything (deduped server-side)
  *   --no-whatsapp      skip WhatsApp (on by default; skipped with a log line if WhatsApp Desktop isn't installed)
@@ -22,10 +24,18 @@
  * upgrade). If launchd runs still fail, also grant /bin/zsh, the job's program.
  */
 
+import {
+  whatsappBackfillKey,
+  readWhatsAppBackfills,
+  markWhatsAppBackfill,
+} from "./dating-whatsapp-checkpoint";
+import { diagnoseWhatsAppPhone } from "./dating-whatsapp-diagnostic";
+import { readDatingContactsCache } from "./dating-contact-cache";
+import { matchDatingContact } from "../src/lib/dating-contact-match";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   CHAT_DB,
   WHATSAPP_DB,
@@ -35,6 +45,7 @@ import {
   iMessageHandleIndex,
   readIMessages,
   readWhatsAppMessages,
+  readWhatsAppIdentityMap,
   snapshotDb,
   whatsAppSchemaProblems,
   whatsAppSessions,
@@ -57,35 +68,66 @@ try {
 } catch {}
 
 const dryRun = process.argv.includes("--dry-run");
+const personId = process.argv
+  .find((arg) => arg.startsWith("--person-id="))
+  ?.slice("--person-id=".length);
+const diagnoseWhatsApp = process.argv.includes("--diagnose-whatsapp");
 const full = process.argv.includes("--full");
 const noWhatsApp = process.argv.includes("--no-whatsapp");
 const installLaunchd = process.argv.includes("--install-launchd");
 
-const BASE = (process.env.DATING_SYNC_URL ?? process.env.APP_URL ?? "").replace(/\/$/, "");
+const BASE = (process.env.DATING_SYNC_URL ?? process.env.APP_URL ?? "").replace(
+  /\/$/,
+  "",
+);
 const TOKEN = process.env.CAPTURE_TOKEN ?? "";
 const CHAT_DB_PATH = process.env.DATING_SYNC_CHATDB || CHAT_DB;
 const WA_DB_PATH = process.env.DATING_SYNC_WADB || WHATSAPP_DB;
+const WA_CONTACTS_DB_PATH =
+  process.env.DATING_SYNC_WA_CONTACTS_DB ||
+  join(dirname(WA_DB_PATH), "ContactsV2.sqlite");
 const BATCH = 1000;
 const DAY_S = 86_400;
 
-type Target = { id: string; name: string; handles: string[]; since: string | null; whatsappSince?: string | null };
+type Target = {
+  id: string;
+  name: string;
+  handles: string[];
+  since: string | null;
+  whatsappSince?: string | null;
+};
 
 async function api(path: string, init?: RequestInit) {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
-    headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      Authorization: `Bearer ${TOKEN}`,
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
   });
   const body = await res.text();
-  if (!res.ok) throw new Error(`${init?.method ?? "GET"} ${path} → ${res.status}: ${body.slice(0, 300)}`);
+  if (!res.ok)
+    throw new Error(
+      `${init?.method ?? "GET"} ${path} → ${res.status}: ${body.slice(0, 300)}`,
+    );
   return JSON.parse(body);
 }
 
-async function send(personId: string, source: CaptureSource, messages: SyncedMessage[]): Promise<number> {
+async function send(
+  personId: string,
+  source: CaptureSource,
+  messages: SyncedMessage[],
+): Promise<number> {
   let added = 0;
   for (let i = 0; i < messages.length; i += BATCH) {
     const res = (await api("/api/capture/dating", {
       method: "POST",
-      body: JSON.stringify({ personId, source, messages: messages.slice(i, i + BATCH) }),
+      body: JSON.stringify({
+        personId,
+        source,
+        messages: messages.slice(i, i + BATCH),
+      }),
     })) as { added: number };
     added += res.added;
   }
@@ -102,15 +144,62 @@ function open(label: string, path: string, tempDir: string): string | null {
 }
 
 async function main() {
+  if (personId !== undefined && !personId.trim())
+    throw new Error("--person-id requires a nonempty ID");
   if (!BASE || !TOKEN) {
     console.error("Set CAPTURE_TOKEN and DATING_SYNC_URL (or APP_URL) in .env");
     process.exit(1);
   }
   if (installLaunchd) return install();
 
-  const { people } = (await api("/api/capture/dating")) as { people: Target[] };
+  // Resolve only people already added to dating; never upload the directory.
+  if (!dryRun) {
+    try {
+      const cache = await readDatingContactsCache();
+      // This is an explicitly saved directory; its age is reported, not treated as a live Contacts connection.
+      if (cache.status === "ready" || cache.status === "stale") {
+        const pending = (await api("/api/capture/dating/contacts")) as {
+          people: { id: string; name: string }[];
+        };
+        for (const person of pending.people.filter(
+          (p) => !personId || p.id === personId,
+        )) {
+          const match = matchDatingContact(person.name, cache.contacts);
+          if (match.status !== "matched") continue;
+          const handles = [...match.contact.phones, ...match.contact.emails];
+          if (!handles.length) continue;
+          await api("/api/capture/dating/contacts", {
+            method: "POST",
+            body: JSON.stringify({
+              personId: person.id,
+              name: person.name,
+              handles,
+            }),
+          });
+        }
+        console.log(
+          `Checked saved Contacts directory from ${cache.updatedAt}.`,
+        );
+      } else {
+        console.log(
+          `Saved Contacts directory ${cache.status}; contact lookup skipped.`,
+        );
+      }
+    } catch {
+      console.warn(
+        "Contact lookup failed; saved-number message sync will continue.",
+      );
+    }
+  }
+
+  const { people: allPeople } = (await api("/api/capture/dating")) as {
+    people: Target[];
+  };
+  const people = allPeople.filter((p) => !personId || p.id === personId);
   if (!people.length) {
-    console.log("No one on /dating has a phone or email yet. Add one to sync their texts.");
+    console.log(
+      "No one on /dating has a phone or email yet. Add one to sync their texts.",
+    );
     return;
   }
 
@@ -118,33 +207,117 @@ async function main() {
   try {
     mkdirSync(join(tempDir, "imessage"));
     mkdirSync(join(tempDir, "whatsapp"));
+    mkdirSync(join(tempDir, "whatsapp-contacts"));
     const chatDb = open("iMessage", CHAT_DB_PATH, join(tempDir, "imessage"));
-    let waDb = noWhatsApp ? null : open("WhatsApp", WA_DB_PATH, join(tempDir, "whatsapp"));
+    let waDb = noWhatsApp
+      ? null
+      : open("WhatsApp", WA_DB_PATH, join(tempDir, "whatsapp"));
+    const waSnapshot = waDb;
     if (waDb) {
       const problems = whatsAppSchemaProblems(waDb);
       if (problems.length) {
-        console.log(`WhatsApp database has an unexpected schema (missing ${problems.join(", ")}); skipping WhatsApp.`);
+        console.log(
+          `WhatsApp database has an unexpected schema (missing ${problems.join(", ")}); skipping WhatsApp.`,
+        );
         waDb = null;
       }
     }
-    if (!chatDb && !waDb) return;
+    if (!chatDb && !waDb && !(diagnoseWhatsApp && waSnapshot)) return;
 
-    const byHandle = chatDb ? iMessageHandleIndex(chatDb) : new Map<string, number[]>();
+    const byHandle = chatDb
+      ? iMessageHandleIndex(chatDb)
+      : new Map<string, number[]>();
     const sessions: WhatsAppSession[] = waDb ? whatsAppSessions(waDb) : [];
+    let identities = new Map<string, string>();
+    if (waDb) {
+      try {
+        const contactsDb = open(
+          "WhatsApp contacts",
+          WA_CONTACTS_DB_PATH,
+          join(tempDir, "whatsapp-contacts"),
+        );
+        if (contactsDb) identities = readWhatsAppIdentityMap(contactsDb);
+      } catch {
+        console.warn(
+          "WhatsApp contact mapping unavailable; only direct phone matches will be imported.",
+        );
+      }
+    }
 
+    const backfills = readWhatsAppBackfills();
     for (const p of people) {
+      if (diagnoseWhatsApp && waSnapshot) {
+        for (const phone of p.handles.filter((h) =>
+          /^\+[1-9]\d{6,14}$/.test(h),
+        )) {
+          console.log(
+            JSON.stringify({
+              whatsappDiagnostic: true,
+              personId: p.id,
+              ...diagnoseWhatsAppPhone(waSnapshot, phone),
+            }),
+          );
+        }
+      }
       // Back off a day from each source's last sync; the server dedupes by guid.
       const imSince = !full && p.since ? toAppleNs(p.since) - DAY_S * 1e9 : 0;
-      const waSince = !full && p.whatsappSince ? toCoreDataSeconds(p.whatsappSince) - DAY_S : 0;
-      const imessages = chatDb ? readIMessages(chatDb, p.handles.flatMap((h) => byHandle.get(h) ?? []), imSince) : [];
-      const whatsapp = waDb ? readWhatsAppMessages(waDb, sessions, p.handles, waSince) : [];
+      const backfillKey = whatsappBackfillKey(
+        BASE,
+        p.id,
+        p.handles,
+        identities,
+      );
+      const needsBackfill = !!backfillKey && !backfills.has(backfillKey);
+      const waSince =
+        !full && !needsBackfill && p.whatsappSince
+          ? toCoreDataSeconds(p.whatsappSince) - DAY_S
+          : 0;
+      const imessages = chatDb
+        ? readIMessages(
+            chatDb,
+            p.handles.flatMap((h) => byHandle.get(h) ?? []),
+            imSince,
+          )
+        : [];
+      const whatsapp = waDb
+        ? readWhatsAppMessages(waDb, sessions, p.handles, waSince, identities)
+        : [];
 
       if (dryRun) {
-        console.log(summaryLine(p.name, imessages.length, whatsapp.length, null));
+        console.log(
+          summaryLine(p.name, imessages.length, whatsapp.length, null),
+        );
         continue;
       }
-      const added = (await send(p.id, "imessage", imessages)) + (await send(p.id, "whatsapp", whatsapp));
-      console.log(summaryLine(p.name, imessages.length, whatsapp.length, added));
+      const added =
+        (await send(p.id, "imessage", imessages)) +
+        (await send(p.id, "whatsapp", whatsapp));
+      console.log(
+        summaryLine(p.name, imessages.length, whatsapp.length, added),
+      );
+      if (waDb && backfillKey && needsBackfill) {
+        try {
+          await markWhatsAppBackfill(backfillKey);
+          backfills.add(backfillKey);
+        } catch {
+          console.warn(
+            `${p.name}: messages saved; history checkpoint will retry next sync.`,
+          );
+        }
+      }
+      // Retry failed summaries even when the next import has no new messages.
+      try {
+        const result = await api("/api/capture/dating/insights", {
+          method: "POST",
+          body: JSON.stringify({ personId: p.id }),
+        });
+        if (result.refreshed)
+          console.log(`${p.name}: summary refreshed from saved messages.`);
+      } catch {
+        console.warn(
+          `${p.name}: summary refresh failed; will retry next sync.`,
+        );
+      }
     }
   } catch (e) {
     if (e instanceof FullDiskAccessError) {
@@ -162,7 +335,10 @@ function install() {
   const uid = userInfo().uid;
   const label = "com.personal-os.dating-messages-sync";
   const plistPath = join(homedir(), "Library/LaunchAgents", `${label}.plist`);
-  const logPath = join(homedir(), "Library/Logs/personal-os/dating-messages-sync.log");
+  const logPath = join(
+    homedir(),
+    "Library/Logs/personal-os/dating-messages-sync.log",
+  );
   mkdirSync(join(homedir(), "Library/LaunchAgents"), { recursive: true });
   mkdirSync(join(homedir(), "Library/Logs/personal-os"), { recursive: true });
   writeFileSync(

@@ -11,6 +11,7 @@ import { basename, join } from "node:path";
 import { normalizeHandle } from "./dating";
 import { decodeAttributedBody } from "./imessage-body";
 import {
+  buildWhatsAppIdentityMap,
   mapIMessageRow,
   mapWhatsAppRow,
   matchWhatsAppSessions,
@@ -18,12 +19,17 @@ import {
   type SyncedMessage,
   type WhatsAppRow,
   type WhatsAppSession,
+  type WhatsAppIdentityRow,
 } from "./dating-message-sync";
 
 export const CHAT_DB = join(homedir(), "Library/Messages/chat.db");
 export const WHATSAPP_DB = join(
   homedir(),
   "Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite",
+);
+export const WHATSAPP_CONTACTS_DB = join(
+  homedir(),
+  "Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ContactsV2.sqlite",
 );
 
 // Only ever pointed at a temp snapshot (see snapshotDb), never the live file.
@@ -169,14 +175,23 @@ export function whatsAppSessions(db: string): WhatsAppSession[] {
   return sqlite(db, "SELECT Z_PK AS pk, ZCONTACTJID AS jid, ZSESSIONTYPE AS type FROM ZWACHATSESSION") as WhatsAppSession[];
 }
 
+/** Snapshot only. Read identity columns, never contact names or message text. */
+export function readWhatsAppIdentityMap(db: string): Map<string, string> {
+  const columns = new Set((sqlite(db, "SELECT name FROM pragma_table_info('ZWAADDRESSBOOKCONTACT')") as { name: string }[]).map((c) => c.name));
+  if (!["ZPHONENUMBER", "ZWHATSAPPID", "ZLID"].every((column) => columns.has(column))) return new Map();
+  const rows = sqlite(db, "SELECT ZPHONENUMBER AS phone, ZWHATSAPPID AS jid, ZLID AS lid FROM ZWAADDRESSBOOKCONTACT") as WhatsAppIdentityRow[];
+  return buildWhatsAppIdentityMap(rows);
+}
+
 /** Text messages in the 1:1 sessions matching `handles`, newer than `sinceSeconds` (Core Data). */
 export function readWhatsAppMessages(
   db: string,
   sessions: WhatsAppSession[],
   handles: string[],
   sinceSeconds: number,
+  identityMap?: ReadonlyMap<string, string>,
 ): SyncedMessage[] {
-  const pks = matchWhatsAppSessions(sessions, handles);
+  const pks = matchWhatsAppSessions(sessions, handles, identityMap);
   if (!pks.length) return [];
   const rows = sqlite(
     db,

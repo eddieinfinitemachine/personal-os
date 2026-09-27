@@ -111,3 +111,5 @@ synthetic KeyboardEvents via eval instead).
 ## 2026-09-26 — dating overview should center people
 **Context**: Eddie found the five-column dating board confusing and chose simple cards.
 **Rule**: Show a compact people grid with name, photo, status and one date line. Keep past relationships under a disclosure. Put detailed scores, activity metrics and editing on the person's page; do not model the overview as a pipeline unless explicitly requested.
+
+- 2026-09-27: Add-person entry should accept the user's natural paragraph first. Keep original context, derive only supported fields, and leave unknown dates blank. Show which sources are connected and automatically refresh derived summaries after new imported evidence; do not make the user repeatedly request source reading. Pursuing is broader than Talking.
