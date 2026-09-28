@@ -8,6 +8,7 @@ import { DatingHome } from "./dating-home";
 
 const push = vi.hoisted(() => vi.fn());
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh: vi.fn() }) }));
+vi.mock("./contact-lookup", () => ({ ContactLookup: () => null }));
 vi.mock("./dictate-card", () => ({ DictateCard: () => null }));
 vi.mock("./photo-strip", () => ({ PhotoStrip: () => null }));
 vi.mock("./relationship-chart", () => ({ RelationshipChart: () => null }));
@@ -52,6 +53,35 @@ const ok = (data: unknown) => ({ ok: true, json: async () => data });
 
 // The request failures must leave their action enabled, drafts intact, and an error visible.
 describe("dating request recovery", () => {
+  it("refreshes automatic contact details without replacing a contact edit being typed", async () => {
+    await detail();
+    const instagram = container.querySelector<HTMLInputElement>('input[placeholder="@handle or profile link"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(instagram, "@my_edit");
+      instagram.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => root.render(<DatingDetail initialPerson={{ ...person, handles: ["+14155550111"], instagram: "auto_contact" }} initialEvents={[]} initialMessages={[]} initialMore={false} meta={[]} />));
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="(415) 555-0134"]')?.value).toBe("+14155550111");
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="@handle or profile link"]')?.value).toBe("@my_edit");
+    expect(container.querySelector('a[aria-label="@auto_contact on Instagram"]')).not.toBeNull();
+  });
+
+  it("keeps a manually saved contact while an older background refresh arrives", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok({ person: { ...person, handles: ["+14155550222"] } })));
+    await detail();
+    const phone = container.querySelector<HTMLInputElement>('input[placeholder="(415) 555-0134"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(phone, "+14155550222");
+      phone.dispatchEvent(new Event("input", { bubbles: true }));
+      phone.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    await act(async () => root.render(<DatingDetail initialPerson={{ ...person, handles: ["+14155550111"] }} initialEvents={[]} initialMessages={[]} initialMore={false} meta={[]} />));
+    expect(phone.value).toBe("+14155550222");
+    // A second blur must see the retained confirmed value, not save it again.
+    await act(async () => phone.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
   it("rolls the visible stage back after a save fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(new Error("offline")));
     await detail();
