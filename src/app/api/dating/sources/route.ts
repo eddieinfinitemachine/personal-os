@@ -82,10 +82,30 @@ export async function POST(request: Request) {
           })
         : await sourceState(userId, String(b.source));
     if (!state) throw new IntakeError("Source not found", 404);
-    if (b.source === "ecpad" && b.action === "enable" && !state.tokenHash)
-      throw new IntakeError("Pair EC Pad first", 409);
     await prisma.$transaction(async (tx) => {
       await lockOwner(tx, userId);
+      const current = await tx.datingSourceState.findFirst({
+        where: { id: state.id, userId },
+      });
+      if (!current) throw new IntakeError("Source not found", 404);
+      if (b.source === "ecpad" && b.action === "enable" && !current.tokenHash)
+        throw new IntakeError("Pair EC Pad first", 409);
+      if (b.source === "ecpad" && b.action === "disconnect") {
+        // Pairing codes live on the default scope, while tokens live on library scopes.
+        // Disconnect revokes both under the same lock as code issue and redemption.
+        await tx.datingSourceState.updateMany({
+          where: { userId, source: "ecpad" },
+          data: {
+            enabled: false,
+            status: "paused",
+            tokenHash: null,
+            pairingHash: null,
+            pairingExpiresAt: null,
+            version: { increment: 1 },
+          },
+        });
+        return;
+      }
       if (b.action === "remove") {
         const records = await tx.datingSourceRecord.findMany({
           where: { userId, stateId: state.id },
@@ -114,7 +134,7 @@ export async function POST(request: Request) {
             : {}),
           ...(b.action === "enable" &&
           b.source === "texts" &&
-          !state.coverageStart
+          !current.coverageStart
             ? { coverageStart: new Date(Date.now() - 30 * 86400000) }
             : {}),
         },

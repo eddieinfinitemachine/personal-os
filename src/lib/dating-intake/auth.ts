@@ -6,9 +6,12 @@ export async function createPairing(userId: string) {
   const state = await sourceState(userId, "ecpad");
   const code = randomBytes(16).toString("hex");
   const expiresAt = new Date(Date.now() + 600000);
-  await prisma.datingSourceState.update({
-    where: { id: state.id },
-    data: { pairingHash: hash(code), pairingExpiresAt: expiresAt },
+  await prisma.$transaction(async (tx) => {
+    await lockOwner(tx, userId);
+    await tx.datingSourceState.update({
+      where: { id: state.id },
+      data: { pairingHash: hash(code), pairingExpiresAt: expiresAt },
+    });
   });
   return { code, expiresAt: expiresAt.toISOString() };
 }
