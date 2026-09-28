@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DatingHome, type DatingCard, type GranolaSuggestion } from "./dating-home";
@@ -8,7 +8,13 @@ import type { PickablePerson } from "./link-picker";
 const navigation = vi.hoisted(() => ({ refresh: vi.fn(), push: vi.fn() }));
 const picker = vi.hoisted(() => ({ pick: null as null | ((person: PickablePerson) => void) }));
 vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
-vi.mock("./people-board", () => ({ PeopleBoard: () => null }));
+vi.mock("./review-inbox", () => ({ ReviewInbox: () => <section aria-label="People to review">New intake review</section> }));
+vi.mock("./source-status", () => ({
+  DatingSourcesProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  SourceStatus: () => null,
+  SourceSettings: ({ children }: { children: ReactNode }) => <details><summary>Imports and sync</summary>{children}</details>,
+}));
+vi.mock("./people-board", () => ({ PeopleBoard: () => <div data-testid="people-board" /> }));
 vi.mock("./dictate-card", () => ({ DictateCard: () => <div data-testid="dictate">Dictate a note</div> }));
 vi.mock("./quick-add", () => ({ QuickAdd: () => <div role="dialog">New person form</div> }));
 vi.mock("./link-picker", () => ({ LinkPicker: ({ onPick }: { onPick: (p: PickablePerson) => void }) => {
@@ -166,6 +172,14 @@ describe("Granola suggestion review", () => {
 });
 
 describe("home actions and imports disclosure", () => {
+  it("places the intake inbox above profiles and keeps legacy mentions separate", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok({ remaining: 0 })));
+    await render();
+    const inbox = container.querySelector('[aria-label="People to review"]')!;
+    const board = container.querySelector('[data-testid="people-board"]')!;
+    expect(inbox.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(review().querySelector("h2")?.textContent).toContain("Earlier Granola mentions");
+  });
   it("labels Add person clearly and leaves notes and review outside collapsed import controls", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok({ remaining: 0 })));
     await render(true);

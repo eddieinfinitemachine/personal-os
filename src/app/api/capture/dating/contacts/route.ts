@@ -3,6 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { resolveCaptureUser } from "@/lib/capture-auth";
 import { parseHandles } from "@/lib/dating";
 
+import {lockOwner} from "@/lib/dating-intake/store";
+import {resolveIdentity} from "@/lib/dating-intake/review";
+
 export const dynamic = "force-dynamic";
 const nameKey = (name: string) =>
   name.normalize("NFKC").toLowerCase().trim().replace(/\s+/gu, " ");
@@ -53,7 +56,9 @@ export async function POST(request: Request) {
     );
   const result = await prisma.$transaction(async (tx) => {
     // Serialize competing automatic resolutions for this account without schema changes.
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${userId}))::text`;
+    await lockOwner(tx,userId);
+    const identity=await resolveIdentity(tx,userId,handles);
+    if(identity.excluded || (identity.personId && identity.personId !== body.personId)) return {status:200,body:{resolved:false,reason:"shared_contact"}};
     const person = await tx.datingPerson.findFirst({
       where: { id: body.personId, userId },
       select: { id: true, name: true, handles: true },

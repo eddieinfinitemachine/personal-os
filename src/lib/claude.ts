@@ -31,6 +31,7 @@ export interface ClaudeCall {
   messages?: ClaudeMessage[];
   maxTokens: number;
   model?: string;
+  timeoutMs?: number;
 }
 
 /**
@@ -43,6 +44,7 @@ export async function callClaudeText({
   messages,
   maxTokens,
   model = DEFAULT_MODEL,
+  timeoutMs,
 }: ClaudeCall): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
@@ -50,6 +52,7 @@ export async function callClaudeText({
   const msgs = messages ?? [{ role: "user" as const, content: user ?? "" }];
   const res = await fetch(ANTHROPIC_URL, {
     method: "POST",
+    ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
     headers: {
       "Content-Type": "application/json",
       "x-api-key": apiKey,

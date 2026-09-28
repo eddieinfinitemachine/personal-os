@@ -25,7 +25,7 @@ export default async function DatingPage() {
       select: { personId: true, kind: true, vibe: true, occurredAt: true },
     }),
     prisma.datingSuggestion.findMany({
-      where: { userId, status: "pending" },
+      where: { userId, status: "pending", sourceRecordId: null },
       orderBy: { occurredAt: "desc" },
       select: { id: true, name: true, summary: true, title: true, url: true, occurredAt: true },
     }),

@@ -12,7 +12,7 @@ export async function POST(request: Request, { params }: Ctx) {
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { id } = await params;
   const res = await prisma.datingSuggestion.updateMany({
-    where: { id, userId, status: "pending" },
+    where: { id, userId, status: "pending", sourceRecordId:null },
     data: { status: "dismissed" },
   });
   if (res.count === 0) return NextResponse.json({ error: "not found" }, { status: 404 });

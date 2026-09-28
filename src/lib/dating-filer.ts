@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import {lockOwner} from "@/lib/dating-intake/store";
 import { prisma } from "@/lib/prisma";
 import { callClaudeJSON } from "@/lib/claude";
 import { guardGranolaIdentities, relationshipWindow, type IdentityPerson } from "@/lib/dating-identity";
@@ -274,7 +275,9 @@ async function applyProposedPersonInTransaction(
     data.stage = item.stage;
     if (item.stage === "ended") data.endedAt = noonUTC(opts.endedDay ?? opts.day);
   }
-  if (Object.keys(data).length) await tx.datingPerson.update({ where: { id: person.id }, data });
+  // Unreviewed Granola evidence may extend the timeline, never manual profile fields.
+  if (opts.source !== "granola" && Object.keys(data).length) await tx.datingPerson.update({ where: { id: person.id }, data });
+  else if(eventIds.length) await tx.datingPerson.update({where:{id:person.id},data:{insights:Prisma.DbNull,insightsAt:null}});
 
   return { personId: person.id, name: person.name, created, eventIds };
 }
@@ -417,14 +420,15 @@ function firstWords(s: string, n = 8): string {
 /** Create a person from one reviewed suggestion. A shared name is not identity. */
 export async function addSuggestion(userId: string, id: string) {
   return prisma.$transaction(async (tx) => {
-    const s = await tx.datingSuggestion.findFirst({ where: { id, userId, status: "pending" } });
+    await lockOwner(tx,userId);
+    const s = await tx.datingSuggestion.findFirst({ where: { id, userId, status: "pending", sourceRecordId:null } });
     if (!s) return null;
     // Claim the selected row atomically before creating anything. A competing
     // add/link waits, then finds it no longer pending. Failure rolls this back.
-    const claimed = await tx.datingSuggestion.updateMany({ where: { id, userId, status: "pending" }, data: { status: "added" } });
+    const claimed = await tx.datingSuggestion.updateMany({ where: { id, userId, status: "pending", sourceRecordId:null }, data: { status: "added" } });
     if (!claimed.count) return null;
     const person = await tx.datingPerson.create({
-      data: { userId, name: s.name, stage: "talking", metAt: s.occurredAt },
+      data: { userId, name: s.name, stage: "talking", metAt: null },
     });
     await tx.datingEvent.create({ data: suggestionNote(userId, person.id, s) });
     await tx.datingSuggestion.update({ where: { id }, data: { personId: person.id } });
@@ -435,19 +439,21 @@ export async function addSuggestion(userId: string, id: string) {
 /** File only the selected suggestion onto its explicitly chosen person. */
 export async function linkSuggestion(userId: string, id: string, personId: string) {
   return prisma.$transaction(async (tx) => {
+    await lockOwner(tx,userId);
     const [s, person] = await Promise.all([
-      tx.datingSuggestion.findFirst({ where: { id, userId, status: "pending" } }),
+      tx.datingSuggestion.findFirst({ where: { id, userId, status: "pending", sourceRecordId:null } }),
       tx.datingPerson.findFirst({ where: { id: personId, userId } }),
     ]);
     if (!s || !person) return null;
     const claimed = await tx.datingSuggestion.updateMany({
-      where: { id, userId, status: "pending" }, data: { status: "added", personId },
+      where: { id, userId, status: "pending", sourceRecordId:null }, data: { status: "added", personId },
     });
     if (!claimed.count) return null;
     const { count } = await tx.datingEvent.createMany({
       data: [suggestionNote(userId, person.id, s)],
       skipDuplicates: true,
     });
+    await tx.datingPerson.update({where:{id:person.id},data:{insights:Prisma.DbNull,insightsAt:null}});
     return { person, filed: count, linked: [s.id] };
   });
 }

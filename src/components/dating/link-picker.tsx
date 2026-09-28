@@ -26,8 +26,10 @@ export function LinkPicker({
   people,
   onPick,
   onClose,
+  description = "Files only this meeting note on her timeline.",
 }: {
   name: string;
+  description?: string;
   people: PickablePerson[];
   onPick: (person: PickablePerson) => void;
   onClose: () => void;
@@ -55,7 +57,7 @@ export function LinkPicker({
   return (
     <Sheet title={`Add “${name}” to…`} onClose={onClose}>
       <p className="px-4 text-xs text-[var(--color-muted-foreground)]">
-        Files only this meeting note on her timeline.
+        {description}
       </p>
       <div className="px-4 pt-2">
         <input

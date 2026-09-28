@@ -27,6 +27,7 @@ import { ListEditor } from "./list-editor";
 import { PhotoStrip } from "./photo-strip";
 import { RelationshipChart } from "./relationship-chart";
 import { SyncHelp } from "./sync-help";
+import { SourceEvidence } from "./source-evidence";
 import { useDatingPerson } from "./use-dating-person";
 import { useDatingInsightsPoll } from "./use-dating-insights-poll";
 
@@ -216,6 +217,7 @@ export function DatingDetail({
         }
       />
 
+      <SourceEvidence key={person.id} personId={person.id} />
       <Timeline personId={person.id} events={events} setEvents={setEvents} setError={setError} />
 
       <section id="more" className="scroll-mt-4 border-t border-[var(--color-separator)] pt-2">
@@ -263,11 +265,11 @@ export function DatingDetail({
               patch={patch}
               setError={setError}
               deleting={deleting}
-              onDelete={async () => {
+              onDelete={async (exclude = false) => {
                 if (!confirm(`Delete ${person.name} and all notes, timeline and messages?`)) return;
                 setDeleting(true);
                 try {
-                  const res = await fetch(`/api/dating/${person.id}`, { method: "DELETE" });
+                  const res = await fetch(`/api/dating/${person.id}${exclude ? "?exclude=true" : ""}`, { method: "DELETE" });
                   if (res.ok) router.push("/dating");
                   else setError("Could not delete. Try again.");
                 } catch {
@@ -881,6 +883,7 @@ function Timeline({
               </button>
               <div className="pl-[4.75rem]">
                 <SourceBadge event={e} />
+                {e.sourceConflict && <p className="text-xs text-[var(--color-muted-foreground)]">The source changed. Your edited note was kept.</p>}
               </div>
             </li>
           ))}
@@ -1140,7 +1143,7 @@ function Details({
   person: DatingPersonDTO;
   patch: Patch;
   setError: (e: string | null) => void;
-  onDelete: () => void;
+  onDelete: (exclude?: boolean) => void;
   deleting: boolean;
 }) {
   // Text fields save on blur, only when changed.
@@ -1210,9 +1213,11 @@ function Details({
         </label>
       </div>
       <div className="mt-6">
-        <button onClick={onDelete} disabled={deleting} className={cn(ghost, tap, "-ml-2.5 hover:text-[var(--color-destructive)]")}>
+        <button onClick={() => onDelete(false)} disabled={deleting} className={cn(ghost, tap, "-ml-2.5 hover:text-[var(--color-destructive)]")}>
           <Trash2 className="size-4" /> Delete {person.name.split(/\s+/)[0]}
         </button>
+        <button onClick={() => onDelete(true)} disabled={deleting} className={cn(ghost, tap, "-ml-2.5")}>Delete and stop suggestions</button>
+        <p className="text-xs text-[var(--color-muted-foreground)]">Stops suggestions for linked sources and known contact details.</p>
       </div>
     </div>
   );

@@ -1057,3 +1057,17 @@ Requested design: retain simple cards, separate Dating (including Exclusive), Pu
 - [x] Verify status movement/recovery, search and disclosure persistence with component tests; full suite506passed/41opt-in skipped; typecheck/build passed. Live mobile/desktop check follows deployment.
 - [x] Independent review approved with no findings.
 - [ ] Release and production desktop/mobile verification.
+
+## 2026-09-27 — Automatic dating intake and review inbox
+
+- [x] Reconcile live dating implementation, EC Pad source architecture and user-approved direction.
+- [x] Specify source adapters, evidence ownership, durable review decisions and concrete additive schema proposal.
+- [x] Independently review the intake design and resolve findings; final review approved after clarifying undated evidence, serialized alias resolution and retention limits.
+- [x] Obtain approval for the documented three-table/additive-column schema change before schema edits — Eddie approved September 28.
+- [ ] Implement, verify and release intake/review; preserve outstanding reflection, summary and photo improvements as follow-up scope.
+
+No schema, code, installed-worker or production source changes in this design step. EC Pad is actively being edited in another task; do not overwrite its working tree. Spec: docs/superpowers/specs/2026-09-27-dating-intake-design.md.
+
+Implementation progress September 28: additive SQL upgraded a full-baseline scratch database with no schema difference afterward. Core ingestion/review/identity/retention and insight freshness integration tests pass; UI and native connector implemented. EC Pad isolated commits c36850d/fbcb7c0 pass195 native tests and macOS/iOS builds. Final adapter integration, release review and deployment remain. No production schema application or new private-source imports yet.
+
+September 28 release preparation: frozen pnpm lockfile build passed; full suite with new scratch PostgreSQL integration passed569 tests (41 unrelated opt-in tests skipped). Synthetic browser checks passed add/edit, unknown dates, dismiss/exclude, message discovery opt-in, source evidence and390px layout. EC Pad connector reconciled with3fd073c at1684299;209 native tests and macOS/iOS builds passed. Production schema-only backup saved privately, approved additive SQL applied transactionally and live schema diff reports no difference. No new source enabled or private source imported. Final review fixes extend exclusions across alias chains and revoke outstanding EC Pad pairing codes on disconnect. Active EC Pad task was notified to integrate the tested local connector after preserving its ongoing work.

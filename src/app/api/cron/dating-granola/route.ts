@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { getFounderUser, isAuthorizedCron } from "@/lib/cron";
+import { prisma } from "@/lib/prisma";
+import { syncGranolaIntake } from "@/lib/dating-intake/granola";
+import { processSource } from "@/lib/dating-intake/extract";
 import { syncGranola } from "@/lib/dating-granola";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +31,13 @@ export async function GET(request: Request) {
 
   const since = new Date(Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000);
   try {
+    const state = await prisma.datingSourceState.findFirst({ where: { userId: founder.id, source: "granola" } });
+    if (state && !state.enabled && state.status !== "not_connected") return NextResponse.json({ skipped: "Granola intake is paused" });
+    if (state?.enabled) {
+      const intake = await syncGranolaIntake(founder.id, state.id);
+      const processing = await processSource(founder.id, state.id);
+      return NextResponse.json({ intake, processing });
+    }
     const result = await syncGranola(founder.id, { since, limit: LIMIT });
     console.log("dating-granola cron", JSON.stringify(result));
     return NextResponse.json(result);

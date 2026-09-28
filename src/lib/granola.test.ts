@@ -216,3 +216,18 @@ describe("createGranolaClient", () => {
     expect(waits[1]).toBeGreaterThan(420);
   });
 });
+
+
+describe("bounded Granola pages", () => {
+  it("fetches exactly one page with the saved cursor", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ notes: [note()], hasMore: true, cursor: "next" }), { status: 200 }));
+    const client = createGranolaClient({ apiKey: "synthetic", fetch, minIntervalMs: 0 });
+    const page = await client.listNotesPage!({ createdAfter: new Date("2026-09-01T00:00:00Z"), cursor: "previous" });
+    expect(fetch).toHaveBeenCalledOnce();
+    const url = new URL(fetch.mock.calls[0][0]);
+    expect(url.searchParams.get("page_size")).toBe("30");
+    expect(url.searchParams.get("cursor")).toBe("previous");
+    expect(page.cursor).toBe("next");
+    expect(fetch.mock.calls[0][1]).toMatchObject({ redirect: "error" });
+  });
+});

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DatingPersonDTO, DatingEventDTO } from "@/lib/dating-server";
@@ -12,6 +12,12 @@ vi.mock("./dictate-card", () => ({ DictateCard: () => null }));
 vi.mock("./photo-strip", () => ({ PhotoStrip: () => null }));
 vi.mock("./relationship-chart", () => ({ RelationshipChart: () => null }));
 vi.mock("./sync-help", () => ({ SyncHelp: () => null }));
+vi.mock("./review-inbox", () => ({ ReviewInbox: () => null }));
+vi.mock("./source-status", () => ({
+  DatingSourcesProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  SourceStatus: () => null,
+  SourceSettings: ({ children }: { children: ReactNode }) => <details><summary>Imports and sync</summary>{children}</details>,
+}));
 vi.mock("./people-board", () => ({ PeopleBoard: () => null }));
 
 const person: DatingPersonDTO = {

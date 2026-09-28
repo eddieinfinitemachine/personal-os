@@ -903,53 +903,56 @@ model User {
   kindleAutoSend Boolean  @default(true)
 
   // auto-generated back-references
-  pushSubscriptions PushSubscription[]
-  readerItems       ReaderItem[]
-  boardItems        BoardItem[]
-  boardTaste        BoardTaste?
-  boardRecs         BoardRec[]
-  highlights        Highlight[]
-  trips             Trip[]
-  tripItems         TripItem[]
-  packingItems      PackingItem[]
-  lists             List[]
-  projects          Project[]
-  vehicles          Vehicle[]
-  vehiclePhotos     VehiclePhoto[]
-  shoppingItems     ShoppingItem[]
-  humans            Human[]
-  biometricReadings BiometricReading[]
-  labResults        LabResult[]
-  medicalVisits     MedicalVisit[]
-  humanVaccinations HumanVaccination[]
-  fitnessSessions   FitnessSession[]
-  dnaResults        DnaResult[]
-  pets              Pet[]
-  petWeights        PetWeight[]
-  petVaccinations   PetVaccination[]
-  petVetVisits      PetVetVisit[]
-  petPhotos         PetPhoto[]
-  recommendations   Recommendation[]
-  petShoppingItems  PetShoppingItem[]
-  serviceItems      ServiceItem[]
-  serviceRecords    ServiceRecord[]
-  vehicleContacts   VehicleContact[]
-  vehicleDrives     VehicleDrive[]
-  notes             Note[]
-  attachments       Attachment[]
-  persons           Person[]
-  assets            Asset[]
-  todos             Todo[]
-  interactions      Interaction[]
-  personalRecord    PersonalRecord?
-  listMemberships   ListMember[]
-  comments          Comment[]
-  commentReads      CommentRead[]
-  datingPeople      DatingPerson[]
-  datingEvents      DatingEvent[]
-  datingMessages    DatingMessage[]
-  datingSuggestions DatingSuggestion[]
-  datingPhotos      DatingPhoto[]
+  pushSubscriptions   PushSubscription[]
+  readerItems         ReaderItem[]
+  boardItems          BoardItem[]
+  boardTaste          BoardTaste?
+  boardRecs           BoardRec[]
+  highlights          Highlight[]
+  trips               Trip[]
+  tripItems           TripItem[]
+  packingItems        PackingItem[]
+  lists               List[]
+  projects            Project[]
+  vehicles            Vehicle[]
+  vehiclePhotos       VehiclePhoto[]
+  shoppingItems       ShoppingItem[]
+  humans              Human[]
+  biometricReadings   BiometricReading[]
+  labResults          LabResult[]
+  medicalVisits       MedicalVisit[]
+  humanVaccinations   HumanVaccination[]
+  fitnessSessions     FitnessSession[]
+  dnaResults          DnaResult[]
+  pets                Pet[]
+  petWeights          PetWeight[]
+  petVaccinations     PetVaccination[]
+  petVetVisits        PetVetVisit[]
+  petPhotos           PetPhoto[]
+  recommendations     Recommendation[]
+  petShoppingItems    PetShoppingItem[]
+  serviceItems        ServiceItem[]
+  serviceRecords      ServiceRecord[]
+  vehicleContacts     VehicleContact[]
+  vehicleDrives       VehicleDrive[]
+  notes               Note[]
+  attachments         Attachment[]
+  persons             Person[]
+  assets              Asset[]
+  todos               Todo[]
+  interactions        Interaction[]
+  personalRecord      PersonalRecord?
+  listMemberships     ListMember[]
+  comments            Comment[]
+  commentReads        CommentRead[]
+  datingPeople        DatingPerson[]
+  datingEvents        DatingEvent[]
+  datingMessages      DatingMessage[]
+  datingSuggestions   DatingSuggestion[]
+  datingPhotos        DatingPhoto[]
+  datingSourceStates  DatingSourceState[]
+  datingSourceRecords DatingSourceRecord[]
+  datingCandidates    DatingCandidate[]
 
   @@index([email])
 }
@@ -1175,30 +1178,35 @@ model DatingPerson {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  events   DatingEvent[]
-  messages DatingMessage[]
-  photos   DatingPhoto[]
+  events     DatingEvent[]
+  messages   DatingMessage[]
+  photos     DatingPhoto[]
+  candidates DatingCandidate[]
 
   @@index([userId, stage])
 }
 
 model DatingEvent {
-  id         String       @id @default(cuid())
-  userId     String
-  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  personId   String
-  person     DatingPerson @relation(fields: [personId], references: [id], onDelete: Cascade)
-  occurredAt DateTime
-  kind       String // "date" | "milestone" | "call" | "conflict" | "note"
-  title      String
-  notes      String?
-  vibe       Int? // 1-10, how it felt; plotted over time
-  source     String? // "dictation" | "granola" | null (added by hand)
+  id                 String              @id @default(cuid())
+  userId             String
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  personId           String
+  person             DatingPerson        @relation(fields: [personId], references: [id], onDelete: Cascade)
+  occurredAt         DateTime
+  kind               String // "date" | "milestone" | "call" | "conflict" | "note"
+  title              String
+  notes              String?
+  vibe               Int? // 1-10, how it felt; plotted over time
+  source             String? // "dictation" | "granola" | null (added by hand)
   // "granola:<meetingId>:<personId>" so re-filing the same meeting is a no-op.
-  externalId String?
-  createdAt  DateTime     @default(now())
+  externalId         String?
+  createdAt          DateTime            @default(now())
+  sourceRecordId     String?
+  sourceRecord       DatingSourceRecord? @relation(fields: [sourceRecordId], references: [id], onDelete: SetNull)
+  machineContentHash String?
 
   @@unique([userId, externalId])
+  @@index([sourceRecordId])
   @@index([personId, occurredAt])
 }
 
@@ -1240,7 +1248,18 @@ model DatingSuggestion {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  source            String              @default("granola")
+  sourceRecordId    String?
+  sourceRecord      DatingSourceRecord? @relation(fields: [sourceRecordId], references: [id], onDelete: Cascade)
+  candidateId       String?
+  candidate         DatingCandidate?    @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  evidence          Json?
+  draft             Json?
+  sourceFingerprint String?
+
   @@unique([userId, meetingId, name])
+  @@index([sourceRecordId])
+  @@index([candidateId])
   @@index([userId, status])
 }
 
@@ -1255,4 +1274,91 @@ model DatingPhoto {
   createdAt DateTime     @default(now())
 
   @@index([personId, createdAt])
+}
+
+// Durable dating intake. Credentials are hashes; source payloads have bounded retention.
+model DatingSourceState {
+  id               String               @id @default(cuid())
+  userId           String
+  user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source           String
+  scope            String               @default("default")
+  enabled          Boolean              @default(false)
+  config           Json                 @default("{}")
+  cursor           Json                 @default("{}")
+  manifest         Json                 @default("{}")
+  manifestVersion  Int                  @default(0)
+  pairingHash      String?              @unique
+  pairingExpiresAt DateTime?
+  tokenHash        String?              @unique
+  status           String               @default("not_connected")
+  version          Int                  @default(0)
+  leaseUntil       DateTime?
+  lastAttemptAt    DateTime?
+  lastSuccessAt    DateTime?
+  lastNewDataAt    DateTime?
+  coverageStart    DateTime?
+  coverageEnd      DateTime?
+  backlog          Int                  @default(0)
+  error            String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  records          DatingSourceRecord[]
+
+  @@unique([userId, source, scope])
+  @@index([userId, status])
+}
+
+model DatingSourceRecord {
+  id              String             @id @default(cuid())
+  userId          String
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stateId         String
+  state           DatingSourceState  @relation(fields: [stateId], references: [id], onDelete: Cascade)
+  source          String
+  externalId      String
+  revision        String
+  documentVersion Int
+  segmentIndex    Int
+  segmentCount    Int
+  occurredAt      DateTime?
+  observedAt      DateTime           @default(now())
+  title           String
+  url             String?
+  evidenceFamily  String?
+  payload         Json?
+  extraction      Json?
+  status          String             @default("receiving")
+  attempts        Int                @default(0)
+  leaseUntil      DateTime?
+  retryAt         DateTime?
+  version         Int                @default(0)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  suggestions     DatingSuggestion[]
+  events          DatingEvent[]
+
+  @@unique([userId, stateId, externalId, revision, segmentIndex])
+  @@index([stateId, status])
+  @@index([userId, stateId, externalId, documentVersion])
+  @@index([status, retryAt])
+}
+
+model DatingCandidate {
+  id                  String             @id @default(cuid())
+  userId              String
+  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  identityKey         String
+  name                String
+  identities          Json               @default("[]")
+  status              String             @default("pending")
+  personId            String?
+  person              DatingPerson?      @relation(fields: [personId], references: [id], onDelete: SetNull)
+  reviewedFingerprint String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  suggestions         DatingSuggestion[]
+
+  @@unique([userId, identityKey])
+  @@index([userId, status])
 }

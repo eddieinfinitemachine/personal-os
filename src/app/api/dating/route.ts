@@ -4,6 +4,9 @@ import { getCurrentUserId } from "@/lib/auth";
 import { newPersonError, personPatch, personPatchError, toPersonDTO } from "@/lib/dating-server";
 import { refreshDatingInsights } from "@/lib/dating-insights";
 
+import { createWithIdentity } from "@/lib/dating-intake/people";
+import { failure } from "@/lib/dating-intake/http";
+
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
@@ -25,7 +28,8 @@ export async function POST(request: Request) {
   if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
   const data = personPatch(body);
   if (!data.name) return NextResponse.json({ error: "name is required" }, { status: 400 });
-  const person = await prisma.datingPerson.create({ data: { ...data, name: data.name, userId } });
+  let person;
+  try { person = data.handles?.length ? await createWithIdentity(userId, { ...data, name:data.name }) : await prisma.datingPerson.create({ data: { ...data, name: data.name, userId } }); } catch(e) { return failure(e); }
   if (person.notes?.trim()) {
     after(async () => {
       try {
