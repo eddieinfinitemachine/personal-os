@@ -1092,3 +1092,15 @@ Verification:621 tests passed with scratch PostgreSQL,42 unrelated opt-in tests 
 No data or schema changes; existing imported tasks remain.
 
 Build and typecheck passed. Synthetic desktop/mobile browser verified permanent Board below Calendar, no duplicate with old saved tracker preferences, no importer link, old bookmark redirect, deleted API404s and no browser errors.
+
+## 2026-09-28 — Daily Call Sheet
+
+- [x] Explore CRM and message-reader architecture; inspect read-only contact coverage.
+- [x] Clarify audience:friends, family and professional relationships; Eddie approved message-based relevance.
+- [x] Compare selection approaches and draft the bounded design.
+- [x] Independently review the written design and resolve blocking findings — approved with no blockers.
+- [ ] Obtain approval for the three additive tables before schema changes.
+- [ ] Resolve Mac message-file access and complete a real source-coverage audit.
+- [ ] Write implementation plan, implement, test with scratch data, and release the authenticated call sheet.
+
+Initial read-only audit:510 CRM people,262 with usable identities,28 shared handles excluded. Both iMessage and WhatsApp file reads denied in this execution context. No conversations read, schema changed, message transfer or job installed. Design:docs/superpowers/specs/2026-09-28-call-sheet-design.md.
