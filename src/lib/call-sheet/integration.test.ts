@@ -110,6 +110,7 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
       version: sheet.day.version,
       entryId: sheet.entries[0].id,
       action: "done",
+        method: "call",
     };
     const [a, b] = await Promise.all([
       mutateCallSheet(userId, action, now),
@@ -125,7 +126,7 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
     await expect(
       mutateCallSheet(
         userId,
-        { ...action, action: "hide", entryId: sheet.entries[1].id },
+        { ...action, method: undefined, action: "hide", entryId: sheet.entries[1].id },
         now,
       ),
     ).rejects.toMatchObject({ status: 409 });
@@ -138,6 +139,36 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
       }),
     ).toBe(0);
   });
+  it("requires a real reach-out method before writing an interaction", async () => {
+    const sheet = await getCallSheet(userId, now);
+    const action = { dayId: sheet.day.id, version: sheet.day.version, entryId: sheet.entries[0].id, action: "done" };
+    for (const method of [undefined, "", "fax", "constructor", null, {}]) {
+      expect(() => mutateCallSheet(userId, { ...action, method }, now)).toThrow("Choose how you reached out");
+    }
+    expect(await prisma.interaction.count({ where: { userId, source: "call-sheet" } })).toBe(0);
+    expect((await getCallSheet(userId, now)).entries[0].status).toBe("pending");
+  });
+  it("persists each selected method in the timeline and daily row, with exact Undo", async () => {
+    const methods = [
+      ["call", "call", "Called"], ["text", "message", "Texted"],
+      ["whatsapp", "message", "Messaged on WhatsApp:"], ["email", "message", "Emailed"],
+      ["in_person", "meeting", "Met with"], ["other", "other", "Checked in with"],
+    ];
+    for (const [method, kind, title] of methods) {
+      const sheet = await getCallSheet(userId, now);
+      const done = await mutateCallSheet(userId, { dayId: sheet.day.id, version: sheet.day.version, entryId: sheet.entries[0].id, action: "done", method }, now);
+      const saved = await prisma.interaction.findUniqueOrThrow({ where: { id: done.entries[0].interactionId! } });
+      expect(saved.kind).toBe(kind);
+      expect(saved.title).toBe(`${title} ${sheet.entries[0].name}`);
+      const refreshed = await getCallSheet(userId, now);
+      expect(refreshed.entries[0].method).toBe(method);
+      expect(refreshed.entries[0].reason).toContain("check-in logged today");
+      const undone = await mutateCallSheet(userId, { dayId: refreshed.day.id, version: refreshed.day.version, action: "undo", undoToken: refreshed.undoToken }, now);
+      expect(undone.entries[0].status).toBe("pending");
+      expect(undone.entries[0].method).toBeUndefined();
+      expect(await prisma.interaction.findUnique({ where: { id: saved.id } })).toBeNull();
+    }
+  });
   it("Undo removes only its exact check-in and preserves a newer encounter", async () => {
     const sheet = await getCallSheet(userId, now);
     const done = await mutateCallSheet(
@@ -147,6 +178,7 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
         version: sheet.day.version,
         entryId: sheet.entries[0].id,
         action: "done",
+        method: "call",
       },
       now,
     );
