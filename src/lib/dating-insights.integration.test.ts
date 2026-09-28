@@ -89,15 +89,22 @@ describe.skipIf(!enabled)("automatic dating insights with real PostgreSQL", () =
     expect(model.call.mock.calls[0][0].user).toContain("imessage: 1 messages; whatsapp: 1 messages");
   });
 
-  it("skips already-covered imports but refreshes newly imported historic messages", async () => {
+  it("migrates summaries without fingerprints, skips covered inputs, and refreshes historic backfill", async () => {
     await message();
     await prisma.datingPerson.update({ where: { id: personId }, data: { insights: { summary: "Previous" }, insightsAt: start } });
+    expect(await (await capture()).json()).toMatchObject({ refreshed: true });
+    const migrated = await prisma.datingPerson.findUniqueOrThrow({ where: { id: personId } });
+    const fingerprint = (migrated.insights as { sourceFingerprint: string }).sourceFingerprint;
+    expect(fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    model.call.mockClear();
     expect(await (await capture()).json()).toMatchObject({ refreshed: false, reason: "fresh" });
     expect(model.call).not.toHaveBeenCalled();
     vi.setSystemTime(new Date(start.getTime() + 2000));
     await message({ sentAt: new Date("2020-01-01"), createdAt: new Date(start.getTime() + 1000), text: "Historic backfill evidence" });
     expect(await (await capture()).json()).toMatchObject({ refreshed: true });
     expect(model.call.mock.calls[0][0].user).toContain("Historic backfill evidence");
+    const backfilled = await prisma.datingPerson.findUniqueOrThrow({ where: { id: personId } });
+    expect((backfilled.insights as { sourceFingerprint: string }).sourceFingerprint).not.toBe(fingerprint);
   });
 
   it("persists actual analyzed source counts separately when the newest-message budget truncates a thread", async () => {
@@ -154,21 +161,49 @@ describe.skipIf(!enabled)("automatic dating insights with real PostgreSQL", () =
     expect(await (await capture()).json()).toMatchObject({ refreshed: true });
   });
 
-  it("does not let a slower concurrent read replace a newer saved summary", async () => {
+  it("coalesces a concurrent refresh into the active generation", async () => {
     await message();
     model.call.mockImplementationOnce(async () => {
       vi.setSystemTime(new Date(start.getTime() + 1000));
-      model.call.mockResolvedValueOnce({ summary: "Newer read" });
-      expect((await refreshDatingInsights(userId, personId)).ok).toBe(true);
+      expect(await refreshDatingInsights(userId, personId)).toMatchObject({
+        ok: true, refreshed: false, reason: "in_progress",
+      });
+      return { summary: "Shared read" };
+    });
+    expect(await (await capture()).json()).toMatchObject({ refreshed: true });
+    expect(model.call).toHaveBeenCalledTimes(1);
+    const saved = await prisma.datingPerson.findUniqueOrThrow({ where: { id: personId } });
+    expect(saved.insights).toMatchObject({ summary: "Shared read" });
+    expect(saved.insights).not.toHaveProperty("generation");
+    expect(await (await capture()).json()).toMatchObject({ refreshed: false, reason: "fresh" });
+    expect(model.call).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let an in-flight read replace a profile changed during generation", async () => {
+    await message();
+    const newer = new Date(start.getTime() + 1000);
+    model.call.mockImplementationOnce(async () => {
+      await prisma.datingPerson.update({ where: { id: personId }, data: {
+        notes: "New manual note", insights: { summary: "Newer saved summary" },
+        insightsAt: newer, updatedAt: newer,
+      } });
       return { summary: "Older read" };
     });
     expect(await (await capture()).json()).toMatchObject({ refreshed: false, reason: "superseded" });
-    expect((await prisma.datingPerson.findUniqueOrThrow({ where: { id: personId } })).insights).toMatchObject({ summary: "Newer read" });
+    expect(await prisma.datingPerson.findUniqueOrThrow({ where: { id: personId } })).toMatchObject({
+      notes: "New manual note", insights: { summary: "Newer saved summary" }, insightsAt: newer,
+    });
   });
 
-  it("skips automatic refresh without messages while preserving manual refresh of notes", async () => {
-    expect(await (await capture()).json()).toMatchObject({ refreshed: false, reason: "no_messages" });
-    expect(model.call).not.toHaveBeenCalled();
+  it("automatically summarizes notes without messages and skips only unchanged inputs", async () => {
+    expect(await (await capture()).json()).toMatchObject({ refreshed: true, sources: { messageCount: 0, hasNotes: true } });
+    expect(model.call.mock.calls[0][0].user).toContain("Keep this original note");
+    expect(await (await capture()).json()).toMatchObject({ refreshed: false, reason: "fresh" });
+    expect(model.call).toHaveBeenCalledTimes(1);
+    await prisma.datingPerson.update({ where: { id: personId }, data: { notes: "Changed manual note" } });
+    expect(await (await capture()).json()).toMatchObject({ refreshed: true });
+    expect(model.call.mock.calls[1][0].user).toContain("Changed manual note");
     expect(await refreshDatingInsights(userId, personId)).toMatchObject({ ok: true, refreshed: true });
+    expect(model.call).toHaveBeenCalledTimes(3);
   });
 });
