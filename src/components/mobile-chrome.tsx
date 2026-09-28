@@ -9,6 +9,7 @@ import {
   Folder,
   Home,
   Inbox as InboxIcon,
+  LayoutGrid,
   Loader2,
   Menu,
   Plus,
@@ -161,11 +162,12 @@ function MobileTopBar() {
 }
 
 // The drawer is the sole mobile nav (no bottom tab bar). Kept deliberately
-// minimal: the lists/trackers/projects below are the point; Home, Calendar,
+// minimal: the lists/trackers/projects below are the point; Home, Calendar, Board,
 // and Settings ride along at the bottom so they stay reachable on phones.
 const DRAWER_PRIMARY = [
   { href: "/", label: "Home", Icon: Home },
   { href: "/calendar", label: "Calendar", Icon: Calendar },
+  { href: "/board", label: "Board", Icon: LayoutGrid },
 ];
 
 function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: MobileProject[]; lists: MobileList[]; appName: string; isPrivate: boolean }) {

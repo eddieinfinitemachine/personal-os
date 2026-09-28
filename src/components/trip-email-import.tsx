@@ -19,7 +19,7 @@ import type { TripItemRow } from "./trip-itinerary";
 
 // "Pull from email": scans Gmail for booking confirmations for this trip, then
 // lets the user review and commit them as itinerary items. Mirrors the
-// meeting-import scan→review two-step; nothing is written until "Add" is clicked.
+// scan→review two-step; nothing is written until "Add" is clicked.
 
 type Phase = "idle" | "scanning" | "review";
 

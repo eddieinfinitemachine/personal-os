@@ -1082,3 +1082,13 @@ Existing approved paragraph-add behavior should work by name alone. Keep exact f
 - [ ] Deploy web, install fastworker, verify live health without adding synthetic people to production.
 
 Verification:621 tests passed with scratch PostgreSQL,42 unrelated opt-in tests skipped;9 legacy contact integration tests also passed. Production build/typecheck passed. Synthetic mobile browser added a person without a phone, resolved Contacts through capture API, and imported only the matching SQLite iMessage thread. Independent review found no blockers. One pre-existing WAL fixture timed out during an unrestricted parallel suite; its16 tests passed alone and the full suite passed with four workers. Live Contacts refresh succeeded; release/LaunchAgent installation remains.
+
+## 2026-09-28 — Replace meeting import with Board
+
+- [x] Remove the manual meeting importer and its Capture link; retain an old-bookmark redirect to Board.
+- [x] Pin Board below Calendar on desktop and mobile, removing it from optional trackers to prevent duplicates.
+- [ ] Verify build and rendered navigation, publish and check the live release.
+
+No data or schema changes; existing imported tasks remain.
+
+Build and typecheck passed. Synthetic desktop/mobile browser verified permanent Board below Calendar, no duplicate with old saved tracker preferences, no importer link, old bookmark redirect, deleted API404s and no browser errors.
