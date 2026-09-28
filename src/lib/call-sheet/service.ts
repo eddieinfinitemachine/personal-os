@@ -115,6 +115,71 @@ export async function ownerTransaction<T>(
     { timeout: 20_000, maxWait: 20_000 },
   );
 }
+/** Remove durable personal snapshots as well as visible rows. Undo may retain
+ * unrelated valid rows, but cannot restore an action involving a revoked identity. */
+function scrubDayPeople(
+  data: DayData,
+  entryAllowed: (entry: StoredEntry) => boolean,
+  personAllowed: (personId: string) => boolean,
+) {
+  const undo = data.undo;
+  if (
+    undo &&
+    (!personAllowed(undo.preference.personId) ||
+      !undo.entries.some(
+        (entry) =>
+          entry.personId === undo.preference.personId && entryAllowed(entry),
+      ) ||
+      (undo.replacement &&
+        (!personAllowed(undo.replacement.personId) ||
+          !data.entries.some(
+            (entry) =>
+              entry.personId === undo.replacement!.personId &&
+              entryAllowed(entry),
+          ))))
+  )
+    delete data.undo;
+  data.entries = data.entries.filter(entryAllowed);
+  data.skipped = data.skipped.filter(personAllowed);
+  if (data.undo) {
+    data.undo.entries = data.undo.entries.filter(entryAllowed);
+    data.undo.skipped = data.undo.skipped.filter(personAllowed);
+  }
+}
+
+/** Called by the CRM delete route so snapshots disappear in the same transaction
+ * as the person and cascading evidence, without waiting for another sheet read. */
+export function deletePersonWithCallSheetCleanup(
+  userId: string,
+  personId: string,
+): Promise<number> {
+  return ownerTransaction(userId, async (tx) => {
+    const result = await tx.person.deleteMany({
+      where: { id: personId, userId },
+    });
+    if (!result.count) return 0;
+    const days = await tx.callSheetDay.findMany({
+      where: { userId },
+      select: { id: true, entries: true },
+    });
+    for (const day of days) {
+      const data = readDay(day.entries);
+      const before = JSON.stringify(data);
+      scrubDayPeople(
+        data,
+        (entry) => entry.personId !== personId,
+        (id) => id !== personId,
+      );
+      if (JSON.stringify(data) !== before)
+        await tx.callSheetDay.update({
+          where: { id: day.id },
+          data: { entries: json(data), version: { increment: 1 } },
+        });
+    }
+    return result.count;
+  });
+}
+
 export async function ensureSettings(tx: Tx, userId: string) {
   return tx.callSheetSettings.upsert({
     where: { userId },
@@ -226,7 +291,12 @@ export async function sheetInTransaction(
   userId: string,
   now: Date,
 ): Promise<CallSheetResponse> {
-  // Historical days retain action records but their evidence expires as well.
+  const ctx = await context(tx, userId, now);
+  const activeIdentities = new Map(
+    ctx.people.map((person) => [person.id, identityKey(person)]),
+  );
+  // Retained history and Undo must respect the current active identity, including
+  // changes or deletions made through another code path.
   const history = await tx.callSheetDay.findMany({
     where: { userId },
     select: { id: true, entries: true },
@@ -234,6 +304,11 @@ export async function sheetInTransaction(
   for (const item of history) {
     const stored = readDay(item.entries);
     const before = JSON.stringify(stored);
+    scrubDayPeople(
+      stored,
+      (entry) => activeIdentities.get(entry.personId) === entry.identityKey,
+      (personId) => activeIdentities.has(personId),
+    );
     for (const entry of [...stored.entries, ...(stored.undo?.entries ?? [])]) {
       entry.cues = liveCues(entry.cues, now);
       entry.topic = entry.cues[0]?.text ?? null;
@@ -244,7 +319,6 @@ export async function sheetInTransaction(
         data: { entries: json(stored), version: { increment: 1 } },
       });
   }
-  const ctx = await context(tx, userId, now);
   const timezone = ctx.settings.timezone;
   const date = localDate(now, timezone);
   let day = await tx.callSheetDay.findUnique({
@@ -268,7 +342,8 @@ export async function sheetInTransaction(
   const data = readDay(day.entries);
   const before = JSON.stringify(data);
   const people = new Map(ctx.people.map((person) => [person.id, person]));
-  data.entries = data.entries.flatMap((entry) => {
+  const staleContactSlots: number[] = [];
+  data.entries = data.entries.flatMap((entry, index) => {
     const person = people.get(entry.personId);
     if (
       !person ||
@@ -282,6 +357,15 @@ export async function sheetInTransaction(
       last.at &&
       Date.parse(last.at) > Date.parse(entry.lastContactAt ?? "1970-01-01") &&
       now.getTime() - Date.parse(last.at) < 7 * 86_400_000;
+    // Initial source sync can discover a conversation that preceded this sheet.
+    // Replace that stale suggestion; only an actual later encounter is progress.
+    if (
+      newlyContacted &&
+      Date.parse(last.at!) < Date.parse(entry.generatedAt)
+    ) {
+      staleContactSlots.push(index);
+      return [];
+    }
     const cues =
       entry.status === "pending" && !newlyContacted && last.complete
         ? liveCues(
@@ -334,7 +418,10 @@ export async function sheetInTransaction(
       )
       .map((person) => ({ category: relationshipCategory(person) })),
   ).map((candidate) => makeEntry(candidate, now));
-  data.entries.push(...additions);
+  additions.forEach((entry, index) => {
+    const slot = staleContactSlots[index] ?? data.entries.length;
+    data.entries.splice(Math.min(slot, data.entries.length), 0, entry);
+  });
   await markSuggested(tx, userId, additions, now);
   if (JSON.stringify(data) !== before)
     day = await tx.callSheetDay.update({

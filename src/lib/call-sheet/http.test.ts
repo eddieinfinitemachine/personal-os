@@ -3,6 +3,7 @@ vi.mock("@/lib/auth", () => ({ getCurrentUserId: vi.fn() }));
 vi.mock("@/lib/capture-auth", () => ({ resolveCaptureUser: vi.fn() }));
 vi.mock("./service", () => ({
   getCallSheet: vi.fn(),
+  deletePersonWithCallSheetCleanup: vi.fn(),
   mutateCallSheet: vi.fn(),
   updateCallSheetSettings: vi.fn(),
 }));
@@ -14,11 +15,13 @@ import { getCurrentUserId } from "@/lib/auth";
 import { resolveCaptureUser } from "@/lib/capture-auth";
 import {
   getCallSheet,
+  deletePersonWithCallSheetCleanup,
   mutateCallSheet,
   updateCallSheetSettings,
 } from "./service";
 import { captureCallSheet, getCaptureConfig } from "./capture";
 import { GET, POST } from "@/app/api/call-sheet/route";
+import { DELETE as personDELETE } from "@/app/api/people/[id]/route";
 import { POST as settingsPOST } from "@/app/api/call-sheet/settings/route";
 import {
   GET as captureGET,
@@ -40,6 +43,7 @@ describe("call sheet HTTP authentication", () => {
     }
     for (const service of [
       getCallSheet,
+      deletePersonWithCallSheetCleanup,
       mutateCallSheet,
       updateCallSheetSettings,
       getCaptureConfig,
@@ -66,5 +70,23 @@ describe("call sheet HTTP authentication", () => {
     );
     expect(response.status).toBe(413);
     expect(mutateCallSheet).not.toHaveBeenCalled();
+  });
+  it("routes authenticated person deletion through scoped snapshot cleanup", async () => {
+    const request = new Request("http://localhost/api/people/person-id", {
+      method: "DELETE",
+    });
+    const params = { params: Promise.resolve({ id: "person-id" }) };
+    expect((await personDELETE(request, params)).status).toBe(401);
+    expect(deletePersonWithCallSheetCleanup).not.toHaveBeenCalled();
+    vi.mocked(getCurrentUserId).mockResolvedValue("authenticated-owner");
+    vi.mocked(deletePersonWithCallSheetCleanup)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(1);
+    expect((await personDELETE(request, params)).status).toBe(404);
+    expect((await personDELETE(request, params)).status).toBe(200);
+    expect(deletePersonWithCallSheetCleanup).toHaveBeenCalledWith(
+      "authenticated-owner",
+      "person-id",
+    );
   });
 });

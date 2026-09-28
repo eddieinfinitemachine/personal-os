@@ -7,6 +7,7 @@ import { captureCallSheet, getCaptureConfig } from "./capture";
 import { extractCallSheetCues } from "./extract";
 import {
   getCallSheet,
+  deletePersonWithCallSheetCleanup,
   mutateCallSheet,
   readDay,
   readSourceData,
@@ -872,5 +873,251 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
         (entry) => entry.lastContactAt === "2026-01-01T00:00:00.000Z",
       ),
     ).toBe(true);
+  });
+  it("deletes owned person snapshots immediately across history and Undo without touching another owner", async () => {
+    const sheet = await getCallSheet(userId, now);
+    const removed = sheet.entries[0];
+    const changed = await mutateCallSheet(
+      userId,
+      {
+        dayId: sheet.day.id,
+        version: sheet.day.version,
+        entryId: removed.id,
+        action: "replace",
+      },
+      now,
+    );
+    const current = await prisma.callSheetDay.findUniqueOrThrow({
+      where: { id: changed.day.id },
+    });
+    const snapshot = readDay(current.entries);
+    const original = snapshot.undo!.entries.find(
+      (entry) => entry.personId === removed.personId,
+    )!;
+    original.cues = [
+      {
+        kind: "topic",
+        text: "Private deleted topic",
+        evidence: [
+          {
+            source: "imessage",
+            messageId: "deleted-message",
+            sentAt: now.toISOString(),
+            excerpt: "Private deleted snippet",
+          },
+        ],
+      },
+    ];
+    snapshot.entries = [original, ...snapshot.entries.slice(1)];
+    snapshot.skipped.push(removed.personId);
+    snapshot.undo!.skipped.push(removed.personId);
+    await prisma.callSheetDay.update({
+      where: { id: current.id },
+      data: { entries: JSON.parse(JSON.stringify(snapshot)) },
+    });
+    await prisma.callSheetDay.create({
+      data: {
+        userId,
+        localDate: "2026-09-27",
+        timezone: "UTC",
+        entries: JSON.parse(JSON.stringify(snapshot)),
+      },
+    });
+    await getCallSheet(otherId, now);
+    const otherBefore = await prisma.callSheetDay.findMany({
+      where: { userId: otherId },
+    });
+    const ownBefore = await prisma.callSheetDay.findMany({ where: { userId } });
+    expect(
+      await deletePersonWithCallSheetCleanup(otherId, removed.personId),
+    ).toBe(0);
+    expect(await prisma.callSheetDay.findMany({ where: { userId } })).toEqual(
+      ownBefore,
+    );
+    expect(
+      await deletePersonWithCallSheetCleanup(userId, removed.personId),
+    ).toBe(1);
+    expect(
+      await prisma.person.findUnique({ where: { id: removed.personId } }),
+    ).toBeNull();
+    expect(
+      await prisma.callSheetContact.count({
+        where: { userId, personId: removed.personId },
+      }),
+    ).toBe(0);
+    for (const day of await prisma.callSheetDay.findMany({
+      where: { userId },
+    })) {
+      const saved = JSON.stringify(day.entries);
+      expect(saved).not.toContain(removed.personId);
+      expect(saved).not.toContain(removed.name);
+      expect(saved).not.toContain(removed.phone!);
+      expect(saved).not.toContain("Private deleted snippet");
+      expect(readDay(day.entries).undo).toBeUndefined();
+    }
+    expect(
+      await prisma.callSheetDay.findMany({ where: { userId: otherId } }),
+    ).toEqual(otherBefore);
+  });
+  it("invalidates Undo when its replacement person is deleted", async () => {
+    const sheet = await getCallSheet(userId, now);
+    const changed = await mutateCallSheet(
+      userId,
+      {
+        dayId: sheet.day.id,
+        version: sheet.day.version,
+        entryId: sheet.entries[0].id,
+        action: "replace",
+      },
+      now,
+    );
+    const replacement = changed.entries[0];
+    expect(changed.undoToken).toBeDefined();
+    await deletePersonWithCallSheetCleanup(userId, replacement.personId);
+    const stored = readDay(
+      (
+        await prisma.callSheetDay.findUniqueOrThrow({
+          where: { id: sheet.day.id },
+        })
+      ).entries,
+    );
+    expect(stored.undo).toBeUndefined();
+    expect(JSON.stringify(stored)).not.toContain(replacement.personId);
+  });
+  it("sheet maintenance removes archived, changed and directly deleted identities from historical and Undo snapshots", async () => {
+    const sheet = await getCallSheet(userId, now);
+    const changed = await mutateCallSheet(
+      userId,
+      {
+        dayId: sheet.day.id,
+        version: sheet.day.version,
+        entryId: sheet.entries[0].id,
+        action: "replace",
+      },
+      now,
+    );
+    const current = await prisma.callSheetDay.findUniqueOrThrow({
+      where: { id: changed.day.id },
+    });
+    const snapshot = readDay(current.entries);
+    const archivedId = sheet.entries[0].personId;
+    const identityChangedId = sheet.entries[1].personId;
+    const deletedId = sheet.entries[2].personId;
+    const revoked = new Set([archivedId, identityChangedId, deletedId]);
+    for (const entry of [...snapshot.entries, ...snapshot.undo!.entries])
+      if (revoked.has(entry.personId))
+        entry.cues = [
+          {
+            kind: "topic",
+            text: "Revoked topic",
+            evidence: [
+              {
+                source: "imessage",
+                messageId: "revoked-message",
+                sentAt: now.toISOString(),
+                excerpt: "Revoked identity snippet",
+              },
+            ],
+          },
+        ];
+    snapshot.skipped.push(...revoked);
+    snapshot.undo!.skipped.push(...revoked);
+    await prisma.callSheetDay.update({
+      where: { id: current.id },
+      data: { entries: JSON.parse(JSON.stringify(snapshot)) },
+    });
+    await prisma.callSheetDay.create({
+      data: {
+        userId,
+        localDate: "2026-09-27",
+        timezone: "UTC",
+        entries: JSON.parse(JSON.stringify(snapshot)),
+      },
+    });
+    await prisma.person.update({
+      where: { id: archivedId },
+      data: { archived: true },
+    });
+    await prisma.person.update({
+      where: { id: identityChangedId },
+      data: { phone: "+15558880000" },
+    });
+    await prisma.person.delete({ where: { id: deletedId } });
+    const fresh = await getCallSheet(userId, now);
+    expect(fresh.undoToken).toBeUndefined();
+    for (const day of await prisma.callSheetDay.findMany({
+      where: { userId },
+    })) {
+      const data = readDay(day.entries);
+      expect(data.entries.some((entry) => revoked.has(entry.personId))).toBe(
+        false,
+      );
+      expect(data.undo).toBeUndefined();
+      expect(data.skipped).not.toContain(archivedId);
+      expect(data.skipped).not.toContain(deletedId);
+      expect(JSON.stringify(data)).not.toContain("Revoked identity snippet");
+    }
+  });
+  it("replaces newly discovered pre-sheet contact but marks genuinely later contact as contacted", async () => {
+    const initial = await updateCallSheetSettings(
+      userId,
+      { source: "imessage", enabled: true },
+      now,
+    );
+    const config = await getCaptureConfig(userId);
+    const template = await payload();
+    const discovered = initial.entries[2];
+    const identity = config.people.find(
+      (person) => person.id === discovered.personId,
+    )!;
+    await captureCallSheet(
+      userId,
+      {
+        ...template,
+        personId: discovered.personId,
+        identityKey: identity.identityKey,
+        handles: [identity.phone!],
+        lastContactAt: "2026-09-26T12:00:00.000Z",
+        messages: [],
+        extract: false,
+      },
+      now,
+    );
+    const refreshed = await getCallSheet(userId, now);
+    expect(refreshed.entries).toHaveLength(5);
+    expect(refreshed.entries[2].personId).not.toBe(discovered.personId);
+    for (const index of [0, 1, 3, 4])
+      expect(refreshed.entries[index].id).toBe(initial.entries[index].id);
+    expect(refreshed.entries.every((entry) => entry.status === "pending")).toBe(
+      true,
+    );
+    const later = new Date(now.getTime() + 60_000);
+    const contacted = refreshed.entries[1];
+    const laterIdentity = config.people.find(
+      (person) => person.id === contacted.personId,
+    )!;
+    await captureCallSheet(
+      userId,
+      {
+        ...template,
+        personId: contacted.personId,
+        identityKey: laterIdentity.identityKey,
+        handles: [laterIdentity.phone!],
+        capturedAt: later.toISOString(),
+        lastContactAt: later.toISOString(),
+        messages: [],
+        extract: false,
+      },
+      later,
+    );
+    const laterSheet = await getCallSheet(userId, later);
+    expect(laterSheet.entries[1]).toMatchObject({
+      id: contacted.id,
+      status: "contacted",
+      reason: "You have been in touch since this was suggested.",
+    });
+    expect(laterSheet.entries.map((entry) => entry.id)).toEqual(
+      refreshed.entries.map((entry) => entry.id),
+    );
   });
 });
