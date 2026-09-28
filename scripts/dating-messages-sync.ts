@@ -4,7 +4,8 @@
  * Purpose: Copy iMessage and WhatsApp threads for the people on /dating into EC.
  * Privacy: reads message text ONLY for 1:1 chats with handles you added to a
  * person on /dating. Group chats, broadcasts/status and every other thread are
- * never selected.
+ * never selected by the saved-person import. Separately enabled discovery may
+ * inspect recent one-to-one conversations; its server setting defaults off.
  * Usage: pnpm dlx tsx scripts/dating-messages-sync.ts [--dry-run] [--full] [--no-whatsapp] [--install-launchd]
  *   --person-id=ID     limit all lookup/import/summary work to one saved person
  *   --diagnose-whatsapp log schema and exact-number match counts, never message text
@@ -24,6 +25,7 @@
  * upgrade). If launchd runs still fail, also grant /bin/zsh, the job's program.
  */
 
+import { runDiscoverySync } from "./dating-discovery-sync";
 import {
   whatsappBackfillKey,
   readWhatsAppBackfills,
@@ -151,6 +153,12 @@ async function main() {
     process.exit(1);
   }
   if (installLaunchd) return install();
+
+  // Discovery has its own explicit server opt-in and never runs during a scoped/dry/diagnostic import.
+  if (!dryRun && !personId && !diagnoseWhatsApp) {
+    try { await runDiscoverySync({ base: BASE, token: TOKEN, chatDbPath: CHAT_DB_PATH, waDbPath: WA_DB_PATH, contactsDbPath: WA_CONTACTS_DB_PATH, noWhatsApp }); }
+    catch { console.warn("Optional message discovery could not finish; saved-person sync will continue."); }
+  }
 
   // Resolve only people already added to dating; never upload the directory.
   if (!dryRun) {

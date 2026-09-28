@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/auth";
 import { isFounderUser } from "@/lib/cron";
+import { IntakeError } from "@/lib/dating-intake/contracts";
+import { prisma } from "@/lib/prisma";
+import { syncGranolaIntake } from "@/lib/dating-intake/granola";
+import { processSource } from "@/lib/dating-intake/extract";
 import { syncGranola } from "@/lib/dating-granola";
 
 export const dynamic = "force-dynamic";
@@ -45,10 +49,17 @@ export async function POST(request: Request) {
   }
 
   try {
+    const state = await prisma.datingSourceState.findFirst({ where: { userId, source: "granola" } });
+    if (state && !state.enabled && state.status !== "not_connected") return NextResponse.json({ error: "Granola intake is paused. Resume it in Imports and sync first." }, { status: 409 });
+    if (state?.enabled) {
+      const intake = await syncGranolaIntake(userId, state.id, { since });
+      const processing = await processSource(userId, state.id);
+      return NextResponse.json({ durable: true, processed: intake.attempted, filed: 0, suggestions: 0, remaining: processing.backlog, errors: [], nextSince: since.toISOString(), nextAfterId: null });
+    }
     return NextResponse.json(await syncGranola(userId, { since, afterId }));
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
-    console.error("granola sync failed:", error);
-    return NextResponse.json({ error }, { status: 502 });
+    console.error("Granola sync could not finish");
+    return NextResponse.json({ error: e instanceof IntakeError ? error : "Granola could not finish. Try again or check source status." }, { status: e instanceof IntakeError ? e.status : 502 });
   }
 }

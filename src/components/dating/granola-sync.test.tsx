@@ -92,3 +92,16 @@ it("pauses at the batch cap while retaining the next cursor", async () => {
   expect(container.textContent).not.toContain("· done");
   expect(container.textContent).toContain("Continue");
 });
+
+
+it("hands durable work to automatic processing after one response and releases controls", async () => {
+  const post = vi.fn().mockResolvedValue(response({ ...batch, durable: true, remaining: 24 }));
+  vi.stubGlobal("fetch", (url: string, opts?: RequestInit) => url.endsWith("organize-all") ? Promise.resolve(response({ remaining: 0 })) : post(url, opts));
+  await act(async () => root.render(<GranolaSync />));
+  await click("Sync now");
+  expect(post).toHaveBeenCalledOnce();
+  expect(container.querySelector('[role="status"]')?.textContent).toContain("Queued for review; automatic processing continues");
+  const sync = [...container.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Sync now")!;
+  expect(sync.disabled).toBe(false);
+  expect(container.textContent).not.toContain("· done");
+});

@@ -53,7 +53,11 @@ export class GranolaError extends Error {
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
+export type GranolaNotePage = { notes: GranolaNoteSummary[]; hasMore: boolean; cursor: string | null };
+
 export type GranolaClient = {
+  /** One bounded enumeration page, so callers can durably checkpoint work. */
+  listNotesPage?(opts: { createdAfter: Date; cursor?: string }): Promise<GranolaNotePage>;
   /** Every note created after `createdAfter`, following the cursor to the end. */
   listNotes(opts: { createdAfter: Date }): Promise<GranolaNoteSummary[]>;
   /** One note; with `transcript`, including the full transcript (paged if it's too big inline). */
@@ -66,6 +70,7 @@ const MAX_PAGES = 200; // runaway-cursor guard
 
 export function createGranolaClient(opts: {
   apiKey: string;
+  signal?: AbortSignal;
   baseUrl?: string;
   fetch?: FetchLike;
   /** Gap between requests. 220 ms keeps us under the 5 req/s sustained limit. */
@@ -80,13 +85,25 @@ export function createGranolaClient(opts: {
   const retries429 = opts.retries429 ?? 2;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   let nextSlot = 0;
+  const pause = async (ms: number) => {
+    if (!opts.signal) return sleep(ms);
+    const signal = opts.signal;
+    signal.throwIfAborted();
+    let abort: () => void = () => {};
+    try {
+      await Promise.race([sleep(ms), new Promise<never>((_, reject) => {
+        abort = () => reject(signal.reason);
+        signal.addEventListener("abort", abort, { once: true });
+      })]);
+    } finally { signal.removeEventListener("abort", abort); }
+  };
 
   // Serialise request starts at least minInterval apart.
   const throttle = async () => {
     const now = Date.now();
     const wait = nextSlot - now;
     nextSlot = Math.max(now, nextSlot) + minInterval;
-    if (wait > 0) await sleep(wait);
+    if (wait > 0) await pause(wait);
   };
 
   const get = async <T>(path: string, params: Record<string, string | undefined> = {}): Promise<T> => {
@@ -97,11 +114,13 @@ export function createGranolaClient(opts: {
       const res = await doFetch(url.toString(), {
         headers: { Authorization: `Bearer ${opts.apiKey}`, Accept: "application/json" },
         cache: "no-store",
+        redirect: "error",
+        signal: opts.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000),
       });
       if (res.ok) return (await res.json()) as T;
       if (res.status === 429 && attempt < retries429) {
         const after = Number(res.headers.get("retry-after"));
-        await sleep(Number.isFinite(after) && after > 0 ? Math.min(after, 10) * 1000 : 2000 * (attempt + 1));
+        await pause(Number.isFinite(after) && after > 0 ? Math.min(after, 10) * 1000 : 2000 * (attempt + 1));
         continue;
       }
       throw await errorFor(res, path);
@@ -117,13 +136,19 @@ export function createGranolaClient(opts: {
         { page_size: String(TRANSCRIPT_PAGE_SIZE), cursor },
       );
       items.push(...(data.transcript ?? []));
-      if (!data.hasMore || !data.cursor) break;
+      if (!data.hasMore) return items;
+      if (!data.cursor || data.cursor === cursor) throw new GranolaError("Granola transcript paging stalled", 502);
       cursor = data.cursor;
     }
-    return items;
+    throw new GranolaError("Granola transcript exceeded the supported page limit", 413);
   };
 
   return {
+    async listNotesPage({ createdAfter, cursor }) {
+      const data = await get<GranolaNotePage>("/notes", { created_after: createdAfter.toISOString(), page_size: String(LIST_PAGE_SIZE), cursor });
+      if (!Array.isArray(data.notes) || data.notes.length > LIST_PAGE_SIZE || (data.hasMore && (!data.cursor || data.cursor === cursor))) throw new GranolaError("Granola returned an invalid page", 502);
+      return data;
+    },
     async listNotes({ createdAfter }) {
       const notes: GranolaNoteSummary[] = [];
       let cursor: string | undefined;
@@ -169,10 +194,10 @@ async function errorFor(res: Response, path: string): Promise<GranolaError> {
 }
 
 /** A client from GRANOLA_API_KEY, or null when it isn't set. */
-export function granolaFromEnv(): GranolaClient | null {
+export function granolaFromEnv(opts: { signal?: AbortSignal } = {}): GranolaClient | null {
   const apiKey = process.env.GRANOLA_API_KEY?.trim();
   if (!apiKey) return null;
-  return createGranolaClient({ apiKey, baseUrl: process.env.GRANOLA_API_URL?.trim() || undefined });
+  return createGranolaClient({ apiKey, signal: opts.signal, baseUrl: process.env.GRANOLA_API_URL?.trim() || undefined });
 }
 
 // ---------------------------------------------------------------------------

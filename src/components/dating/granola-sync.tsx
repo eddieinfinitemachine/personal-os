@@ -6,6 +6,7 @@ import { Download, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Batch = {
+  durable?: boolean;
   processed: number;
   filed: number;
   suggestions: number;
@@ -19,9 +20,9 @@ type Progress = { checked: number; total: number; filed: number; added: number; 
 
 const card = "rounded-xl border border-[var(--color-card-border)] bg-[var(--color-card)]";
 const ghost =
-  "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] disabled:opacity-50";
+  "inline-flex min-h-11 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] disabled:opacity-50";
 const input =
-  "rounded-md bg-[var(--color-fill-secondary)] px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-[var(--color-ring)]";
+  "min-h-11 rounded-md bg-[var(--color-fill-secondary)] px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-[var(--color-ring)]";
 
 const MAX_BATCHES = 300;
 
@@ -56,10 +57,15 @@ export function GranolaSync() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [queued, setQueued] = useState(false);
+  const pending = useRef(false);
   const stop = useRef(false);
   const [retry, setRetry] = useState<{ kind: "sync" | "import"; since: string; afterId?: string; action: "Retry" | "Continue" } | null>(null);
 
   const run = async (kind: "sync" | "import", from: string, fromId?: string) => {
+    if (pending.current) return;
+    pending.current = true;
+    setQueued(false);
     setRunning(kind);
     setError(null);
     setDone(false);
@@ -80,6 +86,7 @@ export function GranolaSync() {
         });
         const data = (await res.json().catch(() => ({}))) as Partial<Batch> & { error?: string };
         if (!res.ok) throw new Error(data.error ?? `Sync failed (${res.status})`);
+        if (data.durable) { setQueued(true); setPicking(false); return; }
         const b = data as Batch;
         p.checked += b.processed;
         p.total = p.checked + b.remaining;
@@ -112,12 +119,13 @@ export function GranolaSync() {
       setRetry({ kind, since: cursor, afterId, action: "Retry" });
       setError(e instanceof Error ? e.message : "Sync failed");
     } finally {
+      pending.current = false;
       setRunning(null);
       router.refresh();
     }
   };
 
-  const text = status(progress, done, error, paused);
+  const text = queued && !error ? "Queued for review; automatic processing continues. Check source status for progress." : status(progress, done, error, paused);
 
   return (
     <section className={cn(card, "mb-6 p-3")}>
@@ -125,7 +133,7 @@ export function GranolaSync() {
         <div className="min-w-0 flex-1 basis-48">
           <div className="text-sm font-semibold">Granola</div>
           <p className="text-xs text-[var(--color-muted-foreground)]">
-            Therapy and meetings that mention someone here are filed every morning.
+            Check meeting notes now or import an earlier date range. New intake suggestions appear in People to review.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1">
@@ -157,7 +165,7 @@ export function GranolaSync() {
               <button
                 type="submit"
                 disabled={running !== null || !since}
-                className="pressable inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium bg-[var(--color-foreground)] text-[var(--color-background)] disabled:opacity-50"
+                className="pressable inline-flex min-h-11 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium bg-[var(--color-foreground)] text-[var(--color-background)] disabled:opacity-50"
               >
                 {running === "import" && <Loader2 className="size-4 animate-spin" />} Import
               </button>
