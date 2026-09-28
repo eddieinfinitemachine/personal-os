@@ -1139,3 +1139,13 @@ Dedicated Call Sheet page verification:production build/typecheck and7existing c
 No schema change; daily list and message sync are unchanged.
 
 Check-in method verification:56 call-sheet tests and97 dating component tests passed, along with typecheck and production build. Synthetic browser verified cancel without writes, WhatsApp persistence/reload/Undo, mobile In person, Escape/autofocus, focus trapping during a delayed save, and focus returning to Undo. Independent review approved. Production rollout pending.
+
+## 2026-09-28 — Nest Call Sheet in Home To Do
+
+- [x] Add a compact Call Sheet row inside the owned default To Do tile, showing current daily progress and linking to the dedicated page.
+- [x] Share one progress request between desktop/mobile layouts; retain a usable link if unavailable.
+- [ ] Verify desktop/mobile placement, progress and navigation, then release and check live.
+
+No schema changes or extra todo records. Full check-in actions stay on /call-sheet.
+
+Verification: typecheck and production build passed. Synthetic desktop/mobile browser checks confirmed a single compact shortcut only in To Do, one shared progress request, navigation to the full sheet, progress after a saved check-in, and a usable fallback during API failure. Screenshots inspected; independent review approved.
