@@ -46,8 +46,8 @@ describe.skipIf(!enabled)("capture contact resolution with real Postgres", () =>
       expect((await get(auth)).status).toBe(401);
       expect((await post(own, undefined, auth)).status).toBe(401);
     }
-    expect(await (await get()).json()).toEqual({ people: [{ id: own.id, name: own.name }] });
-    expect(await (await get(otherToken)).json()).toEqual({ people: [{ id: foreign.id, name: foreign.name }] });
+    expect(await (await get()).json()).toEqual({ people: [{ id: own.id, name: own.name }], refreshContacts: true });
+    expect(await (await get(otherToken)).json()).toEqual({ people: [{ id: foreign.id, name: foreign.name }], refreshContacts: true });
     expect((await post(foreign)).status).toBe(404);
     expect((await prisma.datingPerson.findUniqueOrThrow({ where: { id: foreign.id } })).handles).toEqual([]);
   });

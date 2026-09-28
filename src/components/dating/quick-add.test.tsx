@@ -43,6 +43,17 @@ async function prepare() { await fill("context", paragraph); await click("Fill i
 function deferred() { let resolve!: (value: unknown) => void; const promise = new Promise((yes) => { resolve = yes; }); return { promise, resolve }; }
 
 describe("paragraph dating quick add", () => {
+  it("adds without a phone and explains automatic saved contact lookup", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(prepared()).mockResolvedValueOnce(response({ person: { id: "new", name: "Ana Reyes" } }));
+    vi.stubGlobal("fetch", fetch); await prepare();
+    expect(container.querySelector('label[for="qa-phone"]')?.textContent).toContain("optional");
+    expect(input("phone").required).toBe(false);
+    expect(container.textContent).toContain("Leave blank — I’ll look her up in Contacts after you add her.");
+    await click("Add person");
+    expect(JSON.parse(fetch.mock.calls[1][1].body).handles).toBe("");
+    expect(container.textContent).toContain("find her saved contact details, import matching messages");
+    expect(container.textContent).toContain("automatically while your Mac is awake");
+  });
   it("sends the paragraph with today's local date and keeps unknown dates blank", async () => {
     const fetch = vi.fn().mockResolvedValue(prepared()); vi.stubGlobal("fetch", fetch);
     await prepare();

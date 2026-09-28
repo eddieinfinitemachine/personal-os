@@ -161,8 +161,8 @@ export function QuickAdd({ onClose }: { onClose: () => void }) {
               Added {added.name}.
             </p>
             <p className="mt-2 text-sm text-[var(--color-muted-foreground)]">
-              The Mac sync checks saved contacts and matching messages on its
-              next run. New messages will refresh her summary automatically.
+              I’ll find her saved contact details, import matching messages and
+              update her summary. This starts automatically while your Mac is awake.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <Link autoFocus href={`/dating/${added.id}`} className={primary}>
@@ -326,16 +326,20 @@ export function QuickAdd({ onClose }: { onClose: () => void }) {
               </div>
               <div>
                 <label htmlFor="qa-phone" className={label}>
-                  Phone or email
+                  Phone or email (optional)
                 </label>
                 <input
                   id="qa-phone"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   className={field}
-                  placeholder="Checked during Mac sync if blank"
+                  placeholder="Found automatically from Contacts"
+                  aria-describedby="qa-phone-help"
                   autoComplete="off"
                 />
+                <p id="qa-phone-help" className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+                  Leave blank — I’ll look her up in Contacts after you add her.
+                </p>
               </div>
               <div>
                 <label htmlFor="qa-instagram" className={label}>

@@ -28,6 +28,7 @@ import { PhotoStrip } from "./photo-strip";
 import { RelationshipChart } from "./relationship-chart";
 import { SyncHelp } from "./sync-help";
 import { SourceEvidence } from "./source-evidence";
+import { ContactLookup } from "./contact-lookup";
 import { useDatingPerson } from "./use-dating-person";
 import { useDatingInsightsPoll } from "./use-dating-insights-poll";
 
@@ -81,6 +82,23 @@ export function DatingDetail({
   const [photos, setPhotos] = useState(initialPhotos);
   const [error, setError] = useState<string | null>(null);
   const { person, setPerson, patch } = useDatingPerson(initialPerson, setError);
+  const previousPerson = useRef(initialPerson);
+  const latestPerson = useRef(person);
+  latestPerson.current = person;
+  useEffect(() => {
+    // Refresh contact details only if the user has not changed them locally.
+    // Other editable fields keep their current values and in-flight saves.
+    const previous = previousPerson.current;
+    const current = latestPerson.current;
+    if (previous.id === initialPerson.id) {
+      const incoming: Partial<DatingPersonDTO> = {};
+      if (JSON.stringify(current.handles) === JSON.stringify(previous.handles)) incoming.handles = initialPerson.handles;
+      if (current.instagram === previous.instagram) incoming.instagram = initialPerson.instagram;
+      if (Object.keys(incoming).length) setPerson(incoming);
+    }
+    previousPerson.current = initialPerson;
+  }, [initialPerson, setPerson]);
+  useEffect(() => setMeta(initialMeta), [initialMeta]);
   const [deleting, setDeleting] = useState(false);
   const [organized, setOrganized] = useState<string | null>(null);
   const first = person.name.split(/\s+/)[0];
@@ -148,7 +166,7 @@ export function DatingDetail({
             <Avatar name={person.name} photo={photos[0]?.url} />
           </button>
           <div className="min-w-0 flex-1">
-            <NameHeading name={person.name} onRename={(name) => patch({ name })} setError={setError} />
+            <NameHeading name={person.name} onRename={async (name) => { await patch({ name }); router.refresh(); }} setError={setError} />
             <div className="mt-1 flex flex-wrap items-center gap-x-1 gap-y-1">
               <select
                 value={person.stage}
@@ -178,6 +196,7 @@ export function DatingDetail({
           </div>
         </header>
         {line && <p className="mt-3 text-sm tabular-nums text-[var(--color-muted-foreground)]">{line}</p>}
+        <ContactLookup key={person.id} personId={person.id} name={initialPerson.name} />
       </div>
 
       <DictateCard
@@ -941,6 +960,18 @@ function Messages({
   const [pasteText, setPasteText] = useState("");
   const [myName, setMyName] = useState("");
   const [result, setResult] = useState<string | null>(null);
+  const refreshedMessages = useRef(initialMessages);
+  useEffect(() => {
+    // Preserve searches, loaded history and text being composed during a refresh.
+    if (activeQuery || loading || refreshedMessages.current === initialMessages) return;
+    refreshedMessages.current = initialMessages;
+    setMessages((current) => {
+      const byId = new Map(current.map((message) => [message.id, message]));
+      for (const message of initialMessages) byId.set(message.id, message);
+      return [...byId.values()].sort((a, b) => a.sentAt.localeCompare(b.sentAt) || a.id.localeCompare(b.id));
+    });
+    setMore(initialMore);
+  }, [initialMessages, initialMore, activeQuery, loading]);
 
   const load = async (opts: { before?: Pick<DatingMessageDTO, "id" | "sentAt">; query?: string }) => {
     setLoading(true);
@@ -1174,7 +1205,6 @@ function Details({
           <span className="text-xs text-[var(--color-muted-foreground)]">Instagram</span>
           <input
             defaultValue={person.instagram ? `@${person.instagram}` : ""}
-            key={person.instagram ?? ""}
             placeholder="@handle or profile link"
             autoCapitalize="none"
             autoCorrect="off"
@@ -1184,8 +1214,8 @@ function Details({
               const handle = normalizeInstagram(raw);
               // Checked here too so a bad value never shows as her link.
               if (raw && !handle) return setError("That doesn't look like an Instagram handle. Use @name or an instagram.com/name link.");
+              if (raw) e.target.value = `@${handle}`;
               if (handle !== person.instagram) patch({ instagram: handle ?? "" });
-              else if (raw) e.target.value = `@${handle}`;
             }}
             className={input}
           />
