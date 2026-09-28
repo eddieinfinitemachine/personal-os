@@ -110,19 +110,80 @@ export function liveCues(
   now: Date,
   source?: CallSheetSource,
 ) {
-  return cues
-    .filter(
-      (cue) =>
-        cue.evidence.length &&
-        cue.evidence.every(
-          (e) =>
-            (!source || e.source === source) &&
-            Date.parse(e.sentAt) <= now.getTime() + 300_000 &&
-            Date.parse(e.sentAt) >= now.getTime() - 90 * DAY_MS,
-        ),
-    )
-    .slice(0, 3);
+  const eligible = cues.filter(
+    (cue) =>
+      cue.evidence.length &&
+      cue.evidence.every(
+        (e) =>
+          (!source || e.source === source) &&
+          Date.parse(e.sentAt) <= now.getTime() + 300_000 &&
+          Date.parse(e.sentAt) >= now.getTime() - 90 * DAY_MS,
+      ),
+  );
+  // Use one budget across sources, counting excerpts rather than just topics.
+  // Keep a cue's supporting evidence together instead of silently weakening it.
+  const newest = (cue: EvidenceCue) =>
+    Math.max(...cue.evidence.map((e) => Date.parse(e.sentAt)));
+  const key = (cue: EvidenceCue) =>
+    JSON.stringify([
+      cue.evidence.map((e) => [e.source, e.messageId]).sort(),
+      cue.kind,
+      cue.text,
+    ]);
+  eligible.sort(
+    (a, b) => newest(b) - newest(a) || key(a).localeCompare(key(b)),
+  );
+  let remaining = 3;
+  return eligible.filter((cue) => {
+    if (cue.evidence.length > remaining) return false;
+    remaining -= cue.evidence.length;
+    return true;
+  });
 }
+export function limitPersonCues(
+  sourceData: Partial<Record<CallSheetSource, ContactSourceData>>,
+  now: Date,
+): Partial<Record<CallSheetSource, ContactSourceData>> {
+  const bounded = liveCues(
+    SOURCES.flatMap((source) =>
+      liveCues(sourceData[source]?.cues ?? [], now, source),
+    ),
+    now,
+  );
+  return Object.fromEntries(
+    SOURCES.flatMap((source) =>
+      sourceData[source]
+        ? [
+            [
+              source,
+              {
+                ...sourceData[source],
+                cues: bounded.filter((cue) =>
+                  cue.evidence.every((e) => e.source === source),
+                ),
+              },
+            ],
+          ]
+        : [],
+    ),
+  );
+}
+export function relationshipCategory(person: {
+  circles: string[];
+  tags: string[];
+}): string {
+  const labels = [...person.circles, ...person.tags].map((s) =>
+    s.toLowerCase(),
+  );
+  return labels.some((s) => /^(family|relatives)$/.test(s))
+    ? "family"
+    : labels.some((s) => /^(professional|work|colleagues|business)$/.test(s))
+      ? "professional"
+      : labels.some((s) => /^(friends|friend|social)$/.test(s))
+        ? "friends"
+        : "unknown";
+}
+
 export type PolicyPerson = Identity & {
   id: string;
   imageUrl: string | null;
@@ -222,44 +283,30 @@ export function rankCandidates(
       const interval = cadence(person, pref?.cadenceDays);
       const birthday = birthdaySoon(person.birthday, now, timezone);
       const cues = last.complete
-        ? SOURCES.flatMap((source) =>
-            sources[source].enabled
-              ? liveCues(person.sourceData[source]?.cues ?? [], now, source)
-              : [],
-          ).slice(0, 3)
+        ? liveCues(
+            SOURCES.flatMap((source) =>
+              sources[source].enabled
+                ? liveCues(person.sourceData[source]?.cues ?? [], now, source)
+                : [],
+            ),
+            now,
+          )
         : [];
-      const followUp = cues.some((cue) => cue.kind === "follow_up");
-      if (
-        !birthday &&
-        !followUp &&
-        (!last.reliable || age === null || age < interval)
-      )
+      if (!birthday && (!last.reliable || age === null || age < interval))
         return [];
       const important =
         person.starred ||
         person.strength === "close" ||
         person.strength === "strong";
-      const tier = followUp ? 0 : birthday ? 1 : important ? 2 : 3;
-      const labels = [...person.circles, ...person.tags].map((s) =>
-        s.toLowerCase(),
-      );
-      const category = labels.some((s) => /^(family|relatives)$/.test(s))
-        ? "family"
-        : labels.some((s) =>
-              /^(professional|work|colleagues|business)$/.test(s),
-            )
-          ? "professional"
-          : labels.some((s) => /^(friends|friend|social)$/.test(s))
-            ? "friends"
-            : "unknown";
+      // An AI-extracted question is context, never a user-set due date.
+      const tier = birthday ? 1 : important ? 2 : 3;
+      const category = relationshipCategory(person);
       return [
         {
           person,
-          reason: followUp
-            ? "A possible follow-up from your conversation."
-            : birthday
-              ? "Their birthday is coming up this week."
-              : `Time for your ${interval}-day check-in.`,
+          reason: birthday
+            ? "Their birthday is coming up this week."
+            : `Time for your ${interval}-day check-in.`,
           lastContactAt: last.at,
           lastContactSource: last.source,
           cues,
@@ -280,7 +327,7 @@ export function rankCandidates(
 export function selectCandidates(
   candidates: Candidate[],
   count = 5,
-  existing: Candidate[] = [],
+  existing: { category: string }[] = [],
 ) {
   const pool = [...candidates];
   const selected: Candidate[] = [];

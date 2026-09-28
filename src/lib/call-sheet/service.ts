@@ -11,6 +11,8 @@ import {
   identityKey,
   latestContact,
   liveCues,
+  limitPersonCues,
+  relationshipCategory,
   localDate,
   personName,
   rankCandidates,
@@ -129,6 +131,7 @@ async function context(tx: Tx, userId: string, now: Date) {
       where: {
         userId,
         source: { in: ["manual", "smart-capture", "call-sheet", "checkin"] },
+        occurredAt: { lte: now },
       },
       select: { personIds: true, occurredAt: true },
       orderBy: { occurredAt: "desc" },
@@ -143,16 +146,12 @@ async function context(tx: Tx, userId: string, now: Date) {
   const recordMap = new Map(records.map((person) => [person.id, person]));
   for (const contact of contacts) {
     const person = recordMap.get(contact.personId);
-    const data =
+    const data = limitPersonCues(
       person && contact.identityKey === identityKey(person)
-        ? structuredClone(readSourceData(contact.sourceData))
-        : {};
-    for (const source of SOURCES)
-      if (data[source])
-        data[source] = {
-          ...data[source]!,
-          cues: liveCues(data[source]!.cues, now, source),
-        };
+        ? readSourceData(contact.sourceData)
+        : {},
+      now,
+    );
     if (JSON.stringify(data) !== JSON.stringify(contact.sourceData)) {
       contact.sourceData = json(data) as Prisma.JsonValue;
       await tx.callSheetContact.update({
@@ -285,11 +284,14 @@ export async function sheetInTransaction(
       now.getTime() - Date.parse(last.at) < 7 * 86_400_000;
     const cues =
       entry.status === "pending" && !newlyContacted && last.complete
-        ? SOURCES.flatMap((source) =>
-            ctx.sources[source].enabled
-              ? liveCues(person.sourceData[source]?.cues ?? [], now, source)
-              : [],
-          ).slice(0, 3)
+        ? liveCues(
+            SOURCES.flatMap((source) =>
+              ctx.sources[source].enabled
+                ? liveCues(person.sourceData[source]?.cues ?? [], now, source)
+                : [],
+            ),
+            now,
+          )
         : [];
     return [
       {
@@ -326,9 +328,11 @@ export async function sheetInTransaction(
   const additions = selectCandidates(
     candidates.filter((candidate) => !excluded.has(candidate.person.id)),
     5 - data.entries.length,
-    candidates.filter((candidate) =>
-      data.entries.some((entry) => entry.personId === candidate.person.id),
-    ),
+    ctx.people
+      .filter((person) =>
+        data.entries.some((entry) => entry.personId === person.id),
+      )
+      .map((person) => ({ category: relationshipCategory(person) })),
   ).map((candidate) => makeEntry(candidate, now));
   data.entries.push(...additions);
   await markSuggested(tx, userId, additions, now);
@@ -597,13 +601,14 @@ export function mutateCallSheet(
         const replacement = selectCandidates(
           candidates.filter((item) => !excluded.has(item.person.id)),
           1,
-          candidates.filter((item) =>
-            data.entries.some(
-              (existing) =>
-                existing.personId === item.person.id &&
-                existing.id !== entry.id,
-            ),
-          ),
+          ctx.people
+            .filter((person) =>
+              data.entries.some(
+                (existing) =>
+                  existing.personId === person.id && existing.id !== entry.id,
+              ),
+            )
+            .map((person) => ({ category: relationshipCategory(person) })),
         )[0];
         const index = data.entries.findIndex((item) => item.id === entry.id);
         if (replacement) {

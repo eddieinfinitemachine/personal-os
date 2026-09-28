@@ -688,4 +688,189 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
       ),
     ).toEqual({});
   });
+  it("counts stable existing categories when replacing or filling an archived slot", async () => {
+    const alternatives = await Promise.all(
+      ["One", "Two"].map((lastName) =>
+        prisma.person.create({
+          data: {
+            userId,
+            firstName: "Additional",
+            lastName,
+            circles: ["family"],
+          },
+        }),
+      ),
+    );
+    await prisma.interaction.create({
+      data: {
+        userId,
+        personIds: alternatives.map((person) => person.id),
+        occurredAt: new Date("2026-01-01T00:00:00Z"),
+        kind: "meeting",
+        title: "Synthetic alternative encounter",
+        source: "manual",
+      },
+    });
+    await prisma.person.updateMany({
+      where: { userId, circles: { has: "friends" } },
+      data: { starred: true },
+    });
+    const people = await prisma.person.findMany({ where: { userId } });
+    const friends = new Set(
+      people.filter((p) => p.circles.includes("friends")).map((p) => p.id),
+    );
+    const sheet = await getCallSheet(userId, now);
+    expect(
+      sheet.entries.filter((entry) => friends.has(entry.personId)),
+    ).toHaveLength(2);
+    const target = sheet.entries.find((entry) => !friends.has(entry.personId))!;
+    const replaced = await mutateCallSheet(
+      userId,
+      {
+        dayId: sheet.day.id,
+        version: sheet.day.version,
+        entryId: target.id,
+        action: "replace",
+      },
+      now,
+    );
+    expect(
+      replaced.entries.filter((entry) => friends.has(entry.personId)),
+    ).toHaveLength(2);
+    const archived = replaced.entries.find(
+      (entry) => !friends.has(entry.personId),
+    )!;
+    await prisma.person.update({
+      where: { id: archived.personId },
+      data: { archived: true },
+    });
+    const fresh = await getCallSheet(userId, now);
+    expect(fresh.entries).toHaveLength(5);
+    expect(
+      fresh.entries.filter((entry) => friends.has(entry.personId)),
+    ).toHaveLength(2);
+  });
+  it("shares one three-snippet budget across source ingestions and cleans legacy six-cue states", async () => {
+    await updateCallSheetSettings(
+      userId,
+      { source: "imessage", enabled: true },
+      now,
+    );
+    await updateCallSheetSettings(
+      userId,
+      { source: "whatsapp", enabled: true },
+      now,
+    );
+    const config = await getCaptureConfig(userId);
+    const input = await payload();
+    const makeCues = (source: "imessage" | "whatsapp", days: number[]) =>
+      days.map((day) => ({
+        kind: "topic" as const,
+        text: `${source} ${day}`,
+        evidence: [
+          {
+            source,
+            messageId: `${source}-${day}`,
+            sentAt: `2026-09-${String(day).padStart(2, "0")}T12:00:00.000Z`,
+            excerpt: `Synthetic ${day}`,
+          },
+        ],
+      }));
+    const imessage = makeCues("imessage", [1, 25, 20]);
+    const whatsapp = makeCues("whatsapp", [26, 24, 2]);
+    for (const [source, cues] of [
+      ["imessage", imessage],
+      ["whatsapp", whatsapp],
+    ] as const) {
+      vi.mocked(extractCallSheetCues).mockResolvedValueOnce(cues);
+      const messages = cues.map((cue) => ({
+        guid: cue.evidence[0].messageId,
+        sentAt: cue.evidence[0].sentAt,
+        fromMe: false,
+        text: cue.evidence[0].excerpt,
+      }));
+      await captureCallSheet(
+        userId,
+        {
+          ...input,
+          source,
+          sourceEpoch: config.sourceEpochs![source],
+          messages,
+          messageCount: 3,
+          lastContactAt: [...messages].sort((a, b) =>
+            b.sentAt.localeCompare(a.sentAt),
+          )[0].sentAt,
+        },
+        now,
+      );
+    }
+    const contact = await prisma.callSheetContact.findUniqueOrThrow({
+      where: { userId_personId: { userId, personId: input.personId } },
+    });
+    const data = readSourceData(contact.sourceData);
+    expect(data.imessage!.cues.map((cue) => cue.text)).toEqual(["imessage 25"]);
+    expect(data.whatsapp!.cues.map((cue) => cue.text)).toEqual([
+      "whatsapp 26",
+      "whatsapp 24",
+    ]);
+    data.imessage!.cues = imessage;
+    data.whatsapp!.cues = whatsapp;
+    await prisma.callSheetContact.update({
+      where: { id: contact.id },
+      data: { sourceData: JSON.parse(JSON.stringify(data)) },
+    });
+    const sheet = await getCallSheet(userId, now);
+    const day = await prisma.callSheetDay.findUniqueOrThrow({
+      where: { id: sheet.day.id },
+    });
+    const snapshot = readDay(day.entries);
+    snapshot.entries[0].cues = [...imessage, ...whatsapp];
+    await prisma.callSheetDay.create({
+      data: {
+        userId,
+        localDate: "2026-09-27",
+        timezone: "UTC",
+        entries: JSON.parse(JSON.stringify(snapshot)),
+      },
+    });
+    await getCallSheet(userId, now);
+    const cleaned = readSourceData(
+      (
+        await prisma.callSheetContact.findUniqueOrThrow({
+          where: { id: contact.id },
+        })
+      ).sourceData,
+    );
+    expect(
+      [...cleaned.imessage!.cues, ...cleaned.whatsapp!.cues].flatMap(
+        (cue) => cue.evidence,
+      ),
+    ).toHaveLength(3);
+    const oldDay = await prisma.callSheetDay.findUniqueOrThrow({
+      where: { userId_localDate: { userId, localDate: "2026-09-27" } },
+    });
+    expect(
+      readDay(oldDay.entries).entries[0].cues.flatMap((cue) => cue.evidence),
+    ).toHaveLength(3);
+  });
+  it("keeps known past encounters when a future-dated encounter exists", async () => {
+    const people = await prisma.person.findMany({ where: { userId } });
+    await prisma.interaction.create({
+      data: {
+        userId,
+        personIds: people.map((person) => person.id),
+        occurredAt: new Date("2026-10-01T00:00:00Z"),
+        kind: "meeting",
+        title: "Synthetic future encounter",
+        source: "manual",
+      },
+    });
+    const sheet = await getCallSheet(userId, now);
+    expect(sheet.entries).toHaveLength(5);
+    expect(
+      sheet.entries.every(
+        (entry) => entry.lastContactAt === "2026-01-01T00:00:00.000Z",
+      ),
+    ).toBe(true);
+  });
 });

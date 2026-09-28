@@ -6,6 +6,7 @@ import {
   fresh,
   identityKey,
   liveCues,
+  limitPersonCues,
   normalizeHandle,
   personName,
   SOURCES,
@@ -439,9 +440,12 @@ export async function captureCallSheet(
         userId,
         personId: input.personId,
         identityKey: input.identityKey,
-        sourceData: json(sourceData),
+        sourceData: json(limitPersonCues(sourceData, now)),
       },
-      update: { identityKey: input.identityKey, sourceData: json(sourceData) },
+      update: {
+        identityKey: input.identityKey,
+        sourceData: json(limitPersonCues(sourceData, now)),
+      },
     });
     return { epoch: sources[input.source].epoch };
   });
@@ -479,7 +483,7 @@ export async function captureCallSheet(
     sourceData[input.source] = { ...data, cues, extractionPending: false };
     await tx.callSheetContact.update({
       where: { id: contact.id },
-      data: { sourceData: json(sourceData) },
+      data: { sourceData: json(limitPersonCues(sourceData, now)) },
     });
     return { ok: true, extracted: true };
   });

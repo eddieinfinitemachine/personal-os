@@ -3,6 +3,8 @@ import {
   cadence,
   identityKey,
   latestContact,
+  liveCues,
+  limitPersonCues,
   localDate,
   rankCandidates,
   selectCandidates,
@@ -201,7 +203,7 @@ describe("call sheet policy", () => {
       "work",
     ]);
   });
-  it("supports possible grounded followups without inventing overdue obligations", () => {
+  it("keeps possible grounded followups as context without bypassing cadence", () => {
     const p = person("a", {
       manualAt: null,
       sourceData: {
@@ -228,22 +230,76 @@ describe("call sheet policy", () => {
         },
       },
     });
-    expect(
-      rankCandidates(
-        [p],
+    const connected = {
+      ...sources,
+      imessage: {
+        ...off,
+        enabled: true,
+        status: "ready" as const,
+        lastSuccessAt: now.toISOString(),
+      },
+    };
+    expect(rankCandidates([p], connected, now, "UTC")).toEqual([]);
+    p.preference = {
+      cadenceDays: 14,
+      snoozedUntil: null,
+      excludedAt: null,
+      lastSuggestedAt: null,
+    };
+    const eligible = rankCandidates([p], connected, now, "UTC")[0];
+    expect(eligible.reason).toBe("Time for your 14-day check-in.");
+    expect(eligible.tier).toBe(3);
+    expect(eligible.cues[0].kind).toBe("follow_up");
+  });
+
+  it("limits actual snippets across both sources with deterministic newest-first order", () => {
+    const cue = (source: "imessage" | "whatsapp", day: number) => ({
+      kind: "topic" as const,
+      text: `${source} ${day}`,
+      evidence: [
         {
-          ...sources,
-          imessage: {
-            ...off,
-            enabled: true,
-            status: "ready",
-            lastSuccessAt: now.toISOString(),
-          },
+          source,
+          messageId: `${source}-${day}`,
+          sentAt: `2026-09-${String(day).padStart(2, "0")}T00:00:00.000Z`,
+          excerpt: `Snippet ${day}`,
         },
-        now,
-        "UTC",
-      )[0].reason,
-    ).toBe("A possible follow-up from your conversation.");
+      ],
+    });
+    const metadata = {
+      capturedAt: now.toISOString(),
+      coverageStart: "2025-09-28T16:00:00.000Z",
+      lastContactAt: "2026-09-26T00:00:00.000Z",
+      messageCount: 3,
+      extractionPending: false,
+    };
+    const data = {
+      imessage: {
+        ...metadata,
+        cues: [cue("imessage", 1), cue("imessage", 25), cue("imessage", 20)],
+      },
+      whatsapp: {
+        ...metadata,
+        cues: [cue("whatsapp", 26), cue("whatsapp", 24), cue("whatsapp", 2)],
+      },
+    };
+    const bounded = limitPersonCues(data, now);
+    expect(bounded.imessage?.cues.map((c) => c.text)).toEqual(["imessage 25"]);
+    expect(bounded.whatsapp?.cues.map((c) => c.text)).toEqual([
+      "whatsapp 26",
+      "whatsapp 24",
+    ]);
+    const all = [...data.imessage.cues, ...data.whatsapp.cues];
+    expect(liveCues([...all].reverse(), now)).toEqual(liveCues(all, now));
+    const multi = {
+      ...cue("imessage", 28),
+      evidence: [
+        cue("imessage", 28).evidence[0],
+        cue("imessage", 27).evidence[0],
+      ],
+    };
+    const selected = liveCues([multi, ...all], now);
+    expect(selected.flatMap((c) => c.evidence)).toHaveLength(3);
+    expect(selected).toHaveLength(2);
   });
   it("hashes stable identity fields rather than interaction timestamps", () => {
     expect(identityKey(person("a"))).toBe(
