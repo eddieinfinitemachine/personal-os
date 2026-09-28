@@ -1,0 +1,82 @@
+// @vitest-environment jsdom
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CallSheet } from "./call-sheet";
+import type { CallSheetResponse } from "@/lib/call-sheet/types";
+const now = new Date("2026-09-28T12:00:00Z");
+function sheet(): CallSheetResponse {
+  return { day: { id: "day", localDate: "2026-09-28", version: 0 }, timezone: "America/New_York", hidden: [],
+    sources: { imessage: { enabled: true, status: "ready", lastSuccessAt: now.toISOString(), error: null }, whatsapp: { enabled: false, status: "not_connected", lastSuccessAt: null, error: null } },
+    entries: [{ id: "entry", personId: "person", name: "Avery Example", imageUrl: null, phone: "+15551234567", email: "avery@example.test", reason: "Time for a check-in.", topic: "Ask how the project went.", lastContactAt: "2026-08-01T12:00:00Z", lastContactSource: "imessage", status: "pending", cadenceDays: 30, cues: [{ kind: "topic", text: "Ask how the project went.", evidence: [{ source: "imessage", messageId: "m1", sentAt: "2026-08-01T12:00:00Z", excerpt: "Starting the project next week." }] }] }] };
+}
+const response = (data: unknown, status = 200) => ({ ok: status < 400, status, json: async () => data });
+let container: HTMLDivElement, root: Root;
+beforeEach(() => {
+  vi.useFakeTimers(); vi.setSystemTime(now); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  container = document.createElement("div"); document.body.append(container); root = createRoot(container);
+});
+afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+const render = () => act(async () => root.render(<CallSheet />));
+const button = (label: string) => [...container.querySelectorAll("button")].find(b => b.textContent === label)!;
+describe("daily call sheet", () => {
+  it("renders grounded context collapsed and opens contact links without completing", async () => {
+    const fetch = vi.fn().mockResolvedValue(response(sheet())); vi.stubGlobal("fetch", fetch); await render();
+    expect(container.textContent).toContain("Avery Example"); expect(container.textContent).toContain("Ask how the project went.");
+    expect(container.querySelector("blockquote")!.closest("details")!.open).toBe(false);
+    expect(container.querySelector('a[aria-label="Call Avery Example"]')!.getAttribute("href")).toBe("tel:+15551234567");
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it("saves Done with current version and supports the server undo token", async () => {
+    const done = sheet(); done.day.version = 1; done.entries[0].status = "done"; done.undoToken = "undo";
+    const fetch = vi.fn().mockResolvedValueOnce(response(sheet())).mockResolvedValueOnce(response(done)).mockResolvedValueOnce(response(sheet())); vi.stubGlobal("fetch", fetch); await render();
+    await act(async () => button("Done").click());
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ dayId: "day", version: 0, entryId: "entry", action: "done" });
+    expect(container.textContent).toContain("1 of 1 checked in");
+    await act(async () => button("Undo last change").click());
+    expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ dayId: "day", version: 1, action: "undo", undoToken: "undo" });
+    expect(container.textContent).toContain("0 of 1 checked in");
+  });
+  it("refreshes conflicts without replaying the action", async () => {
+    const latest = sheet(); latest.day.version = 4;
+    const fetch = vi.fn().mockResolvedValueOnce(response(sheet())).mockResolvedValueOnce(response({}, 409)).mockResolvedValueOnce(response(latest)); vi.stubGlobal("fetch", fetch); await render();
+    await act(async () => button("Done").click());
+    expect(container.textContent).toContain("Review the refreshed list");
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch.mock.calls.filter(c => c[1]?.method === "POST")).toHaveLength(1);
+  });
+  it("keeps the current row on failure and allows retry", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response(sheet())).mockRejectedValueOnce(new Error("Offline")); vi.stubGlobal("fetch", fetch); await render();
+    await act(async () => button("Done").click());
+    expect(container.textContent).toContain("Offline"); expect(button("Done").disabled).toBe(false);
+    expect(container.textContent).toContain("0 of 1 checked in");
+  });
+  it("shows authentication and initial load failures honestly", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({}, 401))); await render();
+    expect(container.textContent).toContain("Sign in again"); expect(button("Refresh")).toBeTruthy();
+    expect(container.querySelectorAll("li")).toHaveLength(0);
+  });
+  it("snoozes, hides, and changes sources only from explicit clicks", async () => {
+    const fetch = vi.fn().mockResolvedValue(response(sheet())); vi.stubGlobal("fetch", fetch); await render();
+    await act(async () => button("Remind me in a week").click());
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toMatchObject({ action: "snooze", days: 7 });
+    await act(async () => button("Don’t suggest").click());
+    expect(JSON.parse(fetch.mock.calls[2][1].body).action).toBe("hide");
+    await act(async () => button("Use WhatsApp").click());
+    expect(fetch.mock.calls[3][0]).toBe("/api/call-sheet/settings");
+    expect(JSON.parse(fetch.mock.calls[3][1].body)).toEqual({ source: "whatsapp", enabled: true });
+  });
+  it("does not poll while a save is pending or after unmount", async () => {
+    let finish!: (r: unknown) => void;
+    const fetch = vi.fn().mockResolvedValueOnce(response(sheet())).mockImplementationOnce(() => new Promise(r => { finish = r; })); vi.stubGlobal("fetch", fetch); await render();
+    await act(async () => button("Done").click());
+    await act(async () => vi.advanceTimersByTimeAsync(15000));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    await act(async () => finish(response(sheet())));
+    await act(async () => root.unmount());
+    await act(async () => vi.advanceTimersByTimeAsync(60000));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    root = createRoot(container);
+  });
+});
