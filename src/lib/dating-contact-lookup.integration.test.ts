@@ -388,6 +388,10 @@ describe.skipIf(!enabled)(
       expect((await (await captureGet(capture())).json()).refreshContacts).toBe(
         true,
       );
+      await report({ status: "unavailable", candidates: [] });
+      expect((await (await captureGet(capture())).json()).refreshContacts).toBe(
+        true,
+      );
       await report({ status: "not_found", candidates: [] });
       expect(
         (await (await captureGet(capture())).json()).refreshContacts,

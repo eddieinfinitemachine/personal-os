@@ -408,7 +408,12 @@ export async function getContactRequests(userId: string) {
     );
     const refreshContacts = unresolved.some((person) => {
       const saved = lookups[person.id] as StoredLookup | undefined;
-      return !saved || saved.name !== person.name || saved.status === "pending";
+      return (
+        !saved ||
+        saved.name !== person.name ||
+        saved.status === "pending" ||
+        saved.status === "unavailable"
+      );
     });
     return {
       people: unresolved.map(({ id, name }) => ({ id, name })),

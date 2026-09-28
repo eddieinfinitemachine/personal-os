@@ -120,3 +120,6 @@ synthetic KeyboardEvents via eval instead).
 
 ## 2026-09-27 — Dating should be maintained from sources
 The user wants automatic intake from texts, EC Pad journals and Granola, with explicit approval for new people and durable dismissal/exclusion. A prettier roster or one-off manual import does not satisfy that goal. Track source coverage and last successful processing, preserve manual corrections, and keep source copies from counting as independent evidence. EC Pad is the current journal source; legacy Markdown imports are historical context only unless selected.
+
+## 2026-09-28 — Adding a person must discover contact details
+A saved name should trigger current on-device Contacts lookup and matching message import without entering a number. A stale contact export plus a half-hour delay is not enough. Refresh contact data automatically, show progress and ambiguity, and never silently attach a guessed identity.

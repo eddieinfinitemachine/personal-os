@@ -32,7 +32,7 @@ function date(value: string | null) {
 }
 function dateOnly(value: string) { return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }); }
 function health(source: DatingSource) {
-  if (!source.id) return "Not connected";
+  if (!source.id || source.status === "not_connected") return "Not connected";
   if (!source.enabled) return source.status === "disconnected" ? "Disconnected" : "Paused";
   if (source.error || ["error", "needs_attention", "expired", "refetch_required"].includes(source.status)) return "Needs attention";
   if (["checking", "processing", "running"].includes(source.status)) return "Checking";

@@ -32,8 +32,7 @@ import {
   markWhatsAppBackfill,
 } from "./dating-whatsapp-checkpoint";
 import { diagnoseWhatsAppPhone } from "./dating-whatsapp-diagnostic";
-import { readDatingContactsCache } from "./dating-contact-cache";
-import { matchDatingContact } from "../src/lib/dating-contact-match";
+import { resolveAddedContacts } from "./dating-contact-sync";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
@@ -156,46 +155,36 @@ async function main() {
 
   // Discovery has its own explicit server opt-in and never runs during a scoped/dry/diagnostic import.
   if (!dryRun && !personId && !diagnoseWhatsApp) {
-    try { await runDiscoverySync({ base: BASE, token: TOKEN, chatDbPath: CHAT_DB_PATH, waDbPath: WA_DB_PATH, contactsDbPath: WA_CONTACTS_DB_PATH, noWhatsApp }); }
-    catch { console.warn("Optional message discovery could not finish; saved-person sync will continue."); }
-  }
-
-  // Resolve only people already added to dating; never upload the directory.
-  if (!dryRun) {
     try {
-      const cache = await readDatingContactsCache();
-      // This is an explicitly saved directory; its age is reported, not treated as a live Contacts connection.
-      if (cache.status === "ready" || cache.status === "stale") {
-        const pending = (await api("/api/capture/dating/contacts")) as {
-          people: { id: string; name: string }[];
-        };
-        for (const person of pending.people.filter(
-          (p) => !personId || p.id === personId,
-        )) {
-          const match = matchDatingContact(person.name, cache.contacts);
-          if (match.status !== "matched") continue;
-          const handles = [...match.contact.phones, ...match.contact.emails];
-          if (!handles.length) continue;
-          await api("/api/capture/dating/contacts", {
-            method: "POST",
-            body: JSON.stringify({
-              personId: person.id,
-              name: person.name,
-              handles,
-            }),
-          });
-        }
-        console.log(
-          `Checked saved Contacts directory from ${cache.updatedAt}.`,
-        );
-      } else {
-        console.log(
-          `Saved Contacts directory ${cache.status}; contact lookup skipped.`,
-        );
-      }
+      await runDiscoverySync({
+        base: BASE,
+        token: TOKEN,
+        chatDbPath: CHAT_DB_PATH,
+        waDbPath: WA_DB_PATH,
+        contactsDbPath: WA_CONTACTS_DB_PATH,
+        noWhatsApp,
+      });
     } catch {
       console.warn(
-        "Contact lookup failed; saved-number message sync will continue.",
+        "Optional message discovery could not finish; saved-person sync will continue.",
+      );
+    }
+  }
+
+  // Contact lookup is automatic and refreshes its local directory before matching.
+  if (!dryRun && !diagnoseWhatsApp) {
+    try {
+      await resolveAddedContacts({
+        api: (path, body) =>
+          api(
+            path,
+            body ? { method: "POST", body: JSON.stringify(body) } : undefined,
+          ),
+        personId,
+      });
+    } catch {
+      console.warn(
+        "Contact lookup could not finish; saved-number sync will continue.",
       );
     }
   }
@@ -206,7 +195,7 @@ async function main() {
   const people = allPeople.filter((p) => !personId || p.id === personId);
   if (!people.length) {
     console.log(
-      "No one on /dating has a phone or email yet. Add one to sync their texts.",
+      "No matching contact details found yet. Automatic lookup will retry.",
     );
     return;
   }
@@ -217,6 +206,10 @@ async function main() {
     mkdirSync(join(tempDir, "whatsapp"));
     mkdirSync(join(tempDir, "whatsapp-contacts"));
     const chatDb = open("iMessage", CHAT_DB_PATH, join(tempDir, "imessage"));
+    if (!chatDb && process.argv.includes("--require-imessage"))
+      throw new Error(
+        "iMessage is unavailable; automatic contact import will retry.",
+      );
     let waDb = noWhatsApp
       ? null
       : open("WhatsApp", WA_DB_PATH, join(tempDir, "whatsapp"));
@@ -314,6 +307,21 @@ async function main() {
         }
       }
       // Retry failed summaries even when the next import has no new messages.
+      if (chatDb) {
+        try {
+          await api("/api/capture/dating/contacts", {
+            method: "POST",
+            body: JSON.stringify({
+              personId: p.id,
+              name: p.name,
+              handles: p.handles,
+              status: "messages_checked",
+            }),
+          });
+        } catch {
+          console.warn("Message check status could not save; it will retry.");
+        }
+      }
       try {
         const result = await api("/api/capture/dating/insights", {
           method: "POST",
