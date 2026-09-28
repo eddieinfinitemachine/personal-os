@@ -6,6 +6,7 @@ import {acceptManifest, acceptRecord, cleanupSource} from './store';
 import {processSource} from './extract';
 import {fingerprint, listReview, reviewCandidate} from './review';
 import {claimPairing, connector, createPairing} from './auth';
+import {removeWithIdentity} from './people';
 
 const enabled = process.env.RUN_DATING_INTAKE_INTEGRATION === '1';
 if (enabled) {
@@ -130,5 +131,41 @@ describe.skipIf(!enabled)('intake regressions across revisions and identity chan
     expect((await listReview(userId)).excluded).toHaveLength(0);
     const statuses = await prisma.datingCandidate.findMany({where: {userId}, select: {status: true}});
     expect(statuses.every(candidate => candidate.status === 'dismissed')).toBe(true);
+  });
+
+  it.each([false, true])('ordinary deletion permits new review unless exclusion is explicitly chosen (%s)', async exclude => {
+    await upload();
+    const candidate = (await listReview(userId)).candidates[0];
+    const result = await reviewCandidate(userId, candidate.id, {
+      action: 'add', fingerprint: candidate.fingerprint, draft: {name: 'Robin'},
+    });
+    expect(await removeWithIdentity(userId, result.personId!, exclude)).toBe(true);
+    const newQuote = 'I made plans for another date with Robin on 2026-10-01 and we are both excited.';
+    await acceptRecord(userId, stateId, envelope(newQuote, 2));
+    await processSource(userId, stateId, {extract: async () => ({mentions: [{
+      name: 'Robin', summary: 'Plans for another date with Robin', quote: newQuote, eventDate: '2026-10-01', correspondent: false,
+    }]})});
+    const review = await listReview(userId);
+    expect(review.candidates).toHaveLength(exclude ? 0 : 1);
+    expect(review.excluded).toHaveLength(exclude ? 1 : 0);
+    expect(await prisma.datingPerson.count({where: {userId}})).toBe(0);
+  });
+
+  it('expires paused retry payloads while preserving paused status and the last successful scan', async () => {
+    await acceptRecord(userId, stateId, envelope());
+    const scannedAt = new Date('2026-09-01T12:00:00Z');
+    await prisma.datingSourceRecord.updateMany({where: {userId, stateId}, data: {
+      status: 'retry', createdAt: scannedAt, retryAt: new Date('2026-09-29T00:00:00Z'),
+    }});
+    await prisma.datingSourceState.update({where: {id: stateId}, data: {
+      enabled: false, status: 'paused', lastSuccessAt: scannedAt,
+    }});
+    expect(await cleanupSource(userId, stateId, new Date('2026-09-28T12:00:00Z'))).toBe(1);
+    const record = await prisma.datingSourceRecord.findFirstOrThrow({where: {userId, stateId}});
+    expect(record.status).toBe('expired');
+    expect(record.payload).toBeNull();
+    const state = await prisma.datingSourceState.findUniqueOrThrow({where: {id: stateId}});
+    expect(state.status).toBe('paused');
+    expect(state.lastSuccessAt).toEqual(scannedAt);
   });
 });
