@@ -1,3 +1,4 @@
+import { REACH_OUT_METHODS, isReachOutMethod } from "./reach-out";
 import { randomUUID } from "node:crypto";
 import {
   Prisma,
@@ -392,7 +393,9 @@ export async function sheetInTransaction(
           newlyContacted || entry.status === "contacted"
             ? "You have been in touch since this was suggested."
             : entry.status === "done"
-              ? "Check-in logged today."
+              ? isReachOutMethod(entry.method)
+                ? `${REACH_OUT_METHODS[entry.method].label} check-in logged today.`
+                : "Check-in logged today."
               : (!last.reliable && !entry.reason.includes("birthday")) ||
                   (entry.reason.startsWith("A possible follow-up") &&
                     !cues.some((cue) => cue.kind === "follow_up"))
@@ -480,6 +483,7 @@ export function parseMutation(raw: unknown): CallSheetMutation {
     "action",
     "days",
     "undoToken",
+    "method",
   ]);
   const dayId = id(input.dayId);
   if (!Number.isInteger(input.version) || (input.version as number) < 0)
@@ -497,6 +501,10 @@ export function parseMutation(raw: unknown): CallSheetMutation {
       (input.days as number) > 365)
   )
     throw new IntakeError("Choose 1 to 365 days");
+  if (input.action === "done" && !isReachOutMethod(input.method))
+    throw new IntakeError("Choose how you reached out");
+  if (input.action !== "done" && input.method !== undefined)
+    throw new IntakeError("Reach-out method is only for check-ins");
   if (input.action === "undo") id(input.undoToken);
   else id(input.entryId);
   return { ...input, dayId } as CallSheetMutation;
@@ -624,13 +632,15 @@ export function mutateCallSheet(
         preference: snapshot(contact, person.id),
       };
       if (action.action === "done") {
+        const method = action.method!;
+        const choice = REACH_OUT_METHODS[method];
         const interaction = await tx.interaction.create({
           data: {
             userId,
             personIds: [person.id],
             occurredAt: now,
-            kind: "other",
-            title: `Check-in with ${personName(person)}`,
+            kind: choice.kind,
+            title: `${choice.title} ${personName(person)}`,
             source: "call-sheet",
           },
         });
@@ -654,6 +664,7 @@ export function mutateCallSheet(
           data: { lastCompletedAt: now },
         });
         entry.status = "done";
+        entry.method = method;
         entry.interactionId = interaction.id;
         entry.cues = [];
         entry.topic = null;

@@ -1,3 +1,4 @@
+import type { ReachOutMethod } from "./reach-out";
 export type CallSheetSource = "imessage" | "whatsapp";
 export type EvidenceCue = {
   kind: "topic" | "follow_up";
@@ -30,6 +31,7 @@ export type CallSheetEntry = {
   cues: EvidenceCue[];
   cadenceDays: number;
   interactionId?: string;
+  method?: ReachOutMethod;
 };
 export type CallSheetResponse = {
   day: { id: string; localDate: string; version: number };
@@ -45,6 +47,7 @@ export type CallSheetMutation = {
   entryId?: string;
   action: "done" | "undo" | "snooze" | "replace" | "hide";
   days?: number;
+  method?: ReachOutMethod;
   undoToken?: string;
 };
 export type CallSheetSettingsMutation = {

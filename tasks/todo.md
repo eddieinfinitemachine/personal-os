@@ -1124,8 +1124,18 @@ Release review fixes:connector cue checkpoints now include non-text activity; CR
 
 - [x] Add authenticated /call-sheet page and permanent navigation directly below Board on desktop/mobile; include command-palette discovery.
 - [x] Move the existing interface from Home/Friends to the dedicated page, retaining the same daily data/actions and hourly sync.
-- [ ] Verify build and desktop/mobile navigation, release, and verify live.
+- [x] Verify build and desktop/mobile navigation, release, and verify live (PR29).
 
 No schema or data changes.
 
 Dedicated Call Sheet page verification:production build/typecheck and7existing component tests passed. Synthetic browser verified authenticated /call-sheet, desktop/mobile link directly after Board, five rows, Home/Friends embeds removed, and no overflow/browser errors.
+
+## 2026-09-28 — Ask how a call-sheet check-in happened
+
+- [x] Done opens a compact method picker (Call, Text, WhatsApp, Email, In person, Other) before any save, with Cancel.
+- [x] Require a supported method on the authenticated action; save it through existing Interaction kind/title and daily JSON, display it on the completed row, preserve Undo.
+- [ ] Verify selection/cancel/retry, persistence and Undo in scratch, browser, build, then release and verify live.
+
+No schema change; daily list and message sync are unchanged.
+
+Check-in method verification:56 call-sheet tests and97 dating component tests passed, along with typecheck and production build. Synthetic browser verified cancel without writes, WhatsApp persistence/reload/Undo, mobile In person, Escape/autofocus, focus trapping during a delayed save, and focus returning to Undo. Independent review approved. Production rollout pending.
