@@ -1119,3 +1119,13 @@ Source split:227 iMessage only,24 WhatsApp only,37 both. Private import manifest
 September28 Call Sheet implementation:three additive tables verified against scratch PostgreSQL with no schema difference; Home/Friends UI, direct-message worker and evidence extraction implemented. Final full suite679 passed,42 unrelated opt-in skipped; production build/typecheck passed. Synthetic browser verified five stable rows, shared Home/Friends list, Done/Undo, Snooze/Replace/Hide/Undo, collapsed conversation evidence, pending-source states and390px layout. A pre-existing WAL timing fixture failed during concurrent build load, then passed16 tests alone and the complete suite passed after the build. Independent spec review fixes address category balance, the cross-source three-snippet budget, and optional AI follow-ups remaining context-only. Explicit due-follow-up priority is deferred because CRM has no Person-linked due field. Production rollout remains pending.
 
 Release review fixes:connector cue checkpoints now include non-text activity; CRM deletion atomically scrubs historical/Undo snapshots, with maintenance covering archive/identity changes; first sync replaces newly discovered pre-generation recent contacts rather than claiming a new check-in. Approved three-table production SQL applied transactionally after private schema-only backup; production Prisma diff reports no difference. No sources enabled or job installed yet.
+
+## 2026-09-28 — Give Call Sheet its own page
+
+- [x] Add authenticated /call-sheet page and permanent navigation directly below Board on desktop/mobile; include command-palette discovery.
+- [x] Move the existing interface from Home/Friends to the dedicated page, retaining the same daily data/actions and hourly sync.
+- [ ] Verify build and desktop/mobile navigation, release, and verify live.
+
+No schema or data changes.
+
+Dedicated Call Sheet page verification:production build/typecheck and7existing component tests passed. Synthetic browser verified authenticated /call-sheet, desktop/mobile link directly after Board, five rows, Home/Friends embeds removed, and no overflow/browser errors.

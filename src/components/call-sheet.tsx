@@ -78,7 +78,7 @@ export function CallSheet() {
     <section aria-label="Daily call sheet" className="mb-7 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]">
       <div className="flex flex-wrap items-start justify-between gap-3 px-4 pt-4 sm:px-5">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">Call sheet</h2>
+          <h1 className="text-2xl font-semibold tracking-tight">Call Sheet</h1>
           <p className="mt-0.5 text-sm text-[var(--color-muted-foreground)]">
             {data?.entries.length ? `${complete} of ${data.entries.length} checked in today` : "A few people worth checking in with."}
           </p>

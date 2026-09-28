@@ -1,4 +1,3 @@
-import { CallSheet } from "@/components/call-sheet";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { HomeTiles, type HomeTile } from "@/components/home-tiles";
@@ -204,7 +203,6 @@ export default async function HomePage() {
           <NewListButton />
         </div>
       </header>
-      <CallSheet />
       <KeyboardListNav />
       <HomeTiles tiles={tiles} />
 

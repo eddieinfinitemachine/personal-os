@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Calendar, ChevronDown, ChevronRight, LayoutGrid, Eye, EyeOff, Folder, Home, Inbox as InboxIcon, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Loader2, MoreHorizontal, Settings, Trash2 } from "lucide-react";
+import { Calendar, ChevronDown, ChevronRight, LayoutGrid, Eye, EyeOff, Folder, Home, Inbox as InboxIcon, PanelLeftClose, PanelLeftOpen, Phone, Pencil, Plus, Loader2, MoreHorizontal, Settings, Trash2 } from "lucide-react";
 import { AddTemplateButton, useEnabledTemplates } from "./sidebar-template-picker";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
@@ -209,6 +209,12 @@ export function Sidebar({
           icon={<LayoutGrid className="size-4" />}
           label="Board"
           active={pathname === "/board" || pathname.startsWith("/board/")}
+        />
+        <SidebarLink
+          href="/call-sheet"
+          icon={<Phone className="size-4" />}
+          label="Call Sheet"
+          active={pathname === "/call-sheet" || pathname.startsWith("/call-sheet/")}
         />
       </nav>
 

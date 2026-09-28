@@ -19,6 +19,7 @@ import {
   MapPin,
   Package,
   PawPrint,
+  Phone,
   Plane,
   Settings,
   Sparkles,
@@ -80,6 +81,7 @@ const NAV_COMMANDS: NavCommand[] = [
   { id: "places", label: "Places", href: "/places", icon: <MapPin className="size-4" /> },
   { id: "best-practices", label: "Best practices", href: "/best-practices", icon: <Lightbulb className="size-4" /> },
   { id: "board", label: "Board", hint: "Mood board of things you liked", href: "/board", icon: <LayoutGrid className="size-4" /> },
+  { id: "call-sheet", label: "Call Sheet", hint: "People to check in with today", href: "/call-sheet", icon: <Phone className="size-4" /> },
   { id: "workout", label: "Workout", hint: "Photo of your gear → guided session", href: "/workout", icon: <Dumbbell className="size-4" /> },
   { id: "settings", label: "Settings", href: "/settings", icon: <Settings className="size-4" /> },
 ];
