@@ -45,11 +45,18 @@ export async function GET(request: Request) {
     take: 20,
   });
   for (const state of states) {
-    if (Date.now() - start > 220000) break;
+    const remaining = 240000 - (Date.now() - start);
+    if (remaining < 5000) break;
     try {
       if (state.source === "granola")
-        await syncGranolaIntake(state.userId, state.id);
-      await processSource(state.userId, state.id);
+        await syncGranolaIntake(state.userId, state.id, {
+          maxMs: Math.min(45000, remaining - 1000),
+        });
+      const processingBudget = 240000 - (Date.now() - start);
+      if (processingBudget < 1000) break;
+      await processSource(state.userId, state.id, {
+        maxMs: Math.min(45000, processingBudget),
+      });
       processed++;
     } catch {
       failed++;

@@ -26,49 +26,49 @@ Each server processing run stops at 8 segments/model calls or 45 seconds (config
 
 Files: `prisma/schema.prisma`, `prisma/changes/20260928_dating_intake.sql`, `src/lib/dating-intake/{contracts,store}.ts`, corresponding tests.
 
-- [ ] Add the three approved tables and nullable/defaulted relations; generate additive SQL from old/new schemas and inspect for destructive statements.
-- [ ] Define envelope `{version:1, externalId, revision, segmentIndex, segmentCount, text, title, occurredAt:null|string, url:null|string, identities:string[], evidenceFamily:string|null}`. Bound body, segment size/count and validate SHA-256 full-document revision after all segments arrive; accepted segments cannot silently change.
-- [ ] Add scratch-Postgres integration fixtures with a localhost-only guard, test incomplete/out-of-order/retried/edited revisions and two-owner isolation before implementing writes.
-- [ ] Implement transaction-scoped owner lock, exact owner/source identity uniqueness, stale-revision protection, lease claims, manifest withdrawal and retention cleanup. No partial revision publication, old worker overwrite or silent success on expiry/failure.
-- [ ] Run `npm test -- src/lib/dating-intake`; validate schema and inspect SQL diff; commit reviewed persistence.
+- [x] Add the three approved tables and nullable/defaulted relations; generate additive SQL from old/new schemas and inspect for destructive statements.
+- [x] Define envelope `{version:1, externalId, revision, segmentIndex, segmentCount, text, title, occurredAt:null|string, url:null|string, identities:string[], evidenceFamily:string|null}`. Bound body, segment size/count and validate SHA-256 full-document revision after all segments arrive; accepted segments cannot silently change.
+- [x] Add scratch-Postgres integration fixtures with a localhost-only guard, test incomplete/out-of-order/retried/edited revisions and two-owner isolation before implementing writes.
+- [x] Implement transaction-scoped owner lock, exact owner/source identity uniqueness, stale-revision protection, lease claims, manifest withdrawal and retention cleanup. No partial revision publication, old worker overwrite or silent success on expiry/failure.
+- [x] Run `npm test -- src/lib/dating-intake`; validate schema and inspect SQL diff; commit reviewed persistence.
 
 ### 2. Extraction and durable review
 
 Files: `src/lib/dating-intake/{extract,review}.ts`, `src/app/api/dating/review/route.ts`, `src/app/api/dating/review/[id]/route.ts`, legacy suggestion actions, person create/update routes.
 
-- [ ] Test exact quote validation, unsupported model identities, unknown dates, nonromantic content and overlapping verified aliases.
-- [ ] Extract per bounded segment with source text treated as untrusted; publish only a complete validated revision. Strong aliases come only from verified adapter metadata or explicit user linking; names remain source-scoped.
-- [ ] Implement GET pending/excluded candidate DTOs and POST `{action:add|link|dismiss|exclude|restore, fingerprint, personId?, draft?}`. Add accepts editable fields; unknown dates null. Lock owner identity mutations and check every alias/profile handle before creation.
-- [ ] Test concurrent add/link/exclude, repeated clicks, stale fingerprints, restore, source deletion, manual timeline edits and existing profile field preservation using real Postgres.
-- [ ] Keep legacy suggestions visible and route-compatible; do not let old actions process new-format rows. Fix legacy mention-date-as-met-date behavior.
-- [ ] Source-backed events retain machine hashes; invalidate insights on evidence changes. Save fingerprint with derived summaries and refuse publication on changed input; hide removed source excerpts.
+- [x] Test exact quote validation, unsupported model identities, unknown dates, nonromantic content and overlapping verified aliases.
+- [x] Extract per bounded segment with source text treated as untrusted; publish only a complete validated revision. Strong aliases come only from verified adapter metadata or explicit user linking; names remain source-scoped.
+- [x] Implement GET pending/excluded candidate DTOs and POST `{action:add|link|dismiss|exclude|restore, fingerprint, personId?, draft?}`. Add accepts editable fields; unknown dates null. Lock owner identity mutations and check every alias/profile handle before creation.
+- [x] Test concurrent add/link/exclude, repeated clicks, stale fingerprints, restore, source deletion, manual timeline edits and existing profile field preservation using real Postgres.
+- [x] Keep legacy suggestions visible and route-compatible; do not let old actions process new-format rows. Fix legacy mention-date-as-met-date behavior.
+- [x] Source-backed events retain machine hashes; invalidate insights on evidence changes. Save fingerprint with derived summaries and refuse publication on changed input; hide removed source excerpts.
 
 ### 3. Authenticated source endpoints and UI
 
 Files: `src/lib/dating-intake/auth.ts`, `src/app/api/dating/sources/route.ts`, `src/app/api/dating/intake/{pair,records,manifest,status}/route.ts`, middleware, `src/components/dating/{review-inbox,source-status}.tsx`, dating page/home.
 
-- [ ] Test hashed expiring single-use pairing, revocation, disabled source, body limits, bearer/session separation and invalid auth.
-- [ ] Settings create pairing code; paired client exchanges `{code,scope}` for `{token,stateId}`. All connector calls require token and resolve owner server-side. Configure HTTPS same-origin client and reject redirects.
-- [ ] Build People to review above people cards with evidence expansion, editable Add draft, Link existing, Dismiss, Don't suggest again and Restore. Show source-scoped identity limitations and nearby failures; no optimistic success before server acknowledgment.
-- [ ] Source row always shows EC Pad/Texts/Granola with actual coverage/backlog/error and last successful scan. Setup offers pairing, pause/disconnect, explicit text discovery opt-in and removal of imported evidence.
-- [ ] Component tests cover failed actions, duplicate clicks, mobile-width markup, keyboard labels and preserved mounted drafts. Never display payloads/tokens in logs.
+- [x] Test hashed expiring single-use pairing, revocation, disabled source, body limits, bearer/session separation and invalid auth.
+- [x] Settings create pairing code; paired client exchanges `{code,scope}` for `{token,stateId}`. All connector calls require token and resolve owner server-side. Configure HTTPS same-origin client and reject redirects.
+- [x] Build People to review above people cards with evidence expansion, editable Add draft, Link existing, Dismiss, Don't suggest again and Restore. Show source-scoped identity limitations and nearby failures; no optimistic success before server acknowledgment.
+- [x] Source row always shows EC Pad/Texts/Granola with actual coverage/backlog/error and last successful scan. Setup offers pairing, pause/disconnect, explicit text discovery opt-in and removal of imported evidence.
+- [x] Component tests cover failed actions, duplicate clicks, mobile-width markup, keyboard labels and preserved mounted drafts. Never display payloads/tokens in logs.
 
 ### 4. Server and Mac adapters
 
 Files: `src/lib/dating-intake/granola.ts`, existing Granola sync/cron entry points, `scripts/dating-messages-sync.ts`, `src/lib/dating-intake/message-discovery.ts`, message reader helpers, cron intake endpoint.
 
-- [ ] Persist Granola enumeration progress before moving cursor; bounded API pages feed durable records. Retry old queued work separately from enumeration; recent edited sweep with canonical meeting identity and honest historical limitation.
-- [ ] Add opt-in recent 30-day one-to-one Mac discovery alongside exact-profile imports; exclude groups/services and strong excluded aliases. Chunk chronological text, preserve exact thread identity, checkpoint only accepted data. No remote read of unspecified journal paths.
-- [ ] Test API paging failures, duplicate timestamps, old retries, edited meetings and message discovery filtering with invented fixtures; keep noncandidate raw text transient.
-- [ ] Add authenticated bounded cron processing and cleanup, leases/retries, and source health. Preserve installed-worker scope until explicit opt-in.
+- [x] Persist Granola enumeration progress before moving cursor; bounded API pages feed durable records. Retry old queued work separately from enumeration; recent edited sweep with canonical meeting identity and honest historical limitation.
+- [x] Add opt-in recent 30-day one-to-one Mac discovery alongside exact-profile imports; exclude groups/services and strong excluded aliases. Chunk chronological text, preserve exact thread identity, checkpoint only accepted data. No remote read of unspecified journal paths.
+- [x] Test API paging failures, duplicate timestamps, old retries, edited meetings and message discovery filtering with invented fixtures; keep noncandidate raw text transient.
+- [x] Add authenticated bounded cron processing and cleanup, leases/retries, and source health. Preserve installed-worker scope until explicit opt-in.
 
 ### 5. EC Pad native connector
 
 Files in isolated EC Pad worktree: `apple/ECPad/PersonalOS/*`, focused AppModel/settings integration and native tests. Read EC Pad AGENTS and DESIGN first. Base on finished latest startup work (currently 97259ba); never edit active checkout.
 
-- [ ] Implement library/document UUID metadata outside Markdown, selected physical notes/folders, save debounce, unavailable-file preservation, rename/move/duplicate behavior and cancellation on lock/library switch.
-- [ ] Add pair, Keychain token, source selection, sync/status, pause/disconnect using the server contract; export saved snapshot text only, excluding connected Granola imports.
-- [ ] Test transport rejection, multipart acknowledgments, edits/deletes/partial manifests and selection using temporary libraries; run native tests/macOS/iOS builds per repository rules. Do not open the user's real library or desktop app.
+- [x] Implement library/document UUID metadata outside Markdown, selected physical notes/folders, save debounce, unavailable-file preservation, rename/move/duplicate behavior and cancellation on lock/library switch.
+- [x] Add pair, Keychain token, source selection, sync/status, pause/disconnect using the server contract; export saved snapshot text only, excluding connected Granola imports.
+- [x] Test transport rejection, multipart acknowledgments, edits/deletes/partial manifests and selection using temporary libraries; run native tests/macOS/iOS builds per repository rules. Do not open the user's real library or desktop app.
 
 ### 6. Verify and release
 
