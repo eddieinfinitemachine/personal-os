@@ -310,6 +310,50 @@ describe.skipIf(!enabled)(
         "ambiguous",
       );
     });
+    it("persists explicit message retries, scopes them to the owner, and clears them on completion", async () => {
+      await report({ handles: ["+14155550134"] });
+      await report({ status: "messages_checked", handles: ["+14155550134"] });
+      await actOnContactLookup(userId, personId, { action: "retry" });
+      expect((await lookup()).lookup).toMatchObject({
+        status: "matched",
+        messagesCheckedAt: null,
+        messagesError: false,
+      });
+      const capture = () =>
+        new Request("http://localhost/api/capture/dating/contacts", {
+          headers: { authorization: "Bearer contact-lookup-scratch" },
+        });
+      const foreign = await prisma.datingPerson.create({
+        data: {
+          userId: otherId,
+          name: "Foreign Contact",
+          handles: ["+14155550888"],
+        },
+      });
+      await actOnContactLookup(otherId, foreign.id, { action: "retry" });
+      const expected = [{ id: personId, name, handles: ["+14155550134"] }];
+      expect(
+        (await (await captureGet(capture())).json()).messageRetries,
+      ).toEqual(expected);
+      expect(
+        (await (await captureGet(capture())).json()).messageRetries,
+      ).toEqual(expected);
+      await report({ status: "messages_checked", handles: ["+14155550134"] });
+      expect(
+        (await (await captureGet(capture())).json()).messageRetries ?? [],
+      ).toEqual([]);
+      expect((await lookup()).lookup.messagesCheckedAt).toEqual(
+        expect.any(String),
+      );
+      await actOnContactLookup(userId, personId, { action: "retry" });
+      await prisma.datingPerson.update({
+        where: { id: personId },
+        data: { handles: ["+14155550999"] },
+      });
+      expect(
+        (await (await captureGet(capture())).json()).messageRetries ?? [],
+      ).toEqual([]);
+    });
     it("bounds candidate data and choices", async () => {
       for (const extra of [
         { candidates: Array(6).fill(candidates[0]) },

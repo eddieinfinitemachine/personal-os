@@ -275,7 +275,7 @@ export async function getContactLookup(userId: string, personId: string) {
           status: "matched",
           name: person.name,
           checkedAt:
-            current?.status === "matched" &&
+            (current?.status === "matched" || current?.status === "pending") &&
             sameHandles(current.handles, person.handles)
               ? current.checkedAt
               : null,
@@ -321,7 +321,23 @@ export async function actOnContactLookup(
     await lockOwner(tx, userId);
     const person = await currentPerson(tx, userId, personId);
     if (body.action === "retry") {
-      await saveLookup(tx, userId, personId, null);
+      const { saved } = await readSaved(tx, userId, personId);
+      await saveLookup(
+        tx,
+        userId,
+        personId,
+        person.handles.length
+          ? {
+              status: "pending",
+              name: person.name,
+              handles: person.handles,
+              checkedAt: nextCheckedAt(saved),
+              messagesCheckedAt: null,
+              messagesError: false,
+              candidates: [],
+            }
+          : null,
+      );
       return { ok: true };
     }
     const { saved } = await readSaved(tx, userId, personId);
@@ -354,5 +370,28 @@ export async function actOnContactLookup(
         409,
       );
     return { ok: true, resolved: true };
+  });
+}
+
+/** A durable retry signal lets the Mac rescan an unchanged, already-resolved contact. */
+export async function getContactMessageRetries(userId: string) {
+  return prisma.$transaction(async (tx) => {
+    await lockOwner(tx, userId);
+    const state = await tx.datingSourceState.findUnique({
+      where: stateKey(userId),
+    });
+    const lookups = object(object(state?.config ?? {}).contactLookups ?? {});
+    const people = await tx.datingPerson.findMany({
+      where: { userId, handles: { isEmpty: false } },
+      select: { id: true, name: true, handles: true },
+    });
+    return people.filter((person) => {
+      const saved = lookups[person.id] as StoredLookup | undefined;
+      return (
+        saved?.status === "pending" &&
+        saved.name === person.name &&
+        sameHandles(saved.handles, person.handles)
+      );
+    });
   });
 }

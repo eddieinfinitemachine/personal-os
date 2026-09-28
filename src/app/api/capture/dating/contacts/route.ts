@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveCaptureUser } from "@/lib/capture-auth";
 import {
   contactNameKey,
+  getContactMessageRetries,
   recordContactLookup,
 } from "@/lib/dating-contact-lookup";
 import { readJSON } from "@/lib/dating-intake/contracts";
@@ -24,8 +25,10 @@ export async function GET(request: Request) {
       contactNameKey(p.name),
       (counts.get(contactNameKey(p.name)) ?? 0) + 1,
     );
+  const messageRetries = await getContactMessageRetries(userId);
   return NextResponse.json(
     {
+      ...(messageRetries.length ? { messageRetries } : {}),
       people: all
         .filter(
           (p) => !p.handles.length && counts.get(contactNameKey(p.name)) === 1,
