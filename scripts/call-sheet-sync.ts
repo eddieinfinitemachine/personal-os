@@ -13,7 +13,7 @@ import {
   readIMessages, readWhatsAppMessages, whatsAppSchemaProblems,
 } from "../src/lib/dating-message-readers";
 import { coreDataDate, matchWhatsAppSessions, toAppleNs, toCoreDataSeconds } from "../src/lib/dating-message-sync";
-import { normalizeHandle } from "../src/lib/dating";
+import { normalizeHandle } from "../src/lib/call-sheet/policy";
 import { matchDatingContact, type DatingContact } from "../src/lib/dating-contact-match";
 import { readFreshDatingContacts } from "./dating-contact-cache";
 import type { CaptureConfig, CaptureMessage, CapturePerson, CallSheetSource } from "../src/lib/call-sheet/types";
@@ -50,7 +50,7 @@ export function resolveCallSheetTargets(config: CaptureConfig, contacts: DatingC
   const blocked = new Set(config.blockedHandles.map(normalizeHandle));
   return targets.map(p => ({
     ...p,
-    handles: p.handles.filter(h => !blocked.has(h) && owners.get(h)?.size === 1),
+    handles: p.handles.filter(h => !blocked.has(h) && owners.get(h)?.size === 1).slice(0, 20),
   }));
 }
 

@@ -16,6 +16,7 @@ describe("call sheet local connector", () => {
   it("requires an exact complete name and removes shared/blocked identities", () => {
     const contacts = [{ name: person.name, first: "Avery", last: "Example", phones: ["+15559999999"], emails: [] }];
     const result = resolveCallSheetTargets({ ...config, people: [{ ...person, phone: null }, { ...person, id: "two", name: "Different Person" }], blockedHandles: ["+15551234567"] }, contacts);
+    expect(resolveCallSheetTargets({ ...config, people: [{ ...person, phone: "12345678901234567890", email: "not@valid" }] }, [])[0].handles).toEqual([]);
     expect(result[0].handles).toEqual(["+15559999999"]); expect(result[1].handles).toEqual([]);
     expect(resolveCallSheetTargets({ ...config, people: [{ ...person, name: "Avery", phone: null }] }, contacts)[0].handles).toEqual([]);
     expect(resolveCallSheetTargets({ ...config, people: [person, { ...person, id: "two" }] }, contacts).every(p => p.handles.length === 0)).toBe(true);
