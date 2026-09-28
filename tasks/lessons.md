@@ -123,3 +123,5 @@ The user wants automatic intake from texts, EC Pad journals and Granola, with ex
 
 ## 2026-09-28 — Adding a person must discover contact details
 A saved name should trigger current on-device Contacts lookup and matching message import without entering a number. A stale contact export plus a half-hour delay is not enough. Refresh contact data automatically, show progress and ambiguity, and never silently attach a guessed identity.
+
+- September28:Board belongs with Home/Calendar as permanent navigation; manual meeting import is unwanted. Keep desktop/mobile navigation aligned and avoid duplicate optional tracker entries when promoting a page.

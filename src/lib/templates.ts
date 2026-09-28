@@ -1,5 +1,5 @@
 // Sidebar "templates" — pre-built list/dashboard surfaces the user can
-// opt into. By default only Home + Calendar render; users add templates
+// opt into. By default only Home + Calendar + Board render; users add templates
 // from a picker in the sidebar. Persisted client-side per browser via
 // localStorage (key `STORAGE_KEY`).
 
@@ -8,7 +8,6 @@ import {
   Car,
   Dumbbell,
   Heart,
-  LayoutGrid,
   Lightbulb,
   MapPin,
   Package,
@@ -21,7 +20,6 @@ import {
 } from "lucide-react";
 
 export type TemplateSlug =
-  | "board"
   | "reader"
   | "highlights"
   | "personal"
@@ -47,13 +45,6 @@ export type SidebarTemplate = {
 };
 
 export const TEMPLATES: SidebarTemplate[] = [
-  {
-    slug: "board",
-    href: "/board",
-    label: "Board",
-    description: "A mood board of everything you liked: images, videos, songs, products. Send from the share sheet.",
-    Icon: LayoutGrid,
-  },
   {
     slug: "reader",
     href: "/reader",
