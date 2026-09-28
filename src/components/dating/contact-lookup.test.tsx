@@ -102,8 +102,8 @@ describe("automatic contact lookup", () => {
     expect(button("Check again")).toBeTruthy();
   });
 
-  it("reports blocked message access without continuing a progress claim", async () => {
-    const data = state("matched");
+  it.each([0, 10])("reports blocked message access even with %i existing messages", async (messageCount) => {
+    const data = state("matched", { messageCount });
     data.lookup.messagesError = true;
     const fetch = vi.fn().mockResolvedValue(response(data));
     vi.stubGlobal("fetch", fetch);

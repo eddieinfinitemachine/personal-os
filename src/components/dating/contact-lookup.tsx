@@ -214,7 +214,7 @@ export function ContactLookup({
     }
   };
 
-  if (data?.lookup.status === "matched" && data.messageCount > 0 && !error)
+  if (data?.lookup.status === "matched" && data.messageCount > 0 && !data.lookup.messagesError && !error)
     return null;
   if (!data && !error) return null;
   const status = data?.lookup.status;
