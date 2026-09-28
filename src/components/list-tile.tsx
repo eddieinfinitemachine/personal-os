@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { Check, ChevronDown, ChevronRight, MoreHorizontal, Plus, Trash2, Users } from "lucide-react";
 import { LIST_PALETTE, palette } from "@/lib/lists";
 import { haptic } from "@/lib/haptic";
@@ -40,6 +40,7 @@ export function ListTile({
   onReorderOver,
   onReorderDrop,
   groupByProject,
+  leadingContent,
 }: {
   list: ListInfo;
   todos: TodoLike[];
@@ -56,6 +57,7 @@ export function ListTile({
   // When true, group items by their project under collapsible sub-headers
   // (Personal first, then each project). Used on the Home unified tiles.
   groupByProject?: boolean;
+  leadingContent?: ReactNode;
 }) {
   const router = useRouter();
   const p = palette(list.color);
@@ -1232,6 +1234,7 @@ export function ListTile({
       ) : null}
 
       <div className="flex-1 flex flex-col">
+        {leadingContent}
         {/* Mobile-only: New Reminder input at the TOP of the tile (pre-1c1f088 behavior).
             The desktop counterpart still lives in-place at the bottom, below the list. */}
         <div className="md:hidden">

@@ -129,3 +129,5 @@ A saved name should trigger current on-device Contacts lookup and matching messa
 - September28:Call Sheet should be a dedicated page directly below Board in permanent desktop/mobile navigation. Move its full interface out of Home/Friends when the user asks for its own page.
 
 - September28:Call Sheet Done must ask how Eddie reached out before recording a check-in. Persist the selected channel rather than logging an unspecified encounter.
+
+Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside To Do rather than showing the full five-person panel above the day’s tasks.

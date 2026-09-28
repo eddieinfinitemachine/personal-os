@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ListTile, type ListInfo } from "./list-tile";
 import { palette } from "@/lib/lists";
+import { CallSheetShortcut, useCallSheetProgress } from "./call-sheet-shortcut";
 import { haptic } from "@/lib/haptic";
 import { cn } from "@/lib/utils";
 import type { TodoLike } from "./todo-row";
@@ -16,6 +17,10 @@ export type HomeTile = {
 
 export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
   const router = useRouter();
+  const callSheetProgress = useCallSheetProgress();
+  const callSheet = (list: ListInfo) => list.isDefault && !list.shared && list.name === "To Do"
+    ? <CallSheetShortcut progress={callSheetProgress} />
+    : null;
   const [tiles, setTiles] = useState(initialTiles);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
@@ -196,6 +201,7 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
                 todos={t.todos}
                 totalCount={t.totalCount}
                 groupByProject
+                leadingContent={callSheet(t.list)}
               />
             </div>
           ))}
@@ -212,6 +218,7 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
             totalCount={t.totalCount}
             reorderable
             groupByProject
+            leadingContent={callSheet(t.list)}
             onReorderStart={(id) => setDraggingId(id)}
             onReorderOver={(id) => {
               if (!draggingId || draggingId === id) return;
