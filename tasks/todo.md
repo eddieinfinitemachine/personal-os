@@ -1100,7 +1100,9 @@ Build and typecheck passed. Synthetic desktop/mobile browser verified permanent 
 - [x] Compare selection approaches and draft the bounded design.
 - [x] Independently review the written design and resolve blocking findings — approved with no blockers.
 - [ ] Obtain approval for the three additive tables before schema changes.
-- [ ] Resolve Mac message-file access and complete a real source-coverage audit.
+- [x] Resolve Mac message-file access and complete a real source-coverage audit — succeeded after Eddie enabled Full Disk Access.
 - [ ] Write implementation plan, implement, test with scratch data, and release the authenticated call sheet.
 
 Initial read-only audit:510 CRM people,262 with usable identities,28 shared handles excluded. Both iMessage and WhatsApp file reads denied in this execution context. No conversations read, schema changed, message transfer or job installed. Design:docs/superpowers/specs/2026-09-28-call-sheet-design.md.
+
+September28 access follow-up:both message databases now readable in the same runtime. Direct activity matched179 CRM people on iMessage and29 on WhatsApp, with overlap;26 had activity within7days and179 had newer activity than their CRM date. Reviewed bounded excerpts across an8-person sample plus a4-person WhatsApp-focused sample. No cloud import or CRM writes; temporary snapshots cleaned up. Three-table approval remains pending.

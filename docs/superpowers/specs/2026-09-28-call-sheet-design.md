@@ -1,6 +1,6 @@
 # Daily Call Sheet
 
-Status: product direction approved by Eddie; database additions and message access pending. No implementation, schema mutation, message transfer or new scheduled job has occurred.
+Status: product direction approved by Eddie; read-only message access verified after his Full Disk Access change. Database additions still await approval. No feature implementation, schema mutation, cloud message import or new scheduled job has occurred.
 
 ## Purpose and approved scope
 
@@ -12,7 +12,7 @@ Person already contains name, phone/email, relationship strength, circles, starr
 
 Read-only CRM audit September28:510 active people;262 have usable nonshared identities after stored phone/email plus exact full-name matching against the current local Contacts cache.28 handle values mapped to multiple CRM people and were excluded. This is identity coverage, not confirmed conversation coverage.
 
-Both message database copies were denied by macOS in this Codex execution context. File metadata is visible but content is unreadable. No message content was reviewed. Existing dating background sync access does not establish access for a new CRM worker. Do not switch execution contexts to bypass this denial; require the Mac permission to be fixed before source reads.
+Initial message reads were denied. After Eddie confirmed enabling Full Disk Access, the same execution context successfully read temporary copies of both databases. Direct-thread activity matches179 CRM people on iMessage and29 on WhatsApp (overlap not counted as unique people).26 matched contacts had activity in the past7days;179 had message activity more than a day newer than their stored CRM date or a missing CRM date. Both sources include September28 activity. Reviewed bounded conversation excerpts for8 initial contacts and a4-contact WhatsApp-focused sample; this was not a full semantic review of all conversations. No personal excerpts are stored in this spec or git. Temporary database copies were removed. Installed-worker permissions still require verification during release.
 
 The legacy imessage-stats script can count group chat activity as personal contact, so its cached lastInteractionAt is not reliable direct-conversation evidence. Do not run that script as the new connector.
 
@@ -62,4 +62,4 @@ Migration adds only these tables, relations and indexes; apply first to scratch 
 
 Test source matching, conflicting handles and WhatsApp LIDs, group exclusion, Apple timestamp units, stale/unavailable sources, evidence validation and prompt injection handling. Test daily determinism/timezone midnight/DST, category balancing, unknown history and cooldowns. Scratch PostgreSQL covers owner boundaries, concurrent generation, idempotent Done/Undo, stale action versions and person deletion. Browser tests cover five-row flow, replacing/snoozing, evidence disclosure, mobile layout, and failure/retry.
 
-After the Mac access issue is resolved, complete the live read-only coverage audit before implementing assumptions about message availability. Verify actual runtime access for the installed worker only after system permission is corrected, not by bypassing the denial. Release authenticated web UI, install the hourly connector and verify a real run and a grounded sheet. No personal message samples in git or general logs; retain only aggregate audit findings in this document.
+Read-only live coverage was verified after the user corrected Mac access. Verify the installed worker runtime during release and report access failures explicitly. Release authenticated web UI, install the hourly connector and verify a real run and a grounded sheet. No personal message samples in git or general logs; retain only aggregate audit findings in this document.
