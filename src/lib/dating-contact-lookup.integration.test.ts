@@ -354,6 +354,60 @@ describe.skipIf(!enabled)(
         (await (await captureGet(capture())).json()).messageRetries ?? [],
       ).toEqual([]);
     });
+    it("queues an attached contact before any Mac checkpoint, but not a manual profile with no lookup", async () => {
+      const manual = await prisma.datingPerson.create({
+        data: { userId, name: "Manual Contact", handles: ["+14155550888"] },
+      });
+      await report({ handles: ["+14155550134"] });
+      const capture = () =>
+        new Request("http://localhost/api/capture/dating/contacts", {
+          headers: { authorization: "Bearer contact-lookup-scratch" },
+        });
+      const expected = [{ id: personId, name, handles: ["+14155550134"] }];
+      expect(
+        (await (await captureGet(capture())).json()).messageRetries,
+      ).toEqual(expected);
+      await report({ status: "messages_checked", handles: ["+14155550134"] });
+      expect(
+        (await (await captureGet(capture())).json()).messageRetries ?? [],
+      ).toEqual([]);
+      await report({
+        status: "messages_unavailable",
+        handles: ["+14155550134"],
+      });
+      expect(
+        (await (await captureGet(capture())).json()).messageRetries,
+      ).toEqual(expected);
+      expect(manual.id).not.toBe(personId);
+    });
+    it("requests one fresh Contacts export for a new name and an explicit retry", async () => {
+      const capture = () =>
+        new Request("http://localhost/api/capture/dating/contacts", {
+          headers: { authorization: "Bearer contact-lookup-scratch" },
+        });
+      expect((await (await captureGet(capture())).json()).refreshContacts).toBe(
+        true,
+      );
+      await report({ status: "not_found", candidates: [] });
+      expect(
+        (await (await captureGet(capture())).json()).refreshContacts,
+      ).toBeUndefined();
+      await actOnContactLookup(userId, personId, { action: "retry" });
+      expect((await (await captureGet(capture())).json()).refreshContacts).toBe(
+        true,
+      );
+      await report();
+      expect(
+        (await (await captureGet(capture())).json()).refreshContacts,
+      ).toBeUndefined();
+      await prisma.datingPerson.update({
+        where: { id: personId },
+        data: { name: "Ana Newname" },
+      });
+      expect((await (await captureGet(capture())).json()).refreshContacts).toBe(
+        true,
+      );
+    });
     it("bounds candidate data and choices", async () => {
       for (const extra of [
         { candidates: Array(6).fill(candidates[0]) },
@@ -404,6 +458,7 @@ describe.skipIf(!enabled)(
       );
       expect(await (await captureGet(capture)).json()).toEqual({
         people: [{ id: personId, name }],
+        refreshContacts: true,
       });
       expect(
         await (

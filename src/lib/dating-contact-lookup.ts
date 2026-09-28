@@ -374,7 +374,7 @@ export async function actOnContactLookup(
 }
 
 /** A durable retry signal lets the Mac rescan an unchanged, already-resolved contact. */
-export async function getContactMessageRetries(userId: string) {
+export async function getContactRequests(userId: string) {
   return prisma.$transaction(async (tx) => {
     await lockOwner(tx, userId);
     const state = await tx.datingSourceState.findUnique({
@@ -382,16 +382,38 @@ export async function getContactMessageRetries(userId: string) {
     });
     const lookups = object(object(state?.config ?? {}).contactLookups ?? {});
     const people = await tx.datingPerson.findMany({
-      where: { userId, handles: { isEmpty: false } },
+      where: { userId },
       select: { id: true, name: true, handles: true },
     });
-    return people.filter((person) => {
+    const messageRetries = people.filter((person) => {
       const saved = lookups[person.id] as StoredLookup | undefined;
       return (
-        saved?.status === "pending" &&
-        saved.name === person.name &&
-        sameHandles(saved.handles, person.handles)
+        person.handles.length &&
+        saved?.name === person.name &&
+        sameHandles(saved.handles, person.handles) &&
+        (saved.status === "pending" ||
+          (saved.status === "matched" &&
+            (!saved.messagesCheckedAt || saved.messagesError)))
       );
     });
+    const counts = new Map<string, number>();
+    for (const person of people)
+      counts.set(
+        contactNameKey(person.name),
+        (counts.get(contactNameKey(person.name)) ?? 0) + 1,
+      );
+    const unresolved = people.filter(
+      (person) =>
+        !person.handles.length && counts.get(contactNameKey(person.name)) === 1,
+    );
+    const refreshContacts = unresolved.some((person) => {
+      const saved = lookups[person.id] as StoredLookup | undefined;
+      return !saved || saved.name !== person.name || saved.status === "pending";
+    });
+    return {
+      people: unresolved.map(({ id, name }) => ({ id, name })),
+      ...(messageRetries.length ? { messageRetries } : {}),
+      ...(refreshContacts ? { refreshContacts: true } : {}),
+    };
   });
 }
