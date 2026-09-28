@@ -1,6 +1,6 @@
 # Automatic dating intake and People to review
 
-Status: product direction approved by Eddie's “do it”; concrete database proposal awaiting approval. This is the first delivery of the approved improvement list. No schema or source-data changes have been made.
+Status: product direction approved by Eddie’s “do it”; concrete three-table/additive-column schema approved September 28 with “yes.” Implementation and scratch verification underway; source setup remains disabled until explicitly configured.
 
 ## Outcome and scope
 

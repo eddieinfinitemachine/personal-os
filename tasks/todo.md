@@ -1063,7 +1063,9 @@ Requested design: retain simple cards, separate Dating (including Exclusive), Pu
 - [x] Reconcile live dating implementation, EC Pad source architecture and user-approved direction.
 - [x] Specify source adapters, evidence ownership, durable review decisions and concrete additive schema proposal.
 - [x] Independently review the intake design and resolve findings; final review approved after clarifying undated evidence, serialized alias resolution and retention limits.
-- [ ] Obtain approval for the documented three-table/additive-column schema change before schema edits.
+- [x] Obtain approval for the documented three-table/additive-column schema change before schema edits — Eddie approved September 28.
 - [ ] Implement, verify and release intake/review; preserve outstanding reflection, summary and photo improvements as follow-up scope.
 
 No schema, code, installed-worker or production source changes in this design step. EC Pad is actively being edited in another task; do not overwrite its working tree. Spec: docs/superpowers/specs/2026-09-27-dating-intake-design.md.
+
+Implementation progress September 28: additive SQL upgraded a full-baseline scratch database with no schema difference afterward. Core ingestion/review/identity/retention and insight freshness integration tests pass; UI and native connector implemented. EC Pad isolated commits c36850d/fbcb7c0 pass195 native tests and macOS/iOS builds. Final adapter integration, release review and deployment remain. No production schema application or new private-source imports yet.

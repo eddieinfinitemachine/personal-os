@@ -1,7 +1,10 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
 import { eventPatch, toEventDTO } from "@/lib/dating-server";
+
+import {createEvent} from "@/lib/dating-intake/events";
+import {refreshDatingInsights} from "@/lib/dating-insights";
 
 export const dynamic = "force-dynamic";
 
@@ -16,16 +19,8 @@ export async function POST(request: Request, { params }: Ctx) {
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const data = eventPatch(body);
   if (!data.title) return NextResponse.json({ error: "title is required" }, { status: 400 });
-  const event = await prisma.datingEvent.create({
-    data: {
-      userId,
-      personId: id,
-      title: data.title,
-      kind: data.kind ?? "date",
-      occurredAt: data.occurredAt ?? new Date(),
-      notes: data.notes ?? null,
-      vibe: data.vibe ?? null,
-    },
-  });
+  const event=await createEvent(userId,id,{...data,title:data.title});
+  if(!event)return NextResponse.json({error:"not found"},{status:404});
+  after(async()=>{try{await refreshDatingInsights(userId,id,{onlyIfStale:true});}catch{console.error("Dating summary refresh failed");}});
   return NextResponse.json({ event: toEventDTO(event) });
 }

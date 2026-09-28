@@ -63,6 +63,8 @@ export async function middleware(req: NextRequest) {
   // Bearer-token endpoints handle their own auth.
   if (
     pathname.startsWith("/api/cron/") ||
+    // Scoped journal connector routes authenticate their own bearer token.
+    pathname.startsWith("/api/dating/intake/") ||
     pathname.startsWith("/api/capture/") ||
     // Read-later save from the iOS share-sheet Shortcut (route checks
     // CAPTURE_TOKEN or session itself). The Shortcut's "Get contents of URL"

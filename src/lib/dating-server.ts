@@ -13,6 +13,8 @@ export type InsightSources = {
 };
 
 export type DatingInsights = {
+  sourceFingerprint?: string;
+  generation?: {fingerprint:string;until:string};
   summary?: string;
   remember?: string[];
   greenFlags?: string[];
@@ -34,8 +36,9 @@ export type DatingPersonDTO = Omit<
   insights: DatingInsights | null;
 };
 
-export type DatingEventDTO = Omit<DatingEvent, "userId" | "occurredAt" | "createdAt"> & {
+export type DatingEventDTO = Omit<DatingEvent, "userId" | "occurredAt" | "createdAt" | "sourceRecordId" | "machineContentHash"> & {
   occurredAt: string;
+  sourceConflict?: boolean;
 };
 
 export type DatingMessageDTO = Pick<DatingMessage, "id" | "fromMe" | "text" | "source"> & { sentAt: string };
@@ -56,8 +59,8 @@ export function toPersonDTO(p: DatingPerson): DatingPersonDTO {
 }
 
 export function toEventDTO(e: DatingEvent): DatingEventDTO {
-  const { userId: _u, createdAt: _c, ...rest } = e;
-  return { ...rest, occurredAt: e.occurredAt.toISOString() };
+  const { userId: _u, createdAt: _c, sourceRecordId: _s, machineContentHash, ...rest } = e;
+  return { ...rest, occurredAt: e.occurredAt.toISOString(), ...(machineContentHash === "conflict" ? {sourceConflict:true} : {}) };
 }
 
 export function toMessageDTO(m: Pick<DatingMessage, "id" | "fromMe" | "text" | "source" | "sentAt">): DatingMessageDTO {

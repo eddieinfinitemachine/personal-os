@@ -1,8 +1,11 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/auth";
 import { addSuggestion } from "@/lib/dating-filer";
 import { toPersonDTO } from "@/lib/dating-server";
 
+import {refreshDatingInsights} from "@/lib/dating-insights";
+
+export const maxDuration=120;
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -14,5 +17,6 @@ export async function POST(request: Request, { params }: Ctx) {
   const { id } = await params;
   const res = await addSuggestion(userId, id);
   if (!res) return NextResponse.json({ error: "not found" }, { status: 404 });
+  after(async()=>{try{await refreshDatingInsights(userId,res.person.id,{onlyIfStale:true});}catch{console.error("Dating summary refresh failed");}});
   return NextResponse.json({ person: toPersonDTO(res.person), filed: res.filed });
 }

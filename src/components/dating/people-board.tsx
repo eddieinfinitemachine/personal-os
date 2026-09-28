@@ -109,13 +109,13 @@ export function PeopleBoard({ people }: { people: DatingCard[] }) {
     }
   };
 
-  const remove = async (p: DatingCard) => {
+  const remove = async (p: DatingCard, exclude = false) => {
     if (pending.current.has(p.id)) return;
     if (!confirm(`Delete ${p.name} and all photos, notes, timeline and messages? This cannot be undone.`)) return;
     pending.current.add(p.id);
     setBusy(new Set(pending.current));
     try {
-      const res = await fetch(`/api/dating/${p.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/dating/${p.id}${exclude ? "?exclude=true" : ""}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
       setRemoved((ids) => new Set([...ids, p.id]));
       router.refresh();
@@ -206,7 +206,7 @@ export function PeopleBoard({ people }: { people: DatingCard[] }) {
 
 type Actions = {
   move: (id: string, stage: Stage) => void;
-  remove: (p: DatingCard) => void;
+  remove: (p: DatingCard, exclude?: boolean) => void;
   busy: Set<string>;
 };
 
@@ -245,6 +245,7 @@ function PersonCard({ p, move, remove, busy }: { p: DatingCard } & Actions) {
           disabled={busy.has(p.id)}
           onChange={(e) => {
             if (e.target.value === "delete") remove(p);
+            else if (e.target.value === "delete-exclude") remove(p, true);
             else if (isStage(e.target.value)) move(p.id, e.target.value);
           }}
           className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-wait"
@@ -254,6 +255,7 @@ function PersonCard({ p, move, remove, busy }: { p: DatingCard } & Actions) {
             {STAGES.filter((s) => s !== p.stage).map((s) => <option key={s} value={s}>{LABEL[s]}</option>)}
           </optgroup>
           <option value="delete">Delete person…</option>
+          <option value="delete-exclude">Delete and stop suggestions…</option>
         </select>
       </label>
     </div>
