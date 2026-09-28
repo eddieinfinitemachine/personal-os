@@ -12,6 +12,8 @@ import { SyncHelp } from "./sync-help";
 import { PeopleBoard, type DatingCard } from "./people-board";
 import { LinkPicker, type PickablePerson } from "./link-picker";
 import { QuickAdd } from "./quick-add";
+import { ReviewInbox } from "./review-inbox";
+import { DatingSourcesProvider, SourceStatus, SourceSettings } from "./source-status";
 
 export type { DatingCard };
 
@@ -75,6 +77,7 @@ export function DatingHome({
   };
 
   return (
+    <DatingSourcesProvider>
     <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6 max-w-6xl">
       <header className="mb-6 flex items-end justify-between gap-3">
         <div>
@@ -94,6 +97,8 @@ export function DatingHome({
         <div className="mb-4 rounded-md bg-[var(--color-fill)] px-3 py-2 text-sm text-[var(--color-destructive)]">{error}</div>
       )}
 
+      <SourceStatus />
+      <ReviewInbox people={people} />
       <PeopleBoard people={people} />
 
       {/* Everything below the people view keeps the narrower reading width. */}
@@ -154,16 +159,16 @@ export function DatingHome({
           </div>
         </section>
 
-        <details className={cn(card, "mt-8 p-4")}>
-          <summary className="min-h-11 cursor-pointer content-center text-sm font-semibold">Imports and sync</summary>
+        <SourceSettings>
           {/* Keep controls mounted: collapsing must not reset an active import. */}
           <div className="pt-3">
             {granola && <GranolaSync />}
             <SyncHelp compact />
           </div>
-        </details>
+        </SourceSettings>
       </div>
     </div>
+    </DatingSourcesProvider>
   );
 }
 
@@ -252,7 +257,7 @@ function Suggestions({
   return (
     <section className="mb-6" aria-label="Review from Granola">
       <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
-        Review from Granola <span className="tabular-nums">({visible.length})</span>
+        Earlier Granola mentions <span className="tabular-nums">({visible.length})</span>
       </h2>
       {error && <p role="alert" className="mb-2 rounded-md bg-[var(--color-fill)] px-3 py-2 text-sm text-[var(--color-destructive)]">{error}</p>}
       <ul className="space-y-2">
