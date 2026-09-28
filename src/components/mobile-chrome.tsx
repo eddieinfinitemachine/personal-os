@@ -12,6 +12,7 @@ import {
   LayoutGrid,
   Loader2,
   Menu,
+  Phone,
   Plus,
   Search,
   Settings as SettingsIcon,
@@ -168,6 +169,7 @@ const DRAWER_PRIMARY = [
   { href: "/", label: "Home", Icon: Home },
   { href: "/calendar", label: "Calendar", Icon: Calendar },
   { href: "/board", label: "Board", Icon: LayoutGrid },
+  { href: "/call-sheet", label: "Call Sheet", Icon: Phone },
 ];
 
 function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: MobileProject[]; lists: MobileList[]; appName: string; isPrivate: boolean }) {

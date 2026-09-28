@@ -1,4 +1,3 @@
-import { CallSheet } from "@/components/call-sheet";
 import { prisma } from "@/lib/prisma";
 import { FriendsList, type PersonRow } from "@/components/friends-list";
 import { getSession } from "@/lib/auth";
@@ -93,7 +92,6 @@ export default async function FriendsPage() {
           People you care about. Check in regularly.
         </p>
       </header>
-      <CallSheet />
       <FriendsList initialPeople={rows} />
     </div>
   );
