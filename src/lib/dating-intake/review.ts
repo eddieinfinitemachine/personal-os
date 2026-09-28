@@ -57,17 +57,45 @@ export async function resolveIdentity(
   key?: string,
 ) {
   const candidates = await tx.datingCandidate.findMany({ where: { userId } });
-  const matches = candidates.filter(
-    (c) =>
-      (c.identityKey === key && !key?.startsWith("contact:")) ||
-      identityList(c.identities).some((i) => identities.includes(i)),
-  );
-  const profiles = identities.length
+  const known = new Set(identities);
+  const matchedIds = new Set<string>();
+  // A source key is explicit identity evidence only within its original source.
+  for (const candidate of candidates) {
+    if (candidate.identityKey === key && !key?.startsWith("contact:")) {
+      matchedIds.add(candidate.id);
+      for (const alias of identityList(candidate.identities)) known.add(alias);
+    }
+  }
+  const ownedProfiles = known.size
     ? await tx.datingPerson.findMany({
-        where: { userId, handles: { hasSome: identities } },
-        select: { id: true },
+        where: { userId, handles: { isEmpty: false } },
+        select: { id: true, handles: true },
       })
     : [];
+  const profileIds = new Set<string>();
+  // Resolve the entire alias component, not just neighbors of the submitted handles.
+  // A[a,b], B[b,c], C[c] must share approval/exclusion decisions from either end.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const candidate of candidates) {
+      if (matchedIds.has(candidate.id)) continue;
+      const aliases = identityList(candidate.identities);
+      if (!aliases.some((alias) => known.has(alias))) continue;
+      matchedIds.add(candidate.id);
+      for (const alias of aliases) known.add(alias);
+      changed = true;
+    }
+    for (const profile of ownedProfiles) {
+      if (profileIds.has(profile.id)) continue;
+      if (!profile.handles.some((alias) => known.has(alias))) continue;
+      profileIds.add(profile.id);
+      for (const alias of profile.handles) known.add(alias);
+      changed = true;
+    }
+  }
+  const matches = candidates.filter((candidate) => matchedIds.has(candidate.id));
+  const profiles = ownedProfiles.filter((profile) => profileIds.has(profile.id));
   const linked = [
     ...new Set([
       ...matches.flatMap((c) => (c.personId ? [c.personId] : [])),
@@ -206,15 +234,8 @@ export async function publishMentions(
           ),
         ),
       ];
-      for (const duplicate of resolution.matches.filter(
-        (c) => c.id !== candidate!.id,
-      )) {
-        await tx.datingSuggestion.updateMany({
-          where: { userId: record.userId, candidateId: duplicate.id },
-          data: { candidateId: candidate.id },
-        });
-        await tx.datingCandidate.delete({ where: { id: duplicate.id } });
-      }
+      // Keep every source key and its review decision. Moving pending evidence onto
+      // an approved row would hide it from review and lose durable source/name links.
       candidate = await tx.datingCandidate.update({
         where: { id: candidate.id },
         data: {
@@ -222,18 +243,6 @@ export async function publishMentions(
           reviewedFingerprint: JSON.stringify({ dismissed }),
         },
       });
-      if (candidate.status === "approved" && candidate.personId) {
-        const pending = await tx.datingSuggestion.findMany({
-          where: {
-            userId: record.userId,
-            candidateId: candidate.id,
-            status: "pending",
-            sourceRecord: { userId: record.userId, status: "processed" },
-          },
-          include: { sourceRecord: true },
-        });
-        await attachEvidence(tx, record.userId, candidate.personId, pending);
-      }
     }
     const sourceFingerprint = hash(
       JSON.stringify([
@@ -248,7 +257,9 @@ export async function publishMentions(
     const prior = await tx.datingSuggestion.findFirst({
       where: {
         userId: record.userId,
-        candidateId: candidate.id,
+        candidateId: {
+          in: [...new Set([candidate.id, ...resolution.matches.map((c) => c.id)])],
+        },
         sourceFingerprint,
       },
     });
@@ -353,10 +364,19 @@ export async function reviewCandidate(
         );
         const ids =
           action === "exclude" ? matching.matches.map((x) => x.id) : [id];
+        const reviewedCandidates = action === "exclude" ? matching.matches : [c];
+        const dismissedRows = action === "exclude"
+          ? await tx.datingSuggestion.findMany({
+              where: { userId, candidateId: { in: ids }, status: "pending" },
+              include: { sourceRecord: true },
+            })
+          : rows;
         const dismissed = [
           ...new Set([
-            ...reviewedDigests(c.reviewedFingerprint),
-            ...rows.flatMap((r) =>
+            ...reviewedCandidates.flatMap((candidate) =>
+              reviewedDigests(candidate.reviewedFingerprint),
+            ),
+            ...dismissedRows.flatMap((r) =>
               r.sourceRecord
                 ? [
                     mentionDigest(
