@@ -780,6 +780,8 @@ model Person {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
+  callSheetContacts CallSheetContact[]
+
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -901,6 +903,10 @@ model User {
   lastSeenAt     DateTime @default(now())
   kindleEmail    String?
   kindleAutoSend Boolean  @default(true)
+
+  callSheetSettings CallSheetSettings?
+  callSheetContacts CallSheetContact[]
+  callSheetDays     CallSheetDay[]
 
   // auto-generated back-references
   pushSubscriptions   PushSubscription[]
@@ -1361,4 +1367,47 @@ model DatingCandidate {
 
   @@unique([userId, identityKey])
   @@index([userId, status])
+}
+
+// Daily call sheet: additive owner-scoped preferences, evidence and stable days.
+model CallSheetSettings {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  timezone  String   @default("America/New_York")
+  sources   Json     @default("{}")
+  updatedAt DateTime @updatedAt
+}
+
+model CallSheetContact {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  personId        String
+  person          Person    @relation(fields: [personId], references: [id], onDelete: Cascade)
+  identityKey     String
+  sourceData      Json      @default("{}")
+  cadenceDays     Int?
+  snoozedUntil    DateTime?
+  excludedAt      DateTime?
+  lastSuggestedAt DateTime?
+  lastCompletedAt DateTime?
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([userId, personId])
+  @@index([userId, snoozedUntil])
+}
+
+model CallSheetDay {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  localDate String
+  timezone  String
+  version   Int      @default(0)
+  entries   Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, localDate])
 }

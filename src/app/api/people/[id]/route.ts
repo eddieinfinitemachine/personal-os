@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
+import { deletePersonWithCallSheetCleanup } from "@/lib/call-sheet/service";
 
 export async function PATCH(
   request: Request,
@@ -62,8 +63,8 @@ export async function DELETE(
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const result = await prisma.person.deleteMany({ where: { id, userId } });
-  if (result.count === 0) {
+  const count = await deletePersonWithCallSheetCleanup(userId, id);
+  if (count === 0) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
   return NextResponse.json({ ok: true });
