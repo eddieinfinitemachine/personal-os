@@ -56,6 +56,14 @@ describe("call sheet local connector", () => {
     const changed = await syncCallSheet({ api, contacts: async () => [], open: async () => reader, checkpoint, save: async () => {}, now });
     expect(changed).toEqual({ checked: 1, extracted: 1 });
   });
+  it("refreshes summaries when non-text activity invalidates the saved context", async () => {
+    const checkpoint = fresh();
+    const api = async (body?: object) => !body ? config : { extracted: true };
+    await syncCallSheet({ api, contacts: async () => [], open: async () => reader, checkpoint, save: async () => {}, now });
+    const attachmentReader = { ...reader, activity: () => ({ ...reader.activity(), messageCount: 4 }) };
+    const result = await syncCallSheet({ api, contacts: async () => [], open: async () => attachmentReader, checkpoint, save: async () => {}, now });
+    expect(result).toEqual({ checked: 1, extracted: 1 });
+  });
   it("resends unchanged evidence when a source is re-enabled with a new epoch", async () => {
     const checkpoint = fresh();
     let current = config;

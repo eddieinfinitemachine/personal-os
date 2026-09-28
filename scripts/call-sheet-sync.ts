@@ -157,7 +157,7 @@ export async function syncCallSheet(options: {
         const messages = boundMessages(value.reader.messages(person.target), now);
         if (!messages.length) continue;
         const key = source + ":" + person.target.id;
-        const digest = hash([epochs[source], person.target.identityKey, person.target.handles, messages]);
+        const digest = hash([epochs[source], person.target.identityKey, person.target.handles, value.activity, messages]);
         if (checkpoint.cues[key] === digest) continue;
         attempts++;
         const response = await options.api({
