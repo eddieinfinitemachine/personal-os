@@ -1099,13 +1099,13 @@ Build and typecheck passed. Synthetic desktop/mobile browser verified permanent 
 - [x] Clarify audience:friends, family and professional relationships; Eddie approved message-based relevance.
 - [x] Compare selection approaches and draft the bounded design.
 - [x] Independently review the written design and resolve blocking findings — approved with no blockers.
-- [ ] Obtain approval for the three additive tables before schema changes.
+- [x] Obtain approval for the three additive tables before schema changes — Eddie said “great - start with teh call sheet” after the explicit approval question.
 - [x] Resolve Mac message-file access and complete a real source-coverage audit — succeeded after Eddie enabled Full Disk Access.
 - [ ] Write implementation plan, implement, test with scratch data, and release the authenticated call sheet.
 
 Initial read-only audit:510 CRM people,262 with usable identities,28 shared handles excluded. Both iMessage and WhatsApp file reads denied in this execution context. No conversations read, schema changed, message transfer or job installed. Design:docs/superpowers/specs/2026-09-28-call-sheet-design.md.
 
-September28 access follow-up:both message databases now readable in the same runtime. Direct activity matched179 CRM people on iMessage and29 on WhatsApp, with overlap;26 had activity within7days and179 had newer activity than their CRM date. Reviewed bounded excerpts across an8-person sample plus a4-person WhatsApp-focused sample. No cloud import or CRM writes; temporary snapshots cleaned up. Three-table approval remains pending.
+September28 access follow-up:both message databases now readable in the same runtime. Direct activity matched179 CRM people on iMessage and29 on WhatsApp, with overlap;26 had activity within7days and179 had newer activity than their CRM date. Reviewed bounded excerpts across an8-person sample plus a4-person WhatsApp-focused sample. No cloud import or CRM writes; temporary snapshots cleaned up. The subsequent “start with the call sheet” reply approved the three-table proposal.
 
 ## 2026-09-28 — Add CRM people from conversations
 
@@ -1114,4 +1114,6 @@ September28 access follow-up:both message databases now readable in the same run
 - [x] Review348 candidates, defer51 unclear/service names plus9 possible duplicates, and atomically add288 verified people with contact details, source tags and last observed message date. No schema changes or message sending.
 - [x] Verify all288 new records through authenticated live CRM API; active total798.
 
-Source split:227 iMessage only,24 WhatsApp only,37 both. Private import manifest with exact created IDs and deferred names remains on-device under Application Support/personal-os/crm-conversation-import-2026-09-28-manifest.json (0600). No personal identities, contact details or messages committed to git. Daily Call Sheet three-table approval remains pending separately.
+Source split:227 iMessage only,24 WhatsApp only,37 both. Private import manifest with exact created IDs and deferred names remains on-device under Application Support/personal-os/crm-conversation-import-2026-09-28-manifest.json (0600). No personal identities, contact details or messages committed to git. Eddie subsequently approved the Daily Call Sheet three-table proposal.
+
+September28 Call Sheet implementation:three additive tables verified against scratch PostgreSQL with no schema difference; Home/Friends UI, direct-message worker and evidence extraction implemented. Final full suite679 passed,42 unrelated opt-in skipped; production build/typecheck passed. Synthetic browser verified five stable rows, shared Home/Friends list, Done/Undo, Snooze/Replace/Hide/Undo, collapsed conversation evidence, pending-source states and390px layout. A pre-existing WAL timing fixture failed during concurrent build load, then passed16 tests alone and the complete suite passed after the build. Independent spec review fixes address category balance, the cross-source three-snippet budget, and optional AI follow-ups remaining context-only. Explicit due-follow-up priority is deferred because CRM has no Person-linked due field. Production rollout remains pending.

@@ -1,6 +1,6 @@
 # Daily Call Sheet
 
-Status: product direction approved by Eddie; read-only message access verified after his Full Disk Access change. Database additions still await approval. No feature implementation, schema mutation, cloud message import or new scheduled job has occurred.
+Status: product direction approved by Eddie; read-only message access verified after his Full Disk Access change. Eddie approved proceeding with the previously proposed three-table call sheet on September28. Implementation is complete in the isolated branch and under verification; the approved additive schema has been applied only to scratch PostgreSQL. Production release and the hourly worker are pending.
 
 ## Purpose and approved scope
 
@@ -38,15 +38,17 @@ The latest inbound message alone does not mean Eddie owes a reply. Require an ex
 
 ## Recommendation rules
 
-Eligible:active, not excluded, not snoozed, no cooldown, no verified direct conversation or explicitly logged check-in within7days. An explicit user-set due follow-up may override the cooldown but must show its reason. Never infer an overdue interval from unknown or stale history.
+Eligible:active, not excluded, not snoozed, no cooldown, no verified direct conversation or explicitly logged check-in within7days. Never infer an overdue interval from unknown or stale history.
 
-Priority tiers:explicit overdue follow-up; imminent birthday; important relationship beyond its cadence; other established relationships beyond cadence; occasional reconnect where the last known exchange is documented. Initial editable cadences:starred/close30days, strong60days, casual90days, weak180days. Unspecified strength defaults90days only if prior contact is documented. Age-relative score within tiers; stable person ID as final tie-break.
+Priority tiers:imminent birthday; important relationship beyond its cadence; other established relationships beyond cadence; occasional reconnect where the last known exchange is documented. Initial editable cadences:starred/close30days, strong60days, casual90days, weak180days. Unspecified strength defaults90days only if prior contact is documented. Age-relative score within tiers; stable person ID as final tie-break.
 
-Use existing explicit circles/tags to promote a balanced mix of friends/family/professional contacts when enough eligible people exist. Do not infer relationship categories from message content. Unknown categories stay eligible; no rigid category quotas or pressure to call distant contacts merely to fill slots. At most two of five from one category when alternative eligible categories exist, with explicit due follow-ups exempt.
+Use existing explicit circles/tags to promote a balanced mix of friends/family/professional contacts when enough eligible people exist. Do not infer relationship categories from message content. Unknown categories stay eligible; no rigid category quotas or pressure to call distant contacts merely to fill slots. At most two of five from one category when alternative eligible categories exist.
+
+Implementation clarification:the current CRM has no identity-linked due-follow-up field. User-set due-follow-up priority/cooldown overrides are deferred; unrelated Todo dates and AI-inferred possible follow-ups must not be treated as due commitments. Extracted follow-ups are optional conversation context only.
 
 Source health is visible. Message-based selection requires a successful scan within48hours; otherwise show recommendations from independently verified manual encounters with a warning that messages are out of date. Legacy lastInteractionAt can display as an imported CRM date but cannot alone support “you have not spoken since” or suppress a manually known more recent encounter. Source failure must not make unknown-history people rise in rank.
 
-## Proposed additive database changes — approval required
+## Approved additive database changes
 
 Three new owner-scoped records; no changes to or deletion of current CRM/message data:
 
@@ -56,7 +58,7 @@ Three new owner-scoped records; no changes to or deletion of current CRM/message
 
 Persist one daily sheet under a user-scoped transaction lock. Actions use version+entryID and return conflict rather than overwriting newer changes. Done and its Interaction write are atomic and idempotent. Contact evidence saves preserve user preference fields. Authenticated capture endpoint validates source timestamps, message counts, size and identity version. No unauthenticated endpoint, broad message discovery or shared-list exposure.
 
-Migration adds only these tables, relations and indexes; apply first to scratch PostgreSQL. Production backup and transactional migration follow approval. Rollback disables call-sheet UI/worker and retains new tables so choices/history are not lost; dropping new tables is a separate destructive action. No schema file or production migration changes until Eddie approves.
+Migration adds only these tables, relations and indexes; apply first to scratch PostgreSQL. Production backup and transactional migration follow approval. Rollback disables call-sheet UI/worker and retains new tables so choices/history are not lost; dropping new tables is a separate destructive action. Eddie approved implementation after the explicit three-table proposal; apply this exact additive scope after scratch verification.
 
 ## Verification and delivery
 
