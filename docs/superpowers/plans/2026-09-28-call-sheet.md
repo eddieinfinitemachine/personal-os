@@ -65,7 +65,7 @@ Files: scripts/call-sheet-sync.ts; scripts/call-sheet-sync.test.ts.
 - [x] Review agent diffs, run scoped unit/component tests and real scratch SQL concurrency tests.
 - [x] Production build/typecheck, full suite with4workers. Synthetic browser verifies stable5 rows, Done/Undo, Snooze/Replace, evidence, source failure and390px.
 - [ ] Read-only code/security review; fix material findings and rerun affected checks.
-- [ ] Private schema-only production backup; apply reviewed approved additive SQL transactionally; verify no Prisma diff.
+- [x] Private schema-only production backup; apply reviewed approved additive SQL transactionally; verify no Prisma diff.
 - [ ] PR, attach artifact, pass preview check, merge exact tested head, verify EC production aliases/auth.
 - [ ] Enable both sources for Eddie (already authorized), advance clean stable sync checkout, install hourly job, and verify actual background run. First run may be batched but complete evidence must be available for generated sheet.
 - [ ] Verify five live recommendations with supported evidence, record aggregate outcomes privately, no synthetic production people/messages.

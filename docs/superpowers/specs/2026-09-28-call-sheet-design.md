@@ -1,6 +1,6 @@
 # Daily Call Sheet
 
-Status: product direction approved by Eddie; read-only message access verified after his Full Disk Access change. Eddie approved proceeding with the previously proposed three-table call sheet on September28. Implementation is complete in the isolated branch and under verification; the approved additive schema has been applied only to scratch PostgreSQL. Production release and the hourly worker are pending.
+Status: product direction approved by Eddie; read-only message access verified after his Full Disk Access change. Eddie approved proceeding with the previously proposed three-table call sheet on September28. Implementation is complete in the isolated branch and under verification; the approved additive schema passed scratch verification and is now applied to production after a private schema backup. The production schema matches Prisma. Web release and the hourly worker are pending.
 
 ## Purpose and approved scope
 
