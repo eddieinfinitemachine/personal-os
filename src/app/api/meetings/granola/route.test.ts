@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ user: vi.fn(), founder: vi.fn(), listNotes: vi.fn(), fromEnv: vi.fn() }));
+const mocks = vi.hoisted(() => ({ user: vi.fn(), founder: vi.fn(), listNotes: vi.fn(), fromEnv: vi.fn(), imports: vi.fn() }));
+vi.mock("@/lib/prisma", () => ({ prisma: { granolaImport: { findMany: mocks.imports } } }));
 vi.mock("@/lib/auth", () => ({ getCurrentUserId: mocks.user }));
 vi.mock("@/lib/cron", () => ({ isFounderUser: mocks.founder }));
 vi.mock("@/lib/granola", async (orig) => ({ ...(await orig<typeof import("@/lib/granola")>()), granolaFromEnv: mocks.fromEnv }));
@@ -17,6 +18,7 @@ beforeEach(() => {
   mocks.user.mockResolvedValue("founder");
   mocks.founder.mockResolvedValue(true);
   mocks.fromEnv.mockReturnValue({ listNotes: mocks.listNotes });
+  mocks.imports.mockResolvedValue([]);
 });
 
 describe("GET /api/meetings/granola", () => {
@@ -42,12 +44,23 @@ describe("GET /api/meetings/granola", () => {
     expect(body.meetings).toHaveLength(30);
     expect(body.meetings[0]).toEqual({
       id: "untitled", title: "Untitled meeting", createdAt: "2026-09-28T15:00:00Z",
-      owner: { name: "Obie Odom", email: "obie@example.com" },
+      owner: { name: "Obie Odom", email: "obie@example.com" }, imported: false,
     });
     expect(body.meetings[1].id).toBe("n34");
     const since: Date = mocks.listNotes.mock.calls[0][0].createdAfter;
     expect(Date.now() - since.getTime()).toBeGreaterThan(13.9 * 86400_000);
     expect(Date.now() - since.getTime()).toBeLessThan(14.1 * 86400_000);
+  });
+
+  it("flags meetings that already have a GranolaImport row for this user", async () => {
+    mocks.listNotes.mockResolvedValue([note("a", "2026-09-28T15:00:00Z"), note("b", "2026-09-27T15:00:00Z")]);
+    mocks.imports.mockResolvedValue([{ noteId: "b" }]);
+    const body = await (await GET(req())).json();
+    expect(body.meetings.map((m: { id: string; imported: boolean }) => [m.id, m.imported])).toEqual([["a", false], ["b", true]]);
+    expect(mocks.imports).toHaveBeenCalledWith({
+      where: { userId: "founder", noteId: { in: ["a", "b"] } },
+      select: { noteId: true },
+    });
   });
 
   it("maps Granola errors to 502 with the message", async () => {
