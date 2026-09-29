@@ -7,7 +7,7 @@ import { STORAGE_KEY, TEMPLATES, type SidebarTemplate, type TemplateSlug } from 
 
 const ENABLED_EVENT = "personalos:enabled-templates-changed";
 
-function readEnabled(): Set<TemplateSlug> {
+export function readEnabled(): Set<TemplateSlug> {
   if (typeof window === "undefined") return new Set();
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);

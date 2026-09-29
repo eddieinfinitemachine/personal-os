@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
 import { deleteTodoEvent, syncRecentTodos } from "@/lib/gcal";
 import { listAccessWhere } from "@/lib/list-access";
+import { deleteTodo } from "@/lib/todo-delete";
 
 export async function PATCH(
   request: Request,
@@ -116,7 +117,6 @@ export async function DELETE(
   if (!existing) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
-  await prisma.todo.delete({ where: { id } });
-  after(() => deleteTodoEvent(id));
+  await deleteTodo(id);
   return NextResponse.json({ ok: true });
 }

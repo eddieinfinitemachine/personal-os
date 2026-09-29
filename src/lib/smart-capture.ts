@@ -115,12 +115,33 @@ export type CaptureProposal =
   | TripProposal
   | TodoProposal;
 
+export type ForceType =
+  | "trip"
+  | "inventory"
+  | "media"
+  | "place"
+  | "investment"
+  | "practice";
+
+export const FORCE_TYPES: readonly ForceType[] = [
+  "trip",
+  "inventory",
+  "media",
+  "place",
+  "investment",
+  "practice",
+];
+
+export function isForceType(v: unknown): v is ForceType {
+  return typeof v === "string" && (FORCE_TYPES as readonly string[]).includes(v);
+}
+
 interface ParseInput {
   text: string;
   photo?: CapturePhoto;
   today: string; // YYYY-MM-DD — passed in so Claude can resolve "Friday", "yesterday"
   activeProjects: ActiveProject[];
-  forceType?: "trip" | "inventory";
+  forceType?: ForceType;
   categoryHints?: string[];
 }
 
@@ -252,6 +273,51 @@ For todo:
 
 OUTPUT FORMAT: strict JSON, single object, no prose, no markdown fences. Discriminator is the "type" field.`;
 
+// Extra user-message lines that pin the classification when the caller
+// already knows what it wants (a "New trip" form, a todo sent to a tracker).
+// Empty when nothing is forced. Exported for tests.
+export function requiredTypeBlock(
+  forceType: ForceType | undefined,
+  categoryHints?: string[],
+): string[] {
+  if (!forceType) return [];
+  if (forceType === "trip") {
+    return [
+      "",
+      'REQUIRED TYPE: trip — the user is filling in a "New trip" form. Classify this capture as "trip" regardless of other signals and extract the trip fields.',
+    ];
+  }
+  if (forceType === "inventory") {
+    return [
+      "",
+      `REQUIRED TYPE: asset/inventory — the user is filling in a "New inventory item" form. Return type "asset" with assetKind "inventory" regardless of other signals. title = "Brand Model" the way people say it ("Leica M11", "Nikon Z8", "Togo Couch"), never the model alone. subtitle = "Brand · Model". category: reuse one of the user's existing categories when it fits: ${categoryHints?.join(", ") || "(none yet)"} (otherwise a short lowercase noun). status: one of owned | loaned | stored | sold | wishlist | lost | broken (default owned; "want"/"thinking about" → wishlist). costBasis and currentValue in USD numbers; if the current value is not stated, estimate it (web search allowed) and mention the basis in notes. acquiredAt as YYYY-MM-DD (resolve relative dates against TODAY; year-only → YYYY-01-01). location if mentioned. url if mentioned. notes: anything with no field (condition, serial number, seller, why it matters). details: { brand, model, year, condition, serialNumber, purchaseChannel } when known.`,
+    ];
+  }
+  const pin = `REQUIRED TYPE: asset/${forceType} — the user is sending this item to their ${TRACKER_NOUN[forceType]} tracker. Return type "asset" with assetKind "${forceType}" regardless of other signals.`;
+  const categories = categoryHints?.length
+    ? ` category: reuse one of the user's existing categories when it fits: ${categoryHints.join(", ")} (otherwise a short lowercase noun).`
+    : "";
+  return ["", `${pin}${FORCE_HINTS[forceType]}${categories}`];
+}
+
+const TRACKER_NOUN: Record<"media" | "place" | "investment" | "practice", string> = {
+  media: "Media",
+  place: "Places",
+  investment: "Investments",
+  practice: "Best practices",
+};
+
+const FORCE_HINTS: Record<"media" | "place" | "investment" | "practice", string> = {
+  media:
+    ' Use web_search to identify the exact work (film, documentary, show, book, album, podcast, essay) the text refers to, and fill details: { format, creator (director / author / artist / host), genre, releaseYear, runtimeMinutes, language } when known. title = the work\'s canonical title only; strip verb lead-ins like "Watch:", "Watch", "Read", "Read:", "Listen to", "See", "Check out" and descriptors the user added ("documentary", "the movie", "book") unless they are part of the real title. subtitle = the creator (director for film/documentary, author for books, artist for albums). category = the format in lowercase ("film", "documentary", "show", "book", "album", "podcast", "essay"). status from the lead-in: "watch" → "to-watch", "read" → "to-read", "listen" → "to-listen"; otherwise follow the media status rules by format. url = an official or reference page (IMDb, publisher, Wikipedia) if found. notes: one short factual sentence about what it is; never speculate.',
+  place:
+    ' Use web_search to identify the exact place (restaurant, bar, hotel, shop, park, museum, neighborhood) and fill details: { city, country, neighborhood, cuisine, priceRange, websiteUrl, instagramUrl } when known, plus what it is. title = the place\'s name only; strip lead-ins like "Try", "Go to", "Visit", "Check out", "Eat at". subtitle = "Neighborhood, City" (or "City, Country"). location = the street address if found. category = what it is in lowercase ("restaurant", "bar", "hotel", "cafe", "museum", "shop", "park"). status: "wishlist" unless the text says they have been ("visited"). url = the official website if found. notes: one short factual sentence about what it is known for; never speculate.',
+  investment:
+    ' title = the company / fund / asset name only (strip lead-ins like "Look into", "Research", "Invest in"). subtitle = a short descriptor (sector or ticker). status: "wishlist" when it is something to look into, "active" only if the text says money went in. amountUsd only if the text states a committed amount. Search only when it materially helps identify the company. Fill details per the investment keys when known.',
+  practice:
+    ' title = the practice itself as a short imperative phrase (strip lead-ins like "Start", "Try", "Habit:", "Practice:"). status "active". Fill details: { cadence, trigger, durationMinutes, why } only from the text. Do not search.',
+};
+
 export async function parseCapture(input: ParseInput): Promise<CaptureProposal> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
@@ -268,18 +334,7 @@ export async function parseCapture(input: ParseInput): Promise<CaptureProposal> 
     "",
     "CAPTURE TEXT:",
     input.text || "(no text provided)",
-    ...(input.forceType === "trip"
-      ? [
-          "",
-          'REQUIRED TYPE: trip — the user is filling in a "New trip" form. Classify this capture as "trip" regardless of other signals and extract the trip fields.',
-        ]
-      : []),
-    ...(input.forceType === "inventory"
-      ? [
-          "",
-          `REQUIRED TYPE: asset/inventory — the user is filling in a "New inventory item" form. Return type "asset" with assetKind "inventory" regardless of other signals. title = "Brand Model" the way people say it ("Leica M11", "Nikon Z8", "Togo Couch"), never the model alone. subtitle = "Brand · Model". category: reuse one of the user's existing categories when it fits: ${input.categoryHints?.join(", ") || "(none yet)"} (otherwise a short lowercase noun). status: one of owned | loaned | stored | sold | wishlist | lost | broken (default owned; "want"/"thinking about" → wishlist). costBasis and currentValue in USD numbers; if the current value is not stated, estimate it (web search allowed) and mention the basis in notes. acquiredAt as YYYY-MM-DD (resolve relative dates against TODAY; year-only → YYYY-01-01). location if mentioned. url if mentioned. notes: anything with no field (condition, serial number, seller, why it matters). details: { brand, model, year, condition, serialNumber, purchaseChannel } when known.`,
-        ]
-      : []),
+    ...requiredTypeBlock(input.forceType, input.categoryHints),
   ].join("\n");
 
   const userContent: Array<

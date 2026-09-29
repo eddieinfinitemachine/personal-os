@@ -10,10 +10,12 @@ import {
   ChevronDown,
   ChevronRight,
   Folder,
+  Loader2,
   MessageCircle,
   Paperclip,
   Pencil,
   Plus,
+  Send,
   Trash2,
   X,
 } from "lucide-react";
@@ -23,6 +25,8 @@ import { linkify } from "@/lib/linkify";
 import { pushUndo, quoteTitle } from "@/lib/undo";
 import { pushTodoMoveUndo } from "@/lib/todo-undo";
 import { getLists, getProjects } from "@/lib/todo-menu-cache";
+import { ASSET_TRACKERS, type AssetTracker } from "@/lib/asset-trackers";
+import { readEnabled as readEnabledTemplates } from "./sidebar-template-picker";
 import { TodoDetailModal } from "./todo-detail-modal";
 import {
   ContextMenuPopover,
@@ -462,6 +466,65 @@ function TodoRowImpl({
       });
     });
   }
+  // "Send to tracker": the Asset-backed trackers enabled in this browser.
+  // Read when a picker opens (enabled templates are client-only state) so
+  // rows don't each subscribe to the sidebar's change event.
+  const [trackers, setTrackers] = useState<AssetTracker[]>([]);
+  useEffect(() => {
+    if (!projectPickerOpen && !ctx.isOpen) return;
+    const enabled = readEnabledTemplates();
+    setTrackers(ASSET_TRACKERS.filter((t) => enabled.has(t.slug)));
+  }, [projectPickerOpen, ctx.isOpen]);
+  // Label of the tracker a send is in flight to. Claude takes 10-30 s, so
+  // the row stays put (no optimistic removal) and says what it's doing.
+  const [sendingTo, setSendingTo] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+  const [sendFailed, setSendFailed] = useState(false);
+  useEffect(() => {
+    if (!sendFailed) return;
+    const t = window.setTimeout(() => setSendFailed(false), 4000);
+    return () => window.clearTimeout(t);
+  }, [sendFailed]);
+  async function sendToTracker(tracker: AssetTracker) {
+    setProjectPickerOpen(false);
+    if (sendingTo) return;
+    setSendFailed(false);
+    setSendingTo(tracker.label);
+    let data: { asset: { id: string }; todo: unknown } | null = null;
+    try {
+      const res = await fetch(`/api/todos/${todo.id}/to-tracker`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: tracker.kind }),
+      });
+      if (res.ok) data = await res.json();
+    } catch {
+      data = null;
+    }
+    if (!data) {
+      setSendingTo(null);
+      setSendFailed(true);
+      return;
+    }
+    const result = data;
+    // Collapse the row now; the refresh drops it for good.
+    setSent(true);
+    startTransition(() => router.refresh());
+    pushUndo({
+      label: `Sent ${quoteTitle(displayTitle)} to ${tracker.label}`,
+      run: async () => {
+        await fetch(`/api/assets/${result.asset.id}`, { method: "DELETE" });
+        await fetch("/api/todos/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ todo: result.todo }),
+        });
+        setSent(false);
+        setSendingTo(null);
+        startTransition(() => router.refresh());
+      },
+    });
+  }
   const menu: AnyMenuEntry[] = [
     {
       label: "Show details",
@@ -504,6 +567,18 @@ function TodoRowImpl({
           })),
       ],
     },
+    ...(trackers.length > 0 && !isSubtask
+      ? [
+          {
+            label: "Send to tracker…",
+            icon: <Send className="size-3.5" />,
+            submenu: trackers.map((t) => ({
+              label: t.label,
+              onSelect: () => sendToTracker(t),
+            })),
+          },
+        ]
+      : []),
     { separator: true },
     {
       label: "Delete",
@@ -858,7 +933,7 @@ function TodoRowImpl({
         // minmax(0,1fr) keeps the implicit column from growing to the
         // min-content width of unbreakable content (long URLs).
         "grid grid-cols-[minmax(0,1fr)] transition-[grid-template-rows,opacity] duration-[260ms] ease-out-quart",
-        leaving
+        leaving || sent
           ? "grid-rows-[0fr] opacity-0 border-b-transparent"
           : "grid-rows-[1fr] opacity-100"
       )}
@@ -937,7 +1012,7 @@ function TodoRowImpl({
           onClick={(e) => {
             e.stopPropagation();
             if (touchEnv && justDraggedRef.current) return;
-            if (completed || editing) return;
+            if (completed || editing || sendingTo) return;
             // Finishing a drag-select fires a click; entering edit mode then
             // would swap the text for an input and drop the selection.
             const press = pressRef.current;
@@ -962,7 +1037,15 @@ function TodoRowImpl({
             setDetailOpen(true);
           }}
         >
-          {editing ? (
+          {sendingTo ? (
+            <div
+              role="status"
+              className="flex items-center gap-1.5 text-[17px] leading-[22px] tracking-[-0.022em] md:text-[15px] md:leading-snug md:tracking-normal text-[var(--color-muted-foreground)]"
+            >
+              <Loader2 className="size-3.5 shrink-0 animate-spin" />
+              <span className="truncate">Sending to {sendingTo}…</span>
+            </div>
+          ) : editing ? (
             <textarea
               ref={inputRef}
               rows={1}
@@ -999,6 +1082,14 @@ function TodoRowImpl({
               {linkifiedTitle}
             </div>
           )}
+          {sendFailed ? (
+            <div
+              role="alert"
+              className="text-[13px] leading-[16px] text-[var(--color-muted-foreground)] mt-0.5 md:text-xs"
+            >
+              Couldn&rsquo;t send &mdash; try again
+            </div>
+          ) : null}
           {todo.notes ? (
             <div
               data-todo-text
@@ -1337,6 +1428,23 @@ function TodoRowImpl({
               {availableProjects.length === 0 ? (
                 <div className="px-3 py-2 text-[13px] text-[var(--color-muted-foreground)]">
                   Loading…
+                </div>
+              ) : null}
+              {trackers.length > 0 && !isSubtask ? (
+                <div data-send-to-tracker>
+                  <div className="my-1 h-px bg-[var(--color-separator)]" />
+                  <div className="px-3 pt-1.5 pb-1 text-[11px] font-medium text-[var(--color-muted-foreground)]">
+                    Send to tracker
+                  </div>
+                  {trackers.map((t) => (
+                    <button
+                      key={t.slug}
+                      onClick={() => void sendToTracker(t)}
+                      className="block w-full text-left px-3 py-2 text-[13px] text-[var(--color-foreground)] hover:bg-[var(--color-accent)]"
+                    >
+                      {t.label}
+                    </button>
+                  ))}
                 </div>
               ) : null}
             </div>,
