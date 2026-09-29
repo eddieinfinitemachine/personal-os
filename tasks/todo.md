@@ -832,6 +832,18 @@ recommend a workout. timer, reps, visualizations of the exercises, etc." Built i
 - [x] Shipped 2026-09-20: main 9803d52 + 57017d1 (reduced-motion) live on internal.eddiecohen.com — /workout 200, prod plan call with the kettlebell photo 200 in 22 s (3 warm-up, 4-exercise circuit, 3 cool-down)
 - Follow-ups: real iPhone pass (wake lock, camera capture, haptics); persist plans/sessions server-side if history should sync across devices (schema change → flag first)
 
+## Board: import from Cosmos (2026-09-29)
+Eddie: "can you import my board from cosmos?" — his cosmos.so profile (@ec): 648 public elements + private collections, 1,250 elements across 46 collections.
+- [x] Export: Cosmos has no export and blocks GraphQL introspection, so the data was pulled from a logged-in Chrome tab by replaying the site's own `GetClusterElements` query per collection (pageSize 100) plus a minimal `userClusters` query; handed to disk via the clipboard (a POST to localhost hangs on Chrome's local-network permission prompt). Export JSON lives in the session scratchpad, not the repo.
+- [x] `src/lib/cosmos-import.ts` (pure mapping + tests): one board row per Cosmos element; image re-hosted from cdn.cosmos.so (video → poster frame, animation → the animated image); `url` = source page, or the Cosmos share page for uploads; title = Cosmos's caption (its `<n>` markup stripped) or the page title; kind = image unless the source is playable (YouTube/Instagram reel → video, Spotify → music) or a saved web page (link); collection names → `tags` ("Unsorted Elements" dropped); `savedAt` = Cosmos createdAt; `via: "cosmos"`
+- [x] `scripts/import-cosmos.ts`: `--dry-run`, `--concurrency`, `--undo` (deletes via=cosmos rows + their blobs); manifest `<export>.imported.json` makes re-runs skip what landed; unrendered links (7) go through `saveToBoard` so they get metadata/oEmbed
+- [x] Verified: 11 unit tests, tsc clean, dry run 1,243 images + 7 links / 0 skipped; 10-item sample imported to prod DB and checked row by row (blob URLs, sizes, dominant color, tags, dates)
+- [x] Full import run on prod DB 2026-09-29: 1,234 images + 6 links, 0 failed, 1 image left pointing at cdn.cosmos.so (re-host failed); ~3 min at concurrency 6. Board went 3 → 1,253 items
+- [x] Unfiled items (20 only in "Unsorted Elements") got Claude tags on first board load; it reused the Cosmos names (walden, product, Ads…)
+- [x] Board cap raised 1000 → 3000 (`app/board/page.tsx`, `api/board/route.ts`): the grid showed "All 1000" and hid the oldest 253
+- [x] Verified in the browser (local dev server on the prod DB): "All 1253", 45 collection chips with counts, tiles render with re-hosted images, hover shows caption + host, lightbox shows tag + "Saved <date> · via cosmos"; 629 unit tests pass, tsc clean (only stale `.next/types` noise)
+- Note: one tile per Cosmos element — carousel posts (60 elements with 2–18 images) keep only the cover image, like Cosmos shows them. `pnpm lint` (`next lint`) is broken on this Next version; pre-existing
+
 ## Board: mood board of things you like (2026-09-26)
 Eddie: "send anything I come across that I like (video, song, product) ... a mood board page like cosmos". Easy sending first; recommendations later.
 - [x] `BoardItem` model (additive; needs prod `pnpm db:push` before merge)

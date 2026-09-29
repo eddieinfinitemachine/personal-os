@@ -12,7 +12,7 @@ export default async function BoardPage() {
   const items = await prisma.boardItem.findMany({
     where: { userId: session.userId },
     orderBy: { savedAt: "desc" },
-    take: 1000,
+    take: 3000,
   });
   return <MoodBoard initialItems={items.map(toCard)} />;
 }
