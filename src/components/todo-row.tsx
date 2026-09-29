@@ -227,6 +227,10 @@ function TodoRowImpl({
     () => linkify(displayTitle, (e) => e.stopPropagation()),
     [displayTitle],
   );
+  const linkifiedNotes = useMemo(
+    () => linkify(todo.notes, (e) => e.stopPropagation()),
+    [todo.notes],
+  );
   async function submitSubtask() {
     if (submittingSubRef.current) return;
     const t = subDraft.trim();
@@ -500,7 +504,33 @@ function TodoRowImpl({
     },
   ];
 
-  const draggable = !editing && !!sourceListId && todo.id.startsWith("temp-") === false;
+  // Desktop text selection: a mouse press that starts on the title/notes
+  // text turns off HTML5 drag until mouseup, so dragging across the text
+  // selects it instead of picking up the row. Pressing anywhere else
+  // (checkbox, padding, meta line) still drags the todo as before.
+  const [textPress, setTextPress] = useState(false);
+  // Where the last primary mouse press inside the title wrapper landed; the
+  // wrapper's click compares against it to tell a click from a drag-select.
+  const pressRef = useRef<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!textPress) return;
+    const end = () => setTextPress(false);
+    window.addEventListener("mouseup", end);
+    window.addEventListener("blur", end);
+    return () => {
+      window.removeEventListener("mouseup", end);
+      window.removeEventListener("blur", end);
+    };
+  }, [textPress]);
+
+  const draggable =
+    !editing &&
+    !textPress &&
+    // The detail modal renders inside this <li>; a draggable ancestor would
+    // turn text selection in the modal into a row drag.
+    !detailOpen &&
+    !!sourceListId &&
+    todo.id.startsWith("temp-") === false;
   const [dragging, setDragging] = useState(false);
 
   const [touchEnv, setTouchEnv] = useState(false);
@@ -884,16 +914,40 @@ function TodoRowImpl({
         </button>
         <div
           className="flex-1 min-w-0 cursor-text select-none md:select-text"
+          onMouseDown={(e) => {
+            if (touchEnv || e.button !== 0) return;
+            pressRef.current = { x: e.clientX, y: e.clientY };
+            if (!editing && (e.target as HTMLElement).closest("[data-todo-text]")) {
+              // Flip the DOM attribute synchronously so the browser treats
+              // this press as a selection gesture, not a drag; state keeps
+              // React's render in agreement until mouseup.
+              rootRef.current?.setAttribute("draggable", "false");
+              setTextPress(true);
+            }
+          }}
           onClick={(e) => {
             e.stopPropagation();
             if (touchEnv && justDraggedRef.current) return;
             if (completed || editing) return;
+            // Finishing a drag-select fires a click; entering edit mode then
+            // would swap the text for an input and drop the selection.
+            const press = pressRef.current;
+            pressRef.current = null;
+            const sel = window.getSelection();
+            if (sel && !sel.isCollapsed && sel.toString().length > 0) return;
+            if (
+              press &&
+              Math.hypot(e.clientX - press.x, e.clientY - press.y) > 4
+            )
+              return;
             setEditing(true);
           }}
           onDoubleClick={(e) => {
             // Let users select words inside the input by double-clicking
             // it; only the wrapper-level double-click opens the modal.
             if (e.target instanceof HTMLInputElement) return;
+            // Double-clicking a link opens it; don't also open the modal.
+            if ((e.target as HTMLElement).closest("a")) return;
             e.stopPropagation();
             setEditing(false);
             setDetailOpen(true);
@@ -922,6 +976,7 @@ function TodoRowImpl({
             />
           ) : (
             <div
+              data-todo-text
               className={cn(
                 "text-[17px] leading-[22px] tracking-[-0.022em] md:text-[15px] md:leading-snug md:tracking-normal md:whitespace-normal break-words transition-[color,opacity] duration-300",
                 completed && "line-through text-[var(--color-muted-foreground)]"
@@ -931,8 +986,11 @@ function TodoRowImpl({
             </div>
           )}
           {todo.notes ? (
-            <div className="text-[15px] leading-[20px] text-[var(--color-muted-foreground)] truncate mt-0.5 md:text-xs md:leading-snug">
-              {todo.notes}
+            <div
+              data-todo-text
+              className="text-[15px] leading-[20px] text-[var(--color-muted-foreground)] truncate mt-0.5 md:text-xs md:leading-snug"
+            >
+              {linkifiedNotes}
             </div>
           ) : null}
           {showCreator && todo.creatorName ? (
