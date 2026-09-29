@@ -78,14 +78,14 @@ describe("TodoRow text selection and links", () => {
     await render();
     await mouse(titleText(), "mousedown");
     await mouse(titleText(), "click");
-    expect(wrapper().querySelector("input")).not.toBeNull();
+    expect(wrapper().querySelector("textarea")).not.toBeNull();
   });
 
   it("does not enter edit mode after a drag-select", async () => {
     await render();
     await mouse(titleText(), "mousedown", 10, 10);
     await mouse(titleText(), "click", 60, 10);
-    expect(wrapper().querySelector("input")).toBeNull();
+    expect(wrapper().querySelector("textarea")).toBeNull();
   });
 
   it("does not enter edit mode while text is selected", async () => {
@@ -95,7 +95,7 @@ describe("TodoRow text selection and links", () => {
     window.getSelection()!.addRange(range);
     await mouse(titleText(), "mousedown");
     await mouse(titleText(), "click");
-    expect(wrapper().querySelector("input")).toBeNull();
+    expect(wrapper().querySelector("textarea")).toBeNull();
   });
 
   it("does not enter edit mode when a link in the notes is clicked", async () => {
@@ -104,6 +104,6 @@ describe("TodoRow text selection and links", () => {
     link.addEventListener("click", (e) => e.preventDefault());
     await mouse(link, "mousedown");
     await mouse(link, "click");
-    expect(wrapper().querySelector("input")).toBeNull();
+    expect(wrapper().querySelector("textarea")).toBeNull();
   });
 });
