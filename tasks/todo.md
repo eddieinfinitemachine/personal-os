@@ -1,3 +1,43 @@
+# Import Granola — home-page button → routed team todos (in progress 2026-09-29)
+
+Goal: "Import Granola" button next to "New list" on Home. Pick a recent Granola
+meeting → Claude extracts who committed to what → each item routed to that
+person's EC/* list (Dave = EC/DV, sales; Obie = EC/OB, digital; unowned/Eddie
+→ To Do + Inbox) → quick review (pre-checked rows) → one click adds them.
+Replaces the paste-based importer retired 2026-09-28 (its parse/commit logic is
+restored from 1e24c89^ and adapted to pull from the Granola API instead).
+
+## Tasks
+- [x] `src/lib/team.ts` — TEAM map (list name → person names + role), used in prompt + resolver
+- [x] `src/lib/meeting-extract.ts` — restored prompt/resolver as a pure, tested helper
+- [x] `GET /api/meetings/granola` — founder + GRANOLA_API_KEY gated, recent notes (14 days)
+- [x] `POST /api/meetings/granola/parse` — { noteId } → note+transcript → items (no writes)
+- [x] `POST /api/meetings/commit` — restored, provenance line links the Granola note
+- [x] `src/components/import-granola-button.tsx` — pick → extracting → review → done
+- [x] Home header: render button (founder + key only) before New list
+- [x] Unit + route tests; typecheck; vitest
+- [x] Live verify on scratch Postgres with the real GTM Meeting 9/28 note
+
+## Review
+Built by the Opus worker (uncommitted on main). `pnpm typecheck` clean (after
+removing stale `.next/types` from the deleted old parse route); `pnpm test`
+66 files passed / 15 skipped, 647 tests passed. New: meeting-extract (10),
+granola list route (3), parse route (3), commit route (2).
+
+Live run (scratch PG on :54332, `next dev --webpack`, real prod GRANOLA_API_KEY
+kept in the scratchpad only, Google/Resend/etc. env blanked so nothing left the box):
+the picker listed 30 real meetings; "GTM Meeting 9/28" is `not_Zh3xFsvZIANAtk`
+in the public API (the UUID 47474c2a… returns 400 there; it is only the
+web_url slug). Parse took 24 s and gave 20 items: EC/OB ×12, EC/DV ×3,
+EC/Ash ×2, To Do ×3. Add wrote all 20 to the right tiles, To Do ones in the
+Inbox project, with the provenance line and the Granola link in notes.
+Claude gave "deposit backlog cleanup" to Eddie (To Do), not Dave, even though
+the summary says (Dave). EC/DV still got 3 items (Das Auto follow-up,
+fleet/B2B cadence, signage to Zach). "Launch ads today" got a due date of the
+meeting day, so it is already overdue.
+
+---
+
 # Trips — Gmail booking import → itinerary (built, Phase-1 verified 2026-08-26)
 
 Goal: "Pull from email" — scan Gmail for booking confirmations (flights, lodging,
