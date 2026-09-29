@@ -50,7 +50,7 @@ export async function GET() {
   const items = await prisma.boardItem.findMany({
     where: { userId: session.userId },
     orderBy: { savedAt: "desc" },
-    take: 1000,
+    take: 3000,
   });
   return NextResponse.json({ items });
 }
