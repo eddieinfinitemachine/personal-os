@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { FriendsList, type PersonRow } from "@/components/friends-list";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import type { PersonContext } from "@/lib/person-context/types";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +82,8 @@ export default async function FriendsPage() {
       notes: p.notes,
       imageUrl: p.imageUrl,
       starred: p.starred,
+      context: (p.context ?? null) as PersonContext | null,
+      contextAt: p.contextAt ? p.contextAt.toISOString() : null,
     };
   });
 

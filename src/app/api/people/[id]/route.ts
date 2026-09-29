@@ -12,6 +12,8 @@ export async function PATCH(
 
   const { id } = await params;
   const body = (await request.json()) as Record<string, unknown>;
+  // Allow-list only. `context`/`contextAt` are AI-written by the capture
+  // pipeline and are never writable from the UI, so they are not listed here.
   const data: Record<string, unknown> = {};
   for (const k of [
     "firstName",

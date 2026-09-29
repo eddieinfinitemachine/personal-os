@@ -13,6 +13,11 @@ import {
   useContextMenu,
   type AnyMenuEntry,
 } from "./context-menu";
+import type {
+  ContextItem,
+  ContextSource,
+  PersonContext,
+} from "@/lib/person-context/types";
 
 export type PersonRow = {
   id: string;
@@ -45,6 +50,9 @@ export type PersonRow = {
   notes: string | null;
   imageUrl: string | null;
   starred: boolean;
+  /** AI-written, read-only. Never sent back on PATCH. */
+  context: PersonContext | null;
+  contextAt: string | null;
 };
 
 type Filter = {
@@ -97,6 +105,22 @@ function bucketLabel(days: number | null): string {
   if (days < 30) return `${days}d ago`;
   if (days < 365) return `${Math.round(days / 30)}mo ago`;
   return `${(days / 365).toFixed(1)}y ago`;
+}
+
+/** First sentence of the AI summary, for the one-line row preview. */
+function firstSentence(text: string): string {
+  const t = text.trim();
+  const m = t.match(/^[\s\S]*?[.!?](?=\s|$)/);
+  return (m ? m[0] : t).trim();
+}
+
+function shortDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: d.getFullYear() !== new Date().getFullYear() ? "numeric" : undefined,
+  });
 }
 
 function initials(p: PersonRow): string {
@@ -513,6 +537,13 @@ function PersonRowItem({
   const ctx = useContextMenu();
   const days = daysSince(person.lastInteractionAt);
   const b = bucketFor(days);
+  const summarySentence = person.context?.summary
+    ? firstSentence(person.context.summary)
+    : "";
+  const rowSummary =
+    summarySentence && summarySentence !== person.lastInteractionTitle
+      ? summarySentence
+      : null;
   const menu: AnyMenuEntry[] = [
     {
       label: person.starred ? "Remove from inner circle" : "Add to inner circle",
@@ -575,6 +606,14 @@ function PersonRowItem({
           <div className="text-sm font-medium truncate">
             {person.firstName} {person.lastName ?? ""}
           </div>
+          {rowSummary ? (
+            <div
+              data-testid="person-row-summary"
+              className="text-[11px] text-[var(--color-muted-foreground)] truncate"
+            >
+              {rowSummary}
+            </div>
+          ) : null}
           <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
             <span className={cn("text-xs", bucketColor(b))}>
               {bucketLabel(days)}
@@ -946,6 +985,14 @@ function PersonEditor({
               ))}
             </div>
           </Field>
+          {person?.context?.summary ? (
+            <div className="sm:col-span-2">
+              <PersonContextCard
+                context={person.context}
+                contextAt={person.contextAt}
+              />
+            </div>
+          ) : null}
           <Field label="Notes" full>
             <textarea
               value={draft.notes ?? ""}
@@ -1049,6 +1096,156 @@ function Input({
   );
 }
 
+const SOURCE_LABEL: Record<ContextSource, string> = {
+  imessage: "iMessage",
+  whatsapp: "WhatsApp",
+  granola: "Granola",
+  web: "web",
+  crm: "CRM",
+};
+
+function contextSources(inputs: PersonContext["inputs"]): string[] {
+  const out: string[] = [];
+  if (inputs?.imessage) out.push(SOURCE_LABEL.imessage);
+  if (inputs?.whatsapp) out.push(SOURCE_LABEL.whatsapp);
+  if (inputs?.granolaMeetings) out.push(SOURCE_LABEL.granola);
+  if (inputs?.webSearched) out.push(SOURCE_LABEL.web);
+  // CRM fields (notes, how we met, interactions…) always feed the generator.
+  out.push(SOURCE_LABEL.crm);
+  return out;
+}
+
+const MUTED = "text-[var(--color-muted-foreground)]";
+
+function ContextItemList({
+  label,
+  items,
+}: {
+  label: string;
+  items: ContextItem[];
+}) {
+  if (!items?.length) return null;
+  return (
+    <div>
+      <div className={cn("text-xs font-medium mb-1", MUTED)}>{label}</div>
+      <ul className="space-y-1.5 text-sm">
+        {items.map((item, i) => (
+          <li key={i} className="break-words">
+            {item.text}
+            {item.confidence === "low" ? (
+              <span className={cn("text-xs", MUTED)}> · low confidence</span>
+            ) : null}
+            {item.evidence ? (
+              <details className="inline">
+                <summary className={cn("inline cursor-pointer text-xs ml-1.5", MUTED)}>
+                  why
+                </summary>
+                <blockquote
+                  className={cn(
+                    "mt-1 border-l-2 border-[var(--color-border)] pl-2 text-xs break-words",
+                    MUTED
+                  )}
+                >
+                  {item.evidence.url ? (
+                    <a
+                      href={item.evidence.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline"
+                    >
+                      {item.evidence.quote}
+                    </a>
+                  ) : (
+                    <>&ldquo;{item.evidence.quote}&rdquo;</>
+                  )}
+                  <div className="mt-0.5 opacity-70">
+                    {SOURCE_LABEL[item.evidence.source] ?? item.evidence.source}
+                    {item.evidence.at ? ` · ${shortDate(item.evidence.at)}` : ""}
+                  </div>
+                </blockquote>
+              </details>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Read-only AI-written context. Never editable; manual fields stay separate. */
+function PersonContextCard({
+  context,
+  contextAt,
+}: {
+  context: PersonContext;
+  contextAt: string | null;
+}) {
+  const updated = contextAt ?? context.generatedAt;
+  return (
+    <section
+      aria-label="Context"
+      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-3 space-y-3 min-w-0"
+    >
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+          Context
+        </div>
+        <div data-testid="context-meta" className={cn("mt-0.5 text-xs", MUTED)}>
+          AI-written from {contextSources(context.inputs).join(", ")}
+          {updated ? ` · Updated ${shortDate(updated)}` : ""}
+        </div>
+      </div>
+      {context.summary ? (
+        <p className="text-sm break-words">{context.summary}</p>
+      ) : null}
+      {context.relationship?.text ? (
+        <p className="text-sm break-words">
+          {context.relationship.text}
+          {context.relationship.basis === "inferred" ? (
+            <span className={cn("text-xs", MUTED)}> (inferred)</span>
+          ) : null}
+        </p>
+      ) : null}
+      {context.topics?.length ? (
+        <div className="flex flex-wrap gap-1.5" data-testid="context-topics">
+          {context.topics.map((t) => (
+            <span
+              key={t}
+              className="rounded bg-[var(--color-accent)]/60 px-1.5 py-0.5 text-[11px] break-words"
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <ContextItemList label="Facts" items={context.facts} />
+      <ContextItemList label="Open loops" items={context.openLoops} />
+      {context.publicContext ? (
+        <div>
+          <div className={cn("text-xs font-medium mb-1", MUTED)}>Public</div>
+          <p className="text-sm break-words">{context.publicContext.text}</p>
+          {context.publicContext.sources?.length ? (
+            <ul className={cn("mt-1 space-y-0.5 text-xs", MUTED)}>
+              {context.publicContext.sources.map((src) => (
+                <li key={src.url} className="break-words">
+                  <a
+                    href={src.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline"
+                  >
+                    {src.title || src.url}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 type InteractionRow = {
   id: string;
   occurredAt: string;
@@ -1125,15 +1322,7 @@ function PersonInteractionsList({ personId }: { personId: string }) {
                 </div>
                 <div className="shrink-0 text-right text-xs text-[var(--color-muted-foreground)]">
                   <div>
-                    {new Date(r.occurredAt).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      year:
-                        new Date(r.occurredAt).getFullYear() !==
-                        new Date().getFullYear()
-                          ? "numeric"
-                          : undefined,
-                    })}
+                    {shortDate(r.occurredAt)}
                   </div>
                   <div className="mt-0.5 text-[10px] uppercase tracking-wider opacity-70">
                     {r.kind}
