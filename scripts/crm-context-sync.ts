@@ -159,7 +159,11 @@ export async function syncCrmContext(options: {
       else summary.skipped++;
       checkpoint.digests[target.id] = digest;
       await options.save(checkpoint);
-    } catch { fail(target.id); report(target.id, "failed"); }
+    } catch (e) {
+      fail(target.id); report(target.id, "failed");
+      // Status code only (never response bodies), so a broken deploy is diagnosable from the log.
+      if (flags.verbose) console.error(`  ${e instanceof Error ? e.message : "request failed"}`);
+    }
   }
   if (!flags.dryRun) await options.save(checkpoint);
   return summary;
@@ -259,5 +263,5 @@ export async function runCrmContextWorker(argv: string[]): Promise<number> {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   runCrmContextWorker(process.argv.slice(2))
     .then((code) => { process.exitCode = code; })
-    .catch(() => { console.error("CRM context sync could not finish. Check the connection, flags and Mac access."); process.exitCode = 1; });
+    .catch((e) => { console.error(`CRM context sync could not finish (${e instanceof Error ? e.message : "unknown error"}). Check the connection, flags and Mac access.`); process.exitCode = 1; });
 }
