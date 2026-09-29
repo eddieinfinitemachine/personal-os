@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Loader2, Mail, MessageCircle, Phone, RotateCcw, Settings2 } from "lucide-react";
+import { Check, ChevronDown, Loader2, MessageCircle, Phone, RotateCcw, Settings2 } from "lucide-react";
 import { Sheet } from "@/components/dating/sheet";
 import { REACH_OUT_METHODS, type ReachOutMethod } from "@/lib/call-sheet/reach-out";
 import type { CallSheetEntry, CallSheetMutation, CallSheetResponse, CallSheetSettingsMutation } from "@/lib/call-sheet/types";
@@ -112,6 +112,12 @@ export function CallSheet() {
       closeCheckIn();
     }
   }
+  /** Call / Text on the row log the check-in straight away; they never dial or open Messages. */
+  async function logCheckIn(entry: CallSheetEntry, method: ReachOutMethod) {
+    if (!data || prompt) return;
+    const saved = await send("/api/call-sheet", { dayId: data.day.id, version: data.day.version, entryId: entry.id, action: "done", method });
+    if (saved) focusAfterSave.current = true;
+  }
   const complete = data?.entries.filter(e => e.status !== "pending").length ?? 0;
   return (
     <section aria-label="Daily call sheet" className="mb-7 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]">
@@ -152,11 +158,9 @@ export function CallSheet() {
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-1 sm:mt-0 sm:shrink-0">
-                {entry.phone ? <>
-                  <a className={actionClass} href={`tel:${entry.phone.replace(/[^+\d]/g, "")}`} aria-label={`Call ${entry.name}`}><Phone className="size-3.5" />Call</a>
-                  <a className={actionClass} href={`sms:${entry.phone.replace(/[^+\d]/g, "")}`} aria-label={`Text ${entry.name}`}><MessageCircle className="size-3.5" />Text</a>
-                </> : entry.email ? <a className={actionClass} href={`mailto:${encodeURIComponent(entry.email)}`} aria-label={`Email ${entry.name}`}><Mail className="size-3.5" />Email</a> : null}
                 {entry.status === "pending" ? <>
+                  <button className={actionClass} disabled={busy} onClick={() => void logCheckIn(entry, "call")} aria-label={`Log a call with ${entry.name}`}><Phone className="size-3.5" />Call</button>
+                  <button className={actionClass} disabled={busy} onClick={() => void logCheckIn(entry, "text")} aria-label={`Log a text with ${entry.name}`}><MessageCircle className="size-3.5" />Text</button>
                   <button className={actionClass + " font-medium"} disabled={busy} onClick={() => openCheckIn(entry)} aria-label={`Mark ${entry.name} done`}><Check className="size-3.5" />Done</button>
                   <details className="relative">
                     <summary aria-label={`More options for ${entry.name}`} className={actionClass + " cursor-pointer list-none"}>•••</summary>
