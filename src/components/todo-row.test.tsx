@@ -107,3 +107,81 @@ describe("TodoRow text selection and links", () => {
     expect(wrapper().querySelector("textarea")).toBeNull();
   });
 });
+
+describe("TodoRow send to tracker", () => {
+  type Call = { url: string; init?: RequestInit };
+  let calls: Call[];
+  let resolveSend: (r: Response) => void;
+  beforeEach(() => {
+    calls = [];
+    localStorage.clear();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        calls.push({ url, init });
+        if (url === "/api/projects")
+          return Promise.resolve(Response.json({ projects: [{ id: "p1", name: "Journal" }] }));
+        if (url.endsWith("/to-tracker"))
+          return new Promise<Response>((r) => (resolveSend = r));
+        return Promise.resolve(Response.json({ ok: true }));
+      }),
+    );
+  });
+  afterEach(() => localStorage.clear());
+
+  const openPicker = async () => {
+    await render();
+    await act(async () => {
+      (container.querySelector("[data-project-picker]") as HTMLElement).click();
+    });
+    return document.body.querySelector("[data-project-picker-popover]") as HTMLElement;
+  };
+
+  it("lists no trackers when none are enabled", async () => {
+    const pop = await openPicker();
+    expect(pop).not.toBeNull();
+    expect(pop.querySelector("[data-send-to-tracker]")).toBeNull();
+  });
+
+  it("offers enabled asset trackers and sends the todo to one", async () => {
+    localStorage.setItem("personalos:enabled-templates", JSON.stringify(["media", "trips"]));
+    const pop = await openPicker();
+    const section = pop.querySelector("[data-send-to-tracker]") as HTMLElement;
+    expect(section.textContent).toContain("Send to tracker");
+    const buttons = [...section.querySelectorAll("button")].map((b) => b.textContent);
+    // Trips isn't an Asset tracker.
+    expect(buttons).toEqual(["Media"]);
+
+    await act(async () => section.querySelector("button")!.click());
+    const send = calls.find((c) => c.url === "/api/todos/t1/to-tracker")!;
+    expect(send.init?.method).toBe("POST");
+    expect(JSON.parse(String(send.init?.body))).toEqual({ kind: "media" });
+    // Picker closes; the row says what it's doing while Claude works.
+    expect(document.body.querySelector("[data-project-picker-popover]")).toBeNull();
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Sending to Media…");
+
+    const { peekUndo } = await import("@/lib/undo");
+    await act(async () =>
+      resolveSend(Response.json({ asset: { id: "a1" }, todo: { id: "t1", title: todo.title, listId: "list-1" } })),
+    );
+    const undo = peekUndo()!;
+    expect(undo.label).toContain("to Media");
+    await act(async () => undo.run());
+    const del = calls.find((c) => c.url === "/api/assets/a1")!;
+    expect(del.init?.method).toBe("DELETE");
+    const restore = calls.find((c) => c.url === "/api/todos/restore")!;
+    expect(JSON.parse(String(restore.init?.body))).toEqual({
+      todo: { id: "t1", title: todo.title, listId: "list-1" },
+    });
+  });
+
+  it("shows a retry hint when the send fails", async () => {
+    localStorage.setItem("personalos:enabled-templates", JSON.stringify(["media"]));
+    const pop = await openPicker();
+    await act(async () => (pop.querySelector("[data-send-to-tracker] button") as HTMLElement).click());
+    await act(async () => resolveSend(Response.json({ error: "x" }, { status: 502 })));
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("try again");
+    expect(titleText().textContent).toBe(todo.title);
+  });
+});

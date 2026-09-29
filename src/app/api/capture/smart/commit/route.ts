@@ -4,6 +4,7 @@ import { getCurrentUserId } from "@/lib/auth";
 import { syncRecentTodos } from "@/lib/gcal";
 import { ensureDefaultLists, ensureInboxProject, CAPTURE_LIST_NAME } from "@/lib/lists";
 import type { CaptureProposal } from "@/lib/smart-capture";
+import { createAssetFromProposal } from "@/lib/smart-commit";
 
 // Commit a (possibly user-edited) capture proposal to the DB.
 // Body: { proposal: CaptureProposal }
@@ -31,61 +32,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "proposal required" }, { status: 400 });
   }
 
-  // Validate projectId (if set) belongs to this user.
-  // Only asset / interaction / todo carry a projectId.
-  let projectId: string | null = null;
-  const proposalProjectId =
-    proposal.type === "asset" || proposal.type === "interaction" || proposal.type === "todo"
-      ? proposal.projectId ?? null
-      : null;
-  if (proposalProjectId) {
-    const project = await prisma.project.findUnique({
-      where: { id: proposalProjectId },
-    });
-    if (project && project.userId === userId) projectId = project.id;
-  }
-
   if (proposal.type === "asset") {
-    // Default status per assetKind if Claude didn't set one.
-    const DEFAULT_STATUS: Record<string, string> = {
-      inventory: "owned",
-      investment: "active",
-      media: "wishlist",
-      place: "wishlist",
-      practice: "active",
-    };
-    const asset = await prisma.asset.create({
-      data: {
-        userId,
-        kind: proposal.assetKind,
-        status: proposal.status ?? DEFAULT_STATUS[proposal.assetKind] ?? null,
-        amountUsd: proposal.amountUsd ?? null,
-        rating: proposal.rating ?? null,
-        title: proposal.title,
-        subtitle: proposal.subtitle ?? null,
-        category: proposal.category ?? null,
-        costBasis: proposal.costBasis ?? null,
-        currentValue: proposal.currentValue ?? null,
-        location: proposal.location ?? null,
-        // Default acquiredAt to today for inventory items marked owned (if
-        // Claude didn't extract a date). Other kinds stay null.
-        acquiredAt: proposal.acquiredAt
-          ? new Date(proposal.acquiredAt)
-          : proposal.assetKind === "inventory" &&
-              (proposal.status ?? "owned") === "owned"
-            ? new Date()
-            : null,
-        imageUrl: proposal.photoUrl || null,
-        url: proposal.url ?? null,
-        notes: proposal.notes ?? null,
-        projectId,
-        detailsJson: {
-          source: "smart-capture",
-          sourceVendor: proposal.sourceVendor ?? null,
-          ...(proposal.details ?? {}),
-        },
-      },
-    });
+    const asset = await createAssetFromProposal(userId, proposal);
 
     let followupTodo: { id: string; title: string } | null = null;
     if (proposal.followupTodo?.title) {
@@ -111,6 +59,20 @@ export async function POST(request: Request) {
 
     if (followupTodo) after(() => syncRecentTodos());
     return NextResponse.json({ asset, followupTodo });
+  }
+
+  // Validate projectId (if set) belongs to this user. Only asset (handled
+  // above, inside createAssetFromProposal) / interaction / todo carry one.
+  let projectId: string | null = null;
+  const proposalProjectId =
+    proposal.type === "interaction" || proposal.type === "todo"
+      ? proposal.projectId ?? null
+      : null;
+  if (proposalProjectId) {
+    const project = await prisma.project.findUnique({
+      where: { id: proposalProjectId },
+    });
+    if (project && project.userId === userId) projectId = project.id;
   }
 
   // Person path — add directly to the CRM, no interaction row.

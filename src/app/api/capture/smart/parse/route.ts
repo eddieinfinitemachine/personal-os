@@ -3,6 +3,7 @@ import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
 import {
+  isForceType,
   parseCapture,
   type CapturePhoto,
   type CaptureProposal,
@@ -27,10 +28,7 @@ export async function POST(request: Request) {
   const text = form.get("text");
   const photo = form.get("photo");
   const forceTypeRaw = form.get("forceType");
-  const forceType =
-    forceTypeRaw === "trip" || forceTypeRaw === "inventory"
-      ? forceTypeRaw
-      : undefined;
+  const forceType = isForceType(forceTypeRaw) ? forceTypeRaw : undefined;
 
   if (typeof text !== "string" || text.trim().length === 0) {
     return NextResponse.json({ error: "text required" }, { status: 400 });
@@ -150,15 +148,15 @@ export async function POST(request: Request) {
     );
   }
 
-  if (forceType === "inventory") {
+  if (forceType && forceType !== "trip") {
     if (proposal.type !== "asset") {
       return NextResponse.json(
-        { error: "Couldn't read that as an inventory item" },
+        { error: `Couldn't read that as ${forceType === "inventory" ? "an inventory" : `a ${forceType}`} item` },
         { status: 422 },
       );
     }
-    if (proposal.assetKind !== "inventory") {
-      proposal = { ...proposal, assetKind: "inventory" };
+    if (proposal.assetKind !== forceType) {
+      proposal = { ...proposal, assetKind: forceType };
     }
   }
 

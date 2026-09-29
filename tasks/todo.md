@@ -1,3 +1,29 @@
+# Send todo to tracker (Media etc.) — in progress 2026-09-29
+
+Goal: the todo row's project picker (and a "Send to tracker…" context-menu
+submenu) lists the Asset-backed trackers enabled in this browser (Media,
+Places, Inventory, Investments, Best practices). One click turns the todo into
+an item in that tracker, Claude (web search) fills the details, the todo is
+deleted, and ⌘Z / the Undo pill deletes the asset and restores the todo.
+
+- [x] `forceType` for media / place / investment / practice (`requiredTypeBlock` in `src/lib/smart-capture.ts`); parse route accepts them
+- [x] Shared proposal → Asset helper `src/lib/smart-commit.ts` (commit route uses it; behaviour unchanged)
+- [x] Shared `deleteTodo` (`src/lib/todo-delete.ts`, incl. gcal cleanup) used by DELETE /api/todos/[id]
+- [x] `POST /api/todos/[id]/to-tracker` (401/400/404/502, restore snapshot in response)
+- [x] Todo row: picker section + context submenu, "Sending to Media…" spinner, retry hint on failure, undo
+- [x] Tests: route, smart-commit defaults, forceType prompt block, todo-row picker/send/undo/failure
+- [x] Live scratch-DB run: "Watch: 711 documentary" → Media → /media → Undo
+- [ ] Review + merge
+
+## Review
+Live (scratch Postgres, real Claude): asset `711`, category `documentary`,
+status `to-watch`, subtitle/url empty, detailsJson `{format: "documentary",
+source: "todo", sourceTodoId, sourceTodoTitle}`; notes say the exact work could
+not be identified. Claude searched twice but "711 documentary" is ambiguous and
+it declined to guess. A probe with "Watch: Free Solo documentary" filled
+directors, 2018, runtime, genre, Wikipedia URL. Undo deleted the asset and put
+the todo back with its original id.
+
 # Import Granola — home-page button → routed team todos (in progress 2026-09-29)
 
 Goal: "Import Granola" button next to "New list" on Home. Pick a recent Granola
