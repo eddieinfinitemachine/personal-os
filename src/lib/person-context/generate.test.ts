@@ -32,7 +32,6 @@ import {
   validateContextReply,
   type ContextPerson,
 } from "./generate";
-import { GranolaNotReadyError } from "./granola";
 import { CONTEXT_LIMITS, PERSON_CONTEXT_VERSION, type ContextThread } from "./types";
 
 const now = new Date("2026-09-29T12:00:00Z");
@@ -177,7 +176,7 @@ describe("refreshPersonContext", () => {
     expect(mocks.claude).toHaveBeenCalledTimes(1);
   });
 
-  it("skips missing, archived and empty people; busy on a live lease or cold Granola", async () => {
+  it("skips missing, archived and empty people; busy on a live lease", async () => {
     mocks.person.findFirst.mockResolvedValueOnce(null);
     expect((await refreshPersonContext("u1", "p1", { threads, now })).status).toBe("skipped");
     mocks.person.findFirst.mockResolvedValueOnce({ ...base, archived: true });
@@ -186,9 +185,6 @@ describe("refreshPersonContext", () => {
     expect((await refreshPersonContext("u1", "p1", { threads: [], now })).status).toBe("skipped");
     const leased = { ...base, context: { generation: { owner: "x", startedAt: new Date(now.getTime() - 10_000).toISOString() } } };
     mocks.person.findFirst.mockResolvedValue(leased);
-    expect((await refreshPersonContext("u1", "p1", { threads, now })).status).toBe("busy");
-    mocks.person.findFirst.mockResolvedValue({ ...base });
-    mocks.granola.mockRejectedValueOnce(new GranolaNotReadyError());
     expect((await refreshPersonContext("u1", "p1", { threads, now })).status).toBe("busy");
     expect(mocks.claude).not.toHaveBeenCalled();
   });

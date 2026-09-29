@@ -73,5 +73,7 @@ export const CONTEXT_LIMITS = {
   maxThreadChars: 80_000,
   maxBodyBytes: 200_000,
   maxGranolaMeetings: 5,
+  /** Newest notes whose attendees/summary are read; older ones match on title only. */
+  maxGranolaDetailNotes: 40,
   maxGranolaCharsPerMeeting: 4000,
 } as const;

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { Prisma, type Interaction, type Person } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { callClaudeJSON } from "@/lib/claude";
-import { granolaMeetingsForPerson, GranolaNotReadyError, type PersonMeeting } from "./granola";
+import { granolaMeetingsForPerson, type PersonMeeting } from "./granola";
 import { PERSON_CONTEXT_MODEL, searchPublicContext } from "./web";
 import {
   CONTEXT_LIMITS,
@@ -250,13 +250,7 @@ export async function refreshPersonContext(
   const person = await prisma.person.findFirst({ where: { id: personId, userId } });
   if (!person || person.archived) return { status: "skipped" };
   const fullName = nameOf(person);
-  let meetings: PersonMeeting[];
-  try {
-    meetings = await granolaMeetingsForPerson(fullName, { now });
-  } catch (error) {
-    if (error instanceof GranolaNotReadyError) return { status: "busy" };
-    throw error;
-  }
+  const meetings = await granolaMeetingsForPerson(fullName, { now });
   const interactions = await prisma.interaction.findMany({
     where: { userId, personIds: { has: personId } },
     orderBy: [{ occurredAt: "desc" }, { id: "desc" }],

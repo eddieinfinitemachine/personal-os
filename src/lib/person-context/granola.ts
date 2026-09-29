@@ -9,20 +9,13 @@ import { CONTEXT_LIMITS } from "./types";
 
 export type PersonMeeting = { id: string; date: string; title: string; text: string };
 
-/** The note index is still being filled; retry shortly (the generator reports "busy"). */
-export class GranolaNotReadyError extends Error {
-  constructor() {
-    super("Granola index is still loading");
-    this.name = "GranolaNotReadyError";
-  }
-}
-
 const DAY = 86_400_000;
 const LIST_TTL_MS = 60 * 60_000;
 type Brief = { updatedAt: string; createdAt: string; date: string; title: string; haystack: string; text: string };
 
-// Module scope so a 200-person backfill lists (and reads each note) once per
-// instance. Only titles, attendee names and summaries/notes; never transcripts.
+// Module scope so a 200-person backfill lists (and reads each detailed note)
+// once per warm instance. Only titles, attendee names and summaries/notes;
+// never transcripts.
 let listed: { at: number; notes: GranolaNoteSummary[] } | null = null;
 const briefs = new Map<string, Brief>();
 let loggedError = false;
@@ -42,16 +35,39 @@ async function noteList(client: GranolaClient, now: Date) {
   return notes;
 }
 
+async function brief(client: GranolaClient, n: GranolaNoteSummary): Promise<Brief> {
+  const cached = briefs.get(n.id);
+  if (cached?.updatedAt === n.updated_at) return cached;
+  const note = await client.getNote(n.id);
+  const text = granolaNoteText({ ...note, transcript: null }, CONTEXT_LIMITS.maxGranolaCharsPerMeeting);
+  const title = note.title?.trim() || note.calendar_event?.event_title?.trim() || "Untitled meeting";
+  const b: Brief = {
+    updatedAt: n.updated_at,
+    createdAt: n.created_at,
+    date: note.calendar_event?.scheduled_start_time || n.created_at,
+    title,
+    haystack: [title, note.calendar_event?.event_title, ...(note.attendees ?? []).map((a) => a.name), text]
+      .filter(Boolean)
+      .join("\n"),
+    text,
+  };
+  briefs.set(n.id, b);
+  return b;
+}
+
 /**
  * Meetings in the last year that name this person exactly (full name, whole
- * words, case-insensitive) in the title, attendees or summary. Newest first,
- * capped per CONTEXT_LIMITS. [] without GRANOLA_API_KEY or on API errors.
- * Throws GranolaNotReadyError when the per-call fetch budget runs out before
- * every note has been read, so results never depend on how warm the cache is.
+ * words, case-insensitive). Newest first, capped per CONTEXT_LIMITS.
+ * [] without GRANOLA_API_KEY or on API errors; never throws.
+ *
+ * Bounded so a cold serverless instance finishes in seconds: one list call
+ * (titles, whole year), details (attendees, summary, notes) only for the
+ * newest `maxGranolaDetailNotes`, plus at most `maxGranolaMeetings` more for
+ * older title matches so their text is real. Deterministic for a given list.
  */
 export async function granolaMeetingsForPerson(
   fullName: string,
-  options: { now?: Date; client?: GranolaClient | null; budgetMs?: number } = {},
+  options: { now?: Date; client?: GranolaClient | null } = {},
 ): Promise<PersonMeeting[]> {
   const now = options.now ?? new Date();
   const name = fullName.trim().replace(/\s+/g, " ");
@@ -59,39 +75,28 @@ export async function granolaMeetingsForPerson(
   if (name.split(" ").length < 2) return [];
   const client = options.client === undefined ? granolaFromEnv() : options.client;
   if (!client) return [];
-  const deadline = Date.now() + (options.budgetMs ?? 20_000);
+  const matcher = wordMatcher([name]);
+  if (!matcher) return [];
   try {
     const since = now.getTime() - CONTEXT_LIMITS.threadDays * DAY;
     const notes = (await noteList(client, now))
       .filter((n) => Date.parse(n.created_at) >= since)
       .sort((a, b) => b.created_at.localeCompare(a.created_at) || a.id.localeCompare(b.id));
-    for (const n of notes) {
-      if (briefs.get(n.id)?.updatedAt === n.updated_at) continue;
-      if (Date.now() > deadline) throw new GranolaNotReadyError();
-      const note = await client.getNote(n.id);
-      const text = granolaNoteText({ ...note, transcript: null }, CONTEXT_LIMITS.maxGranolaCharsPerMeeting);
-      const title = note.title?.trim() || note.calendar_event?.event_title?.trim() || "Untitled meeting";
-      briefs.set(n.id, {
-        updatedAt: n.updated_at,
-        createdAt: n.created_at,
-        date: note.calendar_event?.scheduled_start_time || n.created_at,
-        title,
-        haystack: [title, note.calendar_event?.event_title, ...(note.attendees ?? []).map((a) => a.name), text]
-          .filter(Boolean)
-          .join("\n"),
-        text,
-      });
-    }
-    const matcher = wordMatcher([name]);
-    if (!matcher) return [];
-    return notes
-      .flatMap((n) => {
-        const brief = briefs.get(n.id);
-        return brief && matcher.test(brief.haystack) ? [{ id: n.id, date: brief.date, title: brief.title, text: brief.text }] : [];
+    const detailed = new Map<string, Brief>();
+    for (const n of notes.slice(0, CONTEXT_LIMITS.maxGranolaDetailNotes)) detailed.set(n.id, await brief(client, n));
+    const matches = notes
+      .filter((n) => {
+        const b = detailed.get(n.id);
+        return b ? matcher.test(b.haystack) : matcher.test(n.title ?? "");
       })
       .slice(0, CONTEXT_LIMITS.maxGranolaMeetings);
-  } catch (error) {
-    if (error instanceof GranolaNotReadyError) throw error;
+    const out: PersonMeeting[] = [];
+    for (const n of matches) {
+      const b = detailed.get(n.id) ?? (await brief(client, n));
+      out.push({ id: n.id, date: b.date, title: b.title, text: b.text });
+    }
+    return out;
+  } catch {
     if (!loggedError) {
       loggedError = true;
       console.error("person context: Granola unavailable, continuing without meetings");

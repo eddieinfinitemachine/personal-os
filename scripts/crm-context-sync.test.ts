@@ -8,7 +8,7 @@ import type { SyncedMessage } from "../src/lib/dating-message-sync";
 import type { ContextTargets } from "../src/lib/person-context/capture";
 
 const now = new Date("2026-09-29T12:00:00Z");
-const flags = (extra: Partial<Flags> = {}): Flags => ({ dryRun: false, limit: null, person: null, force: false, includeEmpty: false, ...extra });
+const flags = (extra: Partial<Flags> = {}): Flags => ({ dryRun: false, limit: null, person: null, force: false, includeEmpty: false, verbose: false, ...extra });
 const fresh = (): Checkpoint => ({ version: 1, digests: {} });
 const m = (guid: string, sentAt: string, text = "hello", source: SyncedMessage["source"] = "imessage"): SyncedMessage => ({ guid, sentAt, fromMe: false, text, source });
 const people: ContextTargets["people"] = [
@@ -54,8 +54,9 @@ describe("boundContextThreads", () => {
 
 describe("parseFlags", () => {
   it("parses every flag", () => {
-    expect(parseFlags(["--dry-run", "--limit", "3", "--person", "Avery  Example", "--force", "--include-empty"]))
-      .toEqual({ dryRun: true, limit: 3, person: "Avery Example", force: true, includeEmpty: true });
+    expect(parseFlags(["--dry-run", "--limit", "3", "--person", "Avery  Example", "--force", "--include-empty", "--verbose"]))
+      .toEqual({ dryRun: true, limit: 3, person: "Avery Example", force: true, includeEmpty: true, verbose: true });
+    expect(parseFlags([]).verbose).toBe(false);
     expect(parseFlags(["--limit=2"]).limit).toBe(2);
     expect(() => parseFlags(["--limit", "x"])).toThrow();
     expect(() => parseFlags(["--person"])).toThrow();
@@ -117,5 +118,23 @@ describe("syncCrmContext", () => {
     expect(post).toHaveBeenCalledTimes(3);
     expect(sleep).toHaveBeenCalledWith(5000);
     expect(sleep).toHaveBeenCalledWith(500);
+  });
+
+  it("--verbose prints one id + status line per posted person, never names", async () => {
+    const { api, post } = makeApi();
+    post.mockResolvedValueOnce({ status: "busy" }).mockResolvedValueOnce({ status: "busy" }).mockResolvedValueOnce({ status: "busy" })
+      .mockRejectedValueOnce(new Error("CRM context request failed (500)"));
+    const log = vi.fn();
+    await run(api, { log });
+    expect(log).not.toHaveBeenCalled();
+    post.mockReset().mockResolvedValueOnce({ status: "busy" }).mockResolvedValueOnce({ status: "busy" }).mockResolvedValueOnce({ status: "busy" })
+      .mockRejectedValueOnce(new Error("CRM context request failed (500)"));
+    await run(api, { log, flags: flags({ verbose: true }) });
+    expect(log.mock.calls.map((c) => c[0])).toEqual(["one busy", "two failed"]);
+    post.mockReset().mockResolvedValue({ status: "updated" });
+    log.mockClear();
+    await run(api, { log, flags: flags({ verbose: true }) });
+    expect(log.mock.calls.map((c) => c[0])).toEqual(["one updated", "two updated"]);
+    expect(JSON.stringify(log.mock.calls)).not.toContain("Example");
   });
 });
