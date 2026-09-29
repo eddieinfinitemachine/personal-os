@@ -3,9 +3,10 @@
  * threads on this Mac and posts a bounded copy so the server can write
  * Person.context. CLI execution only; imports are side-effect free.
  *
- *   tsx scripts/crm-context-sync.ts [--dry-run] [--limit N] [--person "Full Name"] [--force] [--include-empty]
+ *   tsx scripts/crm-context-sync.ts [--dry-run] [--limit N] [--person "Full Name"] [--force] [--include-empty] [--verbose]
  *
- * Logs one aggregate line plus failed person ids. Never names or message text.
+ * Logs one aggregate line plus failed person ids; --verbose adds one
+ * "<personId> <status>" line per posted person. Never names or message text.
  */
 import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -34,7 +35,7 @@ const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(valu
 
 export type ContextTarget = ContextTargets["people"][number] & { handles: string[] };
 export type Checkpoint = { version: 1; digests: Record<string, string> };
-export type Flags = { dryRun: boolean; limit: number | null; person: string | null; force: boolean; includeEmpty: boolean };
+export type Flags = { dryRun: boolean; limit: number | null; person: string | null; force: boolean; includeEmpty: boolean; verbose: boolean };
 export type Reader = { messages: (target: ContextTarget) => SyncedMessage[] };
 export type API = {
   targets: () => Promise<ContextTargets>;
@@ -46,12 +47,13 @@ export type Summary = {
 };
 
 export function parseFlags(argv: string[]): Flags {
-  const flags: Flags = { dryRun: false, limit: null, person: null, force: false, includeEmpty: false };
+  const flags: Flags = { dryRun: false, limit: null, person: null, force: false, includeEmpty: false, verbose: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--dry-run") flags.dryRun = true;
     else if (arg === "--force") flags.force = true;
     else if (arg === "--include-empty") flags.includeEmpty = true;
+    else if (arg === "--verbose") flags.verbose = true;
     else if (arg === "--limit" || arg.startsWith("--limit=")) {
       const raw = arg.includes("=") ? arg.slice(8) : argv[++i];
       const n = Number(raw);
@@ -113,6 +115,7 @@ export async function syncCrmContext(options: {
   flags: Flags;
   now?: Date;
   sleep?: (ms: number) => Promise<void>;
+  log?: (line: string) => void;
 }): Promise<Summary> {
   const now = options.now ?? new Date();
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -126,6 +129,8 @@ export async function syncCrmContext(options: {
   }
   const summary: Summary = { targets: targets.length, posted: 0, updated: 0, unchanged: 0, skipped: 0, failed: 0, wouldPost: 0, failedIds: [] };
   const fail = (id: string) => { summary.failed++; summary.failedIds.push(id); };
+  const log = options.log ?? console.log;
+  const report = (id: string, status: string) => { if (flags.verbose) log(`${id} ${status}`); };
   const reader = targets.some((t) => t.handles.length) ? await options.open(now) : null;
   let requests = 0;
 
@@ -147,13 +152,14 @@ export async function syncCrmContext(options: {
         result = await options.api.post({ personId: target.id, threads, ...(flags.force ? { force: true } : {}) });
         if (result.status !== "busy") break;
       }
+      report(target.id, result?.status ?? "busy");
       if (!result || result.status === "busy") { summary.skipped++; continue; }
       if (result.status === "updated") summary.updated++;
       else if (result.status === "unchanged") summary.unchanged++;
       else summary.skipped++;
       checkpoint.digests[target.id] = digest;
       await options.save(checkpoint);
-    } catch { fail(target.id); }
+    } catch { fail(target.id); report(target.id, "failed"); }
   }
   if (!flags.dryRun) await options.save(checkpoint);
   return summary;

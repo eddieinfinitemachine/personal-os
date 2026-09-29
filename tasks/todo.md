@@ -1227,3 +1227,4 @@ Ask (Eddie): "can you search more and backfill the crm with context about the pe
 - [x] Verified: typecheck clean, 663 tests pass (118 gated/skipped), prod build OK
 - Known: Granola cache warms ~90 notes per request (20 s budget); the first few people of the very first backfill may come back `busy` and are retried on the next run. CRM-only edits don't retrigger a person whose messages are unchanged (use `--force`)
 - NOT verified: browser rendering with real generated context, the worker against real Mac data (run once after release, see below), integration test (no local Postgres)
+- [x] Fix: Granola matching bounded to the list + newest 40 details, never blocks (first prod run returned busy for everyone on cold instances); worker --verbose

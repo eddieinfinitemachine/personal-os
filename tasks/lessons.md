@@ -131,3 +131,8 @@ A saved name should trigger current on-device Contacts lookup and matching messa
 - September28:Call Sheet Done must ask how Eddie reached out before recording a check-in. Persist the selected channel rather than logging an unspecified encounter.
 
 Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside To Do rather than showing the full five-person panel above the day’s tasks.
+
+## 2026-09-29 — A module-scope cache is not a warm cache on Vercel
+**Context**: CRM context backfill. The Granola step fetched every note from the last year into a module-level Map with a 20 s per-request budget, returning "busy" until the cache was warm.
+**Mistake / surprise**: Every production request landed on a cold instance, the cache never warmed, and every person came back busy: 0 of 798 generated, ~82 s per person. Unit tests and typecheck were green; only running the worker once against prod exposed it.
+**Rule**: On serverless, treat module-scope caches as an optimisation only, never as a correctness or readiness dependency. Every request must be able to finish its work cold inside the route budget. Bound the work (newest N items, one list call) instead of "keep warming across requests". And keep running a new pipeline once for real before calling it done (see 2026-08-18 in ~/tasks/lessons.md).
