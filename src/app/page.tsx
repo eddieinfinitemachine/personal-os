@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { HomeTiles, type HomeTile } from "@/components/home-tiles";
 import { NewListButton } from "@/components/new-list-button";
+import { ImportGranolaButton } from "@/components/import-granola-button";
 import { ProjectCard, type ProjectCardData } from "@/components/project-card";
 import { EcLanding } from "@/components/ec-landing";
 import { CaptureInboxPill } from "@/components/capture-inbox";
@@ -9,6 +10,7 @@ import { KeyboardListNav } from "@/components/keyboard-nav";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists } from "@/lib/lists";
 import { getSession } from "@/lib/auth";
+import { isFounderUser } from "@/lib/cron";
 import { isPrivateHost } from "@/lib/hosts";
 import { listAccessWhere } from "@/lib/list-access";
 import type { TodoLike } from "@/components/todo-row";
@@ -25,6 +27,9 @@ export default async function HomePage() {
   const userId = session.userId;
 
   await ensureDefaultLists(userId);
+  // Granola import uses Eddie's personal API key, so only the founder sees it.
+  const canImportGranola =
+    !!process.env.GRANOLA_API_KEY?.trim() && (await isFounderUser(userId));
 
   // Single fetch for all open top-level todos plus their subtasks. Bucket in
   // memory rather than firing N×M queries per (list, project) tile.
@@ -200,6 +205,7 @@ export default async function HomePage() {
         </div>
         <div className="flex items-center gap-2">
           <CaptureInboxPill />
+          {canImportGranola ? <ImportGranolaButton /> : null}
           <NewListButton />
         </div>
       </header>
