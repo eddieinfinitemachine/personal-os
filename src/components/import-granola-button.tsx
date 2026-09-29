@@ -15,6 +15,8 @@ type Meeting = {
   title: string;
   createdAt: string;
   owner: { name: string | null; email: string | null };
+  /** Already turned into todos (by this button or the auto-import cron). */
+  imported?: boolean;
 };
 
 type ListOption = { id: string; name: string };
@@ -70,6 +72,7 @@ export function ImportGranolaButton() {
   const parseAbort = useRef<AbortController | null>(null);
 
   // review
+  const [noteId, setNoteId] = useState<string | null>(null);
   const [meetingTitle, setMeetingTitle] = useState<string | null>(null);
   const [meetingDate, setMeetingDate] = useState<string | null>(null);
   const [webUrl, setWebUrl] = useState<string | null>(null);
@@ -163,6 +166,7 @@ export function ImportGranolaButton() {
         signal: controller.signal,
       });
       const j = (await res.json().catch(() => ({}))) as {
+        noteId?: string;
         meetingTitle?: string | null;
         meetingDate?: string | null;
         webUrl?: string | null;
@@ -182,6 +186,7 @@ export function ImportGranolaButton() {
         setPhase("pick");
         return;
       }
+      setNoteId(j.noteId ?? meeting.id);
       setMeetingTitle(j.meetingTitle ?? meeting.title);
       setMeetingDate(j.meetingDate ?? null);
       setWebUrl(j.webUrl ?? null);
@@ -223,7 +228,7 @@ export function ImportGranolaButton() {
       const res = await fetch("/api/meetings/commit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ meetingTitle, meetingDate, sourceUrl: webUrl, items }),
+        body: JSON.stringify({ noteId, meetingTitle, meetingDate, sourceUrl: webUrl, items }),
       });
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string };
@@ -291,7 +296,14 @@ export function ImportGranolaButton() {
                     onClick={() => extract(m)}
                     className="w-full rounded-md px-2 py-1.5 text-left hover:bg-[var(--color-accent)]"
                   >
-                    <div className="truncate text-sm">{m.title}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="min-w-0 truncate text-sm">{m.title}</span>
+                      {m.imported ? (
+                        <span className="shrink-0 rounded border border-[var(--color-border)] px-1 text-[10px] leading-4 text-[var(--color-muted-foreground)]">
+                          Imported
+                        </span>
+                      ) : null}
+                    </div>
                     <div className="truncate text-xs text-[var(--color-muted-foreground)]">
                       {shortDate(m.createdAt)}
                       {m.owner.name ? ` · ${m.owner.name}` : ""}

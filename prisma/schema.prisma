@@ -897,6 +897,23 @@ model Todo {
   @@index([userId])
 }
 
+// One row per Granola note turned into todos (auto-import cron or the
+// Import Granola button), so a note is never imported twice.
+model GranolaImport {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  noteId     String
+  title      String?
+  folder     String? // folder name that triggered the auto-import; null for manual
+  source     String // "auto" | "manual"
+  itemCount  Int
+  importedAt DateTime @default(now())
+
+  @@unique([userId, noteId])
+  @@index([userId, importedAt])
+}
+
 // ─── Auth ──────────────────────────────────────────────────────────
 
 model User {
@@ -963,6 +980,7 @@ model User {
   datingSourceStates  DatingSourceState[]
   datingSourceRecords DatingSourceRecord[]
   datingCandidates    DatingCandidate[]
+  granolaImports      GranolaImport[]
 
   @@index([email])
 }

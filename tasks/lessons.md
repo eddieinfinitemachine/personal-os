@@ -136,6 +136,10 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 **Context**: CRM context backfill. The Granola step fetched every note from the last year into a module-level Map with a 20 s per-request budget, returning "busy" until the cache was warm.
 **Mistake / surprise**: Every production request landed on a cold instance, the cache never warmed, and every person came back busy: 0 of 798 generated, ~82 s per person. Unit tests and typecheck were green; only running the worker once against prod exposed it.
 **Rule**: On serverless, treat module-scope caches as an optimisation only, never as a correctness or readiness dependency. Every request must be able to finish its work cold inside the route budget. Bound the work (newest N items, one list call) instead of "keep warming across requests". And keep running a new pipeline once for real before calling it done (see 2026-08-18 in ~/tasks/lessons.md).
+## 2026-09-29 — mock @/lib/prisma before the first run of a new route test
+**Context**: Writing vitest tests for a new API route that reads a new Prisma table.
+**Mistake / surprise**: The first run executed a real Prisma read against the repo `.env` DATABASE_URL (production) because the prisma module wasn't mocked yet. Read-only, but it should never happen.
+**Rule**: Every route/service test file starts with `vi.mock("@/lib/prisma", …)` in the hoisted block before anything is imported; never run a new test file until that line exists.
 
 ## 2026-09-29 — `prisma db push` from a feature branch drops columns other branches added
 **Context**: CRM context backfill added `Person.context` / `Person.contextAt`; pushed to prod from the feature branch at 9:25 and the endpoint worked at 9:45.

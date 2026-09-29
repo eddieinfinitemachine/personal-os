@@ -1,6 +1,7 @@
 // Granola public API (read-only), used to pull meeting notes onto /dating.
 // Docs: https://docs.granola.ai/introduction
-//   GET /v1/notes                  → { notes, hasMore, cursor }  (created_after, cursor, page_size ≤ 30)
+//   GET /v1/notes                  → { notes, hasMore, cursor }  (created_after, folder_id, cursor, page_size ≤ 30)
+//   GET /v1/folders                → { folders, hasMore, cursor }  (cursor, page_size ≤ 30)
 //   GET /v1/notes/{id}             → note (summary, private notes, attendees…)
 //       ?include=transcript        → plus transcript[]; 413 when too big for inline
 //   GET /v1/notes/{id}/transcript  → { transcript, hasMore, cursor }  (page_size ≤ 100)
@@ -55,11 +56,18 @@ type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
 export type GranolaNotePage = { notes: GranolaNoteSummary[]; hasMore: boolean; cursor: string | null };
 
+export type GranolaFolder = { id: string; name: string; parentFolderId: string | null };
+
 export type GranolaClient = {
   /** One bounded enumeration page, so callers can durably checkpoint work. */
-  listNotesPage?(opts: { createdAfter: Date; cursor?: string }): Promise<GranolaNotePage>;
-  /** Every note created after `createdAfter`, following the cursor to the end. */
-  listNotes(opts: { createdAfter: Date }): Promise<GranolaNoteSummary[]>;
+  listNotesPage?(opts: { createdAfter: Date; cursor?: string; folderId?: string }): Promise<GranolaNotePage>;
+  /**
+   * Every note created after `createdAfter`, following the cursor to the end.
+   * With `folderId`, only notes in that folder and its child folders.
+   */
+  listNotes(opts: { createdAfter: Date; folderId?: string }): Promise<GranolaNoteSummary[]>;
+  /** Every folder the key can see (optional so older test doubles still type-check). */
+  listFolders?(): Promise<GranolaFolder[]>;
   /** One note; with `transcript`, including the full transcript (paged if it's too big inline). */
   getNote(id: string, opts?: { transcript?: boolean }): Promise<GranolaNote>;
 };
@@ -144,17 +152,18 @@ export function createGranolaClient(opts: {
   };
 
   return {
-    async listNotesPage({ createdAfter, cursor }) {
-      const data = await get<GranolaNotePage>("/notes", { created_after: createdAfter.toISOString(), page_size: String(LIST_PAGE_SIZE), cursor });
+    async listNotesPage({ createdAfter, cursor, folderId }) {
+      const data = await get<GranolaNotePage>("/notes", { created_after: createdAfter.toISOString(), folder_id: folderId, page_size: String(LIST_PAGE_SIZE), cursor });
       if (!Array.isArray(data.notes) || data.notes.length > LIST_PAGE_SIZE || (data.hasMore && (!data.cursor || data.cursor === cursor))) throw new GranolaError("Granola returned an invalid page", 502);
       return data;
     },
-    async listNotes({ createdAfter }) {
+    async listNotes({ createdAfter, folderId }) {
       const notes: GranolaNoteSummary[] = [];
       let cursor: string | undefined;
       for (let page = 0; page < MAX_PAGES; page++) {
         const data = await get<{ notes: GranolaNoteSummary[]; hasMore: boolean; cursor: string | null }>("/notes", {
           created_after: createdAfter.toISOString(),
+          folder_id: folderId,
           page_size: String(LIST_PAGE_SIZE),
           cursor,
         });
@@ -163,6 +172,24 @@ export function createGranolaClient(opts: {
         cursor = data.cursor;
       }
       return notes;
+    },
+
+    async listFolders() {
+      const folders: GranolaFolder[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const data = await get<{
+          folders: { id: string; name: string; parent_folder_id?: string | null }[];
+          hasMore: boolean;
+          cursor: string | null;
+        }>("/folders", { page_size: String(LIST_PAGE_SIZE), cursor });
+        for (const f of data.folders ?? []) {
+          folders.push({ id: f.id, name: f.name, parentFolderId: f.parent_folder_id ?? null });
+        }
+        if (!data.hasMore || !data.cursor || data.cursor === cursor) break;
+        cursor = data.cursor;
+      }
+      return folders;
     },
 
     async getNote(id, { transcript = false } = {}) {

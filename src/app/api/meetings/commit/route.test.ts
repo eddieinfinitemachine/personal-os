@@ -1,15 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ user: vi.fn(), lists: vi.fn(), createMany: vi.fn(), sync: vi.fn() }));
-vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: vi.fn() }));
+const mocks = vi.hoisted(() => ({ user: vi.fn(), commit: vi.fn(), after: vi.fn(), sync: vi.fn() }));
+vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: mocks.after }));
 vi.mock("@/lib/auth", () => ({ getCurrentUserId: mocks.user }));
 vi.mock("@/lib/gcal", () => ({ syncRecentTodos: mocks.sync }));
-vi.mock("@/lib/prisma", () => ({ prisma: { list: { findMany: mocks.lists }, todo: { createMany: mocks.createMany } } }));
-vi.mock("@/lib/lists", () => ({
-  CAPTURE_LIST_NAME: "To Do",
-  ensureDefaultLists: vi.fn(),
-  ensureInboxProject: vi.fn().mockResolvedValue("inbox-project"),
-}));
+vi.mock("@/lib/meeting-import", () => ({ commitItems: mocks.commit }));
 import { POST } from "./route";
+
+// Row building (list fallback, Inbox, provenance, autopilotKey, GranolaImport)
+// is covered in src/lib/meeting-import.test.ts; this covers the route's own job.
 
 const req = (body: unknown) =>
   new Request("https://example.invalid/api/meetings/commit", { method: "POST", body: JSON.stringify(body) });
@@ -17,51 +15,54 @@ const req = (body: unknown) =>
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.user.mockResolvedValue("founder");
-  mocks.lists.mockResolvedValue([
-    { id: "todo", name: "To Do", isDefault: true, userId: "founder" },
-    { id: "ob", name: "EC/OB", isDefault: false, userId: "founder" },
-  ]);
+  mocks.commit.mockResolvedValue({ created: 2, byList: [{ listId: "ob", listName: "EC/OB", count: 2 }] });
 });
 
 describe("POST /api/meetings/commit", () => {
-  it("files unrouted items to To Do + Inbox and stamps provenance with the note link", async () => {
+  it("commits the reviewed items as a manual import of the note, then syncs the calendar", async () => {
     const res = await POST(
       req({
-        meetingTitle: "GTM Meeting 9/28",
+        noteId: "not_Zh3xFsvZIANAtk",
+        meetingTitle: " GTM Meeting 9/28 ",
         meetingDate: "2026-09-28",
         sourceUrl: "https://notes.granola.ai/d/note-1",
-        items: [
-          { title: "Automate no-show texts", notes: "Keep states consistent", listId: "ob", dueDate: "2026-10-01" },
-          { title: "Design the $5 ad", listId: null },
-          { title: "Ghost list", listId: "someone-elses" },
-          { title: "   " },
-        ],
+        items: [{ title: " Automate no-show texts ", listId: "ob" }, { title: "   " }, { title: "Design the $5 ad" }],
       }),
     );
     expect(res.status).toBe(200);
-    const { data } = mocks.createMany.mock.calls[0][0];
-    expect(data).toHaveLength(3);
-    expect(data[0]).toMatchObject({
-      listId: "ob", projectId: null, dueDate: new Date("2026-10-01"),
-      notes: "Keep states consistent\nFrom meeting: GTM Meeting 9/28 (2026-09-28)\nhttps://notes.granola.ai/d/note-1",
+    expect(await res.json()).toEqual({ created: 2, byList: [{ listId: "ob", listName: "EC/OB", count: 2 }] });
+    expect(mocks.commit).toHaveBeenCalledWith({
+      userId: "founder",
+      items: [{ title: "Automate no-show texts", listId: "ob" }, { title: "Design the $5 ad" }],
+      meetingTitle: "GTM Meeting 9/28",
+      meetingDate: "2026-09-28",
+      sourceUrl: "https://notes.granola.ai/d/note-1",
+      noteId: "not_Zh3xFsvZIANAtk",
+      source: "manual",
     });
-    expect(data[1]).toMatchObject({ listId: "todo", projectId: "inbox-project" });
-    expect(data[1].notes).toBe("From meeting: GTM Meeting 9/28 (2026-09-28)\nhttps://notes.granola.ai/d/note-1");
-    expect(data[2]).toMatchObject({ listId: "todo", projectId: "inbox-project" });
-    expect(await res.json()).toEqual({
-      created: 3,
-      byList: [
-        { listId: "ob", listName: "EC/OB", count: 1 },
-        { listId: "todo", listName: "To Do", count: 2 },
-      ],
-    });
+    expect(mocks.after).toHaveBeenCalledOnce();
   });
 
-  it("drops non-http source links and rejects empty or unauthenticated requests", async () => {
-    await POST(req({ meetingTitle: "M", sourceUrl: "javascript:alert(1)", items: [{ title: "x" }] }));
-    expect(mocks.createMany.mock.calls[0][0].data[0].notes).toBe("From meeting: M");
+  it("ignores a malformed noteId rather than recording it", async () => {
+    await POST(req({ noteId: "../../x", items: [{ title: "x" }] }));
+    expect(mocks.commit.mock.calls[0][0].noteId).toBeNull();
+    await POST(req({ items: [{ title: "x" }] }));
+    expect(mocks.commit.mock.calls[1][0].noteId).toBeNull();
+  });
+
+  it("rejects empty, oversized or unauthenticated requests", async () => {
     expect((await POST(req({ items: [] }))).status).toBe(400);
+    expect((await POST(req({ items: Array.from({ length: 101 }, () => ({ title: "x" })) }))).status).toBe(400);
     mocks.user.mockResolvedValueOnce(null);
     expect((await POST(req({ items: [{ title: "x" }] }))).status).toBe(401);
+    expect(mocks.commit).not.toHaveBeenCalled();
+  });
+
+  it("reports a missing To Do list as a 500", async () => {
+    mocks.commit.mockRejectedValueOnce(new Error("default To Do list missing"));
+    const res = await POST(req({ items: [{ title: "x" }] }));
+    expect(res.status).toBe(500);
+    expect((await res.json()).error).toBe("default To Do list missing");
+    expect(mocks.after).not.toHaveBeenCalled();
   });
 });
