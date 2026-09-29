@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { linkify } from "@/lib/linkify";
 import { haptic } from "@/lib/haptic";
 import { useOverlayTransition } from "@/lib/use-overlay-transition";
 
@@ -397,10 +398,19 @@ function AgendaMode({
                       <span className="h-px flex-1 bg-[var(--color-border)]" />
                     </div>
                   ) : null}
-                  <button
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setIdx(i)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setIdx(i);
+                      }
+                    }}
                     className={cn(
-                      "w-full rounded-xl border px-4 py-3 text-left transition",
+                      // A div, not a <button>: the title can hold links, and an <a> inside a <button> is invalid HTML.
+                      "w-full cursor-pointer rounded-xl border px-4 py-3 text-left transition",
                       i === idx
                         ? "border-[var(--color-foreground)]/50 bg-[var(--color-card)]"
                         : "border-[var(--color-border)] bg-[var(--color-card)]/60",
@@ -409,7 +419,7 @@ function AgendaMode({
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium break-words">
-                        {t.title}
+                        {linkify(t.title, (e) => e.stopPropagation())}
                       </span>
                       <span className="flex items-center gap-1.5 shrink-0">
                         {discussedThisSession ? (
@@ -432,7 +442,7 @@ function AgendaMode({
                         {t.notes}
                       </div>
                     ) : null}
-                  </button>
+                  </div>
                 </li>
               );
             })}

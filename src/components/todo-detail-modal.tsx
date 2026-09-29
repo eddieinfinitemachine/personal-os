@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Check, ExternalLink, Loader2, Paperclip, Send, Trash2, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { haptic } from "@/lib/haptic";
-import { linkify } from "@/lib/linkify";
+import { extractUrls, linkify } from "@/lib/linkify";
 import { timeAgo } from "@/lib/time";
 
 // Things-style detail modal for a single todo. Double-click a todo to open.
@@ -54,6 +54,15 @@ function formatBytes(bytes: number | null): string {
     i++;
   }
   return `${n >= 10 || i === 0 ? Math.round(n) : n.toFixed(1)} ${units[i]}`;
+}
+
+// Short label for a note link: hostname without "www.".
+function urlLabel(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
 }
 
 export function TodoDetailModal({
@@ -389,6 +398,8 @@ export function TodoDetailModal({
 
   if (!open) return null;
 
+  const noteUrls = extractUrls(notes);
+
   return (
     <div
       data-overlay="backdrop"
@@ -397,6 +408,11 @@ export function TodoDetailModal({
       onClick={(e) => {
         if (e.target === e.currentTarget) closeModal();
       }}
+      // The modal mounts inside a todo row, whose context-menu handlers
+      // (right-click, touch long-press) would otherwise hijack selecting
+      // and copying text in here.
+      onContextMenu={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
     >
       <div
         data-overlay="modal"
@@ -442,6 +458,23 @@ export function TodoDetailModal({
             rows={3}
             className="w-full resize-y rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm focus:border-[var(--color-ring)] focus:outline-none"
           />
+          {noteUrls.length > 0 ? (
+            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+              {noteUrls.map((url) => (
+                <a
+                  key={url}
+                  href={url}
+                  title={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-w-0 max-w-full items-center gap-1 text-[var(--color-tint)] hover:opacity-80"
+                >
+                  <ExternalLink className="size-3 shrink-0" />
+                  <span className="truncate">{urlLabel(url)}</span>
+                </a>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         {/* Files */}

@@ -1261,3 +1261,14 @@ Ask (Eddie): "can you search more and backfill the crm with context about the pe
 - Known: Granola cache warms ~90 notes per request (20 s budget); the first few people of the very first backfill may come back `busy` and are retried on the next run. CRM-only edits don't retrigger a person whose messages are unchanged (use `--force`)
 - NOT verified: browser rendering with real generated context, the worker against real Mac data (run once after release, see below), integration test (no local Postgres)
 - [x] Fix: Granola matching bounded to the list + newest 40 details, never blocks (first prod run returned busy for everyone on cold instances); worker --verbose
+
+## 2026-09-29 — Todo links + text selection
+
+- [x] Row title/notes text (`data-todo-text`): a primary mouse press on it sets `textPress` (and flips the `<li>` `draggable` attribute off synchronously) until window `mouseup`/`blur`, so drag-across selects text instead of dragging the todo. Presses elsewhere (checkbox, padding, meta line) still drag. Touch path untouched (handler bails when `touchEnv`).
+- [x] Title wrapper click no longer enters edit mode if a non-collapsed selection exists or the mouse moved >4px since mousedown. Plain click still edits; double-click still opens the modal (except on a link).
+- [x] Row is not draggable while the detail modal is open (the modal renders inside the `<li>`); modal root stops `contextmenu`/`touchstart` propagating to the row's context-menu handlers so right-click Copy and touch long-press selection work in the modal.
+- [x] Notes line in the row is linkified (still single-line truncate); link clicks stopPropagation; anchors from `linkify` are `draggable={false}`.
+- [x] Detail modal: row of note links (hostname label, full URL in `title`) under the notes textarea via new `extractUrls()`.
+- [x] Agenda mode titles linkified.
+- [x] Tests: `src/lib/linkify.test.tsx`, `src/components/todo-row.test.tsx` (jsdom). `pnpm test` green (722 passed). `pnpm typecheck`: only pre-existing errors from the shared node_modules' stale Prisma client (`granolaImport`), none in touched files.
+- [ ] Not verified in a real browser: native drag-vs-select arbitration, Safari/Firefox behaviour, iOS long-press selection in the modal, link inside the agenda `<button>` (invalid nesting; clicks work in modern browsers but worth a look).
