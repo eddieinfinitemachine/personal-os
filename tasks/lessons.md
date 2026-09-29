@@ -145,3 +145,8 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 **Context**: CRM context backfill added `Person.context` / `Person.contextAt`; pushed to prod from the feature branch at 9:25 and the endpoint worked at 9:45.
 **Mistake / surprise**: Another PR (#35) merged at 9:49 from a branch based on older main and pushed its schema; Prisma dropped the two still-empty columns without any data-loss prompt. Every Person query 5xx'd ("column does not exist") while `db push` had said "in sync". The worker only logged "failed" with no status, so it took the Vercel runtime logs to see it.
 **Rule**: Push schema only from an up-to-date main after merging, never from a feature branch. Verify with an information_schema query on the same DATABASE_URL the app uses. If several sessions ship schema the same day, re-push from main last. Workers should log the HTTP status of a failed request (never bodies).
+
+## 2026-09-29 — Killed Mac workers leave multi-GB snapshots in tmp
+**Context**: The CRM context backfill was killed by a Claude session restart; the next LaunchAgent run crashed with ENOSPC.
+**Mistake / surprise**: Each worker copies chat.db / WhatsApp DBs (~2.7 GB) into `$TMPDIR/<worker>-*` and only removes them in `finally`/signal handlers. SIGKILL, session teardown and crashes skip both, so orphans accumulate until the disk fills. (The bulk of the full disk was a 56 GB Finder `TemporaryItems/NSIRD_*` item, not ours, but ours pushed it over.)
+**Rule**: Every worker that snapshots to tmp sweeps stale siblings (`sweepStaleTempRoots`, > 2 h old) on start. When a run "died with the session", check `du -sh $TMPDIR/*` before rerunning.
