@@ -1298,3 +1298,14 @@ Ask (Eddie): "can you search more and backfill the crm with context about the pe
 - [x] Agenda mode titles linkified.
 - [x] Tests: `src/lib/linkify.test.tsx`, `src/components/todo-row.test.tsx` (jsdom). `pnpm test` green (722 passed). `pnpm typecheck`: only pre-existing errors from the shared node_modules' stale Prisma client (`granolaImport`), none in touched files.
 - [ ] Not verified in a real browser: native drag-vs-select arbitration, Safari/Firefox behaviour, iOS long-press selection in the modal, link inside the agenda `<button>` (invalid nesting; clicks work in modern browsers but worth a look).
+
+## 2026-09-29 — Contacts → CRM auto-add
+
+Ask (Eddie): "would also be cool to have anyone i add to my contact get added automatically". New cards only, from install; no backfill unless `--since`.
+- [x] `POST /api/capture/people` (CAPTURE_TOKEN bearer, 200 KB body, ≤200 cards) + pure `src/lib/people-capture.ts` (normalise; skip no first name / no phone+email / business card; dedupe on externalId `contacts:<cardId>`, phone last-10, email, exact full name of an active person; tag `from-contacts`)
+- [x] Mac worker `scripts/contacts-crm-sync.ts` (JXA export with id + creationDate, checkpoint `since`/`floor`/`posted`, 3-day lookback for iCloud-late cards, batches of 50, `--dry-run`/`--verbose`/`--since`). Import guard: >20 new cards in one run (Contacts restamped ~2,000 cards on 2026-09-23) → nothing posted, floor moves past them; `--since` bypasses
+- [x] LaunchAgent `com.personal-os.contacts-crm-sync.plist` (every 5 min), not installed
+- [x] Tests: people-capture, route (mocked Prisma), worker. Typecheck clean, suite green
+- [x] Verified: real JXA export (6,649 cards, id/creationDate populated), worker dry run end to end
+- [ ] Merge, deploy, update personal-os-sync worktree, install LaunchAgent (first run records "now"), add a test contact on the iPhone and watch it arrive
+- NOT verified: route against a real database (no local Postgres); first-run Automation prompt under launchd (Terminal already has Contacts access)
