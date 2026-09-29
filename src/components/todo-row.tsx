@@ -51,6 +51,14 @@ export type TodoLike = {
   subtasks?: TodoLike[];
 };
 
+// The title editor is a one-row textarea that grows with its content, so a
+// long title wraps like the rendered title instead of scrolling sideways.
+// Enter still saves (handled in onKeyDown), so newlines never get typed.
+function growToFit(el: HTMLTextAreaElement) {
+  el.style.height = "0px";
+  el.style.height = `${el.scrollHeight}px`;
+}
+
 function TodoRowImpl({
   todo,
   onToggle,
@@ -101,7 +109,7 @@ function TodoRowImpl({
   const [addingSub, setAddingSub] = useState(false);
   const [subDraft, setSubDraft] = useState("");
   const [subsExpanded, setSubsExpanded] = useState(true);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const dateRef = useRef<HTMLInputElement>(null);
   const subInputRef = useRef<HTMLInputElement>(null);
   const subtasks = todo.subtasks ?? [];
@@ -125,6 +133,7 @@ function TodoRowImpl({
     if (editing) {
       const el = inputRef.current;
       if (el) {
+        growToFit(el);
         el.focus();
         const end = el.value.length;
         el.setSelectionRange(end, end);
@@ -893,17 +902,21 @@ function TodoRowImpl({
           onDoubleClick={(e) => {
             // Let users select words inside the input by double-clicking
             // it; only the wrapper-level double-click opens the modal.
-            if (e.target instanceof HTMLInputElement) return;
+            if (e.target instanceof HTMLTextAreaElement) return;
             e.stopPropagation();
             setEditing(false);
             setDetailOpen(true);
           }}
         >
           {editing ? (
-            <input
+            <textarea
               ref={inputRef}
+              rows={1}
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                growToFit(e.currentTarget);
+              }}
               onBlur={save}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
@@ -916,6 +929,7 @@ function TodoRowImpl({
               }}
               className={cn(
                 "block w-full bg-transparent p-0 m-0 border-0 focus:outline-none focus:ring-0",
+                "resize-none overflow-hidden whitespace-pre-wrap break-words",
                 "text-[17px] leading-[22px] tracking-[-0.022em]",
                 "md:text-[15px] md:leading-snug md:tracking-normal",
               )}
