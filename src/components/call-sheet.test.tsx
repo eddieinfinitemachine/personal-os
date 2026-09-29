@@ -21,11 +21,13 @@ afterEach(async () => { await act(async () => root.unmount()); container.remove(
 const render = () => act(async () => root.render(<CallSheet />));
 const button = (label: string) => [...container.querySelectorAll("button")].find(b => b.textContent === label)!;
 describe("daily call sheet", () => {
-  it("renders grounded context collapsed and opens contact links without completing", async () => {
+  it("renders grounded context collapsed and never links to the dialer or Messages", async () => {
     const fetch = vi.fn().mockResolvedValue(response(sheet())); vi.stubGlobal("fetch", fetch); await render();
     expect(container.textContent).toContain("Avery Example"); expect(container.textContent).toContain("Ask how the project went.");
     expect(container.querySelector("blockquote")!.closest("details")!.open).toBe(false);
-    expect(container.querySelector('a[aria-label="Call Avery Example"]')!.getAttribute("href")).toBe("tel:+15551234567");
+    expect(container.querySelector('a[href^="tel:"], a[href^="sms:"], a[href^="mailto:"]')).toBeNull();
+    expect(button("Call").getAttribute("aria-label")).toBe("Log a call with Avery Example");
+    expect(button("Text").getAttribute("aria-label")).toBe("Log a text with Avery Example");
     expect(fetch).toHaveBeenCalledOnce();
   });
   it("asks before saving, pauses refresh while choosing, and cancels without a check-in", async () => {
@@ -54,21 +56,29 @@ describe("daily call sheet", () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.textContent).toContain("1 of 1 checked in");
   });
-  it("saves Done with current version and supports the server undo token", async () => {
-    const done = sheet(); done.day.version = 1; done.entries[0].status = "done"; done.undoToken = "undo";
+  it("logs a call from the row without asking, with the current version, and supports the server undo token", async () => {
+    const done = sheet(); done.day.version = 1; done.entries[0].status = "done"; done.entries[0].method = "call"; done.undoToken = "undo";
     const fetch = vi.fn().mockResolvedValueOnce(response(sheet())).mockResolvedValueOnce(response(done)).mockResolvedValueOnce(response(sheet())); vi.stubGlobal("fetch", fetch); await render();
-    await act(async () => button("Done").click());
     await act(async () => button("Call").click());
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ dayId: "day", version: 0, entryId: "entry", action: "done", method: "call" });
     expect(container.textContent).toContain("1 of 1 checked in");
+    expect(button("Call")).toBeUndefined();
     await act(async () => button("Undo last change").click());
     expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ dayId: "day", version: 1, action: "undo", undoToken: "undo" });
     expect(container.textContent).toContain("0 of 1 checked in");
   });
+  it("logs a text from the row as a text check-in", async () => {
+    const done = sheet(); done.entries[0].status = "done"; done.entries[0].method = "text";
+    const fetch = vi.fn().mockResolvedValueOnce(response(sheet())).mockResolvedValueOnce(response(done)); vi.stubGlobal("fetch", fetch); await render();
+    await act(async () => button("Text").click());
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ dayId: "day", version: 0, entryId: "entry", action: "done", method: "text" });
+    expect(container.textContent).toContain("1 of 1 checked in");
+  });
   it("refreshes conflicts without replaying the action", async () => {
     const latest = sheet(); latest.day.version = 4;
     const fetch = vi.fn().mockResolvedValueOnce(response(sheet())).mockResolvedValueOnce(response({}, 409)).mockResolvedValueOnce(response(latest)); vi.stubGlobal("fetch", fetch); await render();
-    await act(async () => button("Done").click());
     await act(async () => button("Call").click());
     expect(container.textContent).toContain("Review the refreshed list");
     expect(fetch).toHaveBeenCalledTimes(3);
@@ -76,9 +86,8 @@ describe("daily call sheet", () => {
   });
   it("keeps the current row on failure and allows retry", async () => {
     const fetch = vi.fn().mockResolvedValueOnce(response(sheet())).mockRejectedValueOnce(new Error("Offline")); vi.stubGlobal("fetch", fetch); await render();
-    await act(async () => button("Done").click());
     await act(async () => button("Call").click());
-    expect(container.textContent).toContain("Offline"); expect(button("Done").disabled).toBe(false);
+    expect(container.textContent).toContain("Offline"); expect(button("Call").disabled).toBe(false); expect(button("Done").disabled).toBe(false);
     expect(container.textContent).toContain("0 of 1 checked in");
   });
   it("shows authentication and initial load failures honestly", async () => {
@@ -99,7 +108,6 @@ describe("daily call sheet", () => {
   it("does not poll while a save is pending or after unmount", async () => {
     let finish!: (r: unknown) => void;
     const fetch = vi.fn().mockResolvedValueOnce(response(sheet())).mockImplementationOnce(() => new Promise(r => { finish = r; })); vi.stubGlobal("fetch", fetch); await render();
-    await act(async () => button("Done").click());
     await act(async () => button("Call").click());
     await act(async () => vi.advanceTimersByTimeAsync(15000));
     expect(fetch).toHaveBeenCalledTimes(2);

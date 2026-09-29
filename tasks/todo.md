@@ -1149,3 +1149,13 @@ Check-in method verification:56 call-sheet tests and97 dating component tests pa
 No schema changes or extra todo records. Full check-in actions stay on /call-sheet.
 
 Verification: typecheck and production build passed. Synthetic desktop/mobile browser checks confirmed a single compact shortcut only in To Do, one shared progress request, navigation to the full sheet, progress after a saved check-in, and a usable fallback during API failure. Screenshots inspected; independent review approved.
+
+## 2026-09-29 — Call / Text on the call sheet log the check-in
+
+Ask (Eddie, screenshot of the Call · Text · Done · ••• row): "these buttons should log the communication not trigger the action".
+- [x] Call and Text on each pending row are buttons that save a `done` check-in with method `call` / `text` straight away (same `/api/call-sheet` mutation the Done picker uses), instead of `tel:` / `sms:` links. No dialog. Undo keeps working (focus moves to Undo after the save)
+- [x] The row no longer links to the phone, Messages or mail at all; the `mailto:` shortcut for email-only people is gone too. Done still opens the picker for WhatsApp / Email / In person / Other
+- [x] Call and Text show for every pending person (logging doesn't need a phone number) and disappear once the row is checked in
+- [x] Verified: 10 component tests (2 new: row Call and row Text send the right method with no dialog; retry after a failed save; conflicts; polling paused during the save), all 57 call-sheet tests, `tsc --noEmit` clean
+- NOT verified: in a browser. The only DATABASE_URL on this machine is the Neon prod DB and there is no local Postgres, so a click-through would have written real check-ins
+- No schema or API change
