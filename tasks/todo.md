@@ -36,6 +36,39 @@ the summary says (Dave). EC/DV still got 3 items (Das Auto follow-up,
 fleet/B2B cadence, signage to Zach). "Launch ads today" got a due date of the
 meeting day, so it is already overdue.
 
+## Granola auto-import cron (GTM / C2 / Leads)
+
+Every 30 minutes, Granola notes in the folders named exactly GTM, C2 or Leads
+(case-insensitive; not "GTM Weekly Review", "GTM Daily Standup", "C2-Ben",
+"Functional Leads Meetings") are turned into routed todos with no review step.
+
+> **The `GranolaImport` table has NOT been applied to production.** It exists
+> only in prisma/schema.prisma (and was pushed to a scratch Postgres for
+> verification). Run `pnpm db:push` against prod before merging/deploying, or
+> the cron, the picker list and the commit route will all fail on the missing table.
+
+- [x] `src/lib/granola.ts`: `listFolders()` (paged, MAX_PAGES guard) + `folderId` → `folder_id` on listNotes/listNotesPage
+- [x] Schema: `GranolaImport` (userId+noteId unique) + User back-relation; `pnpm db:generate`
+- [x] `src/lib/meeting-import.ts`: `extractFromNote` + `commitItems` (autopilotKey, skipDuplicates, GranolaImport upsert in one transaction)
+- [x] Parse + commit routes refactored onto the service; button sends `noteId`; manual imports record `source: "manual"`
+- [x] `src/lib/granola-auto-import.ts`: `AUTO_IMPORT_FOLDERS`, exact matching, non-matching child folders excluded
+- [x] `GET /api/cron/granola-todos` (3-day window, max 4 notes/tick, oldest first) + vercel.json `*/30 * * * *`
+- [x] Picker shows a muted "Imported" tag (still selectable)
+- [x] Tests: cron route (11), meeting-import (7), granola folders (3), list route imported flag, commit route rewritten
+- [x] Live verify on scratch PG (:54333) with the real key
+- [ ] Apply `GranolaImport` to prod (`pnpm db:push`) — needs Eddie's go-ahead
+
+### Review
+`pnpm typecheck` clean; `pnpm test` 68 files passed / 15 skipped, 671 tests passed.
+Live run: the real folders resolved to GTM `fol_UeftsroSoNajNN`, C2 `fol_aKL9SrCONDrOpT`
+and Leads `fol_lnxL4GrRUwWpWc`, all top-level. The 3-day window held one note,
+"GTM Meeting 9/28" (`not_Zh3xFsvZIANAtk`). The first run took 28 s and imported 22
+items: EC/OB ×15, To Do ×5 (in Inbox), EC/DV ×2. The second run returned `skipped: 1`
+and imported nothing. Home tiles and the picker's "Imported" tag were checked in the browser.
+A manual parse + commit of "Olto x Bird" wrote a `source: manual` row, and the picker then flagged it too.
+Manual imports get keys `granola:{noteId}:m{stamp}:{i}` instead of `granola:{noteId}:{i}`,
+so a deliberate re-import from the picker isn't silently dropped by skipDuplicates.
+
 ---
 
 # Trips — Gmail booking import → itinerary (built, Phase-1 verified 2026-08-26)

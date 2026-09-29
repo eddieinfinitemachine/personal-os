@@ -231,3 +231,55 @@ describe("bounded Granola pages", () => {
     expect(fetch.mock.calls[0][1]).toMatchObject({ redirect: "error" });
   });
 });
+
+describe("Granola folders", () => {
+  it("pages every folder and maps parent_folder_id", async () => {
+    const calls: string[] = [];
+    const fetch = vi.fn(async (url: string) => {
+      calls.push(url);
+      const cursor = new URL(url).searchParams.get("cursor");
+      if (!cursor) {
+        return json({
+          folders: [{ id: "fol_aaaaaaaaaaaaaa", object: "folder", name: "GTM", parent_folder_id: null }],
+          hasMore: true,
+          cursor: "f2",
+        });
+      }
+      return json({
+        folders: [{ id: "fol_bbbbbbbbbbbbbb", object: "folder", name: "GTM Weekly Review", parent_folder_id: "fol_aaaaaaaaaaaaaa" }],
+        hasMore: false,
+        cursor: null,
+      });
+    });
+    const client = createGranolaClient({ apiKey: "k", baseUrl: "https://g.test/v1", fetch, minIntervalMs: 0 });
+    expect(await client.listFolders!()).toEqual([
+      { id: "fol_aaaaaaaaaaaaaa", name: "GTM", parentFolderId: null },
+      { id: "fol_bbbbbbbbbbbbbb", name: "GTM Weekly Review", parentFolderId: "fol_aaaaaaaaaaaaaa" },
+    ]);
+    expect(calls.map((c) => new URL(c).pathname + new URL(c).search)).toEqual([
+      "/v1/folders?page_size=30",
+      "/v1/folders?page_size=30&cursor=f2",
+    ]);
+  });
+
+  it("stops on a stalled folder cursor", async () => {
+    const fetch = vi.fn(async () => json({ folders: [{ id: "fol_aaaaaaaaaaaaaa", name: "C2" }], hasMore: true, cursor: "same" }));
+    const client = createGranolaClient({ apiKey: "k", fetch, minIntervalMs: 0 });
+    const folders = await client.listFolders!();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(folders[0]).toEqual({ id: "fol_aaaaaaaaaaaaaa", name: "C2", parentFolderId: null });
+  });
+
+  it("passes folder_id on listNotes and listNotesPage only when given", async () => {
+    const fetch = vi.fn(async (_url: string) => json({ notes: [], hasMore: false, cursor: null }));
+    const client = createGranolaClient({ apiKey: "k", baseUrl: "https://g.test/v1", fetch, minIntervalMs: 0 });
+    await client.listNotes({ createdAfter: new Date("2026-09-26T00:00:00Z"), folderId: "fol_aaaaaaaaaaaaaa" });
+    await client.listNotesPage!({ createdAfter: new Date("2026-09-26T00:00:00Z"), folderId: "fol_bbbbbbbbbbbbbb" });
+    await client.listNotes({ createdAfter: new Date("2026-09-26T00:00:00Z") });
+    const params = fetch.mock.calls.map((c) => new URL(c[0] as string).searchParams);
+    expect(params[0].get("folder_id")).toBe("fol_aaaaaaaaaaaaaa");
+    expect(params[0].get("created_after")).toBe("2026-09-26T00:00:00.000Z");
+    expect(params[1].get("folder_id")).toBe("fol_bbbbbbbbbbbbbb");
+    expect(params[2].has("folder_id")).toBe(false);
+  });
+});

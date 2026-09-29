@@ -65,6 +65,7 @@ describe("POST /api/meetings/granola/parse", () => {
     const body = await res.json();
     expect(mocks.getNote).toHaveBeenCalledWith("note-1", { transcript: true });
     expect(body).toMatchObject({
+      noteId: "note-1",
       meetingTitle: "GTM Meeting 9/28",
       meetingDate: "2026-09-28",
       webUrl: "https://notes.granola.ai/d/note-1",

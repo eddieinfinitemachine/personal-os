@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
-import { callClaudeJSON } from "@/lib/claude";
-import { GranolaError, granolaFromEnv, granolaNoteText } from "@/lib/granola";
-import { listAccessWhere } from "@/lib/list-access";
+import { GranolaError, granolaFromEnv } from "@/lib/granola";
 import { CAPTURE_LIST_NAME } from "@/lib/lists";
-import { buildSystem, meetingDay, normalizeItems } from "@/lib/meeting-extract";
-import { prisma } from "@/lib/prisma";
+import { extractFromNote, importLists } from "@/lib/meeting-import";
 import { granolaImportGate } from "../gate";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +10,7 @@ export const maxDuration = 60;
 
 // POST { noteId } → Claude proposes action items, each routed to a list.
 // No writes: the review screen commits via /api/meetings/commit.
-// → { meetingTitle, meetingDate, webUrl, items, lists }
+// → { noteId, meetingTitle, meetingDate, webUrl, items, lists }
 
 export async function POST(request: Request) {
   const gate = await granolaImportGate(request);
@@ -40,41 +37,18 @@ export async function POST(request: Request) {
     throw e;
   }
 
-  const lists = await prisma.list.findMany({
-    where: listAccessWhere(userId),
-    select: { id: true, name: true, isDefault: true, userId: true },
-    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-  });
+  const lists = await importLists(userId);
 
-  const meetingTitle = note.title?.trim() || note.calendar_event?.event_title?.trim() || null;
-  const meetingDate = meetingDay(note.calendar_event?.scheduled_start_time ?? note.created_at);
-  const header = [
-    meetingTitle ? `Meeting: ${meetingTitle}` : null,
-    meetingDate ? `Date: ${meetingDate}` : null,
-    note.attendees?.length
-      ? `Attendees: ${note.attendees.map((a) => a.name || a.email).join(", ")}`
-      : null,
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  let parsed: { items?: unknown };
+  let extraction;
   try {
-    parsed = await callClaudeJSON({
-      system: buildSystem(lists, new Date().toISOString().slice(0, 10)),
-      user: `${header}\n\n${granolaNoteText(note, 200_000)}`,
-      // Items are short (~60 tokens each); 4000 covers a very busy meeting.
-      maxTokens: 4000,
-    });
+    extraction = await extractFromNote({ userId, note, lists });
   } catch {
     return NextResponse.json({ error: "could not extract action items" }, { status: 502 });
   }
 
   return NextResponse.json({
-    meetingTitle,
-    meetingDate,
-    webUrl: note.web_url ?? null,
-    items: normalizeItems(parsed?.items, lists),
+    noteId,
+    ...extraction,
     // Destinations for the review's list picker. The user's own To Do is the
     // picker's "To Do (inbox)" option (listId null), so it isn't listed twice.
     lists: lists

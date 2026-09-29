@@ -131,3 +131,8 @@ A saved name should trigger current on-device Contacts lookup and matching messa
 - September28:Call Sheet Done must ask how Eddie reached out before recording a check-in. Persist the selected channel rather than logging an unspecified encounter.
 
 Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside To Do rather than showing the full five-person panel above the day’s tasks.
+
+## 2026-09-29 — mock @/lib/prisma before the first run of a new route test
+**Context**: Writing vitest tests for a new API route that reads a new Prisma table.
+**Mistake / surprise**: The first run executed a real Prisma read against the repo `.env` DATABASE_URL (production) because the prisma module wasn't mocked yet. Read-only, but it should never happen.
+**Rule**: Every route/service test file starts with `vi.mock("@/lib/prisma", …)` in the hoisted block before anything is imported; never run a new test file until that line exists.
