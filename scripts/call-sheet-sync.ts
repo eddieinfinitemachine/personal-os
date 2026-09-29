@@ -31,7 +31,9 @@ const SOURCES: CallSheetSource[] = ["imessage", "whatsapp"];
 const DAY = 86400000;
 
 /** Contacts only expand a unique complete name; every shared handle is removed. */
-export function resolveCallSheetTargets(config: CaptureConfig, contacts: DatingContact[]): Target[] {
+export function resolveCallSheetTargets<P extends { id: string; name: string; phone: string | null; email: string | null }>(
+  config: { people: P[]; blockedHandles: string[] }, contacts: DatingContact[],
+): (P & { handles: string[] })[] {
   const targets = config.people.map(p => {
     const match = matchDatingContact(p.name, contacts);
     return {

@@ -1171,3 +1171,19 @@ Ask (Eddie, screenshot of the Call · Text · Done · ••• row): "these but
 - [x] Verified: 10 component tests (2 new: row Call and row Text send the right method with no dialog; retry after a failed save; conflicts; polling paused during the save), all 57 call-sheet tests, `tsc --noEmit` clean
 - NOT verified: in a browser. The only DATABASE_URL on this machine is the Neon prod DB and there is no local Postgres, so a click-through would have written real check-ins
 - No schema or API change
+
+## 2026-09-29 — CRM context backfill (AI context per Person)
+
+Ask (Eddie): "can you search more and backfill the crm with context about the person?" Approved: additive schema (Person.context Json?, Person.contextAt DateTime?), sources = iMessage + WhatsApp + existing CRM data/interactions + Granola + web search on company/role, model = Sonnet 5.5.
+- [ ] ⚠️ SCHEMA (approved): `Person.context Json?`, `Person.contextAt DateTime?`. Additive, nullable. Prod `pnpm db:push` BEFORE deploy (branch: schema.prisma + prisma generate done; prod push pending)
+- [x] Shared contract `src/lib/person-context/types.ts` (PersonContext shape, limits)
+- [x] Server: `refreshPersonContext` (Sonnet 5.5, fingerprint skip, lease, optimistic write, never touches manual fields), Granola match by exact full name (cached note list), web search only when company/role set, labeled public
+- [x] Capture endpoint `POST /api/capture/people/context` (CAPTURE_TOKEN bearer, body/thread limits) + `GET` targets. Raw messages never stored
+- [x] Mac worker `scripts/crm-context-sync.ts` (reuses call-sheet target resolver + readers, 365-day 1:1 threads, 80k-char budget, local checkpoint, --dry-run/--limit/--person), LaunchAgent plist hourly
+- [x] UI: read-only Context card in the person editor + one-line summary on the friends row, marked AI-generated with date and sources. No colour changes (lesson 2026-06-10)
+- [x] Tests: prompt/fingerprint/validation, capture limits, script bounding, component render; integration gated by env flag
+- [ ] Merge, prod db:push, deploy, update personal-os-sync worktree, install LaunchAgent, run the backfill once for real, spot-check a few people with Eddie
+- [x] Reviewed both halves (Fable): prompt treats sources as untrusted, relationship basis stated/inferred, lease + optimistic write guarded on updatedAt, worker logs ids only. Fixed: editor hides the Context card while a first generation is in flight (context holds only the lease, no summary)
+- [x] Verified: typecheck clean, 663 tests pass (118 gated/skipped), prod build OK
+- Known: Granola cache warms ~90 notes per request (20 s budget); the first few people of the very first backfill may come back `busy` and are retried on the next run. CRM-only edits don't retrigger a person whose messages are unchanged (use `--force`)
+- NOT verified: browser rendering with real generated context, the worker against real Mac data (run once after release, see below), integration test (no local Postgres)

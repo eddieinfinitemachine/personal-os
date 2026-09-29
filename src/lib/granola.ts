@@ -243,7 +243,7 @@ function escapeRe(s: string): string {
 }
 
 /** Case-insensitive whole-word (letters/digits either side don't count) match. */
-function wordMatcher(terms: string[]): RegExp | null {
+export function wordMatcher(terms: string[]): RegExp | null {
   const alts = terms
     .map((t) => t.trim())
     .filter(Boolean)

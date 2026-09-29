@@ -777,6 +777,10 @@ model Person {
   starred           Boolean   @default(false)
   archived          Boolean   @default(false)
   position          Int       @default(0)
+  // AI-written context (PersonContext in src/lib/person-context/types.ts).
+  // Derived only; manual fields above are never written by that pipeline.
+  context           Json?
+  contextAt         DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
