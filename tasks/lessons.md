@@ -140,3 +140,7 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 **Context**: Writing vitest tests for a new API route that reads a new Prisma table.
 **Mistake / surprise**: The first run executed a real Prisma read against the repo `.env` DATABASE_URL (production) because the prisma module wasn't mocked yet. Read-only, but it should never happen.
 **Rule**: Every route/service test file starts with `vi.mock("@/lib/prisma", …)` in the hoisted block before anything is imported; never run a new test file until that line exists.
+
+## 2026-09-29 — parallel sessions + `prisma db push` drop each other's tables
+**Context**: Pushed the additive `GranolaImport` table to prod, then merged. A concurrent session shipping PR #36 ran its own `db push` from a branch whose schema predated the table; Prisma silently dropped the (empty) table to match that schema. Prod also briefly lacked the other branch's columns in the generated client, which broke `tsc` until `pnpm db:generate`.
+**Rule**: Before any `pnpm db:push`, pull `main` into the branch first so the schema on disk is a superset of prod, then run `prisma migrate diff --from-url $DATABASE_URL --to-schema-datamodel prisma/schema.prisma --script` and refuse to push if it shows anything but the additive change you intend. After merging a schema-bearing PR, re-run that diff once to confirm prod still matches.
