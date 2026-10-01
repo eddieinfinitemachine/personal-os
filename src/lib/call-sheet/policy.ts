@@ -85,20 +85,85 @@ export function snoozeUntil(now: Date, days: number, timezone: string): Date {
   }
   return instant;
 }
+export type Closeness = "close" | "strong" | "casual" | "weak";
+type SourceDataMap = Partial<Record<CallSheetSource, ContactSourceData>>;
+// 1:1 messages in the last 365 days, summed across sources.
+export const CLOSE_MESSAGE_VOLUME = 500;
+export const STRONG_MESSAGE_VOLUME = 150;
+export const CASUAL_MESSAGE_VOLUME = 10;
+const CLOSENESS_RANK: Record<Closeness, number> = {
+  weak: 0,
+  casual: 1,
+  strong: 2,
+  close: 3,
+};
+export function messageVolume(sourceData: SourceDataMap | undefined) {
+  return SOURCES.reduce((sum, source) => {
+    const count = sourceData?.[source]?.messageCount;
+    return typeof count === "number" && Number.isFinite(count) && count >= 0
+      ? sum + count
+      : sum;
+  }, 0);
+}
+// Labels look like "4 - close friend"; legacy rows hold a bare word.
+function labelCloseness(strength: string | null): Closeness | null {
+  const label = strength?.trim().toLowerCase() ?? "";
+  const level = /^([0-5])(?!\d)/.exec(label)?.[1];
+  if (level === "5" || level === "4" || /\b(family|close)\b/.test(label))
+    return "close";
+  if (level === "3" || /\b(friend|strong)\b/.test(label)) return "strong";
+  if (level === "2" || /\b(acquaintance|casual)\b/.test(label)) return "casual";
+  if (
+    level === "1" ||
+    level === "0" ||
+    /\b(met|weak)\b|don[’']?t know/.test(label)
+  )
+    return "weak";
+  return null;
+}
+function volumeCloseness(volume: number): Closeness | null {
+  return volume >= CLOSE_MESSAGE_VOLUME
+    ? "close"
+    : volume >= STRONG_MESSAGE_VOLUME
+      ? "strong"
+      : volume >= CASUAL_MESSAGE_VOLUME
+        ? "casual"
+        : volume > 0
+          ? "weak"
+          : null;
+}
+/** The closer of the CRM label and recent message volume; casual when neither says. */
+export function closeness(person: {
+  strength: string | null;
+  sourceData?: SourceDataMap;
+}): Closeness {
+  const signals = [
+    labelCloseness(person.strength),
+    volumeCloseness(messageVolume(person.sourceData)),
+  ].filter((value): value is Closeness => value !== null);
+  if (!signals.length) return "casual";
+  return signals.reduce((a, b) =>
+    CLOSENESS_RANK[b] > CLOSENESS_RANK[a] ? b : a,
+  );
+}
 export function cadence(
-  person: { starred: boolean; strength: string | null },
+  person: {
+    starred: boolean;
+    strength: string | null;
+    sourceData: SourceDataMap | undefined;
+  },
   override?: number | null,
 ) {
-  return (
-    override ??
-    (person.starred || person.strength === "close"
-      ? 30
-      : person.strength === "strong"
-        ? 60
-        : person.strength === "weak"
-          ? 180
-          : 90)
-  );
+  if (override != null) return override;
+  if (person.starred) return 30;
+  const level = closeness(person);
+  return level === "close"
+    ? 30
+    : level === "strong"
+      ? 60
+      : level === "weak"
+        ? 180
+        : 90;
 }
 export function fresh(iso: string | null | undefined, now: Date) {
   if (!iso) return false;
@@ -223,9 +288,10 @@ export function latestContact(
       ? [{ at: person.manualAt.toISOString(), source: "manual" }]
       : [];
   const enabled = SOURCES.filter((source) => sources[source].enabled);
+  // Freshness alone bounds how old evidence may be. A failed attempt (the Mac
+  // slept mid-scan) leaves the last good scan as usable as it was before it.
   const complete = enabled.every(
     (source) =>
-      sources[source].status !== "error" &&
       fresh(sources[source].lastSuccessAt, now) &&
       fresh(person.sourceData[source]?.capturedAt, now),
   );
@@ -244,6 +310,33 @@ export function latestContact(
     reliable,
     complete,
   };
+}
+export const NO_CONTACT_REASON = "No contact on record.";
+/** People to sort out by hand: active, shown, never starred or given a cadence,
+ * and verifiably silent (every enabled source scanned them fresh). Snoozes and
+ * the suggestion cooldown do not take anyone out of review. */
+export function reviewQueue(
+  people: PolicyPerson[],
+  sources: Record<CallSheetSource, SourceHealth>,
+  now: Date,
+): PolicyPerson[] {
+  return people
+    .filter((person) => {
+      if (
+        person.archived ||
+        person.starred ||
+        person.preference?.excludedAt ||
+        person.preference?.cadenceDays != null
+      )
+        return false;
+      const last = latestContact(person, sources, now);
+      return last.at === null && last.complete;
+    })
+    .sort(
+      (a, b) =>
+        personName(a).localeCompare(personName(b), "en") ||
+        a.id.localeCompare(b.id),
+    );
 }
 function birthdaySoon(birthday: Date | null, now: Date, timezone: string) {
   if (!birthday) return false;
@@ -292,27 +385,35 @@ export function rankCandidates(
             now,
           )
         : [];
-      if (!birthday && (!last.reliable || age === null || age < interval))
+      // No contact on record only counts once every enabled source has a fresh
+      // scan for this person; a missing scan is not evidence of silence.
+      const unknown = age === null && !birthday;
+      if (unknown && !last.complete) return [];
+      if (!birthday && !unknown && (!last.reliable || age! < interval))
         return [];
+      const level = closeness(person);
       const important =
-        person.starred ||
-        person.strength === "close" ||
-        person.strength === "strong";
+        person.starred || level === "close" || level === "strong";
+      // Starred or a user-chosen cadence means they were reviewed and kept:
+      // treat silence as a year overdue. Everyone else waits behind known dates.
+      const kept = person.starred || pref?.cadenceDays != null;
       // An AI-extracted question is context, never a user-set due date.
-      const tier = birthday ? 1 : important ? 2 : 3;
+      const tier = birthday ? 1 : unknown && !kept ? 4 : important ? 2 : 3;
       const category = relationshipCategory(person);
       return [
         {
           person,
           reason: birthday
             ? "Their birthday is coming up this week."
-            : `Time for your ${interval}-day check-in.`,
+            : unknown
+              ? NO_CONTACT_REASON
+              : `Time for your ${interval}-day check-in.`,
           lastContactAt: last.at,
           lastContactSource: last.source,
           cues,
           cadenceDays: interval,
           tier,
-          score: (age ?? 0) / interval,
+          score: (unknown ? (kept ? 365 : 0) : (age ?? 0)) / interval,
           category,
         },
       ];
@@ -335,8 +436,11 @@ export function selectCandidates(
   for (const item of existing)
     counts.set(item.category, (counts.get(item.category) ?? 0) + 1);
   while (pool.length && selected.length < count) {
+    // Category balance never reaches past people who are due into the
+    // no-contact tier; that tier is used only once everyone else is taken.
+    const due = pool.some((item) => item.tier < 4);
     const index = pool.findIndex(
-      (item) => (counts.get(item.category) ?? 0) < 2,
+      (item) => (!due || item.tier < 4) && (counts.get(item.category) ?? 0) < 2,
     );
     const [item] = pool.splice(index === -1 ? 0 : index, 1);
     selected.push(item);

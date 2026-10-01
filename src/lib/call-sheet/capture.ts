@@ -233,6 +233,11 @@ export function getCaptureConfig(userId: string): Promise<CaptureConfig> {
         .filter((person) => !person.archived)
         .map((person) => {
           const pref = preferences.find((item) => item.personId === person.id);
+          // Same identity rule as the sheet, so the worker gets the same cadence.
+          const sourceData =
+            pref?.identityKey === identityKey(person)
+              ? readSourceData(pref.sourceData)
+              : {};
           return {
             id: person.id,
             name: personName(person),
@@ -241,7 +246,7 @@ export function getCaptureConfig(userId: string): Promise<CaptureConfig> {
             identityKey: identityKey(person),
             starred: person.starred,
             strength: person.strength,
-            cadenceDays: cadence(person, pref?.cadenceDays),
+            cadenceDays: cadence({ ...person, sourceData }, pref?.cadenceDays),
             lastSuggestedAt: pref?.lastSuggestedAt?.toISOString() ?? null,
           };
         }),

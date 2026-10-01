@@ -1309,3 +1309,30 @@ Ask (Eddie): "would also be cool to have anyone i add to my contact get added au
 - [x] Verified: real JXA export (6,649 cards, id/creationDate populated), worker dry run end to end
 - [ ] Merge, deploy, update personal-os-sync worktree, install LaunchAgent (first run records "now"), add a test contact on the iPhone and watch it arrive
 - NOT verified: route against a real database (no local Postgres); first-run Automation prompt under launchd (Terminal already has Contacts access)
+
+## 2026-10-01 — "Someone else today" made the person vanish with no replacement
+
+Report (Eddie): "when i selected somebody else for call sheet, they disappeared".
+Cause: the 4:50am message sync ran during a string of 5–30 s dark wakes, so some requests failed and both sources were marked `error`. `latestContact` treated an errored source as incomplete, which made every message-based candidate unreliable: the pool went from 171 people to 0. Replace then removed the row, found nobody to put in the slot, and said nothing.
+- [x] Replace with nobody else due is declined (422, transaction rolled back, no snooze, no undo entry) and the sheet says "No one else is due for a check-in right now, so <name> stays on today’s list." Snooze and Don’t suggest still remove the row
+- [x] Policy: a failed sync attempt no longer discards the last good scan. Reliability is bounded by freshness only (source `lastSuccessAt` and the person's `capturedAt`, both within 2 days), same bound a `ready` source already had
+- [x] Verified: 3 new tests fail without the fix and pass with it (policy, component, real-Postgres integration on a throwaway local cluster); all 24 integration tests, 785 unit tests, `tsc --noEmit` clean
+- [x] Prod data (read-only check): after re-running the sync both sources are `ready` and 171 candidates are back; today's sheet refills to 5 on its next load
+- NOT verified: in a browser (the only app DATABASE_URL is prod; a click-through would write real check-ins)
+- No schema or API shape change. The Mac worker is unchanged, so the sync worktree needs no update
+
+## 2026-10-01 — Call sheet: closeness from message volume, unknowns in the pool, quick review
+
+Ask (Eddie): "use my imessage or whatsapp volume to determine how close i am with somebody. you can put people that have no contact on record and i can skip them. maybe there is a fast way to go thru this".
+Context: 966 people; 464 have 0 messages in the past year, 50 have 500+. Strength labels in the CRM are "4 - close friend" style, which the old `close`/`strong`/`weak` check never matched, so only starred people got a short interval.
+Defaults picked (no schema change):
+- [x] Closeness = the closer of the CRM label and 365-day message volume (iMessage + WhatsApp, 1:1). Volume: 500+ close, 150+ strong, 10+ casual, 1–9 weak. Labels: 5/4 close, 3 strong, 2 casual, 1/0 weak. Interval 30 / 60 / 90 / 180 days; starred stays 30; a per-person override still wins
+- [x] People with no contact on record join the pool at the lowest priority ("No contact on record."), only when every enabled source has a fresh scan for them. Starred ones, and ones given an interval in the review, rank as a year overdue instead
+- [x] Quick review: `GET/POST /api/call-sheet/review` and a one-person-at-a-time sheet on the call sheet. Keys 1–4 keep with an interval (monthly / 3 months / 6 months / yearly), X don't suggest, S skip, Z undo. Optimistic, sequential saves
+- [x] Capture config sends the volume-aware interval so the Mac worker needs no change
+- [x] Tests: policy, real-Postgres integration, component. Typecheck
+- [x] Review of the worker's diff (Fable). Fixed: category balancing in `selectCandidates` reached into the no-contact tier, so on real data one no-contact person took a slot every day ahead of ~170 due people; balancing now stays among due people until they run out
+- [x] Verified: `tsc --noEmit` clean; 803 unit/component tests pass; 63 call-sheet tests incl. 27 real-Postgres integration tests pass on a throwaway local cluster
+- [x] Verified in a browser against that throwaway database with synthetic people: footer count, Review opens, keys 1 / X / S / Z / Z saved keep, hide, and the undo reset (checked the rows), Esc closes and the count drops
+- Real data, read-only simulation: closeness close 64 / strong 92 / casual 709 / weak 101; due pool 176 (37 priority); 449 in the review queue; a fresh day's five are all due people
+- NOT verified: against prod data in the UI, on a phone. Not deployed
