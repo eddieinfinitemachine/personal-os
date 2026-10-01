@@ -18,8 +18,8 @@ import { setCallSheetReminder } from "./service";
 const now = new Date("2026-09-29T01:00:00Z"); // Mon Sep 28, 9pm in New York
 const proposal = {
   type: "call_sheet" as const,
-  firstName: "Grace",
-  lastName: "Kotick",
+  firstName: "Alex",
+  lastName: "Rivera",
   date: "2026-10-06",
   note: " the lease ",
 };
@@ -31,28 +31,28 @@ describe("commitCallSheetProposal", () => {
   it("resolves the person and sets the reminder with a friendly message", async () => {
     vi.mocked(resolveOrCreatePerson).mockResolvedValue({
       kind: "match",
-      person: { id: "grace", firstName: "Grace", lastName: "Kotick" },
+      person: { id: "alex", firstName: "Alex", lastName: "Rivera" },
     });
     const result = await commitCallSheetProposal("owner", proposal, now);
     expect(setCallSheetReminder).toHaveBeenCalledWith(
       "owner",
-      { personId: "grace", dueOn: "2026-10-06", note: "the lease" },
+      { personId: "alex", dueOn: "2026-10-06", note: "the lease" },
       now,
     );
     expect(result).toEqual({
       ok: true,
-      personId: "grace",
-      name: "Grace Kotick",
+      personId: "alex",
+      name: "Alex Rivera",
       dueOn: "2026-10-06",
       note: "the lease",
       created: false,
-      message: "Grace Kotick will be on your call sheet Tue, Oct 6",
+      message: "Alex Rivera will be on your call sheet Tue, Oct 6",
     });
   });
   it("says 'today' in the sheet's timezone, not UTC", async () => {
     vi.mocked(resolveOrCreatePerson).mockResolvedValue({
       kind: "created",
-      person: { id: "new", firstName: "Grace Dayan", lastName: null },
+      person: { id: "new", firstName: "Alex Morgan", lastName: null },
     });
     const result = await commitCallSheetProposal(
       "owner",
@@ -62,15 +62,15 @@ describe("commitCallSheetProposal", () => {
     expect(result).toMatchObject({
       ok: true,
       created: true,
-      message: "Grace Dayan is on your call sheet today",
+      message: "Alex Morgan is on your call sheet today",
     });
   });
   it("returns the candidates for an ambiguous name and never sets a reminder", async () => {
     vi.mocked(resolveOrCreatePerson).mockResolvedValue({
       kind: "ambiguous",
       candidates: [
-        { id: "a", firstName: "Grace Dayan", lastName: null },
-        { id: "b", firstName: "Grace", lastName: "Kotick" },
+        { id: "a", firstName: "Alex Morgan", lastName: null },
+        { id: "b", firstName: "Alex", lastName: "Rivera" },
       ],
     });
     const result = await commitCallSheetProposal(
@@ -82,8 +82,8 @@ describe("commitCallSheetProposal", () => {
       ok: false,
       status: 409,
       error:
-        "More than one person is called Grace: Grace Dayan, Grace Kotick. Use their full name.",
-      candidates: ["Grace Dayan", "Grace Kotick"],
+        "More than one person is called Alex: Alex Morgan, Alex Rivera. Use their full name.",
+      candidates: ["Alex Morgan", "Alex Rivera"],
     });
     expect(setCallSheetReminder).not.toHaveBeenCalled();
   });

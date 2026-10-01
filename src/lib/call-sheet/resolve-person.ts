@@ -18,7 +18,7 @@ export const displayName = (person: NameInput) =>
 
 /** Match a spoken name against people records. A full name matches
  * case-insensitively, including records that keep the whole name in firstName
- * ("Grace Dayan", lastName null). A lone first name matches only when exactly
+ * ("Alex Morgan", lastName null). A lone first name matches only when exactly
  * one person has it; otherwise the caller must ask which one. */
 export function matchPerson(
   people: NamedPerson[],

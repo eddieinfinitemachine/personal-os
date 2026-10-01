@@ -151,6 +151,11 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 **Mistake / surprise**: Each worker copies chat.db / WhatsApp DBs (~2.7 GB) into `$TMPDIR/<worker>-*` and only removes them in `finally`/signal handlers. SIGKILL, session teardown and crashes skip both, so orphans accumulate until the disk fills. (The bulk of the full disk was a 56 GB Finder `TemporaryItems/NSIRD_*` item, not ours, but ours pushed it over.)
 **Rule**: Every worker that snapshots to tmp sweeps stale siblings (`sweepStaleTempRoots`, > 2 h old) on start. When a run "died with the session", check `du -sh $TMPDIR/*` before rerunning.
 
+## 2026-10-01 — never put a real contact's name in UI copy, prompts or fixtures
+**Context**: Building call sheet reminders from Eddie's ask "put Grace Kotick on my call sheet for Tuesday".
+**Mistake / surprise**: The example sentence went straight into the quick-add placeholder, the Claude prompt and the test fixtures, along with a second real name pulled from the people table. Eddie: "i dont want this to be the preview."
+**Rule**: A person named in a request or seen in the database is data, not copy. Placeholders, prompt examples, comments, commit/PR text and fixtures use synthetic names (Alex Rivera, Sam). Grep for the real name before committing.
+
 ## 2026-10-01 — a "last attempt failed" flag is not a staleness signal
 **Context**: Call sheet "Someone else today" removed a person and offered nobody; the candidate pool was empty all morning.
 **Mistake / surprise**: The hourly Mac worker runs during overnight dark wakes (5–30 s each), so the daily full re-post gets chopped and reports `error`. Policy treated `status === "error"` as "evidence incomplete" even though the last good scan was 15 hours old and every row was fresh, so one bad attempt zeroed 171 candidates until the next clean run. The UI then dropped the row silently.

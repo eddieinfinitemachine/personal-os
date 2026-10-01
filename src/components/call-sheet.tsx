@@ -65,7 +65,7 @@ export function CallSheet() {
     }
   }, [prompt, busy]);
 
-  /** "Grace Kotick Tuesday" → Claude reads a person and a day → reminder saved, no preview. */
+  /** "Alex Rivera Tuesday" → Claude reads a person and a day → reminder saved, no preview. */
   async function addForDay(e: React.FormEvent) {
     e.preventDefault();
     const text = quickAdd.trim();
@@ -167,7 +167,7 @@ export function CallSheet() {
         {busy ? <Loader2 className="mt-1 size-4 animate-spin" aria-label="Saving" /> : null}
       </div>
       <form onSubmit={e => void addForDay(e)} className="mx-4 mt-3 flex items-center gap-2 sm:mx-5">
-        <input aria-label="Add someone for a day" value={quickAdd} onChange={e => setQuickAdd(e.target.value)} disabled={adding} maxLength={300} placeholder="Add someone for a day — “Grace Kotick Tuesday”" className="min-h-10 min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm" />
+        <input aria-label="Add someone for a day" value={quickAdd} onChange={e => setQuickAdd(e.target.value)} disabled={adding} maxLength={300} placeholder="Add someone for a day, like “Alex on Tuesday”" className="min-h-10 min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm" />
         <button type="submit" className={actionClass + " border border-[var(--color-border)]"} disabled={busy || !quickAdd.trim()} aria-label="Add to call sheet">{adding ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}Add</button>
       </form>
       {addResult ? <p role={addResult.ok ? "status" : "alert"} className={"mx-4 mt-2 text-sm sm:mx-5" + (addResult.ok ? " text-[var(--color-muted-foreground)]" : "")}>{addResult.text}</p> : null}

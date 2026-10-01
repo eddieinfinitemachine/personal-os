@@ -82,15 +82,15 @@ describe("call_sheet captures", () => {
     expect(
       validateProposal({
         type: "call_sheet",
-        firstName: " Grace ",
-        lastName: "Kotick",
+        firstName: " Alex ",
+        lastName: "Rivera",
         date: "2026-10-06",
         note: " the lease ",
       }),
     ).toEqual({
       type: "call_sheet",
-      firstName: "Grace",
-      lastName: "Kotick",
+      firstName: "Alex",
+      lastName: "Rivera",
       date: "2026-10-06",
       note: "the lease",
     });
@@ -108,18 +108,18 @@ describe("call_sheet captures", () => {
   it.each([
     { type: "call_sheet", firstName: "", date: "2026-10-06" },
     { type: "call_sheet", date: "2026-10-06" },
-    { type: "call_sheet", firstName: "Grace", date: "Tuesday" },
-    { type: "call_sheet", firstName: "Grace", date: "2026-02-30" },
-    { type: "call_sheet", firstName: "Grace" },
-    { type: "call_sheet", firstName: "Grace", lastName: 4, date: "2026-10-06" },
-    { type: "call_sheet", firstName: "Grace", date: "2026-10-06", note: ["x"] },
-    { type: "reminder", firstName: "Grace", date: "2026-10-06" },
+    { type: "call_sheet", firstName: "Alex", date: "Tuesday" },
+    { type: "call_sheet", firstName: "Alex", date: "2026-02-30" },
+    { type: "call_sheet", firstName: "Alex" },
+    { type: "call_sheet", firstName: "Alex", lastName: 4, date: "2026-10-06" },
+    { type: "call_sheet", firstName: "Alex", date: "2026-10-06", note: ["x"] },
+    { type: "reminder", firstName: "Alex", date: "2026-10-06" },
   ])("rejects %j", (shape) => {
     expect(() => validateProposal(shape)).toThrow("unexpected shape");
   });
 
   it("leaves sibling proposals untouched", () => {
-    const todo = { type: "todo", title: "remind me to call Grace Tuesday" };
+    const todo = { type: "todo", title: "remind me to call Alex Tuesday" };
     expect(validateProposal(todo)).toBe(todo);
   });
 
@@ -131,7 +131,7 @@ describe("call_sheet captures", () => {
         content: [
           {
             type: "text",
-            text: '{"type":"call_sheet","firstName":"Grace","lastName":"Kotick","date":"2026-10-06","note":null}',
+            text: '{"type":"call_sheet","firstName":"Alex","lastName":"Rivera","date":"2026-10-06","note":null}',
           },
         ],
       }),
@@ -139,7 +139,7 @@ describe("call_sheet captures", () => {
     vi.stubGlobal("fetch", fetch);
     try {
       const proposal = await parseCapture({
-        text: "Grace Kotick Tuesday",
+        text: "Alex Rivera Tuesday",
         today: "2026-10-01",
         activeProjects: [],
         forceType: "call_sheet",
@@ -150,7 +150,7 @@ describe("call_sheet captures", () => {
       expect(body.system).toContain("SIX structured record types");
       expect(body.system).toContain('"call_sheet"  — put a person on their daily Call Sheet');
       expect(body.system).toContain("call_sheet ONLY when the text explicitly mentions the call sheet");
-      expect(body.system).toContain('"Remind me to call Grace Tuesday" with no call-sheet mention is a todo');
+      expect(body.system).toContain('"Remind me to call Alex Tuesday" with no call-sheet mention is a todo');
       expect(body.system).toContain('"Remind me to …" / "todo: …" / "I need to …" → todo');
       expect(body.system).toContain("next occurrence strictly AFTER 2026-10-01");
       expect(body.messages[0].content[0].text).toContain("REQUIRED TYPE: call_sheet");

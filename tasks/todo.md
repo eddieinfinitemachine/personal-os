@@ -1312,15 +1312,15 @@ Ask (Eddie): "would also be cool to have anyone i add to my contact get added au
 
 ## 2026-10-01 — Call sheet reminders via natural language
 
-Ask (Eddie): "put Grace Kotick on my call sheet for Tuesday" puts that person on the Call Sheet on that date.
+Ask (Eddie): "put Alex Rivera on my call sheet for Tuesday" puts that person on the Call Sheet on that date.
 - [x] Schema (additive): `CallSheetContact.dueOn` / `dueNote` (TEXT, nullable); `prisma/changes/20261001_call_sheet_reminders.sql` (`ADD COLUMN IF NOT EXISTS`). Not applied to any DB
 - [x] Policy: due reminder (`dueOn <= today` in sheet timezone) is tier 0, reason "You asked to be reminded today.", bypasses snooze / 7-day cooldown / recent contact / cadence; respects archived and hidden; future dates don't change ranking
 - [x] Service: reminders are extra rows on top (no 2-per-category balancing), count toward the regular five, win over `skipped`, are cleared on placement (fires once; late if the day was missed); refresh keeps their reason and never auto-flips/removes them; row cap raised 5 → 25 (`MAX_DAY_ENTRIES`); hide clears a pending reminder (Undo restores it); a fired row survives Undo of an earlier action and an identity edit the same day
 - [x] `setCallSheetReminder` + `POST /api/call-sheet/reminders` `{ personId, dueOn | null, note? }`; `CallSheetResponse.upcoming`
 - [x] Smart capture: sixth proposal type `call_sheet` (prompt rules, validator, `forceType: "call_sheet"` with no web search); person resolver `src/lib/call-sheet/resolve-person.ts` (full name incl. whole-name-in-firstName rows, unique first name only, else 409 with candidates, else create); commit + auto routes; preview fields on /capture
-- [x] Call Sheet page: quick-add ("Grace Kotick Tuesday" → parse pinned → commit, no preview), Upcoming list with cancel, reminder note on the row
+- [x] Call Sheet page: quick-add ("Alex Rivera Tuesday" → parse pinned → commit, no preview), Upcoming list with cancel, reminder note on the row
 - [x] Tests: policy, in-memory service (`reminders.test.ts`), resolver, capture commit, smart-capture validator/prompt, HTTP auth, component; integration spec extended (not run: no scratch DB)
-- [ ] Apply the SQL to prod from merged main (flag first), deploy, then try "Grace Kotick Tuesday" for real
+- [ ] Apply the SQL to prod from merged main (flag first), deploy, then try "Alex Rivera Tuesday" for real
 - Review: TODAY for smart capture is now the user's Call Sheet-timezone date instead of the UTC date (affects every capture type in US evenings). NOT verified: integration tests against Postgres, live Claude classification, real browser
 
 ## 2026-10-01 — "Someone else today" made the person vanish with no replacement

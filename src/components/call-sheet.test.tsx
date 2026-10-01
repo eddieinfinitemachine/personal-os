@@ -128,47 +128,47 @@ describe("daily call sheet", () => {
     expect(JSON.parse(fetch.mock.calls[3][1].body)).toEqual({ source: "whatsapp", enabled: true });
   });
   it("adds someone for a day by parsing with the type pinned, committing without a preview, and reloading", async () => {
-    const withGrace = sheet(); withGrace.upcoming = [{ personId: "grace", name: "Grace Kotick", dueOn: "2026-10-06", note: null }];
-    const proposal = { type: "call_sheet", firstName: "Grace", lastName: "Kotick", date: "2026-10-06", note: null };
+    const withAlex = sheet(); withAlex.upcoming = [{ personId: "alex", name: "Alex Rivera", dueOn: "2026-10-06", note: null }];
+    const proposal = { type: "call_sheet", firstName: "Alex", lastName: "Rivera", date: "2026-10-06", note: null };
     const fetch = vi.fn()
       .mockResolvedValueOnce(response(sheet()))
       .mockResolvedValueOnce(response({ proposal }))
-      .mockResolvedValueOnce(response({ callSheet: { personId: "grace" }, message: "Grace Kotick will be on your call sheet Tue, Oct 6" }))
-      .mockResolvedValueOnce(response(withGrace));
+      .mockResolvedValueOnce(response({ callSheet: { personId: "alex" }, message: "Alex Rivera will be on your call sheet Tue, Oct 6" }))
+      .mockResolvedValueOnce(response(withAlex));
     vi.stubGlobal("fetch", fetch); await render();
     const input = container.querySelector<HTMLInputElement>('input[aria-label="Add someone for a day"]')!;
-    expect(input.placeholder).toBe("Add someone for a day — “Grace Kotick Tuesday”");
+    expect(input.placeholder).toBe("Add someone for a day, like “Alex on Tuesday”");
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Grace Kotick Tuesday");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Alex Rivera Tuesday");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () => input.form!.requestSubmit());
     expect(fetch.mock.calls[1][0]).toBe("/api/capture/smart/parse");
     const form = fetch.mock.calls[1][1].body as FormData;
-    expect(form.get("text")).toBe("Grace Kotick Tuesday");
+    expect(form.get("text")).toBe("Alex Rivera Tuesday");
     expect(form.get("forceType")).toBe("call_sheet");
     expect(fetch.mock.calls[2][0]).toBe("/api/capture/smart/commit");
     expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ proposal });
     expect(fetch.mock.calls[3][0]).toBe("/api/call-sheet");
-    expect(container.querySelector('[role="status"]')?.textContent).toBe("Grace Kotick will be on your call sheet Tue, Oct 6");
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Alex Rivera will be on your call sheet Tue, Oct 6");
     expect(input.value).toBe("");
-    expect(container.textContent).toContain("Grace Kotick · Tue, Oct 6");
+    expect(container.textContent).toContain("Alex Rivera · Tue, Oct 6");
   });
   it("shows an ambiguous name without guessing and keeps the text", async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(response(sheet()))
-      .mockResolvedValueOnce(response({ proposal: { type: "call_sheet", firstName: "Grace", lastName: null, date: "2026-09-29", note: null } }))
-      .mockResolvedValueOnce(response({ error: "More than one person is called Grace: Grace Dayan, Grace Kotick. Use their full name.", candidates: ["Grace Dayan", "Grace Kotick"] }, 409))
+      .mockResolvedValueOnce(response({ proposal: { type: "call_sheet", firstName: "Alex", lastName: null, date: "2026-09-29", note: null } }))
+      .mockResolvedValueOnce(response({ error: "More than one person is called Alex: Alex Morgan, Alex Rivera. Use their full name.", candidates: ["Alex Morgan", "Alex Rivera"] }, 409))
       .mockResolvedValueOnce(response(sheet()));
     vi.stubGlobal("fetch", fetch); await render();
     const input = container.querySelector<HTMLInputElement>('input[aria-label="Add someone for a day"]')!;
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Grace tomorrow");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Alex tomorrow");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () => input.form!.requestSubmit());
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Grace Dayan, Grace Kotick");
-    expect(input.value).toBe("Grace tomorrow");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Alex Morgan, Alex Rivera");
+    expect(input.value).toBe("Alex tomorrow");
     expect(button("Add").disabled).toBe(false);
   });
   it("shows upcoming reminders, cancels one, and shows a reminder's note on its row", async () => {
