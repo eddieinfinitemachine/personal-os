@@ -165,12 +165,12 @@ describe("parseReminder", () => {
 
 describe("setCallSheetReminder", () => {
   it("rejects past dates, dates beyond two years and other people's records", async () => {
-    addPerson("grace");
+    addPerson("alex");
     await expect(
-      setCallSheetReminder("u", { personId: "grace", dueOn: "2026-09-27" }, now),
+      setCallSheetReminder("u", { personId: "alex", dueOn: "2026-09-27" }, now),
     ).rejects.toThrow("already passed");
     await expect(
-      setCallSheetReminder("u", { personId: "grace", dueOn: "2028-09-28" }, now),
+      setCallSheetReminder("u", { personId: "alex", dueOn: "2028-09-28" }, now),
     ).rejects.toThrow("two years");
     await expect(
       setCallSheetReminder("u", { personId: "nobody", dueOn: "2026-10-06" }, now),
@@ -183,11 +183,11 @@ describe("setCallSheetReminder", () => {
   });
 
   it("lists a future reminder as upcoming, clears hide/snooze, and cancels", async () => {
-    addPerson("grace", { firstName: "Grace", lastName: "Kotick", manualAt: null });
+    addPerson("alex", { firstName: "Alex", lastName: "Rivera", manualAt: null });
     db.tx.callSheetContact.upsert({
-      where: { userId_personId: { userId: "u", personId: "grace" } },
+      where: { userId_personId: { userId: "u", personId: "alex" } },
       create: {
-        personId: "grace",
+        personId: "alex",
         userId: "u",
         identityKey: "x",
         excludedAt: now,
@@ -197,14 +197,14 @@ describe("setCallSheetReminder", () => {
     });
     const set = await setCallSheetReminder(
       "u",
-      { personId: "grace", dueOn: "2026-10-06", note: "the lease" },
+      { personId: "alex", dueOn: "2026-10-06", note: "the lease" },
       now,
     );
     expect(set.upcoming).toEqual([
-      { personId: "grace", name: "Grace Kotick", dueOn: "2026-10-06", note: "the lease" },
+      { personId: "alex", name: "Alex Rivera", dueOn: "2026-10-06", note: "the lease" },
     ]);
-    expect(set.entries.some((e) => e.personId === "grace")).toBe(false);
-    expect(contact("grace")).toMatchObject({
+    expect(set.entries.some((e) => e.personId === "alex")).toBe(false);
+    expect(contact("alex")).toMatchObject({
       dueOn: "2026-10-06",
       dueNote: "the lease",
       excludedAt: null,
@@ -212,16 +212,16 @@ describe("setCallSheetReminder", () => {
     });
     const cancelled = await setCallSheetReminder(
       "u",
-      { personId: "grace", dueOn: null },
+      { personId: "alex", dueOn: null },
       now,
     );
     expect(cancelled.upcoming).toEqual([]);
-    expect(contact("grace")).toMatchObject({ dueOn: null, dueNote: null });
+    expect(contact("alex")).toMatchObject({ dueOn: null, dueNote: null });
   });
 
   it("adds a reminder due today to a full day as a sixth row on top, once", async () => {
     for (const id of ["a", "b", "c", "d", "e", "f"]) addPerson(id);
-    // a–f have an old saved check-in, so the first sheet fills to five; Grace
+    // a–f have an old saved check-in, so the first sheet fills to five; Alex
     // has no history at all, so she would never be suggested on her own.
     db.tx.interaction.findMany = async () =>
       [
@@ -230,18 +230,18 @@ describe("setCallSheetReminder", () => {
           occurredAt: new Date("2026-01-01T00:00:00Z"),
         },
       ] as never;
-    addPerson("grace", { firstName: "Grace", lastName: "Kotick" });
+    addPerson("alex", { firstName: "Alex", lastName: "Rivera" });
     const first = await getCallSheet("u", now);
     expect(first.entries).toHaveLength(5);
-    expect(first.entries.some((e) => e.personId === "grace")).toBe(false);
+    expect(first.entries.some((e) => e.personId === "alex")).toBe(false);
     const after = await setCallSheetReminder(
       "u",
-      { personId: "grace", dueOn: "2026-09-28", note: "about the lease" },
+      { personId: "alex", dueOn: "2026-09-28", note: "about the lease" },
       now,
     );
     expect(after.entries).toHaveLength(6);
     expect(after.entries[0]).toMatchObject({
-      personId: "grace",
+      personId: "alex",
       reason: "You asked to be reminded today.",
       reminder: { note: "about the lease" },
       status: "pending",
@@ -249,12 +249,12 @@ describe("setCallSheetReminder", () => {
     expect(after.entries.slice(1).map((e) => e.id)).toEqual(
       first.entries.map((e) => e.id),
     );
-    expect(contact("grace")).toMatchObject({ dueOn: null, dueNote: null });
+    expect(contact("alex")).toMatchObject({ dueOn: null, dueNote: null });
     expect(after.upcoming).toEqual([]);
     // Reloading keeps exactly one row for her and does not top up past six.
     const again = await getCallSheet("u", now);
     expect(again.entries).toHaveLength(6);
-    expect(again.entries.filter((e) => e.personId === "grace")).toHaveLength(1);
+    expect(again.entries.filter((e) => e.personId === "alex")).toHaveLength(1);
     expect(again.day.version).toBe(after.day.version);
   });
 
@@ -267,31 +267,31 @@ describe("setCallSheetReminder", () => {
           occurredAt: new Date("2026-01-01T00:00:00Z"),
         },
       ] as never;
-    addPerson("grace", { firstName: "Grace", lastName: "Kotick" });
+    addPerson("alex", { firstName: "Alex", lastName: "Rivera" });
     // Set without loading a sheet, so nobody is in the 7-day cooldown.
     await db.tx.callSheetContact.upsert({
-      where: { userId_personId: { userId: "u", personId: "grace" } },
-      create: { personId: "grace", userId: "u", identityKey: "x", dueOn: "2026-09-29" },
+      where: { userId_personId: { userId: "u", personId: "alex" } },
+      create: { personId: "alex", userId: "u", identityKey: "x", dueOn: "2026-09-29" },
       update: {},
     });
     const tomorrow = await getCallSheet("u", new Date("2026-09-29T16:00:00Z"));
     expect(tomorrow.entries).toHaveLength(5);
-    expect(tomorrow.entries[0].personId).toBe("grace");
+    expect(tomorrow.entries[0].personId).toBe("alex");
   });
 
   it("keeps the reminder reason when contact data is unreliable, and fires late after a missed day", async () => {
-    addPerson("grace", { firstName: "Grace", lastName: "Kotick" });
+    addPerson("alex", { firstName: "Alex", lastName: "Rivera" });
     await getCallSheet("u", new Date("2026-09-20T16:00:00Z"));
     await db.tx.callSheetContact.upsert({
-      where: { userId_personId: { userId: "u", personId: "grace" } },
-      create: { personId: "grace", userId: "u", identityKey: "x", dueOn: "2026-09-22" },
+      where: { userId_personId: { userId: "u", personId: "alex" } },
+      create: { personId: "alex", userId: "u", identityKey: "x", dueOn: "2026-09-22" },
       update: { dueOn: "2026-09-22", dueNote: null },
     });
     // The user did not open the app on the 22nd; it fires on the 28th.
     const late = await getCallSheet("u", now);
     expect(late.entries).toHaveLength(1);
     expect(late.entries[0]).toMatchObject({
-      personId: "grace",
+      personId: "alex",
       reason: "You asked to be reminded today.",
       reminder: { note: null },
     });
@@ -303,32 +303,32 @@ describe("setCallSheetReminder", () => {
   });
 
   it("re-issues a fired reminder row when the person's name is edited that day", async () => {
-    addPerson("grace", { firstName: "Grace", lastName: null });
+    addPerson("alex", { firstName: "Alex", lastName: null });
     await setCallSheetReminder(
       "u",
-      { personId: "grace", dueOn: "2026-09-28", note: "lease" },
+      { personId: "alex", dueOn: "2026-09-28", note: "lease" },
       now,
     );
-    db.state.people[0].lastName = "Kotick";
+    db.state.people[0].lastName = "Rivera";
     const sheet = await getCallSheet("u", now);
     expect(sheet.entries).toHaveLength(1);
     expect(sheet.entries[0]).toMatchObject({
-      name: "Grace Kotick",
+      name: "Alex Rivera",
       reminder: { note: "lease" },
     });
   });
 
   it("wins over an earlier 'someone else today' on the same day", async () => {
-    addPerson("grace", { firstName: "Grace", lastName: "Kotick" });
+    addPerson("alex", { firstName: "Alex", lastName: "Rivera" });
     await getCallSheet("u", now);
     const day = db.state.days[0];
-    day.entries = { entries: [], skipped: ["grace"] };
+    day.entries = { entries: [], skipped: ["alex"] };
     const sheet = await setCallSheetReminder(
       "u",
-      { personId: "grace", dueOn: "2026-09-28" },
+      { personId: "alex", dueOn: "2026-09-28" },
       now,
     );
-    expect(sheet.entries.map((e) => e.personId)).toEqual(["grace"]);
+    expect(sheet.entries.map((e) => e.personId)).toEqual(["alex"]);
     expect((db.state.days[0].entries as { skipped: string[] }).skipped).toEqual([]);
   });
 });

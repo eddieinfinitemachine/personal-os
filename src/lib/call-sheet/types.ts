@@ -32,7 +32,7 @@ export type CallSheetEntry = {
   cadenceDays: number;
   interactionId?: string;
   method?: ReachOutMethod;
-  /** Set when the user asked for this person on this day ("call sheet: Grace Tuesday"). */
+  /** Set when the user asked for this person on this day ("call sheet: Alex Tuesday"). */
   reminder?: { note: string | null };
 };
 export type CallSheetUpcoming = {
