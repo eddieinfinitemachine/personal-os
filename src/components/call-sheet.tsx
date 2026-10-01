@@ -1,17 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Loader2, MessageCircle, Phone, RotateCcw, Settings2 } from "lucide-react";
+import { Check, ChevronDown, Loader2, MessageCircle, Phone, Plus, RotateCcw, Settings2, X } from "lucide-react";
 import { Sheet } from "@/components/dating/sheet";
 import { CallSheetReview, initials } from "@/components/call-sheet-review";
 import { REACH_OUT_METHODS, type ReachOutMethod } from "@/lib/call-sheet/reach-out";
-import type { CallSheetEntry, CallSheetMutation, CallSheetResponse, CallSheetSettingsMutation } from "@/lib/call-sheet/types";
+import type { CallSheetEntry, CallSheetMutation, CallSheetReminderInput, CallSheetResponse, CallSheetSettingsMutation } from "@/lib/call-sheet/types";
 
 const actionClass = "inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-sm hover:bg-[var(--color-accent)] disabled:opacity-50";
 const labels = { imessage: "iMessage", whatsapp: "WhatsApp" } as const;
 function date(value: string | null, timezone: string) {
   if (!value) return "Last contact unknown";
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: timezone }).format(new Date(value));
+}
+/** "Tue, Oct 6" for a local YYYY-MM-DD. */
+function dueDay(value: string) {
+  return new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${value}T12:00:00Z`));
 }
 
 export function CallSheet() {
@@ -24,6 +28,9 @@ export function CallSheet() {
   const undoButton = useRef<HTMLButtonElement>(null);
   const focusAfterSave = useRef(false);
   const [loading, setLoading] = useState(true);
+  const [quickAdd, setQuickAdd] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addResult, setAddResult] = useState<{ ok: boolean; text: string } | null>(null);
   const alive = useRef(true), mutation = useRef(false), sequence = useRef(0), controller = useRef<AbortController | null>(null);
   const load = useCallback(async (quiet = false) => {
     if (mutation.current || choosing.current || document.visibilityState === "hidden") return;
@@ -58,7 +65,33 @@ export function CallSheet() {
     }
   }, [prompt, busy]);
 
-  async function send(path: string, body: CallSheetMutation | CallSheetSettingsMutation) {
+  /** "Grace Kotick Tuesday" → Claude reads a person and a day → reminder saved, no preview. */
+  async function addForDay(e: React.FormEvent) {
+    e.preventDefault();
+    const text = quickAdd.trim();
+    if (!text || mutation.current) return;
+    mutation.current = true; ++sequence.current; controller.current?.abort();
+    setAdding(true); setBusy(true); setAddResult(null);
+    try {
+      const form = new FormData();
+      form.set("text", text);
+      form.set("forceType", "call_sheet");
+      const parsed = await fetch("/api/capture/smart/parse", { method: "POST", body: form });
+      const parsedBody = await parsed.json().catch(() => ({}));
+      if (!parsed.ok || parsedBody.proposal?.type !== "call_sheet") throw Error(parsed.status === 401 ? "Sign in again to add someone." : parsedBody.error ?? "Couldn't read a person and a day from that.");
+      const saved = await fetch("/api/capture/smart/commit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proposal: parsedBody.proposal }) });
+      const savedBody = await saved.json().catch(() => ({}));
+      if (!saved.ok) throw Error(savedBody.error ?? "That could not save. Please try again.");
+      if (alive.current) { setAddResult({ ok: true, text: savedBody.message ?? "Added to your call sheet." }); setQuickAdd(""); }
+    } catch (err) {
+      if (alive.current) setAddResult({ ok: false, text: err instanceof Error ? err.message : "That could not save. Please try again." });
+    } finally {
+      mutation.current = false;
+      if (alive.current) { setAdding(false); setBusy(false); }
+    }
+    await load(true);
+  }
+  async function send(path: string, body: CallSheetMutation | CallSheetSettingsMutation | CallSheetReminderInput) {
     if (mutation.current) return false;
     mutation.current = true; ++sequence.current; controller.current?.abort();
     setBusy(true); setError(null);
@@ -133,6 +166,11 @@ export function CallSheet() {
         </div>
         {busy ? <Loader2 className="mt-1 size-4 animate-spin" aria-label="Saving" /> : null}
       </div>
+      <form onSubmit={e => void addForDay(e)} className="mx-4 mt-3 flex items-center gap-2 sm:mx-5">
+        <input aria-label="Add someone for a day" value={quickAdd} onChange={e => setQuickAdd(e.target.value)} disabled={adding} maxLength={300} placeholder="Add someone for a day — “Grace Kotick Tuesday”" className="min-h-10 min-w-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm" />
+        <button type="submit" className={actionClass + " border border-[var(--color-border)]"} disabled={busy || !quickAdd.trim()} aria-label="Add to call sheet">{adding ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}Add</button>
+      </form>
+      {addResult ? <p role={addResult.ok ? "status" : "alert"} className={"mx-4 mt-2 text-sm sm:mx-5" + (addResult.ok ? " text-[var(--color-muted-foreground)]" : "")}>{addResult.text}</p> : null}
       {error && !prompt ? <div role="alert" className="mx-4 mt-3 rounded-lg bg-[var(--color-muted)] p-3 text-sm">{error} <button onClick={() => void load()} disabled={busy} className="underline underline-offset-2">Refresh</button></div> : null}
       {loading && !data ? <p role="status" className="p-5 text-sm text-[var(--color-muted-foreground)]">Getting your call sheet…</p> : null}
       {data ? <>
@@ -148,7 +186,7 @@ export function CallSheet() {
                     {entry.status !== "pending" ? <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><Check className="size-3" />{entry.status === "done" ? "Checked in" : "Recently contacted"}</span> : null}
                   </div>
                   <p className="mt-0.5 text-sm text-[var(--color-muted-foreground)]">{entry.reason}</p>
-                  {entry.status === "pending" && entry.topic ? <p className="mt-2 text-sm">{entry.topic}</p> : null}
+                  {entry.status === "pending" && (entry.reminder?.note ?? entry.topic) ? <p className="mt-2 text-sm">{entry.reminder?.note ?? entry.topic}</p> : null}
                   <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
                     {entry.lastContactAt ? `Last recorded contact · ${date(entry.lastContactAt, data.timezone)}${entry.lastContactSource ? " · " + (entry.lastContactSource === "manual" ? "Saved check-in" : labels[entry.lastContactSource as keyof typeof labels] ?? entry.lastContactSource) : ""}` : "Last contact unknown"}
                   </p>
@@ -183,6 +221,15 @@ export function CallSheet() {
             </li>
           ))}
         </ol>
+        {data.upcoming?.length ? <div className="border-t border-[var(--color-border)] px-4 py-3 sm:px-5">
+          <p className="mb-1 text-xs text-[var(--color-muted-foreground)]">Upcoming</p>
+          <ul>
+            {data.upcoming.map(item => <li key={item.personId} className="flex items-center justify-between gap-2 text-sm">
+              <span className="min-w-0 truncate">{[item.name, dueDay(item.dueOn), item.note].filter(Boolean).join(" · ")}</span>
+              <button className={actionClass + " shrink-0 px-2"} disabled={busy} onClick={() => void send("/api/call-sheet/reminders", { personId: item.personId, dueOn: null })} aria-label={`Cancel reminder for ${item.name}`}><X className="size-3.5" /></button>
+            </li>)}
+          </ul>
+        </div> : null}
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] px-4 py-2 sm:px-5">
           {data.undoToken ? <button ref={undoButton} className={actionClass} disabled={busy} onClick={() => void send("/api/call-sheet", { dayId: data.day.id, version: data.day.version, action: "undo", undoToken: data.undoToken })}><RotateCcw className="size-3.5" />Undo last change</button> : <span className="text-xs text-[var(--color-muted-foreground)]">Your list stays steady throughout the day.</span>}
           {data.reviewCount > 0 ? <div className="flex w-full flex-wrap items-center justify-between gap-2 text-xs text-[var(--color-muted-foreground)]"><span>{data.reviewCount === 1 ? "1 person has" : `${data.reviewCount} people have`} no contact on record.</span><button className={actionClass} disabled={busy} onClick={() => setReviewing(true)}>Review</button></div> : null}

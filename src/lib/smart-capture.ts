@@ -108,12 +108,32 @@ export type TodoProposal = {
   routedByAlias?: boolean;
 };
 
+// "Put Grace Kotick on my call sheet for Tuesday" — a user-set call sheet
+// reminder. Resolved to a Person (or a new one) at commit.
+export type CallSheetProposal = {
+  type: "call_sheet";
+  firstName: string;
+  lastName: string | null;
+  date: string; // YYYY-MM-DD, resolved against TODAY
+  note: string | null; // the "about …" clause, verbatim
+};
+
 export type CaptureProposal =
   | AssetProposal
   | InteractionProposal
   | PersonProposal
   | TripProposal
-  | TodoProposal;
+  | TodoProposal
+  | CallSheetProposal;
+
+export const PROPOSAL_TYPES = [
+  "asset",
+  "interaction",
+  "person",
+  "trip",
+  "todo",
+  "call_sheet",
+] as const;
 
 export type ForceType =
   | "trip"
@@ -121,7 +141,8 @@ export type ForceType =
   | "media"
   | "place"
   | "investment"
-  | "practice";
+  | "practice"
+  | "call_sheet";
 
 export const FORCE_TYPES: readonly ForceType[] = [
   "trip",
@@ -130,6 +151,7 @@ export const FORCE_TYPES: readonly ForceType[] = [
   "place",
   "investment",
   "practice",
+  "call_sheet",
 ];
 
 export function isForceType(v: unknown): v is ForceType {
@@ -145,12 +167,12 @@ interface ParseInput {
   categoryHints?: string[];
 }
 
-const SYSTEM_PROMPT = `You classify a user's quick "capture" into one of FIVE structured record types and extract the fields needed to file it. The user may have attached a photo (an object, a receipt, a business card, a screenshot) and a short typed description.
+const SYSTEM_PROMPT = `You classify a user's quick "capture" into one of SIX structured record types and extract the fields needed to file it. The user may have attached a photo (an object, a receipt, a business card, a screenshot) and a short typed description.
 
 You have access to a \`web_search\` tool (up to 3 searches per request). Use it WHEN it materially improves the record — not for every capture. Specifically:
 - PERSON: if the person's full name is given, search for them to fill role, company, city, recent work / what they're known for, and a 1-2 sentence bio in "notes". Cite the gist (e.g. "represented by Mendes Wood DM" / "based in São Paulo"). Cross-reference at least 2 sources before populating a confident field. If the name is too common or ambiguous, leave fields null rather than guess.
 - ASSET (inventory / investment / media / place): search if it materially improves the value estimate, edition, or factual details ("current eBay sold for Submariner 124060", "current price Anthropic Series E"). Skip for clear consumables.
-- INTERACTION / TRIP / TODO: do NOT search. These don't need lookups.
+- INTERACTION / TRIP / TODO / CALL_SHEET: do NOT search. These don't need lookups.
 
 CRITICAL OUTPUT FORMAT:
 - Your ENTIRE final text response must be a single JSON object — nothing else.
@@ -172,6 +194,7 @@ Top-level types (the "type" discriminator):
 - "person"      — adding someone to the CRM directly, no event. "add X to my CRM", "X is a [role]", business cards.
 - "trip"        — a planned or past trip: "trip to Tokyo Jan 5–12", "going to Lisbon in March", "Aspen with the kids".
 - "todo"        — a task to do: "remind me to call dentist", "I need to renew passport", "todo: send invoice to Acme".
+- "call_sheet"  — put a person on their daily Call Sheet (check-in list) for a day: "put Grace Kotick on my call sheet for Tuesday", "add Sam to the call sheet tomorrow about the lease", "call sheet: Maya next Friday".
 
 Disambiguation rules:
 - A time + person signal → interaction. "Met Sophie at the party Friday" = interaction; "add Sophie to my CRM, she is an artist" = person.
@@ -181,6 +204,7 @@ Disambiguation rules:
 - "Invested $X in Y" / "bought Y shares" → asset/investment.
 - "Habit: …" / "Principle: …" / "Best practice: …" → asset/practice.
 - "Remind me to …" / "todo: …" / "I need to …" → todo (NOT a person, NOT an interaction).
+- call_sheet ONLY when the text explicitly mentions the call sheet / check-in list ("call sheet", "check-in list"). "Remind me to call Grace Tuesday" with no call-sheet mention is a todo, not call_sheet.
 - A future trip with dates → trip. A wished-for restaurant → asset/place.
 - TEXT THAT IS JUST A URL or "read this / bookmark this / save this <URL>" → asset/media. Treat as a "to read / to watch" bookmark: visit the URL via web_search if useful, set title = the page/article title, creator = the publication or author, url = the URL itself, status = "wishlist". Same for "want to watch <YouTube URL>" → asset/media with format="video".
 
@@ -271,6 +295,11 @@ For todo:
 - "listName": "To Do" by default. "Monitor" if user said "watch / monitor / keep an eye on". "Later" if "someday / eventually / no rush".
 - "projectId": match ACTIVE_PROJECTS like for asset (e.g. "todo: change Ferrari oil" → Ferrari project). Null otherwise.
 
+For call_sheet:
+- "firstName" / "lastName": the ONE person named, split on whitespace like person ("Grace Kotick" → "Grace" / "Kotick"; "Sam" alone → firstName "Sam", lastName null). Keep the name exactly as written; never guess a surname.
+- "date": ISO YYYY-MM-DD resolved against <TODAY>. "today" → <TODAY>; "tomorrow" → <TODAY>+1; a bare weekday ("Tuesday", "on Friday") → the next occurrence strictly AFTER <TODAY> (if <TODAY> is Tuesday, "Tuesday" means a week later); "next Friday" → the same rule; an explicit date ("Oct 6") → that date in the coming year. No date given → <TODAY>.
+- "note": the "about …" / "re …" clause verbatim without the lead-in ("about the lease" → "the lease"). null when there is none. Never invent one.
+
 OUTPUT FORMAT: strict JSON, single object, no prose, no markdown fences. Discriminator is the "type" field.`;
 
 // Extra user-message lines that pin the classification when the caller
@@ -281,6 +310,12 @@ export function requiredTypeBlock(
   categoryHints?: string[],
 ): string[] {
   if (!forceType) return [];
+  if (forceType === "call_sheet") {
+    return [
+      "",
+      'REQUIRED TYPE: call_sheet — the user typed this into the Call Sheet\'s "add someone for a day" box. Return type "call_sheet" regardless of other signals (no call-sheet wording is needed here). Extract firstName, lastName, date and note per the call_sheet rules. Do not search.',
+    ];
+  }
   if (forceType === "trip") {
     return [
       "",
@@ -365,9 +400,11 @@ export async function parseCapture(input: ParseInput): Promise<CaptureProposal> 
     max_tokens: 4000,
     system: SYSTEM_PROMPT.replace(/<TODAY>/g, input.today),
     messages: [{ role: "user", content: userContent }],
-    tools: [
-      { type: "web_search_20250305", name: "web_search", max_uses: 3 },
-    ],
+    // A pinned call-sheet capture never needs a lookup; skip the tool entirely.
+    tools:
+      input.forceType === "call_sheet"
+        ? undefined
+        : [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
   });
 
   // Anthropic returns 529 "Overloaded" + 503 / 502 transient errors under load.
@@ -456,20 +493,54 @@ export async function parseCapture(input: ParseInput): Promise<CaptureProposal> 
     );
   }
 
+  return validateProposal(parsed);
+}
+
+const isIsoDate = (value: unknown): value is string =>
+  typeof value === "string" &&
+  /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+  !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) &&
+  new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+const optionalText = (value: unknown) =>
+  value === undefined || value === null || typeof value === "string";
+
+// Shape check on Claude's JSON. Sibling types only need a known discriminator;
+// call_sheet is committed without a preview from the Call Sheet page, so its
+// fields are checked and normalised here. Exported for tests.
+export function validateProposal(parsed: unknown): CaptureProposal {
+  const fail = () =>
+    new Error(
+      `Claude returned unexpected shape: ${JSON.stringify(parsed).slice(0, 300)}`,
+    );
   if (
     !parsed ||
     typeof parsed !== "object" ||
     !("type" in parsed) ||
-    !["asset", "interaction", "person", "trip", "todo"].includes(
+    !(PROPOSAL_TYPES as readonly string[]).includes(
       (parsed as { type: string }).type,
     )
   ) {
-    throw new Error(
-      `Claude returned unexpected shape: ${JSON.stringify(parsed).slice(0, 300)}`,
-    );
+    throw fail();
   }
-
-  return parsed as CaptureProposal;
+  const proposal = parsed as CaptureProposal;
+  if (proposal.type !== "call_sheet") return proposal;
+  const raw = parsed as Record<string, unknown>;
+  if (
+    typeof raw.firstName !== "string" ||
+    !raw.firstName.trim() ||
+    !optionalText(raw.lastName) ||
+    !isIsoDate(raw.date) ||
+    !optionalText(raw.note)
+  ) {
+    throw fail();
+  }
+  return {
+    type: "call_sheet",
+    firstName: raw.firstName.trim(),
+    lastName: (raw.lastName as string | null | undefined)?.trim() || null,
+    date: raw.date,
+    note: (raw.note as string | null | undefined)?.trim() || null,
+  };
 }
 
 // Scan a string for the first top-level balanced {…} object, respecting

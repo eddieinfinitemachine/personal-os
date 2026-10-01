@@ -32,6 +32,14 @@ export type CallSheetEntry = {
   cadenceDays: number;
   interactionId?: string;
   method?: ReachOutMethod;
+  /** Set when the user asked for this person on this day ("call sheet: Grace Tuesday"). */
+  reminder?: { note: string | null };
+};
+export type CallSheetUpcoming = {
+  personId: string;
+  name: string;
+  dueOn: string;
+  note: string | null;
 };
 export type CallSheetResponse = {
   day: { id: string; localDate: string; version: number };
@@ -41,6 +49,8 @@ export type CallSheetResponse = {
   hidden: { personId: string; name: string }[];
   /** People with no contact on record waiting for a quick review. */
   reviewCount: number;
+  /** Future-dated reminders, soonest first. */
+  upcoming: CallSheetUpcoming[];
   undoToken?: string;
 };
 export type CallSheetReviewPerson = {
@@ -64,6 +74,12 @@ export type CallSheetReview = {
 export type CallSheetReviewDecision =
   | { personId: string; decision: "keep"; cadenceDays: number }
   | { personId: string; decision: "hide" | "reset" };
+export type CallSheetReminderInput = {
+  personId: string;
+  /** Local YYYY-MM-DD, or null to cancel. */
+  dueOn: string | null;
+  note?: string | null;
+};
 export type CallSheetMutation = {
   dayId: string;
   version: number;

@@ -1414,6 +1414,10 @@ model CallSheetContact {
   excludedAt      DateTime?
   lastSuggestedAt DateTime?
   lastCompletedAt DateTime?
+  // User-set reminder: put this person on the sheet on/after this local date
+  // (YYYY-MM-DD in CallSheetSettings.timezone). Cleared once placed on a day.
+  dueOn           String?
+  dueNote         String?
   updatedAt       DateTime  @updatedAt
 
   @@unique([userId, personId])

@@ -3,8 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
 import { syncRecentTodos } from "@/lib/gcal";
 import { ensureDefaultLists, ensureInboxProject, CAPTURE_LIST_NAME } from "@/lib/lists";
-import type { CaptureProposal } from "@/lib/smart-capture";
+import { PROPOSAL_TYPES, type CaptureProposal } from "@/lib/smart-capture";
 import { createAssetFromProposal } from "@/lib/smart-commit";
+import { commitCallSheetProposal } from "@/lib/call-sheet/reminder-capture";
 
 // Commit a (possibly user-edited) capture proposal to the DB.
 // Body: { proposal: CaptureProposal }
@@ -12,6 +13,8 @@ import { createAssetFromProposal } from "@/lib/smart-commit";
 // Inventory → create Asset(kind=inventory) [+ optional follow-up Todo if proposal.followupTodo]
 // Interaction → upsert each personHints[] to Person, then create Interaction.
 //             Also bumps Person.lastInteractionAt for each linked person.
+// Call sheet → resolve the named person (or create them) and set a dated
+//             reminder; an ambiguous first name is a 409 listing candidates.
 export async function POST(request: Request) {
   const userId = await getCurrentUserId(request);
   if (!userId) {
@@ -27,9 +30,21 @@ export async function POST(request: Request) {
   const proposal = body.proposal;
   if (
     !proposal ||
-    !["asset", "interaction", "person", "trip", "todo"].includes(proposal.type)
+    !(PROPOSAL_TYPES as readonly string[]).includes(proposal.type)
   ) {
     return NextResponse.json({ error: "proposal required" }, { status: 400 });
+  }
+
+  if (proposal.type === "call_sheet") {
+    const result = await commitCallSheetProposal(userId, proposal);
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error, candidates: result.candidates },
+        { status: result.status },
+      );
+    }
+    const { ok: _ok, message, ...callSheet } = result;
+    return NextResponse.json({ callSheet, message });
   }
 
   if (proposal.type === "asset") {

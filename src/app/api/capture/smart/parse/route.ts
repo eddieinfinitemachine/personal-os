@@ -9,6 +9,7 @@ import {
   type CaptureProposal,
 } from "@/lib/smart-capture";
 import { parseAliasToken } from "@/lib/alias";
+import { userLocalToday } from "@/lib/call-sheet/reminder-capture";
 
 // Same per-user storage caps as the regular attachments upload route.
 const QUOTA_BYTES = 1024 * 1024 * 1024; // 1 GB
@@ -126,7 +127,9 @@ export async function POST(request: Request) {
     typeof category === "string" && category.trim() ? [category.trim()] : [],
   );
 
-  const today = new Date().toISOString().slice(0, 10);
+  // The user's local date (not UTC) so "tomorrow" / "Tuesday" resolve the way
+  // they meant them in the evening.
+  const today = await userLocalToday(userId);
 
   let proposal: CaptureProposal;
   try {
@@ -148,7 +151,13 @@ export async function POST(request: Request) {
     );
   }
 
-  if (forceType && forceType !== "trip") {
+  if (forceType === "call_sheet" && proposal.type !== "call_sheet") {
+    return NextResponse.json(
+      { error: "Couldn't read that as a person and a day" },
+      { status: 422 },
+    );
+  }
+  if (forceType && forceType !== "trip" && forceType !== "call_sheet") {
     if (proposal.type !== "asset") {
       return NextResponse.json(
         { error: `Couldn't read that as ${forceType === "inventory" ? "an inventory" : `a ${forceType}`} item` },

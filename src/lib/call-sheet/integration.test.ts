@@ -13,6 +13,7 @@ import {
   mutateCallSheet,
   readDay,
   readSourceData,
+  setCallSheetReminder,
   updateCallSheetSettings,
 } from "./service";
 import type { CapturePerson } from "./types";
@@ -1429,6 +1430,221 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
         data: { phone: "+15559990001" },
       });
       expect(await cadenceFor()).toBe(90);
+    });
+  });
+  describe("user-set reminders", () => {
+    const offSheet = async (id = userId) => {
+      const sheet = await getCallSheet(id, now);
+      const person = await prisma.person.findFirstOrThrow({
+        where: {
+          userId: id,
+          id: { notIn: sheet.entries.map((entry) => entry.personId) },
+        },
+        orderBy: { lastName: "asc" },
+      });
+      return { sheet, person };
+    };
+    const contactOf = (personId: string) =>
+      prisma.callSheetContact.findUnique({
+        where: { userId_personId: { userId, personId } },
+      });
+    it("adds a reminder due today to a full day as a sixth row on top, once, and clears it", async () => {
+      const { sheet, person } = await offSheet();
+      expect(sheet.entries).toHaveLength(5);
+      // Snooze and a recent suggestion do not hold back an explicit request.
+      await prisma.callSheetContact.upsert({
+        where: { userId_personId: { userId, personId: person.id } },
+        create: {
+          userId,
+          personId: person.id,
+          identityKey: "stale",
+          snoozedUntil: new Date("2026-12-01T00:00:00Z"),
+          lastSuggestedAt: now,
+        },
+        update: {
+          snoozedUntil: new Date("2026-12-01T00:00:00Z"),
+          lastSuggestedAt: now,
+        },
+      });
+      const after = await setCallSheetReminder(
+        userId,
+        { personId: person.id, dueOn: "2026-09-28", note: "the lease" },
+        now,
+      );
+      expect(after.entries).toHaveLength(6);
+      expect(after.entries[0]).toMatchObject({
+        personId: person.id,
+        reason: "You asked to be reminded today.",
+        reminder: { note: "the lease" },
+        status: "pending",
+      });
+      expect(after.entries.slice(1).map((entry) => entry.id)).toEqual(
+        sheet.entries.map((entry) => entry.id),
+      );
+      expect(await contactOf(person.id)).toMatchObject({
+        dueOn: null,
+        dueNote: null,
+        snoozedUntil: null,
+      });
+      const again = await getCallSheet(userId, now);
+      expect(again.entries).toHaveLength(6);
+      expect(again.day.version).toBe(after.day.version);
+      expect(
+        again.entries.filter((entry) => entry.personId === person.id),
+      ).toHaveLength(1);
+    });
+    it("fires on the next opened day when the due day was missed, and lists it as upcoming before", async () => {
+      const { person } = await offSheet();
+      const set = await setCallSheetReminder(
+        userId,
+        { personId: person.id, dueOn: "2026-09-30", note: null },
+        now,
+      );
+      expect(set.upcoming).toEqual([
+        {
+          personId: person.id,
+          name: `${person.firstName} ${person.lastName}`,
+          dueOn: "2026-09-30",
+          note: null,
+        },
+      ]);
+      expect(set.entries.some((entry) => entry.personId === person.id)).toBe(
+        false,
+      );
+      const late = new Date("2026-10-03T16:00:00Z");
+      const sheet = await getCallSheet(userId, late);
+      expect(sheet.entries[0]).toMatchObject({
+        personId: person.id,
+        reason: "You asked to be reminded today.",
+      });
+      expect(sheet.upcoming).toEqual([]);
+      expect((await contactOf(person.id))?.dueOn).toBeNull();
+    });
+    it("cancels a reminder, and rejects past, far-future and foreign requests", async () => {
+      const { person } = await offSheet();
+      await setCallSheetReminder(
+        userId,
+        { personId: person.id, dueOn: "2026-10-06" },
+        now,
+      );
+      const cancelled = await setCallSheetReminder(
+        userId,
+        { personId: person.id, dueOn: null },
+        now,
+      );
+      expect(cancelled.upcoming).toEqual([]);
+      expect((await contactOf(person.id))?.dueOn).toBeNull();
+      await expect(
+        setCallSheetReminder(
+          userId,
+          { personId: person.id, dueOn: "2026-09-27" },
+          now,
+        ),
+      ).rejects.toThrow("already passed");
+      await expect(
+        setCallSheetReminder(
+          userId,
+          { personId: person.id, dueOn: "2028-09-28" },
+          now,
+        ),
+      ).rejects.toThrow("two years");
+      const foreign = await prisma.person.findFirstOrThrow({
+        where: { userId: otherId },
+      });
+      await expect(
+        setCallSheetReminder(
+          userId,
+          { personId: foreign.id, dueOn: "2026-10-06" },
+          now,
+        ),
+      ).rejects.toMatchObject({ status: 404 });
+    });
+    it("hiding a person clears their pending reminder and Undo restores it", async () => {
+      const sheet = await getCallSheet(userId, now);
+      const entry = sheet.entries[2];
+      const set = await setCallSheetReminder(
+        userId,
+        { personId: entry.personId, dueOn: "2026-10-06", note: "trip" },
+        now,
+      );
+      expect(set.upcoming.map((item) => item.personId)).toEqual([
+        entry.personId,
+      ]);
+      const hidden = await mutateCallSheet(
+        userId,
+        {
+          dayId: set.day.id,
+          version: set.day.version,
+          entryId: entry.id,
+          action: "hide",
+        },
+        now,
+      );
+      expect(hidden.upcoming).toEqual([]);
+      expect(await contactOf(entry.personId)).toMatchObject({
+        dueOn: null,
+        dueNote: null,
+      });
+      const undone = await mutateCallSheet(
+        userId,
+        {
+          dayId: hidden.day.id,
+          version: hidden.day.version,
+          action: "undo",
+          undoToken: hidden.undoToken,
+        },
+        now,
+      );
+      expect(undone.upcoming).toEqual([
+        expect.objectContaining({ personId: entry.personId, dueOn: "2026-10-06", note: "trip" }),
+      ]);
+    });
+    it("a fired reminder row survives undoing an unrelated earlier action", async () => {
+      const sheet = await getCallSheet(userId, now);
+      const replaced = await mutateCallSheet(
+        userId,
+        {
+          dayId: sheet.day.id,
+          version: sheet.day.version,
+          entryId: sheet.entries[1].id,
+          action: "replace",
+        },
+        now,
+      );
+      // Someone neither on the sheet now nor the person just replaced.
+      const person = await prisma.person.findFirstOrThrow({
+        where: {
+          userId,
+          id: {
+            notIn: [
+              ...replaced.entries.map((entry) => entry.personId),
+              sheet.entries[1].personId,
+            ],
+          },
+        },
+      });
+      const withReminder = await setCallSheetReminder(
+        userId,
+        { personId: person.id, dueOn: "2026-09-28" },
+        now,
+      );
+      expect(withReminder.entries[0].personId).toBe(person.id);
+      expect(withReminder.undoToken).toBe(replaced.undoToken);
+      const undone = await mutateCallSheet(
+        userId,
+        {
+          dayId: withReminder.day.id,
+          version: withReminder.day.version,
+          action: "undo",
+          undoToken: withReminder.undoToken,
+        },
+        now,
+      );
+      expect(undone.entries[0]).toMatchObject({
+        personId: person.id,
+        reminder: { note: null },
+      });
+      expect(undone.entries[2].id).toBe(sheet.entries[1].id);
     });
   });
 });

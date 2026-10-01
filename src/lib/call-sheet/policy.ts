@@ -45,6 +45,23 @@ export function localDate(now: Date, timezone: string): string {
     day: "2-digit",
   }).format(now);
 }
+/** True for a real calendar date written as YYYY-MM-DD. */
+export function isLocalDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value))
+    return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
+}
+/** Calendar arithmetic on a YYYY-MM-DD string (no timezone involved). */
+export function addLocalDays(date: string, days: number): string {
+  const value = new Date(`${date}T12:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+export const REMINDER_REASON = "You asked to be reminded today.";
 export function validTimezone(timezone: string) {
   try {
     new Intl.DateTimeFormat("en", { timeZone: timezone }).format();
@@ -264,6 +281,8 @@ export type PolicyPerson = Identity & {
     snoozedUntil: Date | null;
     excludedAt: Date | null;
     lastSuggestedAt: Date | null;
+    dueOn: string | null;
+    dueNote: string | null;
   };
   sourceData: Partial<Record<CallSheetSource, ContactSourceData>>;
 };
@@ -277,6 +296,8 @@ export type Candidate = {
   tier: number;
   score: number;
   category: string;
+  /** Present when the user asked for this person today (or on a missed earlier day). */
+  reminder?: { note: string | null };
 };
 export function latestContact(
   person: PolicyPerson,
@@ -312,8 +333,8 @@ export function latestContact(
   };
 }
 export const NO_CONTACT_REASON = "No contact on record.";
-/** People to sort out by hand: active, shown, never starred or given a cadence,
- * and verifiably silent (every enabled source scanned them fresh). Snoozes and
+/** People to sort out by hand: active, shown, never starred or given a cadence
+ * or a reminder, and verifiably silent (every enabled source scanned them fresh). Snoozes and
  * the suggestion cooldown do not take anyone out of review. */
 export function reviewQueue(
   people: PolicyPerson[],
@@ -326,7 +347,8 @@ export function reviewQueue(
         person.archived ||
         person.starred ||
         person.preference?.excludedAt ||
-        person.preference?.cadenceDays != null
+        person.preference?.cadenceDays != null ||
+        person.preference?.dueOn
       )
         return false;
       const last = latestContact(person, sources, now);
@@ -357,22 +379,27 @@ export function rankCandidates(
   now: Date,
   timezone: string,
 ): Candidate[] {
+  const today = localDate(now, timezone);
   return people
     .flatMap((person) => {
       const pref = person.preference;
+      if (person.archived || pref?.excludedAt) return [];
+      // A reminder the user set is explicit intent: it fires on its date (or the
+      // first later day the sheet is opened) regardless of snooze, cooldown,
+      // recent contact or cadence.
+      const due = !!pref?.dueOn && pref.dueOn <= today;
       if (
-        person.archived ||
-        pref?.excludedAt ||
-        (pref?.snoozedUntil && pref.snoozedUntil > now) ||
-        (pref?.lastSuggestedAt &&
-          now.getTime() - pref.lastSuggestedAt.getTime() < 7 * DAY_MS)
+        !due &&
+        ((pref?.snoozedUntil && pref.snoozedUntil > now) ||
+          (pref?.lastSuggestedAt &&
+            now.getTime() - pref.lastSuggestedAt.getTime() < 7 * DAY_MS))
       )
         return [];
       const last = latestContact(person, sources, now);
       const age = last.at
         ? (now.getTime() - Date.parse(last.at)) / DAY_MS
         : null;
-      if (age !== null && age < 7) return [];
+      if (!due && age !== null && age < 7) return [];
       const interval = cadence(person, pref?.cadenceDays);
       const birthday = birthdaySoon(person.birthday, now, timezone);
       const cues = last.complete
@@ -387,27 +414,40 @@ export function rankCandidates(
         : [];
       // No contact on record only counts once every enabled source has a fresh
       // scan for this person; a missing scan is not evidence of silence.
-      const unknown = age === null && !birthday;
-      if (unknown && !last.complete) return [];
-      if (!birthday && !unknown && (!last.reliable || age! < interval))
+      const unknown = age === null && !birthday && !due;
+      // Starred or a user-chosen cadence means they were reviewed and kept.
+      const kept = person.starred || pref?.cadenceDays != null;
+      // A reminder set for a later day already says when; don't offer them as
+      // no-contact filler before it.
+      if (unknown && (!last.complete || (pref?.dueOn && !kept))) return [];
+      if (!due && !birthday && !unknown && (!last.reliable || age! < interval))
         return [];
       const level = closeness(person);
       const important =
         person.starred || level === "close" || level === "strong";
-      // Starred or a user-chosen cadence means they were reviewed and kept:
-      // treat silence as a year overdue. Everyone else waits behind known dates.
-      const kept = person.starred || pref?.cadenceDays != null;
+      // Kept people with no contact count as a year overdue; everyone else
+      // with no contact waits behind known dates.
       // An AI-extracted question is context, never a user-set due date.
-      const tier = birthday ? 1 : unknown && !kept ? 4 : important ? 2 : 3;
+      const tier = due
+        ? 0
+        : birthday
+          ? 1
+          : unknown && !kept
+            ? 4
+            : important
+              ? 2
+              : 3;
       const category = relationshipCategory(person);
       return [
         {
           person,
-          reason: birthday
-            ? "Their birthday is coming up this week."
-            : unknown
-              ? NO_CONTACT_REASON
-              : `Time for your ${interval}-day check-in.`,
+          reason: due
+            ? REMINDER_REASON
+            : birthday
+              ? "Their birthday is coming up this week."
+              : unknown
+                ? NO_CONTACT_REASON
+                : `Time for your ${interval}-day check-in.`,
           lastContactAt: last.at,
           lastContactSource: last.source,
           cues,
@@ -415,6 +455,7 @@ export function rankCandidates(
           tier,
           score: (unknown ? (kept ? 365 : 0) : (age ?? 0)) / interval,
           category,
+          ...(due ? { reminder: { note: pref!.dueNote ?? null } } : {}),
         },
       ];
     })
