@@ -32,6 +32,14 @@ export type CallSheetEntry = {
   cadenceDays: number;
   interactionId?: string;
   method?: ReachOutMethod;
+  /** Set when the user asked for this person on this day ("call sheet: Grace Tuesday"). */
+  reminder?: { note: string | null };
+};
+export type CallSheetUpcoming = {
+  personId: string;
+  name: string;
+  dueOn: string;
+  note: string | null;
 };
 export type CallSheetResponse = {
   day: { id: string; localDate: string; version: number };
@@ -39,7 +47,15 @@ export type CallSheetResponse = {
   sources: Record<CallSheetSource, SourceHealth>;
   timezone: string;
   hidden: { personId: string; name: string }[];
+  /** Future-dated reminders, soonest first. */
+  upcoming: CallSheetUpcoming[];
   undoToken?: string;
+};
+export type CallSheetReminderInput = {
+  personId: string;
+  /** Local YYYY-MM-DD, or null to cancel. */
+  dueOn: string | null;
+  note?: string | null;
 };
 export type CallSheetMutation = {
   dayId: string;

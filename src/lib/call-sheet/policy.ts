@@ -45,6 +45,23 @@ export function localDate(now: Date, timezone: string): string {
     day: "2-digit",
   }).format(now);
 }
+/** True for a real calendar date written as YYYY-MM-DD. */
+export function isLocalDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value))
+    return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
+}
+/** Calendar arithmetic on a YYYY-MM-DD string (no timezone involved). */
+export function addLocalDays(date: string, days: number): string {
+  const value = new Date(`${date}T12:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+export const REMINDER_REASON = "You asked to be reminded today.";
 export function validTimezone(timezone: string) {
   try {
     new Intl.DateTimeFormat("en", { timeZone: timezone }).format();
@@ -199,6 +216,8 @@ export type PolicyPerson = Identity & {
     snoozedUntil: Date | null;
     excludedAt: Date | null;
     lastSuggestedAt: Date | null;
+    dueOn: string | null;
+    dueNote: string | null;
   };
   sourceData: Partial<Record<CallSheetSource, ContactSourceData>>;
 };
@@ -212,6 +231,8 @@ export type Candidate = {
   tier: number;
   score: number;
   category: string;
+  /** Present when the user asked for this person today (or on a missed earlier day). */
+  reminder?: { note: string | null };
 };
 export function latestContact(
   person: PolicyPerson,
@@ -264,22 +285,27 @@ export function rankCandidates(
   now: Date,
   timezone: string,
 ): Candidate[] {
+  const today = localDate(now, timezone);
   return people
     .flatMap((person) => {
       const pref = person.preference;
+      if (person.archived || pref?.excludedAt) return [];
+      // A reminder the user set is explicit intent: it fires on its date (or the
+      // first later day the sheet is opened) regardless of snooze, cooldown,
+      // recent contact or cadence.
+      const due = !!pref?.dueOn && pref.dueOn <= today;
       if (
-        person.archived ||
-        pref?.excludedAt ||
-        (pref?.snoozedUntil && pref.snoozedUntil > now) ||
-        (pref?.lastSuggestedAt &&
-          now.getTime() - pref.lastSuggestedAt.getTime() < 7 * DAY_MS)
+        !due &&
+        ((pref?.snoozedUntil && pref.snoozedUntil > now) ||
+          (pref?.lastSuggestedAt &&
+            now.getTime() - pref.lastSuggestedAt.getTime() < 7 * DAY_MS))
       )
         return [];
       const last = latestContact(person, sources, now);
       const age = last.at
         ? (now.getTime() - Date.parse(last.at)) / DAY_MS
         : null;
-      if (age !== null && age < 7) return [];
+      if (!due && age !== null && age < 7) return [];
       const interval = cadence(person, pref?.cadenceDays);
       const birthday = birthdaySoon(person.birthday, now, timezone);
       const cues = last.complete
@@ -292,21 +318,27 @@ export function rankCandidates(
             now,
           )
         : [];
-      if (!birthday && (!last.reliable || age === null || age < interval))
+      if (
+        !due &&
+        !birthday &&
+        (!last.reliable || age === null || age < interval)
+      )
         return [];
       const important =
         person.starred ||
         person.strength === "close" ||
         person.strength === "strong";
       // An AI-extracted question is context, never a user-set due date.
-      const tier = birthday ? 1 : important ? 2 : 3;
+      const tier = due ? 0 : birthday ? 1 : important ? 2 : 3;
       const category = relationshipCategory(person);
       return [
         {
           person,
-          reason: birthday
-            ? "Their birthday is coming up this week."
-            : `Time for your ${interval}-day check-in.`,
+          reason: due
+            ? REMINDER_REASON
+            : birthday
+              ? "Their birthday is coming up this week."
+              : `Time for your ${interval}-day check-in.`,
           lastContactAt: last.at,
           lastContactSource: last.source,
           cues,
@@ -314,6 +346,7 @@ export function rankCandidates(
           tier,
           score: (age ?? 0) / interval,
           category,
+          ...(due ? { reminder: { note: pref!.dueNote ?? null } } : {}),
         },
       ];
     })

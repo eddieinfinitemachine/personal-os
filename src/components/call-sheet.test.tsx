@@ -6,7 +6,7 @@ import { CallSheet } from "./call-sheet";
 import type { CallSheetResponse } from "@/lib/call-sheet/types";
 const now = new Date("2026-09-28T12:00:00Z");
 function sheet(): CallSheetResponse {
-  return { day: { id: "day", localDate: "2026-09-28", version: 0 }, timezone: "America/New_York", hidden: [],
+  return { day: { id: "day", localDate: "2026-09-28", version: 0 }, timezone: "America/New_York", hidden: [], upcoming: [],
     sources: { imessage: { enabled: true, status: "ready", lastSuccessAt: now.toISOString(), error: null }, whatsapp: { enabled: false, status: "not_connected", lastSuccessAt: null, error: null } },
     entries: [{ id: "entry", personId: "person", name: "Avery Example", imageUrl: null, phone: "+15551234567", email: "avery@example.test", reason: "Time for a check-in.", topic: "Ask how the project went.", lastContactAt: "2026-08-01T12:00:00Z", lastContactSource: "imessage", status: "pending", cadenceDays: 30, cues: [{ kind: "topic", text: "Ask how the project went.", evidence: [{ source: "imessage", messageId: "m1", sentAt: "2026-08-01T12:00:00Z", excerpt: "Starting the project next week." }] }] }] };
 }
@@ -104,6 +104,66 @@ describe("daily call sheet", () => {
     await act(async () => button("Use WhatsApp").click());
     expect(fetch.mock.calls[3][0]).toBe("/api/call-sheet/settings");
     expect(JSON.parse(fetch.mock.calls[3][1].body)).toEqual({ source: "whatsapp", enabled: true });
+  });
+  it("adds someone for a day by parsing with the type pinned, committing without a preview, and reloading", async () => {
+    const withGrace = sheet(); withGrace.upcoming = [{ personId: "grace", name: "Grace Kotick", dueOn: "2026-10-06", note: null }];
+    const proposal = { type: "call_sheet", firstName: "Grace", lastName: "Kotick", date: "2026-10-06", note: null };
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(sheet()))
+      .mockResolvedValueOnce(response({ proposal }))
+      .mockResolvedValueOnce(response({ callSheet: { personId: "grace" }, message: "Grace Kotick will be on your call sheet Tue, Oct 6" }))
+      .mockResolvedValueOnce(response(withGrace));
+    vi.stubGlobal("fetch", fetch); await render();
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Add someone for a day"]')!;
+    expect(input.placeholder).toBe("Add someone for a day — “Grace Kotick Tuesday”");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Grace Kotick Tuesday");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => input.form!.requestSubmit());
+    expect(fetch.mock.calls[1][0]).toBe("/api/capture/smart/parse");
+    const form = fetch.mock.calls[1][1].body as FormData;
+    expect(form.get("text")).toBe("Grace Kotick Tuesday");
+    expect(form.get("forceType")).toBe("call_sheet");
+    expect(fetch.mock.calls[2][0]).toBe("/api/capture/smart/commit");
+    expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ proposal });
+    expect(fetch.mock.calls[3][0]).toBe("/api/call-sheet");
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Grace Kotick will be on your call sheet Tue, Oct 6");
+    expect(input.value).toBe("");
+    expect(container.textContent).toContain("Grace Kotick · Tue, Oct 6");
+  });
+  it("shows an ambiguous name without guessing and keeps the text", async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(sheet()))
+      .mockResolvedValueOnce(response({ proposal: { type: "call_sheet", firstName: "Grace", lastName: null, date: "2026-09-29", note: null } }))
+      .mockResolvedValueOnce(response({ error: "More than one person is called Grace: Grace Dayan, Grace Kotick. Use their full name.", candidates: ["Grace Dayan", "Grace Kotick"] }, 409))
+      .mockResolvedValueOnce(response(sheet()));
+    vi.stubGlobal("fetch", fetch); await render();
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Add someone for a day"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Grace tomorrow");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => input.form!.requestSubmit());
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Grace Dayan, Grace Kotick");
+    expect(input.value).toBe("Grace tomorrow");
+    expect(button("Add").disabled).toBe(false);
+  });
+  it("shows upcoming reminders, cancels one, and shows a reminder's note on its row", async () => {
+    const data = sheet();
+    data.entries[0].reminder = { note: "the lease" }; data.entries[0].reason = "You asked to be reminded today.";
+    data.upcoming = [{ personId: "maya", name: "Maya Example", dueOn: "2026-10-02", note: "her trip" }];
+    const cancelled = sheet(); cancelled.day.version = 1;
+    const fetch = vi.fn().mockResolvedValueOnce(response(data)).mockResolvedValueOnce(response(cancelled)); vi.stubGlobal("fetch", fetch); await render();
+    expect(container.textContent).toContain("the lease");
+    expect(container.textContent).not.toContain("Ask how the project went.");
+    expect(container.textContent).toContain("Maya Example · Fri, Oct 2 · her trip");
+    const cancel = container.querySelector<HTMLButtonElement>('button[aria-label="Cancel reminder for Maya Example"]')!;
+    await act(async () => cancel.click());
+    expect(fetch.mock.calls[1][0]).toBe("/api/call-sheet/reminders");
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ personId: "maya", dueOn: null });
+    expect(container.textContent).not.toContain("Maya Example");
+    expect(container.textContent).not.toContain("Upcoming");
   });
   it("does not poll while a save is pending or after unmount", async () => {
     let finish!: (r: unknown) => void;
