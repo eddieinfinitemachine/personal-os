@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  addLocalDays,
   cadence,
   identityKey,
+  isLocalDate,
   latestContact,
   liveCues,
   limitPersonCues,
@@ -166,6 +168,8 @@ describe("call sheet policy", () => {
       snoozedUntil: null,
       excludedAt: null,
       lastSuggestedAt: now,
+      dueOn: null,
+      dueNote: null,
     };
     expect(
       rankCandidates(
@@ -245,6 +249,8 @@ describe("call sheet policy", () => {
       snoozedUntil: null,
       excludedAt: null,
       lastSuggestedAt: null,
+      dueOn: null,
+      dueNote: null,
     };
     const eligible = rankCandidates([p], connected, now, "UTC")[0];
     expect(eligible.reason).toBe("Time for your 14-day check-in.");
@@ -308,5 +314,125 @@ describe("call sheet policy", () => {
     expect(identityKey(person("a"))).not.toBe(
       identityKey(person("a", { phone: "+15555550101" })),
     );
+  });
+});
+describe("user-set call sheet reminders", () => {
+  const pref = (extra: Partial<NonNullable<PolicyPerson["preference"]>>) => ({
+    cadenceDays: null,
+    snoozedUntil: null,
+    excludedAt: null,
+    lastSuggestedAt: null,
+    dueOn: null,
+    dueNote: null,
+    ...extra,
+  });
+  it("puts a due reminder first as tier 0 with its note", () => {
+    const ranked = rankCandidates(
+      [
+        person("birthday", { birthday: new Date("1990-09-29"), manualAt: null }),
+        person("overdue"),
+        person("asked", {
+          preference: pref({ dueOn: "2026-09-28", dueNote: "the lease" }),
+        }),
+      ],
+      sources,
+      now,
+      "UTC",
+    );
+    expect(ranked.map((item) => item.person.id)).toEqual([
+      "asked",
+      "birthday",
+      "overdue",
+    ]);
+    expect(ranked[0]).toMatchObject({
+      tier: 0,
+      reason: "You asked to be reminded today.",
+      reminder: { note: "the lease" },
+    });
+    expect(ranked[1].reminder).toBeUndefined();
+  });
+  it("bypasses snooze, the 7-day cooldown, recent contact and cadence", () => {
+    const ranked = rankCandidates(
+      [
+        person("snoozed", {
+          preference: pref({
+            dueOn: "2026-09-28",
+            snoozedUntil: new Date("2026-10-20T00:00:00Z"),
+          }),
+        }),
+        person("cooldown", {
+          preference: pref({ dueOn: "2026-09-28", lastSuggestedAt: now }),
+        }),
+        person("recent", {
+          manualAt: new Date("2026-09-27T00:00:00Z"),
+          preference: pref({ dueOn: "2026-09-28" }),
+        }),
+        person("unknown", {
+          manualAt: null,
+          preference: pref({ dueOn: "2026-09-28", cadenceDays: 365 }),
+        }),
+      ],
+      sources,
+      now,
+      "UTC",
+    );
+    expect(ranked.map((item) => item.person.id).sort()).toEqual([
+      "cooldown",
+      "recent",
+      "snoozed",
+      "unknown",
+    ]);
+    expect(ranked.every((item) => item.tier === 0 && item.reminder)).toBe(true);
+  });
+  it("fires late when the due day was missed, using the sheet's timezone", () => {
+    const missed = person("missed", {
+      manualAt: null,
+      preference: pref({ dueOn: "2026-09-20" }),
+    });
+    expect(rankCandidates([missed], sources, now, "UTC")[0].tier).toBe(0);
+    // 02:00 UTC on the 28th is still the 27th in New York.
+    const early = new Date("2026-09-28T02:00:00Z");
+    const tomorrow = person("tomorrow", {
+      manualAt: null,
+      preference: pref({ dueOn: "2026-09-28" }),
+    });
+    expect(rankCandidates([tomorrow], sources, early, "America/New_York")).toEqual([]);
+    expect(rankCandidates([tomorrow], sources, early, "UTC")[0].tier).toBe(0);
+  });
+  it("ignores a future date and leaves normal ranking alone", () => {
+    const future = person("future", {
+      manualAt: null,
+      preference: pref({ dueOn: "2026-10-06" }),
+    });
+    expect(rankCandidates([future], sources, now, "UTC")).toEqual([]);
+    const overdue = person("overdue", { preference: pref({ dueOn: "2026-10-06" }) });
+    const [ranked] = rankCandidates([overdue], sources, now, "UTC");
+    expect(ranked.tier).toBe(3);
+    expect(ranked.reminder).toBeUndefined();
+  });
+  it("still respects archived and hidden people", () => {
+    expect(
+      rankCandidates(
+        [
+          person("archived", {
+            archived: true,
+            preference: pref({ dueOn: "2026-09-28" }),
+          }),
+          person("hidden", {
+            preference: pref({ dueOn: "2026-09-28", excludedAt: now }),
+          }),
+        ],
+        sources,
+        now,
+        "UTC",
+      ),
+    ).toEqual([]);
+  });
+  it("validates local dates and does calendar arithmetic", () => {
+    expect(isLocalDate("2026-10-06")).toBe(true);
+    for (const bad of ["2026-02-30", "2026-1-06", "2026-10-06T00:00", "", null, 20261006])
+      expect(isLocalDate(bad)).toBe(false);
+    expect(addLocalDays("2026-09-28", 730)).toBe("2028-09-27");
+    expect(addLocalDays("2026-03-07", 2)).toBe("2026-03-09");
   });
 });

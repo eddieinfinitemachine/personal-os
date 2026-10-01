@@ -201,6 +201,8 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
         router.push("/trips");
       } else if (proposal.type === "todo") {
         router.push("/");
+      } else if (proposal.type === "call_sheet") {
+        router.push("/call-sheet");
       } else {
         // interaction + person land on /friends.
         router.push("/friends");
@@ -377,6 +379,8 @@ function Preview({
           <PersonFields proposal={proposal} patch={patch} />
         ) : proposal.type === "trip" ? (
           <TripFields proposal={proposal} patch={patch} />
+        ) : proposal.type === "call_sheet" ? (
+          <CallSheetFields proposal={proposal} patch={patch} />
         ) : (
           <TodoFields proposal={proposal} projects={projects} patch={patch} />
         )}
@@ -1117,8 +1121,55 @@ function TodoFields({
   );
 }
 
+function CallSheetFields({
+  proposal,
+  patch,
+}: {
+  proposal: Extract<CaptureProposal, { type: "call_sheet" }>;
+  patch: (part: Partial<Extract<CaptureProposal, { type: "call_sheet" }>>) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="First name">
+          <input
+            value={proposal.firstName}
+            onChange={(e) => patch({ firstName: e.target.value })}
+            className={INPUT_CLASS}
+          />
+        </Field>
+        <Field label="Last name">
+          <input
+            value={proposal.lastName ?? ""}
+            onChange={(e) => patch({ lastName: e.target.value || null })}
+            className={INPUT_CLASS}
+          />
+        </Field>
+      </div>
+      <Field label="Day">
+        <input
+          type="date"
+          value={proposal.date}
+          onChange={(e) => patch({ date: e.target.value })}
+          className={INPUT_CLASS}
+        />
+      </Field>
+      <Field label="About">
+        <input
+          value={proposal.note ?? ""}
+          onChange={(e) => patch({ note: e.target.value || null })}
+          maxLength={200}
+          placeholder="Optional"
+          className={INPUT_CLASS}
+        />
+      </Field>
+    </div>
+  );
+}
+
 function previewLabel(p: CaptureProposal): string {
   if (p.type === "asset") return p.assetKind;
+  if (p.type === "call_sheet") return "call sheet";
   return p.type;
 }
 
