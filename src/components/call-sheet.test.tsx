@@ -6,7 +6,7 @@ import { CallSheet } from "./call-sheet";
 import type { CallSheetResponse } from "@/lib/call-sheet/types";
 const now = new Date("2026-09-28T12:00:00Z");
 function sheet(): CallSheetResponse {
-  return { day: { id: "day", localDate: "2026-09-28", version: 0 }, timezone: "America/New_York", hidden: [], upcoming: [],
+  return { day: { id: "day", localDate: "2026-09-28", version: 0 }, timezone: "America/New_York", hidden: [], reviewCount: 0, upcoming: [],
     sources: { imessage: { enabled: true, status: "ready", lastSuccessAt: now.toISOString(), error: null }, whatsapp: { enabled: false, status: "not_connected", lastSuccessAt: null, error: null } },
     entries: [{ id: "entry", personId: "person", name: "Avery Example", imageUrl: null, phone: "+15551234567", email: "avery@example.test", reason: "Time for a check-in.", topic: "Ask how the project went.", lastContactAt: "2026-08-01T12:00:00Z", lastContactSource: "imessage", status: "pending", cadenceDays: 30, cues: [{ kind: "topic", text: "Ask how the project went.", evidence: [{ source: "imessage", messageId: "m1", sentAt: "2026-08-01T12:00:00Z", excerpt: "Starting the project next week." }] }] }] };
 }
@@ -89,6 +89,28 @@ describe("daily call sheet", () => {
     await act(async () => button("Call").click());
     expect(container.textContent).toContain("Offline"); expect(button("Call").disabled).toBe(false); expect(button("Done").disabled).toBe(false);
     expect(container.textContent).toContain("0 of 1 checked in");
+  });
+  it("says why when there is no one else to suggest, and keeps the row", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response(sheet())).mockResolvedValueOnce(response({ error: "No one else is due for a check-in right now, so Avery Example stays on today’s list." }, 422)); vi.stubGlobal("fetch", fetch); await render();
+    await act(async () => button("Someone else today").click());
+    expect(JSON.parse(fetch.mock.calls[1][1].body).action).toBe("replace");
+    expect(container.textContent).toContain("Avery Example stays on today’s list");
+    expect(container.querySelectorAll("li")).toHaveLength(1); expect(button("Someone else today").disabled).toBe(false);
+  });
+  it("offers a quick review of people with no contact on record and refreshes after a decision", async () => {
+    const withReview = { ...sheet(), reviewCount: 459 };
+    const fetch = vi.fn().mockResolvedValueOnce(response(withReview)).mockResolvedValueOnce(response({ total: 1, people: [{ personId: "quiet", name: "Quinn Quiet", imageUrl: null, company: null, role: null, city: null, howWeMet: null, strength: null, circles: [], tags: [], summary: null, reachable: true }] })).mockResolvedValueOnce(response({ ok: true })).mockResolvedValue(response(sheet()));
+    vi.stubGlobal("fetch", fetch); await render();
+    expect(container.textContent).toContain("459 people have no contact on record.");
+    await act(async () => button("Review").click());
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain("Quick review");
+    expect(fetch.mock.calls[1][0]).toBe("/api/call-sheet/review");
+    await act(async () => [...container.querySelectorAll("button")].find(b => b.textContent?.includes("Monthly"))!.click());
+    expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ personId: "quiet", decision: "keep", cadenceDays: 30 });
+    await act(async () => (container.querySelector('button[aria-label="Close"]') as HTMLButtonElement).click());
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(fetch.mock.calls[3][0]).toBe("/api/call-sheet");
+    expect(container.textContent).not.toContain("no contact on record");
   });
   it("shows authentication and initial load failures honestly", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({}, 401))); await render();

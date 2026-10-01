@@ -155,3 +155,16 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 **Context**: Building call sheet reminders from Eddie's ask "put Grace Kotick on my call sheet for Tuesday".
 **Mistake / surprise**: The example sentence went straight into the quick-add placeholder, the Claude prompt and the test fixtures, along with a second real name pulled from the people table. Eddie: "i dont want this to be the preview."
 **Rule**: A person named in a request or seen in the database is data, not copy. Placeholders, prompt examples, comments, commit/PR text and fixtures use synthetic names (Alex Rivera, Sam). Grep for the real name before committing.
+
+## 2026-10-01 — a "last attempt failed" flag is not a staleness signal
+**Context**: Call sheet "Someone else today" removed a person and offered nobody; the candidate pool was empty all morning.
+**Mistake / surprise**: The hourly Mac worker runs during overnight dark wakes (5–30 s each), so the daily full re-post gets chopped and reports `error`. Policy treated `status === "error"` as "evidence incomplete" even though the last good scan was 15 hours old and every row was fresh, so one bad attempt zeroed 171 candidates until the next clean run. The UI then dropped the row silently.
+**Rule**: (1) Gate on data age (`lastSuccessAt`, per-row `capturedAt`), never on the outcome of the latest attempt; LaunchAgent jobs on a laptop fail routinely while it sleeps. (2) An action that asks for a substitute must refuse out loud when there is none, not half-apply. (3) When a list "loses" something, check the pool size in prod before reading UI code.
+
+## 2026-10-01 — adding a low-priority tier to a pool breaks every "search the whole pool" rule
+**Context**: No-contact people joined the call sheet pool as tier 4, meant to appear only after everyone who is due.
+**Mistake / surprise**: `selectCandidates` balances categories by scanning the whole pool for an under-represented one, so a tier-4 person with a `family`/`professional` circle jumped ahead of 170 due people every day. Unit tests on ranking passed; only a read-only simulation on real data showed it.
+**Rule**: When widening a candidate pool, re-read every consumer of the pool, not just the ranker, and simulate the final pick on real data (counts only) before calling it done.
+
+## 2026-10-01 — browser-checking against a scratch DB
+**Rule**: `next dev --webpack -p <port>` with `DATABASE_URL` set to the scratch cluster; sign a session with `signSession` (dev secret) and set it from the page. Use `http://<name>.localhost:<port>`: plain `localhost` may hold an HttpOnly `ec-session` that JS cannot replace, and `127.0.0.1` is blocked from dev resources so the page never hydrates. A background automation tab reports `visibilityState: "hidden"`, which pauses the call sheet's loader; override it and dispatch `visibilitychange`. Local Postgres needs `-c unix_socket_directories=''` when the data dir path is long.

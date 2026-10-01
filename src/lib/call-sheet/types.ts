@@ -47,10 +47,33 @@ export type CallSheetResponse = {
   sources: Record<CallSheetSource, SourceHealth>;
   timezone: string;
   hidden: { personId: string; name: string }[];
+  /** People with no contact on record waiting for a quick review. */
+  reviewCount: number;
   /** Future-dated reminders, soonest first. */
   upcoming: CallSheetUpcoming[];
   undoToken?: string;
 };
+export type CallSheetReviewPerson = {
+  personId: string;
+  name: string;
+  imageUrl: string | null;
+  company: string | null;
+  role: string | null;
+  city: string | null;
+  howWeMet: string | null;
+  strength: string | null;
+  circles: string[];
+  tags: string[];
+  summary: string | null;
+  reachable: boolean;
+};
+export type CallSheetReview = {
+  total: number;
+  people: CallSheetReviewPerson[];
+};
+export type CallSheetReviewDecision =
+  | { personId: string; decision: "keep"; cadenceDays: number }
+  | { personId: string; decision: "hide" | "reset" };
 export type CallSheetReminderInput = {
   personId: string;
   /** Local YYYY-MM-DD, or null to cancel. */

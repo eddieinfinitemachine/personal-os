@@ -17,9 +17,11 @@ import {
   limitPersonCues,
   relationshipCategory,
   localDate,
+  NO_CONTACT_REASON,
   personName,
   rankCandidates,
   REMINDER_REASON,
+  reviewQueue,
   selectCandidates,
   snoozeUntil,
   SOURCES,
@@ -32,6 +34,8 @@ import type {
   CallSheetMutation,
   CallSheetReminderInput,
   CallSheetResponse,
+  CallSheetReview,
+  CallSheetReviewDecision,
   CallSheetSettingsMutation,
   CallSheetSource,
   ContactSourceData,
@@ -454,7 +458,9 @@ export async function sheetInTransaction(
                 ? REMINDER_REASON
                 : (!last.reliable && !entry.reason.includes("birthday")) ||
                     (entry.reason.startsWith("A possible follow-up") &&
-                      !cues.some((cue) => cue.kind === "follow_up"))
+                      !cues.some((cue) => cue.kind === "follow_up")) ||
+                    // Older contact surfaced after suggesting: no longer "none".
+                    (entry.reason === NO_CONTACT_REASON && last.at)
                   ? "A suggested check-in."
                   : entry.reason.startsWith("Time for your")
                     ? `Time for your ${cadence(person, person.preference?.cadenceDays)}-day check-in.`
@@ -526,7 +532,15 @@ export async function sheetInTransaction(
       where: { id: day.id },
       data: { entries: json(data), version: { increment: 1 } },
     });
-  return response(day, data, ctx.sources, timezone, ctx.people, date);
+  return response(
+    day,
+    data,
+    ctx.sources,
+    timezone,
+    ctx.people,
+    date,
+    reviewQueue(ctx.people, ctx.sources, now).length,
+  );
 }
 function response(
   day: CallSheetDay,
@@ -535,6 +549,7 @@ function response(
   timezone: string,
   people: PolicyPerson[],
   today: string,
+  reviewCount: number,
 ): CallSheetResponse {
   return {
     day: { id: day.id, localDate: day.localDate, version: day.version },
@@ -555,6 +570,7 @@ function response(
     hidden: people
       .filter((person) => person.preference?.excludedAt)
       .map((person) => ({ personId: person.id, name: personName(person) })),
+    reviewCount,
     upcoming: people
       .flatMap((person) => {
         const dueOn = person.preference?.dueOn;
@@ -828,6 +844,13 @@ export function mutateCallSheet(
             )
             .map((person) => ({ category: relationshipCategory(person) })),
         )[0];
+        // "Someone else" with nobody else due would only shorten the list.
+        // Throwing rolls back the snooze above, so the person stays put.
+        if (!replacement && action.action === "replace")
+          throw new IntakeError(
+            `No one else is due for a check-in right now, so ${personName(person)} stays on today’s list.`,
+            422,
+          );
         const index = data.entries.findIndex((item) => item.id === entry.id);
         if (replacement) {
           undo.replacement = {
@@ -1031,5 +1054,98 @@ export function setCallSheetReminder(
       update: values,
     });
     return sheetInTransaction(tx, userId, now);
+  });
+}
+function reviewSummary(raw: unknown): string | null {
+  const summary =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as { summary?: unknown }).summary
+      : null;
+  if (typeof summary !== "string" || !summary.trim()) return null;
+  const text = summary.trim().replace(/\s+/g, " ");
+  return text.length > 240 ? `${text.slice(0, 239).trimEnd()}…` : text;
+}
+export function getCallSheetReview(
+  userId: string,
+  now = new Date(),
+): Promise<CallSheetReview> {
+  return ownerTransaction(userId, async (tx) => {
+    const ctx = await context(tx, userId, now);
+    const records = new Map(ctx.records.map((person) => [person.id, person]));
+    const people = reviewQueue(ctx.people, ctx.sources, now).flatMap((item) => {
+      const person = records.get(item.id);
+      if (!person) return [];
+      return [
+        {
+          personId: person.id,
+          name: personName(person),
+          imageUrl: person.imageUrl,
+          company: person.company,
+          role: person.role,
+          city: person.city,
+          howWeMet: person.howWeMet,
+          strength: person.strength,
+          circles: person.circles,
+          tags: person.tags,
+          summary: reviewSummary(person.context),
+          reachable: !!(person.phone?.trim() || person.email?.trim()),
+        },
+      ];
+    });
+    return { total: people.length, people };
+  });
+}
+export function parseReviewDecision(raw: unknown): CallSheetReviewDecision {
+  const input = object(raw);
+  strictFields(input, ["personId", "decision", "cadenceDays"]);
+  const personId = id(input.personId);
+  if (input.decision === "keep") {
+    if (
+      !Number.isInteger(input.cadenceDays) ||
+      (input.cadenceDays as number) < 7 ||
+      (input.cadenceDays as number) > 730
+    )
+      throw new IntakeError("Cadence must be 7 to 730 days");
+    return {
+      personId,
+      decision: "keep",
+      cadenceDays: input.cadenceDays as number,
+    };
+  }
+  if (input.decision !== "hide" && input.decision !== "reset")
+    throw new IntakeError("Invalid decision");
+  if (input.cadenceDays !== undefined)
+    throw new IntakeError("Cadence is only for keep");
+  return { personId, decision: input.decision };
+}
+/** One quick-review answer. Light on purpose: the sheet re-ranks on its next read. */
+export function decideCallSheetReview(
+  userId: string,
+  raw: unknown,
+  now = new Date(),
+) {
+  const input = parseReviewDecision(raw);
+  return ownerTransaction(userId, async (tx) => {
+    const person = await tx.person.findFirst({
+      where: { id: input.personId, userId, archived: false },
+    });
+    if (!person) throw new IntakeError("Person not found", 404);
+    const values =
+      input.decision === "keep"
+        ? { cadenceDays: input.cadenceDays }
+        : input.decision === "hide"
+          ? { excludedAt: now }
+          : { excludedAt: null, cadenceDays: null };
+    await tx.callSheetContact.upsert({
+      where: { userId_personId: { userId, personId: person.id } },
+      create: {
+        userId,
+        personId: person.id,
+        identityKey: identityKey(person),
+        ...values,
+      },
+      update: values,
+    });
+    return { ok: true as const };
   });
 }

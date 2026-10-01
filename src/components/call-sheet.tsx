@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Loader2, MessageCircle, Phone, Plus, RotateCcw, Settings2, X } from "lucide-react";
 import { Sheet } from "@/components/dating/sheet";
+import { CallSheetReview, initials } from "@/components/call-sheet-review";
 import { REACH_OUT_METHODS, type ReachOutMethod } from "@/lib/call-sheet/reach-out";
 import type { CallSheetEntry, CallSheetMutation, CallSheetReminderInput, CallSheetResponse, CallSheetSettingsMutation } from "@/lib/call-sheet/types";
 
@@ -16,13 +17,13 @@ function date(value: string | null, timezone: string) {
 function dueDay(value: string) {
   return new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${value}T12:00:00Z`));
 }
-function initials(name: string) { return name.split(/\s+/).filter(Boolean).slice(0, 2).map(s => s[0]).join("").toUpperCase(); }
 
 export function CallSheet() {
   const [data, setData] = useState<CallSheetResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [prompt, setPrompt] = useState<{ entry: CallSheetEntry; dayId: string; version: number } | null>(null);
+  const [reviewing, setReviewing] = useState(false);
   const choosing = useRef(false);
   const undoButton = useRef<HTMLButtonElement>(null);
   const focusAfterSave = useRef(false);
@@ -107,6 +108,8 @@ export function CallSheet() {
         await load(true);
         return false;
       }
+      // 422: the server declined on purpose and says why (e.g. nobody else to suggest).
+      if (res.status === 422 && typeof result.error === "string") throw Error(result.error);
       if (!res.ok || !result.day) throw Error(res.status === 401 ? "Sign in again to update your call sheet." : "That change could not save. Please try again.");
       if (alive.current) setData(result);
       return true;
@@ -229,6 +232,7 @@ export function CallSheet() {
         </div> : null}
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] px-4 py-2 sm:px-5">
           {data.undoToken ? <button ref={undoButton} className={actionClass} disabled={busy} onClick={() => void send("/api/call-sheet", { dayId: data.day.id, version: data.day.version, action: "undo", undoToken: data.undoToken })}><RotateCcw className="size-3.5" />Undo last change</button> : <span className="text-xs text-[var(--color-muted-foreground)]">Your list stays steady throughout the day.</span>}
+          {data.reviewCount > 0 ? <div className="flex w-full flex-wrap items-center justify-between gap-2 text-xs text-[var(--color-muted-foreground)]"><span>{data.reviewCount === 1 ? "1 person has" : `${data.reviewCount} people have`} no contact on record.</span><button className={actionClass} disabled={busy} onClick={() => setReviewing(true)}>Review</button></div> : null}
           <details className="w-full text-sm">
             <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 py-2 text-xs text-[var(--color-muted-foreground)]"><Settings2 className="size-3.5" />Sources & preferences</summary>
             <div className="space-y-3 pb-3 pt-1">
@@ -262,6 +266,7 @@ export function CallSheet() {
           <button type="button" className={actionClass + " mt-3 w-full"} disabled={busy} onClick={closeCheckIn}>Cancel</button>
         </div>
       </Sheet> : null}
+      {reviewing && data ? <CallSheetReview count={data.reviewCount} onClose={() => setReviewing(false)} onChanged={() => void load(true)} /> : null}
     </section>
   );
 }
