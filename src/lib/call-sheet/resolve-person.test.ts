@@ -6,15 +6,15 @@ vi.mock("@/lib/prisma", () => ({ prisma }));
 import { matchPerson, resolveOrCreatePerson } from "./resolve-person";
 
 const people = [
-  { id: "kotick", firstName: "Grace", lastName: "Kotick" },
-  { id: "dayan", firstName: "Grace Dayan", lastName: null },
+  { id: "rivera", firstName: "Alex", lastName: "Rivera" },
+  { id: "morgan", firstName: "Alex Morgan", lastName: null },
   { id: "sam", firstName: "Sam", lastName: "Lee" },
   { id: "maya", firstName: "maya", lastName: "ROSS" },
   { id: "mary", firstName: "Mary Ann", lastName: "Smith" },
 ];
 describe("matchPerson", () => {
   it("matches a full name case-insensitively, with spacing noise", () => {
-    expect(matchPerson(people, { firstName: "grace", lastName: "KOTICK" })).toEqual({
+    expect(matchPerson(people, { firstName: "alex", lastName: "RIVERA" })).toEqual({
       kind: "match",
       person: people[0],
     });
@@ -24,13 +24,13 @@ describe("matchPerson", () => {
     });
   });
   it("matches a record that stores the whole name in firstName", () => {
-    expect(matchPerson(people, { firstName: "Grace", lastName: "Dayan" })).toMatchObject({
+    expect(matchPerson(people, { firstName: "Alex", lastName: "Morgan" })).toMatchObject({
       kind: "match",
-      person: { id: "dayan" },
+      person: { id: "morgan" },
     });
-    expect(matchPerson(people, { firstName: "Grace Dayan", lastName: null })).toMatchObject({
+    expect(matchPerson(people, { firstName: "Alex Morgan", lastName: null })).toMatchObject({
       kind: "match",
-      person: { id: "dayan" },
+      person: { id: "morgan" },
     });
   });
   it("matches a lone first name only when it is unique", () => {
@@ -38,7 +38,7 @@ describe("matchPerson", () => {
       kind: "match",
       person: { id: "sam" },
     });
-    expect(matchPerson(people, { firstName: "grace", lastName: null })).toEqual({
+    expect(matchPerson(people, { firstName: "alex", lastName: null })).toEqual({
       kind: "ambiguous",
       candidates: [people[1], people[0]],
     });
@@ -46,7 +46,7 @@ describe("matchPerson", () => {
     expect(matchPerson(people, { firstName: "Mary" })).toEqual({ kind: "none" });
   });
   it("finds nobody for an unknown or empty name", () => {
-    expect(matchPerson(people, { firstName: "Grace", lastName: "Hopper" })).toEqual({
+    expect(matchPerson(people, { firstName: "Alex", lastName: "Hopper" })).toEqual({
       kind: "none",
     });
     expect(matchPerson(people, { firstName: "  " })).toEqual({ kind: "none" });
@@ -58,34 +58,34 @@ describe("resolveOrCreatePerson", () => {
     prisma.person.findMany.mockResolvedValue(people);
   });
   it("looks only at the owner's non-archived people", async () => {
-    await resolveOrCreatePerson("owner", { firstName: "Grace", lastName: "Kotick" });
+    await resolveOrCreatePerson("owner", { firstName: "Alex", lastName: "Rivera" });
     expect(prisma.person.findMany).toHaveBeenCalledWith({
       where: {
         userId: "owner",
         archived: false,
-        firstName: { startsWith: "Grace", mode: "insensitive" },
+        firstName: { startsWith: "Alex", mode: "insensitive" },
       },
       select: { id: true, firstName: true, lastName: true },
     });
     expect(prisma.person.create).not.toHaveBeenCalled();
   });
   it("returns candidates instead of guessing", async () => {
-    const result = await resolveOrCreatePerson("owner", { firstName: "Grace" });
+    const result = await resolveOrCreatePerson("owner", { firstName: "Alex" });
     expect(result.kind).toBe("ambiguous");
     expect(prisma.person.create).not.toHaveBeenCalled();
   });
   it("creates a bare person when nobody matches", async () => {
-    prisma.person.create.mockResolvedValue({ id: "new", firstName: "Grace", lastName: "Hopper" });
+    prisma.person.create.mockResolvedValue({ id: "new", firstName: "Alex", lastName: "Hopper" });
     const result = await resolveOrCreatePerson("owner", {
-      firstName: " Grace ",
+      firstName: " Alex ",
       lastName: " Hopper ",
     });
     expect(result).toEqual({
       kind: "created",
-      person: { id: "new", firstName: "Grace", lastName: "Hopper" },
+      person: { id: "new", firstName: "Alex", lastName: "Hopper" },
     });
     expect(prisma.person.create).toHaveBeenCalledWith({
-      data: { userId: "owner", firstName: "Grace", lastName: "Hopper" },
+      data: { userId: "owner", firstName: "Alex", lastName: "Hopper" },
       select: { id: true, firstName: true, lastName: true },
     });
   });

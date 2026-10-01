@@ -108,7 +108,7 @@ export type TodoProposal = {
   routedByAlias?: boolean;
 };
 
-// "Put Grace Kotick on my call sheet for Tuesday" — a user-set call sheet
+// "Put Alex Rivera on my call sheet for Tuesday" — a user-set call sheet
 // reminder. Resolved to a Person (or a new one) at commit.
 export type CallSheetProposal = {
   type: "call_sheet";
@@ -194,7 +194,7 @@ Top-level types (the "type" discriminator):
 - "person"      — adding someone to the CRM directly, no event. "add X to my CRM", "X is a [role]", business cards.
 - "trip"        — a planned or past trip: "trip to Tokyo Jan 5–12", "going to Lisbon in March", "Aspen with the kids".
 - "todo"        — a task to do: "remind me to call dentist", "I need to renew passport", "todo: send invoice to Acme".
-- "call_sheet"  — put a person on their daily Call Sheet (check-in list) for a day: "put Grace Kotick on my call sheet for Tuesday", "add Sam to the call sheet tomorrow about the lease", "call sheet: Maya next Friday".
+- "call_sheet"  — put a person on their daily Call Sheet (check-in list) for a day: "put Alex Rivera on my call sheet for Tuesday", "add Sam to the call sheet tomorrow about the lease", "call sheet: Maya next Friday".
 
 Disambiguation rules:
 - A time + person signal → interaction. "Met Sophie at the party Friday" = interaction; "add Sophie to my CRM, she is an artist" = person.
@@ -204,7 +204,7 @@ Disambiguation rules:
 - "Invested $X in Y" / "bought Y shares" → asset/investment.
 - "Habit: …" / "Principle: …" / "Best practice: …" → asset/practice.
 - "Remind me to …" / "todo: …" / "I need to …" → todo (NOT a person, NOT an interaction).
-- call_sheet ONLY when the text explicitly mentions the call sheet / check-in list ("call sheet", "check-in list"). "Remind me to call Grace Tuesday" with no call-sheet mention is a todo, not call_sheet.
+- call_sheet ONLY when the text explicitly mentions the call sheet / check-in list ("call sheet", "check-in list"). "Remind me to call Alex Tuesday" with no call-sheet mention is a todo, not call_sheet.
 - A future trip with dates → trip. A wished-for restaurant → asset/place.
 - TEXT THAT IS JUST A URL or "read this / bookmark this / save this <URL>" → asset/media. Treat as a "to read / to watch" bookmark: visit the URL via web_search if useful, set title = the page/article title, creator = the publication or author, url = the URL itself, status = "wishlist". Same for "want to watch <YouTube URL>" → asset/media with format="video".
 
@@ -296,7 +296,7 @@ For todo:
 - "projectId": match ACTIVE_PROJECTS like for asset (e.g. "todo: change Ferrari oil" → Ferrari project). Null otherwise.
 
 For call_sheet:
-- "firstName" / "lastName": the ONE person named, split on whitespace like person ("Grace Kotick" → "Grace" / "Kotick"; "Sam" alone → firstName "Sam", lastName null). Keep the name exactly as written; never guess a surname.
+- "firstName" / "lastName": the ONE person named, split on whitespace like person ("Alex Rivera" → "Alex" / "Rivera"; "Sam" alone → firstName "Sam", lastName null). Keep the name exactly as written; never guess a surname.
 - "date": ISO YYYY-MM-DD resolved against <TODAY>. "today" → <TODAY>; "tomorrow" → <TODAY>+1; a bare weekday ("Tuesday", "on Friday") → the next occurrence strictly AFTER <TODAY> (if <TODAY> is Tuesday, "Tuesday" means a week later); "next Friday" → the same rule; an explicit date ("Oct 6") → that date in the coming year. No date given → <TODAY>.
 - "note": the "about …" / "re …" clause verbatim without the lead-in ("about the lease" → "the lease"). null when there is none. Never invent one.
 
