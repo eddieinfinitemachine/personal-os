@@ -168,3 +168,7 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 
 ## 2026-10-01 — browser-checking against a scratch DB
 **Rule**: `next dev --webpack -p <port>` with `DATABASE_URL` set to the scratch cluster; sign a session with `signSession` (dev secret) and set it from the page. Use `http://<name>.localhost:<port>`: plain `localhost` may hold an HttpOnly `ec-session` that JS cannot replace, and `127.0.0.1` is blocked from dev resources so the page never hydrates. A background automation tab reports `visibilityState: "hidden"`, which pauses the call sheet's loader; override it and dispatch `visibilitychange`. Local Postgres needs `-c unix_socket_directories=''` when the data dir path is long.
+
+## 2026-10-05 — a bare `catch {}` in a background pipeline hides the root cause
+**Context**: "Some evidence could not be analyzed" on Texts and EC Pad. `processSource` caught every extraction error without logging, so production logs had nothing and the cause had to be inferred from record states and a synthetic benchmark.
+**Rule**: Background workers log a failure *class* (timeout, HTTP status, parse, validation, storage) on every catch — never bodies. Give each call a deadline that doesn't shrink with the loop; when the run's own budget cuts a call short, requeue it uncounted instead of recording a failure. A status message must clear when its condition clears, not when the whole backlog drains.

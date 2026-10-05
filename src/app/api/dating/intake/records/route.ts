@@ -4,7 +4,8 @@ import { readJSON } from "@/lib/dating-intake/contracts";
 import { acceptRecord } from "@/lib/dating-intake/store";
 import { processSource } from "@/lib/dating-intake/extract";
 import { failure } from "@/lib/dating-intake/http";
-export const maxDuration = 60;
+// processSource runs after the response for up to 60 s plus its publish transaction.
+export const maxDuration = 150;
 export async function POST(request: Request) {
   try {
     const s = await connector(request);

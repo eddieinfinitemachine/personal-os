@@ -4,6 +4,10 @@ import { getSession } from "@/lib/auth";
 import { LogoutButton } from "@/components/logout-button";
 import { PushSettings } from "@/components/push-settings";
 import { ReadingSettings } from "@/components/reading-settings";
+import { isFounderUser } from "@/lib/cron";
+import { DatingSourcesProvider, SourceSettings } from "@/components/dating/source-status";
+import { GranolaSync } from "@/components/dating/granola-sync";
+import { SyncHelp } from "@/components/dating/sync-help";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +23,7 @@ export default async function SettingsPage() {
   if (!session) redirect("/login");
   const userId = session.userId;
 
-  const [user, storageUsed] = await Promise.all([
+  const [user, storageUsed, founder] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -34,6 +38,7 @@ export default async function SettingsPage() {
       where: { userId, kind: "file" },
       _sum: { size: true },
     }),
+    isFounderUser(userId),
   ]);
 
   if (!user) redirect("/login");
@@ -82,6 +87,21 @@ export default async function SettingsPage() {
               senderAddress={extractSenderAddress(process.env.EMAIL_FROM || "")}
               newsletterAddress={process.env.READER_INBOUND_ADDRESS}
             />
+          </div>
+        </section>
+
+        <section id="imports-and-sync" className="scroll-mt-6">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+            Imports and sync
+          </h2>
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+            <DatingSourcesProvider>
+              <SourceSettings>
+                {/* Granola sync is founder-only: the API key is personal. */}
+                {founder && <GranolaSync />}
+                <SyncHelp compact />
+              </SourceSettings>
+            </DatingSourcesProvider>
           </div>
         </section>
 

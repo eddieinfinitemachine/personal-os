@@ -55,7 +55,7 @@ export async function GET(request: Request) {
       const processingBudget = 240000 - (Date.now() - start);
       if (processingBudget < 1000) break;
       await processSource(state.userId, state.id, {
-        maxMs: Math.min(45000, processingBudget),
+        maxMs: Math.min(60000, processingBudget),
       });
       processed++;
     } catch {
