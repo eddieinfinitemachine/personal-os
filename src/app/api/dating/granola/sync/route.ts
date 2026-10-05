@@ -50,7 +50,7 @@ export async function POST(request: Request) {
 
   try {
     const state = await prisma.datingSourceState.findFirst({ where: { userId, source: "granola" } });
-    if (state && !state.enabled && state.status !== "not_connected") return NextResponse.json({ error: "Granola intake is paused. Resume it in Imports and sync first." }, { status: 409 });
+    if (state && !state.enabled && state.status !== "not_connected") return NextResponse.json({ error: "Granola intake is paused. Resume it in Settings › Imports and sync first." }, { status: 409 });
     if (state?.enabled) {
       const intake = await syncGranolaIntake(userId, state.id, { since });
       const processing = await processSource(userId, state.id);
