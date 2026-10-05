@@ -1033,16 +1033,19 @@ model PersonalRecord {
 // Person.lastInteractionAt as the only signal. One row per encounter, with
 // optional people / project / photo links.
 model Interaction {
-  id         String   @id @default(cuid())
-  occurredAt DateTime
-  kind       String // "dinner" | "call" | "meeting" | "event" | "message" | "other"
-  title      String
-  location   String?
-  notes      String?
-  photoUrl   String?
-  personIds  String[] @default([])
-  source     String   @default("manual") // "manual" | "smart-capture"
-  createdAt  DateTime @default(now())
+  id          String   @id @default(cuid())
+  occurredAt  DateTime
+  kind        String // "dinner" | "call" | "meeting" | "event" | "message" | "other"
+  title       String
+  location    String?
+  notes       String?
+  photoUrl    String?
+  personIds   String[] @default([])
+  source      String   @default("manual") // "manual" | "smart-capture" | "ecpad" | …
+  // Stable id from an external writer (EC Pad: "ecpad:<sha256>"), so re-sends
+  // upsert instead of duplicating. Null for everything entered in the app.
+  externalKey String?
+  createdAt   DateTime @default(now())
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1050,6 +1053,7 @@ model Interaction {
   projectId String?
   project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
+  @@unique([userId, externalKey])
   @@index([userId, occurredAt])
   @@index([projectId])
 }

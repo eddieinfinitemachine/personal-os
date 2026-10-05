@@ -7,7 +7,7 @@ import type { CallSheetResponse } from "@/lib/call-sheet/types";
 const now = new Date("2026-09-28T12:00:00Z");
 function sheet(): CallSheetResponse {
   return { day: { id: "day", localDate: "2026-09-28", version: 0 }, timezone: "America/New_York", hidden: [], reviewCount: 0, upcoming: [],
-    sources: { imessage: { enabled: true, status: "ready", lastSuccessAt: now.toISOString(), error: null }, whatsapp: { enabled: false, status: "not_connected", lastSuccessAt: null, error: null } },
+    sources: { imessage: { enabled: true, status: "ready", lastSuccessAt: now.toISOString(), error: null }, whatsapp: { enabled: false, status: "not_connected", lastSuccessAt: null, error: null }, ecpad: { enabled: false, status: "not_connected", lastSuccessAt: null, error: null } },
     entries: [{ id: "entry", personId: "person", name: "Avery Example", imageUrl: null, phone: "+15551234567", email: "avery@example.test", reason: "Time for a check-in.", topic: "Ask how the project went.", lastContactAt: "2026-08-01T12:00:00Z", lastContactSource: "imessage", status: "pending", cadenceDays: 30, cues: [{ kind: "topic", text: "Ask how the project went.", evidence: [{ source: "imessage", messageId: "m1", sentAt: "2026-08-01T12:00:00Z", excerpt: "Starting the project next week." }] }] }] };
 }
 const response = (data: unknown, status = 200) => ({ ok: status < 400, status, json: async () => data });
@@ -126,6 +126,17 @@ describe("daily call sheet", () => {
     await act(async () => button("Use WhatsApp").click());
     expect(fetch.mock.calls[3][0]).toBe("/api/call-sheet/settings");
     expect(JSON.parse(fetch.mock.calls[3][1].body)).toEqual({ source: "whatsapp", enabled: true });
+    await act(async () => button("Use EC Pad notes").click());
+    expect(JSON.parse(fetch.mock.calls[4][1].body)).toEqual({ source: "ecpad", enabled: true });
+  });
+  it("labels EC Pad evidence and never warns about a stale note scan", async () => {
+    const data = sheet();
+    data.sources.ecpad = { enabled: true, status: "syncing", lastSuccessAt: null, error: null };
+    data.entries[0].cues = [{ kind: "topic", text: "Ask about the new job.", evidence: [{ source: "ecpad", messageId: "p1", sentAt: "2026-09-27T00:00:00Z", excerpt: "Starts the new job in March." }] }];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(data))); await render();
+    expect(container.textContent).toContain("EC Pad notes · ");
+    expect(container.textContent).toContain("Waiting for EC Pad on your Mac to read your notes…");
+    expect(container.textContent).not.toContain("Some message history is still waiting to refresh");
   });
   it("adds someone for a day by parsing with the type pinned, committing without a preview, and reloading", async () => {
     const withAlex = sheet(); withAlex.upcoming = [{ personId: "alex", name: "Alex Rivera", dueOn: "2026-10-06", note: null }];

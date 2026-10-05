@@ -162,7 +162,12 @@ export function parseCapture(
     throw new IntakeError("Maximum 20000 text characters", 413);
   if ((input.messageCount as number) > 0 !== (lastContactAt !== null))
     throw new IntakeError("Contact time and message count disagree");
+  // EC Pad excerpts come from the owner's notes, matched by person id; there is
+  // no handle to match. Message sources must prove the handle behind activity.
+  if (source === "ecpad" && handles.length)
+    throw new IntakeError("EC Pad notes have no handles");
   if (
+    source !== "ecpad" &&
     !handles.length &&
     (lastContactAt || input.messageCount || messages.length)
   )
@@ -203,15 +208,13 @@ export function getCaptureConfig(userId: string): Promise<CaptureConfig> {
   return ownerTransaction(userId, async (tx) => {
     const settings = await ensureSettings(tx, userId);
     const sourceState = readSources(settings.sources);
-    const sources = {
-      imessage: sourceState.imessage.enabled,
-      whatsapp: sourceState.whatsapp.enabled,
-    };
-    const sourceEpochs = {
-      imessage: sourceState.imessage.epoch,
-      whatsapp: sourceState.whatsapp.epoch,
-    };
-    if (!sources.imessage && !sources.whatsapp)
+    const sources = Object.fromEntries(
+      SOURCES.map((source) => [source, sourceState[source].enabled]),
+    ) as CaptureConfig["sources"];
+    const sourceEpochs = Object.fromEntries(
+      SOURCES.map((source) => [source, sourceState[source].epoch]),
+    ) as NonNullable<CaptureConfig["sourceEpochs"]>;
+    if (!SOURCES.some((source) => sources[source]))
       return { sources, sourceEpochs, people: [], blockedHandles: [] };
     const { people, owners } = await identities(tx, userId);
     const preferences = await tx.callSheetContact.findMany({
@@ -355,7 +358,9 @@ export async function captureCallSheet(
         Date.parse(input.capturedAt) < Date.parse(state.attemptAt)
       )
         throw new IntakeError("A newer scan has started", 409);
-      if (input.status === "ready") {
+      // EC Pad reports only the people its notes mention, and its evidence never
+      // proves silence, so a ready report does not require a scan of everyone.
+      if (input.status === "ready" && input.source !== "ecpad") {
         const people = await tx.person.findMany({
           where: { userId, archived: false },
         });

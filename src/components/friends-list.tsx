@@ -1325,7 +1325,7 @@ function PersonInteractionsList({ personId }: { personId: string }) {
                     {shortDate(r.occurredAt)}
                   </div>
                   <div className="mt-0.5 text-[10px] uppercase tracking-wider opacity-70">
-                    {r.kind}
+                    {r.source === "ecpad" ? `${r.kind} · EC Pad` : r.kind}
                   </div>
                 </div>
               </div>

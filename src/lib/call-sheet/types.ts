@@ -1,5 +1,6 @@
 import type { ReachOutMethod } from "./reach-out";
-export type CallSheetSource = "imessage" | "whatsapp";
+/** "ecpad" carries the owner's own note excerpts: context for cues only, never contact evidence. */
+export type CallSheetSource = "imessage" | "whatsapp" | "ecpad";
 export type EvidenceCue = {
   kind: "topic" | "follow_up";
   text: string;
