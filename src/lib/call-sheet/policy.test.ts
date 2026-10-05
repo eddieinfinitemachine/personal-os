@@ -27,7 +27,7 @@ const off: SourceHealth = {
   lastSuccessAt: null,
   error: null,
 };
-const sources = { imessage: off, whatsapp: off };
+const sources = { imessage: off, whatsapp: off, ecpad: off };
 function person(id: string, extra: Partial<PolicyPerson> = {}): PolicyPerson {
   return {
     id,
@@ -131,14 +131,14 @@ describe("call sheet policy", () => {
       },
     });
     expect(
-      rankCandidates([p], { imessage: health, whatsapp: health }, now, "UTC"),
+      rankCandidates([p], { imessage: health, whatsapp: health, ecpad: off }, now, "UTC"),
     ).toEqual([]);
     expect(
-      rankCandidates([p], { imessage: health, whatsapp: off }, now, "UTC"),
+      rankCandidates([p], { imessage: health, whatsapp: off, ecpad: off }, now, "UTC"),
     ).toHaveLength(1);
     p.sourceData.imessage!.capturedAt = "2026-09-20T00:00:00Z";
     expect(
-      rankCandidates([p], { imessage: health, whatsapp: off }, now, "UTC"),
+      rankCandidates([p], { imessage: health, whatsapp: off, ecpad: off }, now, "UTC"),
     ).toEqual([]);
   });
   it("keeps trusting a fresh scan after a later attempt fails", () => {
@@ -163,7 +163,7 @@ describe("call sheet policy", () => {
       },
     });
     expect(
-      rankCandidates([p], { imessage: failed, whatsapp: off }, now, "UTC"),
+      rankCandidates([p], { imessage: failed, whatsapp: off, ecpad: off }, now, "UTC"),
     ).toHaveLength(1);
     expect(
       rankCandidates(
@@ -171,6 +171,7 @@ describe("call sheet policy", () => {
         {
           imessage: { ...failed, lastSuccessAt: "2026-09-20T00:00:00Z" },
           whatsapp: off,
+          ecpad: off,
         },
         now,
         "UTC",
@@ -803,5 +804,69 @@ describe("user-set call sheet reminders", () => {
       expect(isLocalDate(bad)).toBe(false);
     expect(addLocalDays("2026-09-28", 730)).toBe("2028-09-27");
     expect(addLocalDays("2026-03-07", 2)).toBe("2026-03-09");
+  });
+  it("treats EC Pad notes as topics only: never contact, volume or proof of silence", () => {
+    const base = {
+      capturedAt: now.toISOString(),
+      coverageStart: "2025-09-28T16:00:00.000Z",
+      extractionPending: false,
+    };
+    const noteCue = {
+      kind: "topic" as const,
+      text: "Ask how the new job is going.",
+      evidence: [
+        {
+          source: "ecpad" as const,
+          messageId: "passage-1",
+          sentAt: "2026-09-27T00:00:00.000Z",
+          excerpt: "Alex Rivera starts the new job in March.",
+        },
+      ],
+    };
+    const p = person("notes", {
+      manualAt: null,
+      sourceData: {
+        imessage: {
+          ...base,
+          lastContactAt: "2026-05-01T00:00:00.000Z",
+          messageCount: 20,
+          cues: [],
+        },
+        ecpad: {
+          ...base,
+          lastContactAt: "2026-09-27T00:00:00.000Z",
+          messageCount: 900,
+          cues: [noteCue],
+        },
+      },
+    });
+    const ready = {
+      ...off,
+      enabled: true,
+      status: "ready" as const,
+      lastSuccessAt: now.toISOString(),
+    };
+    // A note scan that is days old must not mark message evidence incomplete.
+    const connected = {
+      ...sources,
+      imessage: ready,
+      ecpad: { ...ready, lastSuccessAt: "2026-09-01T00:00:00.000Z" },
+    };
+    expect(messageVolume(p.sourceData)).toBe(20);
+    expect(closeness({ strength: null, sourceData: p.sourceData })).toBe("casual");
+    const last = latestContact(p, connected, now);
+    expect(last).toMatchObject({
+      at: "2026-05-01T00:00:00.000Z",
+      source: "imessage",
+      complete: true,
+    });
+    const [ranked] = rankCandidates([p], connected, now, "UTC");
+    expect(ranked.reason).toBe("Time for your 90-day check-in.");
+    expect(ranked.lastContactSource).toBe("imessage");
+    expect(ranked.cues).toEqual([noteCue]);
+    // Disabling the source hides its cues.
+    expect(
+      rankCandidates([p], { ...connected, ecpad: off }, now, "UTC")[0].cues,
+    ).toEqual([]);
   });
 });

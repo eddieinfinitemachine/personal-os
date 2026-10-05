@@ -7,7 +7,11 @@ import type {
 } from "./types";
 
 export const DAY_MS = 86_400_000;
-export const SOURCES: CallSheetSource[] = ["imessage", "whatsapp"];
+export const SOURCES: CallSheetSource[] = ["imessage", "whatsapp", "ecpad"];
+/** Sources that record actual conversations. EC Pad notes are the owner's own
+ * writing about someone: they add topics (cues) but never count as contact,
+ * message volume, or a scan that proves silence. */
+export const CONTACT_SOURCES: CallSheetSource[] = ["imessage", "whatsapp"];
 export type Identity = {
   firstName: string;
   lastName: string | null;
@@ -115,7 +119,7 @@ const CLOSENESS_RANK: Record<Closeness, number> = {
   close: 3,
 };
 export function messageVolume(sourceData: SourceDataMap | undefined) {
-  return SOURCES.reduce((sum, source) => {
+  return CONTACT_SOURCES.reduce((sum, source) => {
     const count = sourceData?.[source]?.messageCount;
     return typeof count === "number" && Number.isFinite(count) && count >= 0
       ? sum + count
@@ -308,7 +312,7 @@ export function latestContact(
     person.manualAt && person.manualAt <= now
       ? [{ at: person.manualAt.toISOString(), source: "manual" }]
       : [];
-  const enabled = SOURCES.filter((source) => sources[source].enabled);
+  const enabled = CONTACT_SOURCES.filter((source) => sources[source].enabled);
   // Freshness alone bounds how old evidence may be. A failed attempt (the Mac
   // slept mid-scan) leaves the last good scan as usable as it was before it.
   const complete = enabled.every(

@@ -8,7 +8,7 @@ import { REACH_OUT_METHODS, type ReachOutMethod } from "@/lib/call-sheet/reach-o
 import type { CallSheetEntry, CallSheetMutation, CallSheetReminderInput, CallSheetResponse, CallSheetSettingsMutation } from "@/lib/call-sheet/types";
 
 const actionClass = "inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-sm hover:bg-[var(--color-accent)] disabled:opacity-50";
-const labels = { imessage: "iMessage", whatsapp: "WhatsApp" } as const;
+const labels = { imessage: "iMessage", whatsapp: "WhatsApp", ecpad: "EC Pad notes" } as const;
 function date(value: string | null, timezone: string) {
   if (!value) return "Last contact unknown";
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: timezone }).format(new Date(value));
@@ -237,10 +237,10 @@ export function CallSheet() {
             <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 py-2 text-xs text-[var(--color-muted-foreground)]"><Settings2 className="size-3.5" />Sources & preferences</summary>
             <div className="space-y-3 pb-3 pt-1">
               <p className="text-xs text-[var(--color-muted-foreground)]">Messages refresh from your Mac while it is awake.</p>
-              {(["imessage", "whatsapp"] as const).map(source => {
+              {(["imessage", "whatsapp", "ecpad"] as const).filter(source => data.sources[source]).map(source => {
                 const state = data.sources[source];
                 return <div key={source} className="flex flex-wrap items-start justify-between gap-2">
-                  <div><span>{labels[source]}</span><p className="mt-0.5 text-xs text-[var(--color-muted-foreground)]">{!state.enabled ? "Not connected" : state.status === "error" ? state.error ?? "Could not refresh. Check Mac access." : state.status === "ready" ? `Last updated ${date(state.lastSuccessAt, data.timezone)}` : "Waiting for your Mac to check conversations…"}</p></div>
+                  <div><span>{labels[source]}</span><p className="mt-0.5 text-xs text-[var(--color-muted-foreground)]">{!state.enabled ? "Not connected" : state.status === "error" ? state.error ?? "Could not refresh. Check Mac access." : state.status === "ready" ? `Last updated ${date(state.lastSuccessAt, data.timezone)}` : source === "ecpad" ? "Waiting for EC Pad on your Mac to read your notes…" : "Waiting for your Mac to check conversations…"}</p></div>
                   <button className={actionClass} disabled={busy} onClick={() => void send("/api/call-sheet/settings", { source, enabled: !state.enabled })}>{state.enabled ? `Disconnect ${labels[source]}` : `Use ${labels[source]}`}</button>
                 </div>;
               })}
@@ -250,7 +250,8 @@ export function CallSheet() {
               {data.hidden.length ? <div><p className="mb-1 text-xs text-[var(--color-muted-foreground)]">Hidden from your call sheet</p>{data.hidden.map(person => <div key={person.personId} className="flex items-center justify-between gap-2"><span>{person.name}</span><button className={actionClass} disabled={busy} onClick={() => void send("/api/call-sheet/settings", { restorePersonId: person.personId })}>Restore</button></div>)}</div> : null}
             </div>
           </details>
-          {Object.values(data.sources).some(s => s.enabled && (s.status === "error" || !s.lastSuccessAt || Date.now() - Date.parse(s.lastSuccessAt) > 48 * 3600000)) ? <p role="status" className="pb-1 text-xs text-amber-700">Some message history is still waiting to refresh. Suggestions may be limited.</p> : null}
+          {/* EC Pad notes only add topics; a stale note scan never limits suggestions. */}
+          {(["imessage", "whatsapp"] as const).map(source => data.sources[source]).some(s => s?.enabled &&(s.status === "error" || !s.lastSuccessAt || Date.now() - Date.parse(s.lastSuccessAt) > 48 * 3600000)) ? <p role="status" className="pb-1 text-xs text-amber-700">Some message history is still waiting to refresh. Suggestions may be limited.</p> : null}
         </div>
       </> : null}
       {prompt ? <Sheet title="How did you reach out?" onClose={closeCheckIn}>

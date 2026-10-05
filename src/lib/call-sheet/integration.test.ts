@@ -1647,4 +1647,62 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
       expect(undone.entries[2].id).toBe(sheet.entries[1].id);
     });
   });
+  it("EC Pad notes flow through config and capture as context-only evidence", async () => {
+    const before = await getCaptureConfig(userId);
+    expect(before.sources).toEqual({ imessage: false, whatsapp: false, ecpad: false });
+    expect(before.people).toEqual([]);
+    await updateCallSheetSettings(userId, { source: "ecpad", enabled: true }, now);
+    const config = await getCaptureConfig(userId);
+    expect(config.sources.ecpad).toBe(true);
+    expect(config.sourceEpochs!.ecpad).not.toBe("initial");
+    // Pick someone already on today's sheet; cues are re-read on every load.
+    const first = await getCallSheet(userId, now);
+    const person = config.people.find((item) => item.id === first.entries[0].personId)!;
+    const passage = {
+      guid: "ecpad-passage-1",
+      sentAt: "2026-09-26T00:00:00.000Z",
+      fromMe: true,
+      text: "Dinner with Synthetic Person0; they start the new job in March.",
+    };
+    const note: CapturePerson = {
+      type: "person",
+      source: "ecpad",
+      sourceEpoch: config.sourceEpochs!.ecpad,
+      personId: person.id,
+      identityKey: person.identityKey,
+      handles: [],
+      capturedAt: now.toISOString(),
+      coverageStart: "2026-07-01T00:00:00.000Z",
+      lastContactAt: passage.sentAt,
+      messageCount: 1,
+      messages: [passage],
+    };
+    vi.mocked(extractCallSheetCues).mockResolvedValue([
+      {
+        kind: "topic",
+        text: "Ask about the new job.",
+        evidence: [{ source: "ecpad", messageId: passage.guid, sentAt: passage.sentAt, excerpt: "they start the new job in March" }],
+      },
+    ]);
+    expect(await captureCallSheet(userId, note, now)).toEqual({ ok: true, extracted: true });
+    expect(vi.mocked(extractCallSheetCues).mock.calls[0][1]).toBe("ecpad");
+    const contact = await prisma.callSheetContact.findUniqueOrThrow({
+      where: { userId_personId: { userId, personId: person.id } },
+    });
+    expect(readSourceData(contact.sourceData).ecpad?.cues).toHaveLength(1);
+    // Ready does not require a note scan of every person.
+    await expect(
+      captureCallSheet(userId, { type: "health", source: "ecpad", sourceEpoch: note.sourceEpoch, status: "ready", capturedAt: now.toISOString() }, now),
+    ).resolves.toEqual({ ok: true, extracted: false });
+    const sheet = await getCallSheet(userId, now);
+    expect(sheet.sources.ecpad).toMatchObject({ enabled: true, status: "ready" });
+    // A note from two days ago is not contact: the person is still due.
+    const entry = sheet.entries.find((item) => item.personId === person.id);
+    expect(entry?.status).toBe("pending");
+    expect(entry?.lastContactSource).toBe("manual");
+    expect(entry?.cues.map((cue) => cue.text)).toEqual(["Ask about the new job."]);
+    await expect(
+      captureCallSheet(userId, { ...note, handles: [person.phone!] }, now),
+    ).rejects.toThrow("no handles");
+  });
 });
