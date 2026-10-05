@@ -1366,3 +1366,22 @@ Spec: EC Pad → Personal OS contract (approved 2026-10-05; schema change pendin
 - Open: the people directory (`GET /api/capture/call-sheet`) returns people only while at least one Call Sheet source is enabled, so EC Pad activities need "EC Pad notes" (or another source) turned on to see anyone
 - [ ] Eddie approves the schema change → apply `20261005_interaction_external_key.sql` to prod from merged main, check `information_schema`, deploy
 - NOT verified: in a browser, against prod, with the real EC Pad client
+
+## 2026-10-05 — "Some evidence could not be analyzed" on Texts and EC Pad
+
+Prod evidence (read-only counts, no content): Texts had 254 records processed since Oct 5 01:00 and only one ever failed (it recovered at 06:00), yet the message stayed because `updateHealth` cleared `error` only when backlog hit 0 and the Mac still reports ~620 unsent conversations. EC Pad's current 4-segment journal has 3 segments `extracted` and segment 2 in `retry` after 3 attempts; 5 earlier revisions failed the same way. `processSource`'s catch swallowed every error, so Vercel logs had no failure lines at all. Synthetic 12k-char journal on `claude-opus-4-8`: 11–15 s and ~1.3–1.5k output tokens per call (model id and key are fine: Granola succeeds on the same path).
+- [x] Root cause 1: the per-call timeout was `min(20 s, what is left of a 45 s run)`, so the 3rd/4th ~12 s segment of a long journal got <10 s and always "failed"; a dense segment needing >20 s could never pass
+- [x] Root cause 2: one unprovable mention (paraphrased quote, unknown name, a 13th item) rejected the whole segment, identically on every retry; same name+quote with two dates collided on `DatingSuggestion @@unique([userId, meetingId, name])` and rolled back the document
+- [x] Root cause 3: a stale failure message never cleared while a backlog remained
+- [x] Fix: 55 s per-call cap, 60 s run, don't start a call with <20 s left; a call cut short by the run budget goes back to `pending` uncounted, without an error; `maxTokens` 4096; publish tx 30 s; leases and `maxDuration` (records/discovery 150 s) widened to fit
+- [x] Validation drops bad mentions instead of failing the segment, caps at 12, dedupes by (name, quote); publish also skips repeats from extractions stored before the fix
+- [x] `error` clears whenever no record needs attention (adapter errors still win)
+- [x] Failures are logged by class only (`config|budget|timeout|provider|invalid|storage` + HTTP status); 401/403/404 or a missing key shows "Analysis is paused: Claude rejected the server's API key or model (HTTP n). Check ANTHROPIC_API_KEY on Vercel…" and stops the run
+- [x] Tests: `extract.test.ts` (unit) and `extract.integration.test.ts` (scratch Postgres, Claude mocked at `callClaudeJSON` with a simulated clock). All 6 integration cases fail on origin/main and pass now
+
+## 2026-10-05 — Imports and sync moves to Settings
+- [x] Settings › Imports and sync (`#imports-and-sync`): every source control, Refresh, Pair EC Pad, Pause/Disconnect/Remove evidence, Granola sync (founder only) and the Mac sync help, in the Settings card style
+- [x] Dating keeps only `SourceAttention`: one line when a source needs attention, linking to the Settings anchor; nothing otherwise
+- [x] Copy: "Pair in EC Pad › Settings › Personal OS"; Granola paused error points to Settings › Imports and sync
+
+Review: `tsc --noEmit` clean; full suite 886 passed (140 opt-in skipped); dating-intake suites with the scratch cluster on :55442: 63 passed; `next build --webpack` passes. Not verified in a browser or against prod. After deploy: Texts' message should clear on its next successful extraction; EC Pad's segment 2 retries on its own at its next `retryAt` — if it still fails, Vercel logs now show the class (`Dating intake extraction failed: <kind>`).

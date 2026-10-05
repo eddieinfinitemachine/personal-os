@@ -177,7 +177,14 @@ export async function publishMentions(
   mentions: Mention[],
   verified: string[],
 ) {
+  // Extractions stored before validation deduplicated by (name, quote) may hold
+  // the same suggestion twice; creating both would violate its unique key and
+  // roll back the whole document on every retry.
+  const seen = new Set<string>();
   for (const m of mentions) {
+    const once = `${m.name.toLowerCase()}\u0000${m.quote}`;
+    if (seen.has(once)) continue;
+    seen.add(once);
     const ids = m.correspondent ? verified : [];
     const key = ids.length
       ? `contact:${hash(ids[0])}`

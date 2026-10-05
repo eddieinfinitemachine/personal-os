@@ -201,22 +201,27 @@ describe.skipIf(!enabled)(
         ).notes,
       ).toBe("My edited reflection");
     });
-    it("rejects fabricated quotes and recovers provider failures without advancing success", async () => {
-      expect(() =>
-        validateExtraction(
-          {
-            mentions: [
-              {
-                name: "Robin",
-                summary: "Date",
-                quote: "This is not in source",
-                eventDate: null,
-              },
-            ],
-          },
-          env(),
-        ),
-      ).toThrow();
+    it("drops fabricated quotes and recovers provider failures without advancing success", async () => {
+      const kept = validateExtraction(
+        {
+          mentions: [
+            {
+              name: "Robin",
+              summary: "Date",
+              quote: "This is not in source",
+              eventDate: null,
+            },
+            {
+              name: "Robin",
+              summary: "Date with Robin",
+              quote: text,
+              eventDate: null,
+            },
+          ],
+        },
+        env(),
+      );
+      expect(kept.map((m) => m.quote)).toEqual([text]);
       await acceptRecord(userId, stateId, env());
       await processSource(userId, stateId, {
         extract: async () => {

@@ -7,7 +7,8 @@ import { processSource } from "@/lib/dating-intake/extract";
 import { failure } from "@/lib/dating-intake/http";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// processSource runs after the response for up to 60 s plus its publish transaction.
+export const maxDuration = 150;
 async function enabledState(userId: string) {
   return prisma.datingSourceState.findFirst({ where: { userId, source: "texts", scope: "default", enabled: true } });
 }

@@ -131,9 +131,15 @@ export async function updateHealth(tx: Tx, userId: string, stateId: string) {
           : backlog || !scanComplete
             ? "backlog"
             : "up_to_date",
-      ...(adapterError ? { error: adapterError } : {}),
+      // A failure message lasts only while a record still needs attention: once
+      // retries succeed it clears, even if a large backlog is still draining.
+      ...(adapterError
+        ? { error: adapterError }
+        : !needsAttention
+          ? { error: null }
+          : {}),
       ...(!backlog && scanComplete && state.enabled && !adapterError
-        ? { lastSuccessAt: state.lastAttemptAt, error: null }
+        ? { lastSuccessAt: state.lastAttemptAt }
         : {}),
     },
   });
