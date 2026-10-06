@@ -1661,7 +1661,7 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
       });
       return { sheet, people };
     };
-    it("puts a snoozed person on top on their birthday; Done keeps the row checked in, once", async () => {
+    it("puts a snoozed person in the birthday section on their birthday; Done keeps the row checked in, once", async () => {
       const { sheet, people } = await offSheet();
       const [person] = people;
       await prisma.person.update({
@@ -1688,6 +1688,7 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
         personId: person.id,
         reason: "It’s their birthday today.",
         birthday: "2026-09-28",
+        section: "birthday",
         status: "pending",
       });
       expect(withBirthday.entries.slice(1).map((entry) => entry.id)).toEqual(
@@ -1708,6 +1709,7 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
         personId: person.id,
         status: "done",
         birthday: "2026-09-28",
+        section: "birthday",
       });
       const later = await getCallSheet(
         userId,
@@ -1751,6 +1753,8 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
       expect(replaced.entries.some((entry) => entry.personId === first.id)).toBe(
         false,
       );
+      // Nobody steps in for a birthday row.
+      expect(replaced.entries).toHaveLength(sheet.entries.length - 1);
       const hidden = await mutateCallSheet(
         userId,
         {
@@ -1772,6 +1776,79 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
           ),
         ).toEqual([]);
       expect(reread.hidden.map((item) => item.personId)).toEqual([second.id]);
+    });
+    it("a birthday row leaves the five alone; setting it aside, Done and Undo work on it", async () => {
+      const { sheet, people } = await offSheet();
+      const [person] = people;
+      await prisma.person.update({
+        where: { id: person.id },
+        data: { birthday: birthdayToday },
+      });
+      const listed = (data: typeof sheet) =>
+        data.entries
+          .filter((entry) => entry.section !== "birthday")
+          .map((entry) => entry.id);
+      const withBirthday = await getCallSheet(userId, now);
+      const row = withBirthday.entries.find(
+        (entry) => entry.personId === person.id,
+      )!;
+      expect(row).toMatchObject({ section: "birthday", status: "pending" });
+      expect(listed(withBirthday)).toEqual(sheet.entries.map((e) => e.id));
+      const setAside = await mutateCallSheet(
+        userId,
+        {
+          dayId: withBirthday.day.id,
+          version: withBirthday.day.version,
+          entryId: row.id,
+          action: "replace",
+        },
+        now,
+      );
+      expect(setAside.entries.map((e) => e.id)).toEqual(
+        sheet.entries.map((e) => e.id),
+      );
+      const restored = await mutateCallSheet(
+        userId,
+        {
+          dayId: setAside.day.id,
+          version: setAside.day.version,
+          action: "undo",
+          undoToken: setAside.undoToken,
+        },
+        now,
+      );
+      expect(
+        restored.entries.find((entry) => entry.personId === person.id),
+      ).toMatchObject({ id: row.id, section: "birthday", status: "pending" });
+      expect(listed(restored)).toEqual(sheet.entries.map((e) => e.id));
+      const done = await mutateCallSheet(
+        userId,
+        {
+          dayId: restored.day.id,
+          version: restored.day.version,
+          entryId: row.id,
+          action: "done",
+          method: "call",
+        },
+        now,
+      );
+      expect(
+        done.entries.find((entry) => entry.personId === person.id),
+      ).toMatchObject({ section: "birthday", status: "done" });
+      const undone = await mutateCallSheet(
+        userId,
+        {
+          dayId: done.day.id,
+          version: done.day.version,
+          action: "undo",
+          undoToken: done.undoToken,
+        },
+        now,
+      );
+      expect(
+        undone.entries.find((entry) => entry.personId === person.id),
+      ).toMatchObject({ id: row.id, section: "birthday", status: "pending" });
+      expect(listed(undone)).toEqual(sheet.entries.map((e) => e.id));
     });
   });
   it("EC Pad notes flow through config and capture as context-only evidence", async () => {

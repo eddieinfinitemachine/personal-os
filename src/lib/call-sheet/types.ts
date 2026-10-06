@@ -37,6 +37,8 @@ export type CallSheetEntry = {
   reminder?: { note: string | null };
   /** Local YYYY-MM-DD of their birthday when it is today or within the next week. */
   birthday?: string;
+  /** "birthday": shown under "Birthdays today", outside the regular five. */
+  section?: "birthday";
 };
 export type CallSheetUpcoming = {
   personId: string;

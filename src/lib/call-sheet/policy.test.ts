@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  BIRTHDAY_SOON_REASON,
   BIRTHDAY_TODAY_REASON,
   CASUAL_MESSAGE_VOLUME,
   CLOSE_MESSAGE_VOLUME,
@@ -9,6 +8,7 @@ import {
   cadence,
   closeness,
   identityKey,
+  isBirthday,
   isLocalDate,
   latestContact,
   liveCues,
@@ -229,14 +229,14 @@ describe("call sheet policy", () => {
       ),
     ).toEqual([]);
   });
-  it("prioritizes imminent birthday and balances explicit circles", () => {
+  it("puts a birthday today first and balances explicit circles", () => {
     const list = ["a", "b", "c", "d"].map((id) =>
       person(id, { circles: ["friends"] }),
     );
     list.push(
       person("family", { circles: ["family"] }),
       person("work", { circles: ["work"] }),
-      person("birthday", { birthday: new Date("1990-09-29"), manualAt: null }),
+      person("birthday", { birthday: new Date("1990-09-28"), manualAt: null }),
     );
     const selected = selectCandidates(
       rankCandidates(list, sources, now, "UTC"),
@@ -689,7 +689,7 @@ describe("user-set call sheet reminders", () => {
     const ranked = rankCandidates(
       [
         person("birthday", {
-          birthday: new Date("1990-09-29"),
+          birthday: new Date("1990-09-28"),
           manualAt: null,
         }),
         person("overdue"),
@@ -887,12 +887,12 @@ describe("birthdays on the call sheet", () => {
   const ids = (list: { person: { id: string } }[]) =>
     list.map((item) => item.person.id);
   const yesterday = new Date("2026-09-27T16:00:00Z");
-  it("ranks today, then the soonest, in the birthday tier; 8 days out is ordinary", () => {
+  it("only the day itself is a birthday; later this week is an ordinary check-in", () => {
     const ranked = rankCandidates(
       [
         person("in8", { birthday: born("1985-10-06") }),
         person("in7", { birthday: born("1985-10-05") }),
-        person("in3", { birthday: born("1985-10-01") }),
+        person("in1", { birthday: born("1985-09-29") }),
         person("today", { birthday: born("1990-09-28") }),
       ],
       sources,
@@ -900,15 +900,15 @@ describe("birthdays on the call sheet", () => {
       "UTC",
     );
     expect(
-      ranked.map((c) => [c.person.id, c.tier, c.birthdayOn, c.reason]),
+      ranked.map((c) => [c.person.id, c.tier, c.birthdayToday, c.reason]),
     ).toEqual([
-      ["today", 1, "2026-09-28", BIRTHDAY_TODAY_REASON],
-      ["in3", 1, "2026-10-01", BIRTHDAY_SOON_REASON],
-      ["in7", 1, "2026-10-05", BIRTHDAY_SOON_REASON],
+      ["today", 1, true, BIRTHDAY_TODAY_REASON],
+      ["in1", 3, undefined, "Time for your 90-day check-in."],
+      ["in7", 3, undefined, "Time for your 90-day check-in."],
       ["in8", 3, undefined, "Time for your 90-day check-in."],
     ]);
   });
-  it("a recent chat never hides a birthday, today or later this week", () => {
+  it("a recent chat never hides a birthday today; one later this week waits for cadence", () => {
     const ranked = rankCandidates(
       [
         person("today", { birthday: born("1990-09-28"), manualAt: yesterday }),
@@ -919,10 +919,10 @@ describe("birthdays on the call sheet", () => {
       now,
       "UTC",
     );
-    expect(ids(ranked)).toEqual(["today", "soon"]);
+    expect(ids(ranked)).toEqual(["today"]);
     expect(ranked[0].lastContactAt).toBe(yesterday.toISOString());
   });
-  it("on the day it outranks a snooze and the suggestion cooldown; a heads-up waits for both", () => {
+  it("on the day it outranks a snooze and the suggestion cooldown; before it, both hold", () => {
     const later = new Date("2026-12-01T00:00:00Z");
     const ranked = rankCandidates(
       [
@@ -981,9 +981,9 @@ describe("birthdays on the call sheet", () => {
       now,
       "UTC",
     );
-    expect(ranked.map((c) => [c.person.id, c.birthdayOn])).toEqual([
-      ["yearless", "2026-09-28"],
-      ["unscanned", "2026-09-30"],
+    // Two days out, an unscanned person still waits for a fresh scan.
+    expect(ranked.map((c) => [c.person.id, c.birthdayToday])).toEqual([
+      ["yearless", true],
     ]);
   });
   it("marks a Feb 29 birthday on Feb 28 outside leap years", () => {
@@ -991,28 +991,29 @@ describe("birthdays on the call sheet", () => {
     const at = (iso: string) =>
       rankCandidates([leapling], sources, new Date(iso), "UTC")[0];
     expect(at("2027-02-28T16:00:00Z")).toMatchObject({
-      birthdayOn: "2027-02-28",
+      birthdayToday: true,
       reason: BIRTHDAY_TODAY_REASON,
     });
-    expect(at("2027-03-01T16:00:00Z").birthdayOn).toBeUndefined();
-    expect(at("2028-02-28T16:00:00Z")).toMatchObject({
-      birthdayOn: "2028-02-29",
-      reason: BIRTHDAY_SOON_REASON,
-    });
+    expect(at("2027-03-01T16:00:00Z").birthdayToday).toBeUndefined();
+    expect(at("2028-02-28T16:00:00Z").birthdayToday).toBeUndefined();
     expect(at("2028-02-29T16:00:00Z")).toMatchObject({
-      birthdayOn: "2028-02-29",
+      birthdayToday: true,
       reason: BIRTHDAY_TODAY_REASON,
     });
+    expect(isBirthday(born("2000-02-29"), "2027-02-28")).toBe(true);
+    expect(isBirthday(born("2000-02-29"), "2028-02-28")).toBe(false);
+    expect(isBirthday(born("1604-02-29"), "2027-02-28")).toBe(true);
+    expect(isBirthday(null, "2027-02-28")).toBe(false);
   });
   it("counts days in the sheet's timezone near midnight and across the new year", () => {
     // 02:30 UTC on the 29th is still 22:30 on the 28th in New York.
     const late = new Date("2026-09-29T02:30:00Z");
     const p = person("p", { birthday: born("1990-09-29") });
-    expect(
-      rankCandidates([p], sources, late, "America/New_York")[0],
-    ).toMatchObject({ birthdayOn: "2026-09-29", reason: BIRTHDAY_SOON_REASON });
+    const ny = rankCandidates([p], sources, late, "America/New_York")[0];
+    expect(ny.birthdayToday).toBeUndefined();
+    expect(ny.reason).toBe("Time for your 90-day check-in.");
     expect(rankCandidates([p], sources, late, "UTC")[0]).toMatchObject({
-      birthdayOn: "2026-09-29",
+      birthdayToday: true,
       reason: BIRTHDAY_TODAY_REASON,
     });
     expect(upcomingBirthday(born("1990-01-02"), "2026-12-28")).toBe(
@@ -1023,7 +1024,7 @@ describe("birthdays on the call sheet", () => {
   });
   it("never balances a birthday away by circle", () => {
     const friends = ["f1", "f2", "f3"].map((id, i) =>
-      person(id, { circles: ["friends"], birthday: born(`1990-10-0${i + 1}`) }),
+      person(id, { circles: ["friends"], birthday: born(`198${i}-09-28`) }),
     );
     const work = ["w1", "w2", "w3"].map((id) =>
       person(id, { circles: ["work"] }),

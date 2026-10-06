@@ -1385,3 +1385,12 @@ Prod evidence (read-only counts, no content): Texts had 254 records processed si
 - [x] Copy: "Pair in EC Pad › Settings › Personal OS"; Granola paused error points to Settings › Imports and sync
 
 Review: `tsc --noEmit` clean; full suite 886 passed (140 opt-in skipped); dating-intake suites with the scratch cluster on :55442: 63 passed; `next build --webpack` passes. Not verified in a browser or against prod. After deploy: Texts' message should clear on its next successful extraction; EC Pad's segment 2 retries on its own at its next `retryAt` — if it still fails, Vercel logs now show the class (`Dating intake extraction failed: <kind>`).
+
+## 2026-10-06 — Call Sheet: birthdays on the day, in their own section
+- [x] A birthday later this week no longer puts someone on the list (no more "coming up this week" tier). Cadence alone decides; the row badge ("Birthday Fri, Oct 9") and "Upcoming birthdays" stay as the heads-up
+- [x] On the day (sheet timezone; Feb 29 → Feb 28, yearless 1604), the person shows under "Birthdays today" above the list, with the same Call / Text / Done / ••• actions. These rows don't count against the five and don't affect circle balance. No storage change: the response tags `section: "birthday"` when the person's birthday is today and the row is not a reminder
+- [x] A reminder on someone's birthday is one row, in the list, with the "Birthday today" badge. A reminder that fires for a birthday row moves that row into the list
+- [x] Guarantees from 5a2a295 still hold: snooze, cooldown and recent contact are bypassed on the day; only "Don't suggest" and archive keep someone off; "Someone else today" or a snooze sets the row aside for the day, with no replacement and no 422; Done marks them in touch; Undo restores the row
+- [x] "N of M checked in today" counts every row on the page, birthday rows included
+- [x] Verified: `tsc --noEmit` clean; full suite 935 passed (143 opt-in skipped); call-sheet integration on the scratch cluster on :55442 passed 38/38 (10 of 10 runs, plus the known "counts stable existing categories" flake once, which also happens on origin/main and involves no birthdays). `pnpm lint` is broken repo-wide (`next lint` was removed in Next 16, and there is no ESLint config)
+- NOT verified: in a browser, against prod
