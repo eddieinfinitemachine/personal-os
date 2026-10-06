@@ -160,7 +160,56 @@ export function CallSheet() {
     const saved = await send("/api/call-sheet", { dayId: data.day.id, version: data.day.version, entryId: entry.id, action: "done", method });
     if (saved) focusAfterSave.current = true;
   }
+  // Every row on the page counts, birthday rows included.
   const complete = data?.entries.filter(e => e.status !== "pending").length ?? 0;
+  const birthdayRows = data?.entries.filter(e => e.section === "birthday") ?? [];
+  const list = data?.entries.filter(e => e.section !== "birthday") ?? [];
+  /** One person: who, why, and the row actions. Shared by the list and "Birthdays today". */
+  const row = (entry: CallSheetEntry) => data && (
+    <li key={entry.id} className="py-4 sm:flex sm:items-start sm:justify-between sm:gap-4" data-person-id={entry.personId}>
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        {entry.imageUrl ? <img src={entry.imageUrl} alt="" className="size-10 shrink-0 rounded-full object-cover" /> : <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--color-muted)] text-xs text-[var(--color-muted-foreground)]">{initials(entry.name)}</span>}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-medium">{entry.name}</span>
+            {entry.status !== "pending" ? <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><Check className="size-3" />{entry.status === "done" ? "Checked in" : "Recently contacted"}</span> : null}
+            {entry.birthday && entry.section !== "birthday" ? <span className={"inline-flex items-center gap-1 text-xs " + (entry.birthday === data.day.localDate ? "font-medium" : "text-[var(--color-muted-foreground)]")}><Cake className="size-3" aria-hidden="true" />Birthday {birthdayDay(entry.birthday, data.day.localDate)}</span> : null}
+          </div>
+          <p className="mt-0.5 text-sm text-[var(--color-muted-foreground)]">{entry.reason}</p>
+          {entry.status === "pending" && (entry.reminder?.note ?? entry.topic) ? <p className="mt-2 text-sm">{entry.reminder?.note ?? entry.topic}</p> : null}
+          <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+            {entry.lastContactAt ? `Last recorded contact · ${date(entry.lastContactAt, data.timezone)}${entry.lastContactSource ? " · " + (entry.lastContactSource === "manual" ? "Saved check-in" : labels[entry.lastContactSource as keyof typeof labels] ?? entry.lastContactSource) : ""}` : "Last contact unknown"}
+          </p>
+          {entry.status === "pending" && entry.cues.length > 0 ? <details className="mt-2 text-xs text-[var(--color-muted-foreground)]">
+            <summary className="inline-flex cursor-pointer list-none items-center gap-1 py-1">Conversation context <ChevronDown className="size-3" /></summary>
+            <div className="mt-2 space-y-2 border-l-2 border-[var(--color-border)] pl-3">
+              {entry.cues.flatMap(c => c.evidence).slice(0, 3).map((e, i) => <div key={e.source + e.messageId + i}><p className="mb-1">{labels[e.source]} · {date(e.sentAt, data.timezone)}</p><blockquote className="whitespace-pre-wrap break-words text-[var(--color-foreground)]">{e.excerpt}</blockquote></div>)}
+            </div>
+          </details> : null}
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-1 sm:mt-0 sm:shrink-0">
+        {entry.status === "pending" ? <>
+          <button className={actionClass} disabled={busy} onClick={() => void logCheckIn(entry, "call")} aria-label={`Log a call with ${entry.name}`}><Phone className="size-3.5" />Call</button>
+          <button className={actionClass} disabled={busy} onClick={() => void logCheckIn(entry, "text")} aria-label={`Log a text with ${entry.name}`}><MessageCircle className="size-3.5" />Text</button>
+          <button className={actionClass + " font-medium"} disabled={busy} onClick={() => openCheckIn(entry)} aria-label={`Mark ${entry.name} done`}><Check className="size-3.5" />Done</button>
+          <details className="relative">
+            <summary aria-label={`More options for ${entry.name}`} className={actionClass + " cursor-pointer list-none"}>•••</summary>
+            <div className="absolute right-0 z-10 mt-1 min-w-48 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-1 shadow-md">
+              <button className={actionClass + " w-full justify-start"} disabled={busy} onClick={() => void act(entry, "snooze")}>Remind me in a week</button>
+              <button className={actionClass + " w-full justify-start"} disabled={busy} onClick={() => void act(entry, "replace")}>Someone else today</button>
+              <button className={actionClass + " w-full justify-start"} disabled={busy} onClick={() => void act(entry, "hide")}>Don’t suggest</button>
+              <label className="block px-3 py-2 text-xs">Check in every
+                <select aria-label={`Check-in frequency for ${entry.name}`} className="mt-1 block w-full rounded border border-[var(--color-border)] bg-[var(--color-background)] p-2 text-sm" disabled={busy} value={entry.cadenceDays} onChange={e => void send("/api/call-sheet/settings", { personId: entry.personId, cadenceDays: Number(e.target.value) })}>
+                  {[7, 14, 30, 60, 90, 180, 365, entry.cadenceDays].filter((v, i, a) => a.indexOf(v) === i).sort((a, b) => a - b).map(n => <option key={n} value={n}>{n} days</option>)}
+                </select>
+              </label>
+            </div>
+          </details>
+        </> : null}
+      </div>
+    </li>
+  );
   return (
     <section aria-label="Daily call sheet" className="mb-7 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]">
       <div className="flex flex-wrap items-start justify-between gap-3 px-4 pt-4 sm:px-5">
@@ -181,52 +230,12 @@ export function CallSheet() {
       {loading && !data ? <p role="status" className="p-5 text-sm text-[var(--color-muted-foreground)]">Getting your call sheet…</p> : null}
       {data ? <>
         {!data.entries.length ? <div className="px-4 py-5 text-sm text-[var(--color-muted-foreground)]">No check-ins to suggest yet. Your list will fill as recent conversations and saved interactions are checked.</div> : null}
+        {birthdayRows.length ? <section aria-labelledby="call-sheet-birthdays" className="mx-4 mt-3 rounded-lg border border-[var(--color-border)] px-3 sm:mx-5">
+          <h2 id="call-sheet-birthdays" className="inline-flex items-center gap-1.5 pt-3 text-sm font-medium"><Cake className="size-4" aria-hidden="true" />Birthdays today</h2>
+          <ul className="divide-y divide-[var(--color-border)]">{birthdayRows.map(row)}</ul>
+        </section> : null}
         <ol className="divide-y divide-[var(--color-border)] px-4 sm:px-5">
-          {data.entries.map(entry => (
-            <li key={entry.id} className="py-4 sm:flex sm:items-start sm:justify-between sm:gap-4" data-person-id={entry.personId}>
-              <div className="flex min-w-0 flex-1 items-start gap-3">
-                {entry.imageUrl ? <img src={entry.imageUrl} alt="" className="size-10 shrink-0 rounded-full object-cover" /> : <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--color-muted)] text-xs text-[var(--color-muted-foreground)]">{initials(entry.name)}</span>}
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="font-medium">{entry.name}</span>
-                    {entry.status !== "pending" ? <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><Check className="size-3" />{entry.status === "done" ? "Checked in" : "Recently contacted"}</span> : null}
-                    {entry.birthday ? <span className={"inline-flex items-center gap-1 text-xs " + (entry.birthday === data.day.localDate ? "font-medium" : "text-[var(--color-muted-foreground)]")}><Cake className="size-3" aria-hidden="true" />Birthday {birthdayDay(entry.birthday, data.day.localDate)}</span> : null}
-                  </div>
-                  <p className="mt-0.5 text-sm text-[var(--color-muted-foreground)]">{entry.reason}</p>
-                  {entry.status === "pending" && (entry.reminder?.note ?? entry.topic) ? <p className="mt-2 text-sm">{entry.reminder?.note ?? entry.topic}</p> : null}
-                  <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
-                    {entry.lastContactAt ? `Last recorded contact · ${date(entry.lastContactAt, data.timezone)}${entry.lastContactSource ? " · " + (entry.lastContactSource === "manual" ? "Saved check-in" : labels[entry.lastContactSource as keyof typeof labels] ?? entry.lastContactSource) : ""}` : "Last contact unknown"}
-                  </p>
-                  {entry.status === "pending" && entry.cues.length > 0 ? <details className="mt-2 text-xs text-[var(--color-muted-foreground)]">
-                    <summary className="inline-flex cursor-pointer list-none items-center gap-1 py-1">Conversation context <ChevronDown className="size-3" /></summary>
-                    <div className="mt-2 space-y-2 border-l-2 border-[var(--color-border)] pl-3">
-                      {entry.cues.flatMap(c => c.evidence).slice(0, 3).map((e, i) => <div key={e.source + e.messageId + i}><p className="mb-1">{labels[e.source]} · {date(e.sentAt, data.timezone)}</p><blockquote className="whitespace-pre-wrap break-words text-[var(--color-foreground)]">{e.excerpt}</blockquote></div>)}
-                    </div>
-                  </details> : null}
-                </div>
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-1 sm:mt-0 sm:shrink-0">
-                {entry.status === "pending" ? <>
-                  <button className={actionClass} disabled={busy} onClick={() => void logCheckIn(entry, "call")} aria-label={`Log a call with ${entry.name}`}><Phone className="size-3.5" />Call</button>
-                  <button className={actionClass} disabled={busy} onClick={() => void logCheckIn(entry, "text")} aria-label={`Log a text with ${entry.name}`}><MessageCircle className="size-3.5" />Text</button>
-                  <button className={actionClass + " font-medium"} disabled={busy} onClick={() => openCheckIn(entry)} aria-label={`Mark ${entry.name} done`}><Check className="size-3.5" />Done</button>
-                  <details className="relative">
-                    <summary aria-label={`More options for ${entry.name}`} className={actionClass + " cursor-pointer list-none"}>•••</summary>
-                    <div className="absolute right-0 z-10 mt-1 min-w-48 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-1 shadow-md">
-                      <button className={actionClass + " w-full justify-start"} disabled={busy} onClick={() => void act(entry, "snooze")}>Remind me in a week</button>
-                      <button className={actionClass + " w-full justify-start"} disabled={busy} onClick={() => void act(entry, "replace")}>Someone else today</button>
-                      <button className={actionClass + " w-full justify-start"} disabled={busy} onClick={() => void act(entry, "hide")}>Don’t suggest</button>
-                      <label className="block px-3 py-2 text-xs">Check in every
-                        <select aria-label={`Check-in frequency for ${entry.name}`} className="mt-1 block w-full rounded border border-[var(--color-border)] bg-[var(--color-background)] p-2 text-sm" disabled={busy} value={entry.cadenceDays} onChange={e => void send("/api/call-sheet/settings", { personId: entry.personId, cadenceDays: Number(e.target.value) })}>
-                          {[7, 14, 30, 60, 90, 180, 365, entry.cadenceDays].filter((v, i, a) => a.indexOf(v) === i).sort((a, b) => a - b).map(n => <option key={n} value={n}>{n} days</option>)}
-                        </select>
-                      </label>
-                    </div>
-                  </details>
-                </> : null}
-              </div>
-            </li>
-          ))}
+          {list.map(row)}
         </ol>
         {data.upcoming?.length ? <div className="border-t border-[var(--color-border)] px-4 py-3 sm:px-5">
           <p className="mb-1 text-xs text-[var(--color-muted-foreground)]">Upcoming</p>

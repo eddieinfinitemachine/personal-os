@@ -200,6 +200,7 @@ describe("daily call sheet", () => {
   });
   it("shows a birthday on its row and lists the ones coming up", async () => {
     const data = sheet();
+    // A list row on their birthday: a reminder for that day keeps them in the list.
     data.entries[0].birthday = "2026-09-28";
     data.entries.push(
       { ...data.entries[0], id: "e2", personId: "p2", name: "Blake Example", birthday: "2026-09-29", status: "done", cues: [], topic: null },
@@ -219,10 +220,34 @@ describe("daily call sheet", () => {
     expect(container.textContent).toContain("Emery Example · Fri, Oct 9");
     expect(container.textContent).toContain("Finley Example · Mon, Oct 12");
   });
+  it("puts today's birthdays in their own section above the list, with the same actions", async () => {
+    const data = sheet();
+    data.entries.push({ ...data.entries[0], id: "bday", personId: "bea", name: "Bea Day", reason: "It’s their birthday today.", birthday: "2026-09-28", section: "birthday", cues: [], topic: null });
+    const done = sheet(); done.day.version = 1; done.entries.push({ ...data.entries[1], status: "done", method: "call" });
+    const fetch = vi.fn().mockResolvedValueOnce(response(data)).mockResolvedValueOnce(response(done));
+    vi.stubGlobal("fetch", fetch); await render();
+    const section = container.querySelector('section[aria-labelledby="call-sheet-birthdays"]')!;
+    expect(section.querySelector("h2")!.textContent).toBe("Birthdays today");
+    expect([...section.querySelectorAll("li[data-person-id]")].map(li => li.getAttribute("data-person-id"))).toEqual(["bea"]);
+    // The heading says it; the row carries no badge of its own.
+    expect(section.textContent).not.toContain("Birthday today");
+    const list = container.querySelector("ol")!;
+    expect([...list.querySelectorAll("li[data-person-id]")].map(li => li.getAttribute("data-person-id"))).toEqual(["person"]);
+    expect(section.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Birthday rows count in "checked in today" like any other row.
+    expect(container.textContent).toContain("0 of 2 checked in today");
+    for (const label of ["Log a call with Bea Day", "Log a text with Bea Day", "Mark Bea Day done", "More options for Bea Day"])
+      expect(section.querySelector(`[aria-label="${label}"]`)).not.toBeNull();
+    await act(async () => (section.querySelector('[aria-label="Log a call with Bea Day"]') as HTMLButtonElement).click());
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ dayId: "day", version: 0, entryId: "bday", action: "done", method: "call" });
+    expect(container.textContent).toContain("1 of 2 checked in today");
+    expect(container.querySelector('section[aria-labelledby="call-sheet-birthdays"]')!.textContent).toContain("Checked in");
+  });
   it("shows nothing about birthdays when there are none", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(sheet()))); await render();
     expect(container.textContent).not.toContain("Birthday");
     expect(container.textContent).not.toContain("birthdays");
+    expect(container.querySelector('section[aria-labelledby="call-sheet-birthdays"]')).toBeNull();
   });
   it("does not poll while a save is pending or after unmount", async () => {
     let finish!: (r: unknown) => void;

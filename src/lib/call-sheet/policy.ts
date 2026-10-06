@@ -68,8 +68,7 @@ export function addLocalDays(date: string, days: number): string {
 }
 export const REMINDER_REASON = "You asked to be reminded today.";
 export const BIRTHDAY_TODAY_REASON = "It’s their birthday today.";
-export const BIRTHDAY_SOON_REASON = "Their birthday is coming up this week.";
-/** A birthday this many days ahead (or today) puts someone on the sheet. */
+/** A birthday this many days ahead (or today) shows as a badge on a row. */
 export const BIRTHDAY_WINDOW_DAYS = 7;
 /** How far ahead the sheet lists upcoming birthdays. */
 export const BIRTHDAY_LIST_DAYS = 14;
@@ -83,6 +82,10 @@ export function upcomingBirthday(
   if (!birthday) return null;
   const next = nextBirthday(birthday, today);
   return next <= addLocalDays(today, days) ? next : null;
+}
+/** Whether `date` (a local YYYY-MM-DD) is the person's birthday. */
+export function isBirthday(birthday: Date | null, date: string): boolean {
+  return !!birthday && nextBirthday(birthday, date) === date;
 }
 export function validTimezone(timezone: string) {
   try {
@@ -320,8 +323,8 @@ export type Candidate = {
   category: string;
   /** Present when the user asked for this person today (or on a missed earlier day). */
   reminder?: { note: string | null };
-  /** Local date of a birthday today or within BIRTHDAY_WINDOW_DAYS. */
-  birthdayOn?: string;
+  /** Today is their birthday: they go in the sheet's birthday section. */
+  birthdayToday?: true;
 };
 export function latestContact(
   person: PolicyPerson,
@@ -399,14 +402,14 @@ export function rankCandidates(
       // first later day the sheet is opened) regardless of snooze, cooldown,
       // recent contact or cadence.
       const due = !!pref?.dueOn && pref.dueOn <= today;
-      const birthdayOn = upcomingBirthday(person.birthday, today);
-      const birthday = !!birthdayOn;
       // A birthday is a date, not a routine nudge. On the day it outranks a
-      // snooze ("not now" for check-ins) and the cooldown left by this week's
-      // heads-up; only "Don't suggest" and archiving keep someone off.
+      // snooze ("not now" for check-ins), the weekly suggestion cooldown and
+      // recent contact; only "Don't suggest" and archiving keep someone off.
+      // Before the day it is only a badge: cadence alone decides.
+      const birthday = isBirthday(person.birthday, today);
       if (
         !due &&
-        birthdayOn !== today &&
+        !birthday &&
         ((pref?.snoozedUntil && pref.snoozedUntil > now) ||
           (pref?.lastSuggestedAt &&
             now.getTime() - pref.lastSuggestedAt.getTime() < 7 * DAY_MS))
@@ -460,29 +463,20 @@ export function rankCandidates(
           person,
           reason: due
             ? REMINDER_REASON
-            : birthdayOn === today
+            : birthday
               ? BIRTHDAY_TODAY_REASON
-              : birthday
-                ? BIRTHDAY_SOON_REASON
-                : unknown
-                  ? NO_CONTACT_REASON
-                  : `Time for your ${interval}-day check-in.`,
+              : unknown
+                ? NO_CONTACT_REASON
+                : `Time for your ${interval}-day check-in.`,
           lastContactAt: last.at,
           lastContactSource: last.source,
           cues,
           cadenceDays: interval,
           tier,
-          // Within the birthday tier, the soonest birthday comes first.
-          score:
-            !due && birthdayOn
-              ? BIRTHDAY_WINDOW_DAYS -
-                Math.round(
-                  (Date.parse(birthdayOn) - Date.parse(today)) / DAY_MS,
-                )
-              : (unknown ? (kept ? 365 : 0) : (age ?? 0)) / interval,
+          score: (unknown ? (kept ? 365 : 0) : (age ?? 0)) / interval,
           category,
           ...(due ? { reminder: { note: pref!.dueNote ?? null } } : {}),
-          ...(birthdayOn ? { birthdayOn } : {}),
+          ...(birthday ? { birthdayToday: true as const } : {}),
         },
       ];
     })
