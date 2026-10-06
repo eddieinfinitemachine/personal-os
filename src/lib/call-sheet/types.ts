@@ -35,12 +35,20 @@ export type CallSheetEntry = {
   method?: ReachOutMethod;
   /** Set when the user asked for this person on this day ("call sheet: Alex Tuesday"). */
   reminder?: { note: string | null };
+  /** Local YYYY-MM-DD of their birthday when it is today or within the next week. */
+  birthday?: string;
 };
 export type CallSheetUpcoming = {
   personId: string;
   name: string;
   dueOn: string;
   note: string | null;
+};
+export type CallSheetBirthday = {
+  personId: string;
+  name: string;
+  /** Local YYYY-MM-DD. */
+  on: string;
 };
 export type CallSheetResponse = {
   day: { id: string; localDate: string; version: number };
@@ -52,6 +60,8 @@ export type CallSheetResponse = {
   reviewCount: number;
   /** Future-dated reminders, soonest first. */
   upcoming: CallSheetUpcoming[];
+  /** Birthdays from tomorrow through the next two weeks, soonest first. */
+  birthdays: CallSheetBirthday[];
   undoToken?: string;
 };
 export type CallSheetReviewPerson = {

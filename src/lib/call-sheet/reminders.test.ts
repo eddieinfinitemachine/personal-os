@@ -332,3 +332,122 @@ describe("setCallSheetReminder", () => {
     expect((db.state.days[0].entries as { skipped: string[] }).skipped).toEqual([]);
   });
 });
+
+describe("birthdays on the sheet", () => {
+  const born = (date: string) => new Date(`${date}T00:00:00.000Z`);
+  const overdue = (...ids: string[]) =>
+    (async () =>
+      [
+        { personIds: ids, occurredAt: new Date("2026-01-01T00:00:00Z") },
+      ]) as never;
+  it("adds a birthday today to a full day as an extra row on top, even when snoozed", async () => {
+    for (const id of ["a", "b", "c", "d", "e", "f"]) addPerson(id);
+    db.tx.interaction.findMany = overdue("a", "b", "c", "d", "e", "f");
+    addPerson("bea", { firstName: "Bea", lastName: "Day" });
+    const first = await getCallSheet("u", now);
+    expect(first.entries).toHaveLength(5);
+    expect(first.birthdays).toEqual([]);
+    await db.tx.callSheetContact.upsert({
+      where: { userId_personId: { userId: "u", personId: "bea" } },
+      create: {
+        personId: "bea",
+        userId: "u",
+        identityKey: "x",
+        snoozedUntil: new Date("2026-12-01T00:00:00Z"),
+        lastSuggestedAt: now,
+      },
+      update: {},
+    });
+    db.state.people.find((p) => p.id === "bea")!.birthday = born("1990-09-28");
+    const after = await getCallSheet("u", now);
+    expect(after.entries).toHaveLength(6);
+    expect(after.entries[0]).toMatchObject({
+      personId: "bea",
+      reason: "It’s their birthday today.",
+      birthday: "2026-09-28",
+      status: "pending",
+    });
+    expect(after.entries.slice(1).map((e) => e.id)).toEqual(
+      first.entries.map((e) => e.id),
+    );
+    const again = await getCallSheet("u", now);
+    expect(again.day.version).toBe(after.day.version);
+    expect(again.entries.filter((e) => e.personId === "bea")).toHaveLength(1);
+  });
+
+  it("on a new day follows reminders, counts toward five, and lists the next two weeks", async () => {
+    for (const id of ["a", "b", "c", "d", "e", "f"]) addPerson(id);
+    db.tx.interaction.findMany = overdue("a", "b", "c", "d", "e", "f");
+    addPerson("alex", { firstName: "Alex", lastName: "Rivera" });
+    await db.tx.callSheetContact.upsert({
+      where: { userId_personId: { userId: "u", personId: "alex" } },
+      create: { personId: "alex", userId: "u", identityKey: "x", dueOn: "2026-09-28" },
+      update: {},
+    });
+    addPerson("bea", { firstName: "Bea", lastName: "Day", birthday: born("1990-09-28") });
+    addPerson("cal", { firstName: "Cal", lastName: "Soon", birthday: born("1990-10-01") });
+    addPerson("dee", { firstName: "Dee", lastName: "Far", birthday: born("1604-10-12") });
+    addPerson("eve", { firstName: "Eve", lastName: "Out", birthday: born("1990-10-13") });
+    addPerson("hid", { firstName: "Hid", lastName: "Den", birthday: born("1990-09-30") });
+    await db.tx.callSheetContact.upsert({
+      where: { userId_personId: { userId: "u", personId: "hid" } },
+      create: { personId: "hid", userId: "u", identityKey: "x", excludedAt: now },
+      update: {},
+    });
+    const sheet = await getCallSheet("u", now);
+    expect(sheet.entries.map((e) => e.personId)).toEqual([
+      "alex",
+      "bea",
+      "cal",
+      "a",
+      "b",
+    ]);
+    expect(sheet.entries[1]).toMatchObject({
+      reason: "It’s their birthday today.",
+      birthday: "2026-09-28",
+    });
+    expect(sheet.entries[2]).toMatchObject({
+      reason: "Their birthday is coming up this week.",
+      birthday: "2026-10-01",
+    });
+    expect(sheet.entries[3].birthday).toBeUndefined();
+    expect(sheet.birthdays).toEqual([
+      { personId: "cal", name: "Cal Soon", on: "2026-10-01" },
+      { personId: "dee", name: "Dee Far", on: "2026-10-12" },
+    ]);
+  });
+
+  it("stays off for the day once set aside", async () => {
+    addPerson("bea", { birthday: born("1990-09-28") });
+    expect((await getCallSheet("u", now)).entries.map((e) => e.personId)).toEqual(["bea"]);
+    db.state.days[0].entries = { entries: [], skipped: ["bea"] };
+    expect((await getCallSheet("u", now)).entries).toEqual([]);
+  });
+
+  it("only contact made on the day counts, and earlier contact never swaps the row out", async () => {
+    addPerson("bea", { birthday: born("1990-09-28") });
+    const first = await getCallSheet("u", now);
+    expect(first.entries[0]).toMatchObject({ personId: "bea", status: "pending" });
+    // A sync after the sheet was made finds yesterday's chat: still her birthday.
+    db.tx.interaction.findMany = async () =>
+      [{ personIds: ["bea"], occurredAt: new Date("2026-09-27T20:00:00Z") }] as never;
+    const synced = await getCallSheet("u", now);
+    expect(synced.entries).toHaveLength(1);
+    expect(synced.entries[0]).toMatchObject({
+      id: first.entries[0].id,
+      status: "pending",
+      reason: "It’s their birthday today.",
+    });
+    // A message this morning, before the sheet was opened, is the birthday wish.
+    db.tx.interaction.findMany = async () =>
+      [{ personIds: ["bea"], occurredAt: new Date("2026-09-28T09:00:00Z") }] as never;
+    const wished = await getCallSheet("u", now);
+    expect(wished.entries).toHaveLength(1);
+    expect(wished.entries[0]).toMatchObject({
+      id: first.entries[0].id,
+      status: "contacted",
+      reason: "You have been in touch today.",
+      birthday: "2026-09-28",
+    });
+  });
+});

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Loader2, MessageCircle, Phone, Plus, RotateCcw, Settings2, X } from "lucide-react";
+import { Cake, Check, ChevronDown, Loader2, MessageCircle, Phone, Plus, RotateCcw, Settings2, X } from "lucide-react";
 import { Sheet } from "@/components/dating/sheet";
 import { CallSheetReview, initials } from "@/components/call-sheet-review";
 import { REACH_OUT_METHODS, type ReachOutMethod } from "@/lib/call-sheet/reach-out";
@@ -16,6 +16,12 @@ function date(value: string | null, timezone: string) {
 /** "Tue, Oct 6" for a local YYYY-MM-DD. */
 function dueDay(value: string) {
   return new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${value}T12:00:00Z`));
+}
+/** "today", "tomorrow" or "Fri, Oct 9" for a local YYYY-MM-DD, relative to the sheet's day. */
+function birthdayDay(value: string, today: string) {
+  if (value === today) return "today";
+  const tomorrow = new Date(Date.parse(`${today}T12:00:00Z`) + 86400000).toISOString().slice(0, 10);
+  return value === tomorrow ? "tomorrow" : dueDay(value);
 }
 
 export function CallSheet() {
@@ -184,6 +190,7 @@ export function CallSheet() {
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="font-medium">{entry.name}</span>
                     {entry.status !== "pending" ? <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><Check className="size-3" />{entry.status === "done" ? "Checked in" : "Recently contacted"}</span> : null}
+                    {entry.birthday ? <span className={"inline-flex items-center gap-1 text-xs " + (entry.birthday === data.day.localDate ? "font-medium" : "text-[var(--color-muted-foreground)]")}><Cake className="size-3" aria-hidden="true" />Birthday {birthdayDay(entry.birthday, data.day.localDate)}</span> : null}
                   </div>
                   <p className="mt-0.5 text-sm text-[var(--color-muted-foreground)]">{entry.reason}</p>
                   {entry.status === "pending" && (entry.reminder?.note ?? entry.topic) ? <p className="mt-2 text-sm">{entry.reminder?.note ?? entry.topic}</p> : null}
@@ -228,6 +235,12 @@ export function CallSheet() {
               <span className="min-w-0 truncate">{[item.name, dueDay(item.dueOn), item.note].filter(Boolean).join(" · ")}</span>
               <button className={actionClass + " shrink-0 px-2"} disabled={busy} onClick={() => void send("/api/call-sheet/reminders", { personId: item.personId, dueOn: null })} aria-label={`Cancel reminder for ${item.name}`}><X className="size-3.5" /></button>
             </li>)}
+          </ul>
+        </div> : null}
+        {data.birthdays?.length ? <div className="border-t border-[var(--color-border)] px-4 py-3 sm:px-5">
+          <p className="mb-1 text-xs text-[var(--color-muted-foreground)]">Upcoming birthdays</p>
+          <ul>
+            {data.birthdays.map(item => <li key={item.personId} className="truncate py-0.5 text-sm">{item.name} · {dueDay(item.on)}</li>)}
           </ul>
         </div> : null}
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] px-4 py-2 sm:px-5">

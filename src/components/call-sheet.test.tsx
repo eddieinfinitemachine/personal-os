@@ -6,7 +6,7 @@ import { CallSheet } from "./call-sheet";
 import type { CallSheetResponse } from "@/lib/call-sheet/types";
 const now = new Date("2026-09-28T12:00:00Z");
 function sheet(): CallSheetResponse {
-  return { day: { id: "day", localDate: "2026-09-28", version: 0 }, timezone: "America/New_York", hidden: [], reviewCount: 0, upcoming: [],
+  return { day: { id: "day", localDate: "2026-09-28", version: 0 }, timezone: "America/New_York", hidden: [], reviewCount: 0, upcoming: [], birthdays: [],
     sources: { imessage: { enabled: true, status: "ready", lastSuccessAt: now.toISOString(), error: null }, whatsapp: { enabled: false, status: "not_connected", lastSuccessAt: null, error: null }, ecpad: { enabled: false, status: "not_connected", lastSuccessAt: null, error: null } },
     entries: [{ id: "entry", personId: "person", name: "Avery Example", imageUrl: null, phone: "+15551234567", email: "avery@example.test", reason: "Time for a check-in.", topic: "Ask how the project went.", lastContactAt: "2026-08-01T12:00:00Z", lastContactSource: "imessage", status: "pending", cadenceDays: 30, cues: [{ kind: "topic", text: "Ask how the project went.", evidence: [{ source: "imessage", messageId: "m1", sentAt: "2026-08-01T12:00:00Z", excerpt: "Starting the project next week." }] }] }] };
 }
@@ -197,6 +197,32 @@ describe("daily call sheet", () => {
     expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ personId: "maya", dueOn: null });
     expect(container.textContent).not.toContain("Maya Example");
     expect(container.textContent).not.toContain("Upcoming");
+  });
+  it("shows a birthday on its row and lists the ones coming up", async () => {
+    const data = sheet();
+    data.entries[0].birthday = "2026-09-28";
+    data.entries.push(
+      { ...data.entries[0], id: "e2", personId: "p2", name: "Blake Example", birthday: "2026-09-29", status: "done", cues: [], topic: null },
+      { ...data.entries[0], id: "e3", personId: "p3", name: "Casey Example", birthday: "2026-10-02", cues: [], topic: null },
+      { ...data.entries[0], id: "e4", personId: "p4", name: "Drew Example", birthday: undefined, cues: [], topic: null },
+    );
+    data.birthdays = [{ personId: "p5", name: "Emery Example", on: "2026-10-09" }, { personId: "p6", name: "Finley Example", on: "2026-10-12" }];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(data))); await render();
+    const rows = [...container.querySelectorAll("li[data-person-id]")].map(li => li.textContent);
+    expect(rows[0]).toContain("Birthday today");
+    expect(rows[1]).toContain("Birthday tomorrow");
+    expect(rows[1]).toContain("Checked in");
+    expect(rows[2]).toContain("Birthday Fri, Oct 2");
+    expect(rows[3]).not.toContain("Birthday");
+    expect(container.querySelector('li[data-person-id="person"] svg[aria-hidden="true"]')).not.toBeNull();
+    expect(container.textContent).toContain("Upcoming birthdays");
+    expect(container.textContent).toContain("Emery Example · Fri, Oct 9");
+    expect(container.textContent).toContain("Finley Example · Mon, Oct 12");
+  });
+  it("shows nothing about birthdays when there are none", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(sheet()))); await render();
+    expect(container.textContent).not.toContain("Birthday");
+    expect(container.textContent).not.toContain("birthdays");
   });
   it("does not poll while a save is pending or after unmount", async () => {
     let finish!: (r: unknown) => void;
