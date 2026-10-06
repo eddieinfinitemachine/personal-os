@@ -2,11 +2,15 @@
  * Contacts → CRM auto-add: every few minutes, posts macOS Contacts cards
  * created since the last run to /api/capture/people, which adds new people to
  * the CRM (deduped server-side). New cards only: the first run just records
- * "now" unless --since is given. CLI execution only; imports are side-effect free.
+ * "now" unless --since is given. Then every card's birthday is offered to
+ * /api/capture/people/birthdays, which fills it in on the matching existing
+ * person (by card id, phone or email) and never overwrites one already set;
+ * that pass runs when the birthdays change and at least daily.
+ * CLI execution only; imports are side-effect free.
  *
  *   tsx scripts/contacts-crm-sync.ts [--dry-run] [--verbose] [--since <ISO|YYYY-MM-DD>]
  *
- * Logs one aggregate line; --verbose adds "<cardId> <result>" per card. Never names.
+ * Logs aggregate lines; --verbose adds "<cardId> <result>" per new card. Never names.
  */
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -15,8 +19,13 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { parseBirthday } from "../src/lib/birthday";
 
 export const BATCH_SIZE = 50;
+/** The server's per-request cap (PEOPLE_CAPTURE_LIMITS.maxPeople). */
+export const BIRTHDAY_BATCH_SIZE = 200;
+/** Unchanged birthdays are still re-sent this often, so people added to the CRM since get theirs. */
+export const BIRTHDAY_RESEND_MS = 86_400_000;
 /** iPhone-created cards reach this Mac via iCloud after later local ones; re-scan this far behind `since`. */
 export const LOOKBACK_MS = 3 * 86_400_000;
 /**
@@ -37,6 +46,8 @@ export type ContactCard = {
   emails: string[];
   creationDate: string;
   modificationDate: string | null;
+  /** YYYY-MM-DD as Contacts shows it; year 1604 when saved without a year. */
+  birthday: string | null;
 };
 /**
  * `floor` is the install moment (or --since) and never moves, so the lookback
@@ -146,6 +157,7 @@ export async function syncContactsToCrm(options: {
       phones: c.phones,
       emails: c.emails,
       createdAt: c.creationDate,
+      birthday: c.birthday,
     })));
     summary.created += result.created.length;
     summary.skipped += result.skipped.length;
@@ -173,14 +185,75 @@ export function summaryLine(s: Summary, dryRun: boolean): string {
     : `Contacts CRM sync: ${s.cards} cards, ${s.selected} new, ${s.created} created, ${s.skipped} skipped`;
 }
 
+export type BirthdayState = { version: 1; digest: string; sentAt: string };
+export type BirthdayCounts = { filled: number; alreadySet: number; unmatched: number; ambiguous: number; conflicting: number };
+export type BirthdaySummary = BirthdayCounts & { cards: number; sent: number; wouldSend: number; unchanged: boolean };
+
+export function readBirthdayState(value: unknown): BirthdayState | null {
+  const s = value as BirthdayState | null;
+  return s && s.version === 1 && typeof s.digest === "string" && typeof s.sentAt === "string" && !Number.isNaN(Date.parse(s.sentAt)) ? s : null;
+}
+
+/** Cards with a birthday and a phone or email to match on, in a stable order. */
+export function birthdayCards(cards: ContactCard[]) {
+  return cards
+    .flatMap((c) => (c.birthday && (c.phones.length || c.emails.length) ? [{ cardId: c.id, phones: c.phones, emails: c.emails, birthday: c.birthday }] : []))
+    .sort((a, b) => a.cardId.localeCompare(b.cardId));
+}
+
+/** Offers every card birthday to the server's fill-only endpoint when they changed or a day has passed. */
+export async function syncContactBirthdays(options: {
+  exportCards: () => Promise<ContactCard[]>;
+  post: (birthdays: object[]) => Promise<Partial<BirthdayCounts>>;
+  state: BirthdayState | null;
+  save: (state: BirthdayState) => Promise<void>;
+  flags: Flags;
+  now?: Date;
+}): Promise<BirthdaySummary> {
+  const now = options.now ?? new Date();
+  const cards = birthdayCards(await options.exportCards());
+  const digest = createHash("sha256").update(JSON.stringify(cards)).digest("hex");
+  const summary: BirthdaySummary = { cards: cards.length, sent: 0, wouldSend: 0, unchanged: false, filled: 0, alreadySet: 0, unmatched: 0, ambiguous: 0, conflicting: 0 };
+  const { state } = options;
+  if (state?.digest === digest && now.getTime() - Date.parse(state.sentAt) < BIRTHDAY_RESEND_MS) {
+    summary.unchanged = true;
+    return summary;
+  }
+  if (options.flags.dryRun) {
+    summary.wouldSend = cards.length;
+    return summary;
+  }
+  for (let i = 0; i < cards.length; i += BIRTHDAY_BATCH_SIZE) {
+    const batch = cards.slice(i, i + BIRTHDAY_BATCH_SIZE);
+    // Throws on failure: nothing is saved, so the next run sends again (the server only fills blanks).
+    const result = await options.post(batch);
+    summary.sent += batch.length;
+    for (const key of ["filled", "alreadySet", "unmatched", "ambiguous", "conflicting"] as const) summary[key] += Number(result[key]) || 0;
+  }
+  await options.save({ version: 1, digest, sentAt: now.toISOString() });
+  return summary;
+}
+
+export function birthdaySummaryLine(s: BirthdaySummary, dryRun: boolean): string {
+  if (s.unchanged) return `Contacts birthdays: ${s.cards} cards, unchanged since the last send`;
+  if (dryRun) return `Contacts birthdays (dry run): ${s.wouldSend} cards would be sent`;
+  return `Contacts birthdays: ${s.sent} sent, ${s.filled} filled, ${s.alreadySet} already set, ${s.unmatched} unmatched, ${s.ambiguous} ambiguous, ${s.conflicting} conflicting`;
+}
+
 const MOBILE = /mobile|iphone|cell/i;
-const JXA = `
+// AppleScript dates are wall-clock dates, so the local calendar fields are the
+// birthday Contacts shows (Contacts uses year 1604 when no year was given).
+// Birthdays are optional: if they cannot be read, cards still sync without them.
+export const CONTACTS_JXA = `
 const people = Application("Contacts").people;
 const ids=people.id(), firsts=people.firstName(), lasts=people.lastName(), orgs=people.organization();
 const phones=people.phones.value(), labels=people.phones.label(), emails=people.emails.value();
 const created=people.creationDate(), modified=people.modificationDate();
+let births=[]; try { births=people.birthDate(); } catch (e) {}
 const iso=(d)=>d instanceof Date && !isNaN(d) ? d.toISOString() : null;
-JSON.stringify(ids.map((id,i)=>({id,firstName:firsts[i]||"",lastName:lasts[i]||"",organization:orgs[i]||"",phones:phones[i]||[],phoneLabels:labels[i]||[],emails:emails[i]||[],creationDate:iso(created[i]),modificationDate:iso(modified[i])})));`;
+const pad=(n,w)=>String(n).padStart(w,"0");
+const ymd=(d)=>d instanceof Date && !isNaN(d) ? pad(d.getFullYear(),4)+"-"+pad(d.getMonth()+1,2)+"-"+pad(d.getDate(),2) : null;
+JSON.stringify(ids.map((id,i)=>({id,firstName:firsts[i]||"",lastName:lasts[i]||"",organization:orgs[i]||"",phones:phones[i]||[],phoneLabels:labels[i]||[],emails:emails[i]||[],creationDate:iso(created[i]),modificationDate:iso(modified[i]),birthday:ymd(births[i])})));`;
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 
@@ -205,13 +278,14 @@ export function toContactCards(raw: unknown): ContactCard[] {
       emails: strings(r.emails),
       creationDate: r.creationDate,
       modificationDate: typeof r.modificationDate === "string" ? r.modificationDate : null,
+      birthday: parseBirthday(r.birthday) ? (r.birthday as string) : null,
     }];
   });
 }
 
 /** Read-only export of every person card via JXA (needs Automation access to Contacts). */
 export async function exportContactCards(): Promise<ContactCard[]> {
-  const { stdout } = await promisify(execFile)("/usr/bin/osascript", ["-l", "JavaScript", "-e", JXA], {
+  const { stdout } = await promisify(execFile)("/usr/bin/osascript", ["-l", "JavaScript", "-e", CONTACTS_JXA], {
     timeout: 120_000, maxBuffer: 40 * 1024 * 1024, encoding: "utf8",
   });
   return toContactCards(JSON.parse(stdout));
@@ -223,35 +297,48 @@ export async function runContactsCrmWorker(argv: string[]): Promise<number> {
   const base = new URL(process.env.CRM_CONTEXT_SYNC_URL ?? process.env.CALL_SHEET_SYNC_URL ?? process.env.DATING_SYNC_URL ?? process.env.APP_URL ?? "");
   const token = process.env.CAPTURE_TOKEN;
   if (base.protocol !== "https:" || base.username || base.password || !token) throw new Error("Contacts CRM connection is not configured");
-  const endpoint = new URL("/api/capture/people", base);
   const dataDir = join(homedir(), "Library/Application Support/personal-os");
   await mkdir(dataDir, { recursive: true, mode: 0o700 });
   const key = createHash("sha256").update(JSON.stringify([base.origin, token])).digest("hex");
   const file = join(dataDir, `contacts-crm-sync-${key}.json`);
-  let checkpoint: Checkpoint | null = null;
-  try { checkpoint = readCheckpoint(JSON.parse(await readFile(file, "utf8"))); } catch {}
+  const birthdayFile = join(dataDir, `contacts-birthdays-${key}.json`);
+  const read = async <T>(path: string, parse: (value: unknown) => T | null) => {
+    try { return parse(JSON.parse(await readFile(path, "utf8"))); } catch { return null; }
+  };
+  const write = async (path: string, data: object) => {
+    const temp = `${path}.${process.pid}.tmp`;
+    await writeFile(temp, JSON.stringify(data), { mode: 0o600 });
+    await rename(temp, path);
+  };
+  const post = async <T>(path: string, body: object): Promise<T> => {
+    const response = await fetch(new URL(path, base), {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      redirect: "error", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    // Status code only (never response bodies).
+    if (!response.ok) throw new Error(`Contacts CRM request failed (${response.status})`);
+    return response.json() as Promise<T>;
+  };
+  // Both passes read the same (slow) Contacts export.
+  let exported: Promise<ContactCard[]> | null = null;
+  const exportCards = () => (exported ??= exportContactCards());
 
   const summary = await syncContactsToCrm({
-    exportCards: exportContactCards,
-    post: async (people) => {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ people }),
-        redirect: "error", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
-      // Status code only (never response bodies).
-      if (!response.ok) throw new Error(`Contacts CRM request failed (${response.status})`);
-      return response.json() as Promise<PostResult>;
-    },
-    checkpoint, flags,
-    save: async (data) => {
-      const temp = `${file}.${process.pid}.tmp`;
-      await writeFile(temp, JSON.stringify(data), { mode: 0o600 });
-      await rename(temp, file);
-    },
+    exportCards,
+    post: (people) => post<PostResult>("/api/capture/people", { people }),
+    checkpoint: await read(file, readCheckpoint), flags,
+    save: (data) => write(file, data),
   });
   console.log(summaryLine(summary, flags.dryRun));
+  const birthdays = await syncContactBirthdays({
+    exportCards,
+    post: (cards) => post<Partial<BirthdayCounts>>("/api/capture/people/birthdays", { birthdays: cards }),
+    state: await read(birthdayFile, readBirthdayState), flags,
+    save: (data) => write(birthdayFile, data),
+  });
+  console.log(birthdaySummaryLine(birthdays, flags.dryRun));
   return 0;
 }
 

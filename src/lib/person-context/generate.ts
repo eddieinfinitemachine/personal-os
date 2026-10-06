@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma, type Interaction, type Person } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { formatBirthday } from "@/lib/birthday";
 import { callClaudeJSON } from "@/lib/claude";
 import { granolaMeetingsForPerson, type PersonMeeting } from "./granola";
 import { PERSON_CONTEXT_MODEL, searchPublicContext } from "./web";
@@ -106,7 +107,7 @@ export function buildContextPrompt(
     person.circles.length && `Circles: ${person.circles.join(", ")}`,
     person.tags.length && `Tags: ${person.tags.join(", ")}`,
     person.interests.length && `Interests: ${person.interests.join(", ")}`,
-    person.birthday && `Birthday: ${day(person.birthday)}`,
+    person.birthday && `Birthday: ${formatBirthday(person.birthday)}`,
     person.lastInteractionAt && `Last interaction: ${day(person.lastInteractionAt)}`,
   ]
     .filter(Boolean)

@@ -1,13 +1,15 @@
+import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 import {
-  BATCH_SIZE, BULK_LIMIT, LOOKBACK_MS, parseFlags, parseSince, readCheckpoint, selectNewCards, summaryLine, syncContactsToCrm, toContactCards,
-  type Checkpoint, type ContactCard, type Flags, type PostResult,
+  BATCH_SIZE, CONTACTS_JXA, BIRTHDAY_BATCH_SIZE, BIRTHDAY_RESEND_MS, BULK_LIMIT, LOOKBACK_MS, birthdaySummaryLine, parseFlags, parseSince, readBirthdayState, readCheckpoint,
+  selectNewCards, summaryLine, syncContactBirthdays, syncContactsToCrm, toContactCards,
+  type BirthdayState, type Checkpoint, type ContactCard, type Flags, type PostResult,
 } from "./contacts-crm-sync";
 
 const now = new Date("2026-09-29T12:00:00Z");
 const flags = (extra: Partial<Flags> = {}): Flags => ({ dryRun: false, verbose: false, since: null, ...extra });
 const card = (id: string, creationDate: string, extra: Partial<ContactCard> = {}): ContactCard => ({
-  id, firstName: "Avery", lastName: "Example", organization: "", phones: ["+15551234567"], emails: [], creationDate, modificationDate: null, ...extra,
+  id, firstName: "Avery", lastName: "Example", organization: "", phones: ["+15551234567"], emails: [], creationDate, modificationDate: null, birthday: null, ...extra,
 });
 const checkpoint = (extra: Partial<Checkpoint> = {}): Checkpoint => ({ version: 1, since: "2026-09-29T10:00:00.000Z", floor: "2026-09-20T00:00:00.000Z", posted: {}, ...extra });
 const ok = (people: object[]): PostResult => ({
@@ -95,7 +97,7 @@ describe("syncContactsToCrm", () => {
     const { promise, post, save } = run({ flags: flags({ verbose: true }), log });
     const summary = await promise;
     expect(post).toHaveBeenCalledTimes(1);
-    expect(post.mock.calls[0][0][0]).toEqual({ cardId: "new1", firstName: "Avery", lastName: "Example", company: null, phones: ["+15551234567"], emails: [], createdAt: "2026-09-29T11:00:00Z" });
+    expect(post.mock.calls[0][0][0]).toEqual({ cardId: "new1", firstName: "Avery", lastName: "Example", company: null, phones: ["+15551234567"], emails: [], createdAt: "2026-09-29T11:00:00Z", birthday: null });
     expect(summary).toMatchObject({ cards: 3, selected: 2, created: 2, skipped: 0 });
     expect(save).toHaveBeenCalledWith({ version: 1, since: "2026-09-29T11:30:00.000Z", floor: "2026-09-20T00:00:00.000Z", posted: { new1: "2026-09-29T11:00:00Z", new2: "2026-09-29T11:30:00Z" } });
     expect(log.mock.calls.map((c) => c[0])).toEqual(["new1 created", "new2 created"]);
@@ -156,5 +158,105 @@ describe("syncContactsToCrm", () => {
     await promise;
     expect(post.mock.calls[0][0].map((p) => (p as { cardId: string }).cardId)).toEqual(["old", "new2"]);
     expect(save.mock.calls[0][0].floor).toBe("2026-08-01T00:00:00.000Z");
+  });
+});
+
+describe("Contacts birthdays", () => {
+  it("toContactCards keeps a real birthday (yearless 1604 included) and drops anything else", () => {
+    const row = (birthday: unknown) => ({ id: "a", firstName: "Avery", phones: [], emails: [], creationDate: "2026-09-29T00:00:00.000Z", birthday });
+    expect(toContactCards([row("1990-03-05"), row("1604-02-29"), row("2026-02-29"), row(null), row("1990-3-5")]).map((c) => c.birthday))
+      .toEqual(["1990-03-05", "1604-02-29", null, null, null]);
+  });
+
+  it("the Contacts export reads birth dates as local calendar dates and survives without them", () => {
+    const list = <T,>(values: T[]) => () => values;
+    const people = (birthDate: () => unknown) => ({
+      id: list(["a", "b", "c"]), firstName: list(["Avery", "Blake", ""]), lastName: list(["", "", ""]), organization: list(["", "", ""]),
+      phones: { value: list([[], [], []]), label: list([[], [], []]) }, emails: { value: list([[], [], []]) },
+      creationDate: list([new Date("2026-09-29T00:00:00Z"), new Date("2026-09-29T00:00:00Z"), null]), modificationDate: list([null, null, null]),
+      birthDate,
+    });
+    const run = (birthDate: () => unknown) =>
+      toContactCards(JSON.parse(runInNewContext(CONTACTS_JXA, { Application: () => ({ people: people(birthDate) }), Date }) as string));
+    // Local midnight and local noon both read as the date Contacts shows.
+    expect(run(list([new Date(1990, 2, 5), new Date(1604, 6, 14, 12)])).map((c) => c.birthday)).toEqual(["1990-03-05", "1604-07-14"]);
+    expect(run(list([null, undefined])).map((c) => c.birthday)).toEqual([null, null]);
+    expect(run(() => { throw new Error("birth date unavailable"); }).map((c) => [c.id, c.birthday])).toEqual([["a", null], ["b", null]]);
+  });
+
+  it("posts new cards with their birthday", async () => {
+    const cards = [card("new1", "2026-09-29T11:00:00Z", { birthday: "1990-03-05" })];
+    const { promise, post } = run({ exportCards: async () => cards });
+    await promise;
+    expect(post.mock.calls[0][0][0]).toMatchObject({ cardId: "new1", birthday: "1990-03-05" });
+  });
+
+  const birthdays = (extra: Partial<Parameters<typeof syncContactBirthdays>[0]> = {}) => {
+    const post = vi.fn(async (sent: object[]) => ({ filled: sent.length, alreadySet: 0, unmatched: 0, ambiguous: 0, conflicting: 0 }));
+    const save = vi.fn<(state: BirthdayState) => Promise<void>>(async () => {});
+    const cards = [
+      card("b", "2026-01-01T00:00:00Z", { birthday: "1604-07-14", phones: [], emails: ["b@example.com"] }),
+      card("a", "2026-01-01T00:00:00Z", { birthday: "1990-03-05" }),
+      card("none", "2026-01-01T00:00:00Z"),
+      card("unreachable", "2026-01-01T00:00:00Z", { birthday: "1991-04-06", phones: [], emails: [] }),
+    ];
+    const promise = syncContactBirthdays({ exportCards: async () => cards, post, save, state: null, flags: flags(), now, ...extra });
+    return { promise, post, save };
+  };
+
+  it("sends every card with a birthday and a handle, in card order, and records what it sent", async () => {
+    const { promise, post, save } = birthdays();
+    const summary = await promise;
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0][0]).toEqual([
+      { cardId: "a", phones: ["+15551234567"], emails: [], birthday: "1990-03-05" },
+      { cardId: "b", phones: [], emails: ["b@example.com"], birthday: "1604-07-14" },
+    ]);
+    expect(summary).toMatchObject({ cards: 2, sent: 2, filled: 2, unchanged: false });
+    expect(save).toHaveBeenCalledWith({ version: 1, digest: expect.stringMatching(/^[0-9a-f]{64}$/), sentAt: now.toISOString() });
+    expect(birthdaySummaryLine(summary, false)).toBe("Contacts birthdays: 2 sent, 2 filled, 0 already set, 0 unmatched, 0 ambiguous, 0 conflicting");
+  });
+
+  it("skips unchanged birthdays for a day, then sends again; any change sends at once", async () => {
+    const first = birthdays();
+    await first.promise;
+    const state = first.save.mock.calls[0][0];
+    const same = birthdays({ state, now: new Date(now.getTime() + BIRTHDAY_RESEND_MS - 1) });
+    const summary = await same.promise;
+    expect(summary.unchanged).toBe(true);
+    expect(same.post).not.toHaveBeenCalled();
+    expect(same.save).not.toHaveBeenCalled();
+    expect(birthdaySummaryLine(summary, false)).toContain("unchanged");
+    const daily = birthdays({ state, now: new Date(now.getTime() + BIRTHDAY_RESEND_MS) });
+    await daily.promise;
+    expect(daily.post).toHaveBeenCalledTimes(1);
+    const changed = birthdays({ state, exportCards: async () => [card("a", "2026-01-01T00:00:00Z", { birthday: "1990-03-06" })] });
+    await changed.promise;
+    expect(changed.post).toHaveBeenCalledTimes(1);
+  });
+
+  it("batches by the server cap, and a failed request saves nothing", async () => {
+    const many = Array.from({ length: BIRTHDAY_BATCH_SIZE + 3 }, (_, i) => card(`c${String(i).padStart(3, "0")}`, "2026-01-01T00:00:00Z", { birthday: "1990-03-05" }));
+    const ok = birthdays({ exportCards: async () => many });
+    await ok.promise;
+    expect(ok.post.mock.calls.map((c) => c[0].length)).toEqual([BIRTHDAY_BATCH_SIZE, 3]);
+    const post = vi.fn(async () => { throw new Error("Contacts CRM request failed (502)"); });
+    const failing = birthdays({ post });
+    await expect(failing.promise).rejects.toThrow("502");
+    expect(failing.save).not.toHaveBeenCalled();
+  });
+
+  it("dry run sends and saves nothing", async () => {
+    const { promise, post, save } = birthdays({ flags: flags({ dryRun: true }) });
+    const summary = await promise;
+    expect(summary.wouldSend).toBe(2);
+    expect(post).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(birthdaySummaryLine(summary, true)).toBe("Contacts birthdays (dry run): 2 cards would be sent");
+  });
+
+  it("reads only a valid birthday state", () => {
+    expect(readBirthdayState({ version: 1, digest: "d", sentAt: now.toISOString() })).toEqual({ version: 1, digest: "d", sentAt: now.toISOString() });
+    for (const bad of [null, {}, { version: 2, digest: "d", sentAt: now.toISOString() }, { version: 1, digest: "d", sentAt: "x" }]) expect(readBirthdayState(bad)).toBeNull();
   });
 });

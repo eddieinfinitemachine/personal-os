@@ -104,6 +104,13 @@ describe("renderThreads", () => {
     expect(user).not.toContain("y".repeat(CONTEXT_LIMITS.maxGranolaCharsPerMeeting + 1));
     expect(user.indexOf("[2026-09-01] Them: Are we still on")).toBeLessThan(user.indexOf("[2026-09-02] Me: Yes"));
   });
+
+  it("gives a yearless Contacts birthday without its placeholder year", () => {
+    const prompt = (birthday: Date) => buildContextPrompt({ ...base, birthday }, [], [], []).user;
+    expect(prompt(new Date("1990-03-05T00:00:00Z"))).toContain("Birthday: 1990-03-05");
+    expect(prompt(new Date("1604-03-05T00:00:00Z"))).toContain("Birthday: 03-05 (year unknown)");
+    expect(prompt(new Date("1604-03-05T00:00:00Z"))).not.toContain("1604");
+  });
 });
 
 describe("contextFingerprint", () => {
