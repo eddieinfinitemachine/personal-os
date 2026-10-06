@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  BIRTHDAY_SOON_REASON,
+  BIRTHDAY_TODAY_REASON,
   CASUAL_MESSAGE_VOLUME,
   CLOSE_MESSAGE_VOLUME,
   STRONG_MESSAGE_VOLUME,
@@ -17,6 +19,7 @@ import {
   reviewQueue,
   selectCandidates,
   snoozeUntil,
+  upcomingBirthday,
   type PolicyPerson,
 } from "./policy";
 import type { SourceHealth } from "./types";
@@ -868,5 +871,179 @@ describe("user-set call sheet reminders", () => {
     expect(
       rankCandidates([p], { ...connected, ecpad: off }, now, "UTC")[0].cues,
     ).toEqual([]);
+  });
+});
+describe("birthdays on the call sheet", () => {
+  const pref = (extra: Partial<NonNullable<PolicyPerson["preference"]>> = {}) => ({
+    cadenceDays: null,
+    snoozedUntil: null,
+    excludedAt: null,
+    lastSuggestedAt: null,
+    dueOn: null,
+    dueNote: null,
+    ...extra,
+  });
+  const born = (date: string) => new Date(`${date}T00:00:00.000Z`);
+  const ids = (list: { person: { id: string } }[]) =>
+    list.map((item) => item.person.id);
+  const yesterday = new Date("2026-09-27T16:00:00Z");
+  it("ranks today, then the soonest, in the birthday tier; 8 days out is ordinary", () => {
+    const ranked = rankCandidates(
+      [
+        person("in8", { birthday: born("1985-10-06") }),
+        person("in7", { birthday: born("1985-10-05") }),
+        person("in3", { birthday: born("1985-10-01") }),
+        person("today", { birthday: born("1990-09-28") }),
+      ],
+      sources,
+      now,
+      "UTC",
+    );
+    expect(
+      ranked.map((c) => [c.person.id, c.tier, c.birthdayOn, c.reason]),
+    ).toEqual([
+      ["today", 1, "2026-09-28", BIRTHDAY_TODAY_REASON],
+      ["in3", 1, "2026-10-01", BIRTHDAY_SOON_REASON],
+      ["in7", 1, "2026-10-05", BIRTHDAY_SOON_REASON],
+      ["in8", 3, undefined, "Time for your 90-day check-in."],
+    ]);
+  });
+  it("a recent chat never hides a birthday, today or later this week", () => {
+    const ranked = rankCandidates(
+      [
+        person("today", { birthday: born("1990-09-28"), manualAt: yesterday }),
+        person("soon", { birthday: born("1990-10-01"), manualAt: yesterday }),
+        person("plain", { manualAt: yesterday }),
+      ],
+      sources,
+      now,
+      "UTC",
+    );
+    expect(ids(ranked)).toEqual(["today", "soon"]);
+    expect(ranked[0].lastContactAt).toBe(yesterday.toISOString());
+  });
+  it("on the day it outranks a snooze and the suggestion cooldown; a heads-up waits for both", () => {
+    const later = new Date("2026-12-01T00:00:00Z");
+    const ranked = rankCandidates(
+      [
+        person("snoozed-today", {
+          birthday: born("1990-09-28"),
+          preference: pref({ snoozedUntil: later }),
+        }),
+        person("cooldown-today", {
+          birthday: born("1990-09-28"),
+          preference: pref({ lastSuggestedAt: yesterday }),
+        }),
+        person("snoozed-soon", {
+          birthday: born("1990-10-01"),
+          preference: pref({ snoozedUntil: later }),
+        }),
+        person("cooldown-soon", {
+          birthday: born("1990-10-01"),
+          preference: pref({ lastSuggestedAt: yesterday }),
+        }),
+      ],
+      sources,
+      now,
+      "UTC",
+    );
+    expect(ids(ranked).sort()).toEqual(["cooldown-today", "snoozed-today"]);
+  });
+  it("hidden and archived people stay off even on their birthday", () => {
+    expect(
+      rankCandidates(
+        [
+          person("hidden", {
+            birthday: born("1990-09-28"),
+            preference: pref({ excludedAt: now }),
+          }),
+          person("archived", { birthday: born("1990-09-28"), archived: true }),
+        ],
+        sources,
+        now,
+        "UTC",
+      ),
+    ).toEqual([]);
+  });
+  it("needs no contact history or fresh scan, and handles yearless birthdays", () => {
+    const stale = {
+      ...off,
+      enabled: true,
+      status: "ready" as const,
+      lastSuccessAt: "2026-09-01T00:00:00Z",
+    };
+    const ranked = rankCandidates(
+      [
+        person("unscanned", { manualAt: null, birthday: born("1990-09-30") }),
+        person("yearless", { manualAt: null, birthday: born("1604-09-28") }),
+      ],
+      { ...sources, imessage: stale },
+      now,
+      "UTC",
+    );
+    expect(ranked.map((c) => [c.person.id, c.birthdayOn])).toEqual([
+      ["yearless", "2026-09-28"],
+      ["unscanned", "2026-09-30"],
+    ]);
+  });
+  it("marks a Feb 29 birthday on Feb 28 outside leap years", () => {
+    const leapling = person("leap", { birthday: born("2000-02-29") });
+    const at = (iso: string) =>
+      rankCandidates([leapling], sources, new Date(iso), "UTC")[0];
+    expect(at("2027-02-28T16:00:00Z")).toMatchObject({
+      birthdayOn: "2027-02-28",
+      reason: BIRTHDAY_TODAY_REASON,
+    });
+    expect(at("2027-03-01T16:00:00Z").birthdayOn).toBeUndefined();
+    expect(at("2028-02-28T16:00:00Z")).toMatchObject({
+      birthdayOn: "2028-02-29",
+      reason: BIRTHDAY_SOON_REASON,
+    });
+    expect(at("2028-02-29T16:00:00Z")).toMatchObject({
+      birthdayOn: "2028-02-29",
+      reason: BIRTHDAY_TODAY_REASON,
+    });
+  });
+  it("counts days in the sheet's timezone near midnight and across the new year", () => {
+    // 02:30 UTC on the 29th is still 22:30 on the 28th in New York.
+    const late = new Date("2026-09-29T02:30:00Z");
+    const p = person("p", { birthday: born("1990-09-29") });
+    expect(
+      rankCandidates([p], sources, late, "America/New_York")[0],
+    ).toMatchObject({ birthdayOn: "2026-09-29", reason: BIRTHDAY_SOON_REASON });
+    expect(rankCandidates([p], sources, late, "UTC")[0]).toMatchObject({
+      birthdayOn: "2026-09-29",
+      reason: BIRTHDAY_TODAY_REASON,
+    });
+    expect(upcomingBirthday(born("1990-01-02"), "2026-12-28")).toBe(
+      "2027-01-02",
+    );
+    expect(upcomingBirthday(born("1990-01-05"), "2026-12-28")).toBeNull();
+    expect(upcomingBirthday(null, "2026-12-28")).toBeNull();
+  });
+  it("never balances a birthday away by circle", () => {
+    const friends = ["f1", "f2", "f3"].map((id, i) =>
+      person(id, { circles: ["friends"], birthday: born(`1990-10-0${i + 1}`) }),
+    );
+    const work = ["w1", "w2", "w3"].map((id) =>
+      person(id, { circles: ["work"] }),
+    );
+    const ranked = rankCandidates([...work, ...friends], sources, now, "UTC");
+    expect(ids(selectCandidates(ranked))).toEqual([
+      "f1",
+      "f2",
+      "f3",
+      "w1",
+      "w2",
+    ]);
+    // Even with two friends already on today's sheet.
+    expect(
+      ids(
+        selectCandidates(ranked, 1, [
+          { category: "friends" },
+          { category: "friends" },
+        ]),
+      ),
+    ).toEqual(["f1"]);
   });
 });

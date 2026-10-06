@@ -271,7 +271,7 @@ For person:
 - "socialUrls": object with optional keys linkedin / twitter / instagram / github / website. Populate ONLY when the URL or handle is mentioned in the text, visible in a photo (business card / screenshot), or found via your web search with high confidence. For Twitter/IG, store the full URL (https://twitter.com/handle), not just the handle.
 - "howWeMet": short context if user mentioned it ("intro from Maya", "met at the Olto launch", "Stanford 2018"). Otherwise null.
 - "interests": short array of topics they care about ("climbing", "Brazilian art", "VC", "kid swaps") — only if the user mentioned them or you're highly confident from web search. Maximum 5.
-- "email" / "phone" / "birthday": only if literally in the text or photo (business card OCR).
+- "email" / "phone" / "birthday": only if literally in the text or photo (business card OCR). birthday is YYYY-MM-DD; with no year given use 1604 ("birthday March 5" → "1604-03-05").
 - "strength": "close" | "strong" | "casual" | "weak" — only if user gave a clear cue ("good friend" → strong, "barely know them" → weak). Otherwise null.
 - "circles": tags / groups for context (e.g. ["nyc art", "school friends"]) — only if user mentioned explicitly. Don't invent.
 - "notes": 1-2 sentences with anything else worth remembering. If you confidently recognize the person from training knowledge or web search as a notable public figure, include 1 short factual sentence about what they're known for. DO NOT speculate or fabricate. If you don't recognize them with high confidence, leave notes null.

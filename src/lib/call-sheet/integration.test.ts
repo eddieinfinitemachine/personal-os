@@ -1647,6 +1647,133 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
       expect(undone.entries[2].id).toBe(sheet.entries[1].id);
     });
   });
+  describe("birthdays", () => {
+    // The default sheet timezone is New York, where `now` is noon on Sep 28.
+    const birthdayToday = new Date("1990-09-28T00:00:00Z");
+    const offSheet = async () => {
+      const sheet = await getCallSheet(userId, now);
+      const people = await prisma.person.findMany({
+        where: {
+          userId,
+          id: { notIn: sheet.entries.map((entry) => entry.personId) },
+        },
+        orderBy: { lastName: "asc" },
+      });
+      return { sheet, people };
+    };
+    it("puts a snoozed person on top on their birthday; Done keeps the row checked in, once", async () => {
+      const { sheet, people } = await offSheet();
+      const [person] = people;
+      await prisma.person.update({
+        where: { id: person.id },
+        data: { birthday: birthdayToday },
+      });
+      await prisma.callSheetContact.upsert({
+        where: { userId_personId: { userId, personId: person.id } },
+        create: {
+          userId,
+          personId: person.id,
+          identityKey: "stale",
+          snoozedUntil: new Date("2026-12-01T00:00:00Z"),
+          lastSuggestedAt: now,
+        },
+        update: {
+          snoozedUntil: new Date("2026-12-01T00:00:00Z"),
+          lastSuggestedAt: now,
+        },
+      });
+      const withBirthday = await getCallSheet(userId, now);
+      expect(withBirthday.entries).toHaveLength(6);
+      expect(withBirthday.entries[0]).toMatchObject({
+        personId: person.id,
+        reason: "It’s their birthday today.",
+        birthday: "2026-09-28",
+        status: "pending",
+      });
+      expect(withBirthday.entries.slice(1).map((entry) => entry.id)).toEqual(
+        sheet.entries.map((entry) => entry.id),
+      );
+      const done = await mutateCallSheet(
+        userId,
+        {
+          dayId: withBirthday.day.id,
+          version: withBirthday.day.version,
+          entryId: withBirthday.entries[0].id,
+          action: "done",
+          method: "text",
+        },
+        now,
+      );
+      expect(done.entries[0]).toMatchObject({
+        personId: person.id,
+        status: "done",
+        birthday: "2026-09-28",
+      });
+      const later = await getCallSheet(
+        userId,
+        new Date(now.getTime() + 3_600_000),
+      );
+      expect(later.entries).toHaveLength(6);
+      expect(
+        later.entries.filter((entry) => entry.personId === person.id),
+      ).toEqual([expect.objectContaining({ status: "done" })]);
+      const tomorrow = await getCallSheet(
+        userId,
+        new Date("2026-09-29T16:00:00Z"),
+      );
+      expect(
+        tomorrow.entries.some((entry) => entry.personId === person.id),
+      ).toBe(false);
+    });
+    it("Someone else today and Don't suggest take a birthday row off for good that day", async () => {
+      const { people } = await offSheet();
+      const [first, second] = people;
+      await prisma.person.updateMany({
+        where: { id: { in: [first.id, second.id] } },
+        data: { birthday: birthdayToday },
+      });
+      const sheet = await getCallSheet(userId, now);
+      expect(sheet.entries.slice(0, 2).map((entry) => entry.personId)).toEqual(
+        expect.arrayContaining([first.id, second.id]),
+      );
+      const entryOf = (data: typeof sheet, personId: string) =>
+        data.entries.find((entry) => entry.personId === personId)!;
+      const replaced = await mutateCallSheet(
+        userId,
+        {
+          dayId: sheet.day.id,
+          version: sheet.day.version,
+          entryId: entryOf(sheet, first.id).id,
+          action: "replace",
+        },
+        now,
+      );
+      expect(replaced.entries.some((entry) => entry.personId === first.id)).toBe(
+        false,
+      );
+      const hidden = await mutateCallSheet(
+        userId,
+        {
+          dayId: replaced.day.id,
+          version: replaced.day.version,
+          entryId: entryOf(replaced, second.id).id,
+          action: "hide",
+        },
+        now,
+      );
+      const reread = await getCallSheet(
+        userId,
+        new Date(now.getTime() + 3_600_000),
+      );
+      for (const data of [hidden, reread])
+        expect(
+          data.entries.filter((entry) =>
+            [first.id, second.id].includes(entry.personId),
+          ),
+        ).toEqual([]);
+      expect(reread.hidden.map((item) => item.personId)).toEqual([second.id]);
+    });
+  });
   it("EC Pad notes flow through config and capture as context-only evidence", async () => {
     const before = await getCaptureConfig(userId);
     expect(before.sources).toEqual({ imessage: false, whatsapp: false, ecpad: false });

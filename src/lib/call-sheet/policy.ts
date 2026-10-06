@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { nextBirthday } from "@/lib/birthday";
 import type {
   CallSheetSource,
   ContactSourceData,
@@ -66,6 +67,23 @@ export function addLocalDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 export const REMINDER_REASON = "You asked to be reminded today.";
+export const BIRTHDAY_TODAY_REASON = "It’s their birthday today.";
+export const BIRTHDAY_SOON_REASON = "Their birthday is coming up this week.";
+/** A birthday this many days ahead (or today) puts someone on the sheet. */
+export const BIRTHDAY_WINDOW_DAYS = 7;
+/** How far ahead the sheet lists upcoming birthdays. */
+export const BIRTHDAY_LIST_DAYS = 14;
+/** The local date of the person's next birthday when it is today or within
+ * `days` from today (both local YYYY-MM-DD in the sheet's timezone), else null. */
+export function upcomingBirthday(
+  birthday: Date | null,
+  today: string,
+  days = BIRTHDAY_WINDOW_DAYS,
+): string | null {
+  if (!birthday) return null;
+  const next = nextBirthday(birthday, today);
+  return next <= addLocalDays(today, days) ? next : null;
+}
 export function validTimezone(timezone: string) {
   try {
     new Intl.DateTimeFormat("en", { timeZone: timezone }).format();
@@ -302,6 +320,8 @@ export type Candidate = {
   category: string;
   /** Present when the user asked for this person today (or on a missed earlier day). */
   reminder?: { note: string | null };
+  /** Local date of a birthday today or within BIRTHDAY_WINDOW_DAYS. */
+  birthdayOn?: string;
 };
 export function latestContact(
   person: PolicyPerson,
@@ -364,19 +384,6 @@ export function reviewQueue(
         a.id.localeCompare(b.id),
     );
 }
-function birthdaySoon(birthday: Date | null, now: Date, timezone: string) {
-  if (!birthday) return false;
-  const today = new Date(`${localDate(now, timezone)}T00:00:00Z`);
-  for (let offset = 0; offset <= 7; offset++) {
-    const day = new Date(today.getTime() + offset * DAY_MS);
-    if (
-      day.getUTCMonth() === birthday.getUTCMonth() &&
-      day.getUTCDate() === birthday.getUTCDate()
-    )
-      return true;
-  }
-  return false;
-}
 export function rankCandidates(
   people: PolicyPerson[],
   sources: Record<CallSheetSource, SourceHealth>,
@@ -392,8 +399,14 @@ export function rankCandidates(
       // first later day the sheet is opened) regardless of snooze, cooldown,
       // recent contact or cadence.
       const due = !!pref?.dueOn && pref.dueOn <= today;
+      const birthdayOn = upcomingBirthday(person.birthday, today);
+      const birthday = !!birthdayOn;
+      // A birthday is a date, not a routine nudge. On the day it outranks a
+      // snooze ("not now" for check-ins) and the cooldown left by this week's
+      // heads-up; only "Don't suggest" and archiving keep someone off.
       if (
         !due &&
+        birthdayOn !== today &&
         ((pref?.snoozedUntil && pref.snoozedUntil > now) ||
           (pref?.lastSuggestedAt &&
             now.getTime() - pref.lastSuggestedAt.getTime() < 7 * DAY_MS))
@@ -403,9 +416,9 @@ export function rankCandidates(
       const age = last.at
         ? (now.getTime() - Date.parse(last.at)) / DAY_MS
         : null;
-      if (!due && age !== null && age < 7) return [];
+      // A recent chat is no reason to miss a birthday.
+      if (!due && !birthday && age !== null && age < 7) return [];
       const interval = cadence(person, pref?.cadenceDays);
-      const birthday = birthdaySoon(person.birthday, now, timezone);
       const cues = last.complete
         ? liveCues(
             SOURCES.flatMap((source) =>
@@ -447,19 +460,29 @@ export function rankCandidates(
           person,
           reason: due
             ? REMINDER_REASON
-            : birthday
-              ? "Their birthday is coming up this week."
-              : unknown
-                ? NO_CONTACT_REASON
-                : `Time for your ${interval}-day check-in.`,
+            : birthdayOn === today
+              ? BIRTHDAY_TODAY_REASON
+              : birthday
+                ? BIRTHDAY_SOON_REASON
+                : unknown
+                  ? NO_CONTACT_REASON
+                  : `Time for your ${interval}-day check-in.`,
           lastContactAt: last.at,
           lastContactSource: last.source,
           cues,
           cadenceDays: interval,
           tier,
-          score: (unknown ? (kept ? 365 : 0) : (age ?? 0)) / interval,
+          // Within the birthday tier, the soonest birthday comes first.
+          score:
+            !due && birthdayOn
+              ? BIRTHDAY_WINDOW_DAYS -
+                Math.round(
+                  (Date.parse(birthdayOn) - Date.parse(today)) / DAY_MS,
+                )
+              : (unknown ? (kept ? 365 : 0) : (age ?? 0)) / interval,
           category,
           ...(due ? { reminder: { note: pref!.dueNote ?? null } } : {}),
+          ...(birthdayOn ? { birthdayOn } : {}),
         },
       ];
     })
@@ -483,9 +506,12 @@ export function selectCandidates(
   while (pool.length && selected.length < count) {
     // Category balance never reaches past people who are due into the
     // no-contact tier; that tier is used only once everyone else is taken.
+    // Reminders and birthdays (tiers 0 and 1) are never balanced away.
     const due = pool.some((item) => item.tier < 4);
     const index = pool.findIndex(
-      (item) => (!due || item.tier < 4) && (counts.get(item.category) ?? 0) < 2,
+      (item) =>
+        (!due || item.tier < 4) &&
+        (item.tier <= 1 || (counts.get(item.category) ?? 0) < 2),
     );
     const [item] = pool.splice(index === -1 ? 0 : index, 1);
     selected.push(item);

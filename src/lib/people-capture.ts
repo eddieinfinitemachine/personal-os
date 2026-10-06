@@ -1,6 +1,8 @@
 // Contacts → CRM auto-add. Pure: parses the Mac worker's cards, normalises
 // them and decides create vs skip against the owner's existing people. The
-// route (src/app/api/capture/people/route.ts) does the database work.
+// route (src/app/api/capture/people/route.ts) does the database work. Card
+// birthdays also fill in existing people (planBirthdayFill, route .../birthdays).
+import { parseBirthday } from "@/lib/birthday";
 import { IntakeError } from "@/lib/dating-intake/contracts";
 
 export const PEOPLE_CAPTURE_LIMITS = { maxBodyBytes: 200 * 1024, maxPeople: 200, maxHandles: 20, maxField: 200 } as const;
@@ -15,6 +17,8 @@ export type ContactCard = {
   phones: string[];
   emails: string[];
   createdAt: string | null;
+  /** YYYY-MM-DD; year 1604 when the card has no year. */
+  birthday: string | null;
 };
 export type ExistingPerson = {
   id: string;
@@ -34,6 +38,7 @@ export type PersonDraft = {
   company: string | null;
   tags: string[];
   externalId: string;
+  birthday: Date | null;
   lastInteractionAt: null;
   position: number;
 };
@@ -83,6 +88,12 @@ function str(value: unknown, field: string, required = false): string | null {
   return s || null;
 }
 
+function birthday(value: unknown): string | null {
+  if (value == null) return null;
+  if (!parseBirthday(value)) throw new IntakeError("birthday must be a YYYY-MM-DD date");
+  return (value as string).trim();
+}
+
 function list(value: unknown, field: string, normalise: (s: string) => string): string[] {
   if (value == null) return [];
   if (!Array.isArray(value) || value.length > PEOPLE_CAPTURE_LIMITS.maxHandles) throw new IntakeError(`${field} must be a short list`);
@@ -113,6 +124,7 @@ export function parsePeopleCapture(body: unknown): ContactCard[] {
       phones: list(p.phones, "phones", normalisePhone),
       emails: list(p.emails, "emails", normaliseEmail),
       createdAt,
+      birthday: birthday(p.birthday),
     };
   });
 }
@@ -168,6 +180,7 @@ export function planPeopleCapture(cards: ContactCard[], existing: ExistingPerson
         company: card.company,
         tags: [CONTACTS_TAG],
         externalId,
+        birthday: parseBirthday(card.birthday),
         lastInteractionAt: null,
         position: 0,
       },
@@ -178,4 +191,69 @@ export function planPeopleCapture(cards: ContactCard[], existing: ExistingPerson
     names.add(nameKey(card.firstName, card.lastName));
   }
   return plan;
+}
+
+export type BirthdayCard = { cardId: string; phones: string[]; emails: string[]; birthday: string };
+export type BirthdayHolder = { id: string; phone: string | null; email: string | null; externalId: string | null; birthday: Date | null };
+export type BirthdayFillCounts = { alreadySet: number; unmatched: number; ambiguous: number; conflicting: number };
+export type BirthdayFillPlan = { fill: { personId: string; birthday: Date }[]; counts: BirthdayFillCounts };
+
+/** Validates `{ birthdays: [...] }` (a card id, a birthday and its handles). Throws IntakeError (400) on a bad shape. */
+export function parseBirthdayCapture(body: unknown): BirthdayCard[] {
+  const cards = (body as { birthdays?: unknown } | null)?.birthdays;
+  if (!body || typeof body !== "object" || !Array.isArray(cards)) throw new IntakeError("birthdays must be a list");
+  if (cards.length > PEOPLE_CAPTURE_LIMITS.maxPeople) throw new IntakeError(`At most ${PEOPLE_CAPTURE_LIMITS.maxPeople} cards per request`);
+  return cards.map((raw) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new IntakeError("Each card must be an object");
+    const c = raw as Record<string, unknown>;
+    const date = birthday(c.birthday);
+    if (!date) throw new IntakeError("birthday required");
+    return {
+      cardId: str(c.cardId, "cardId", true)!,
+      phones: list(c.phones, "phones", normalisePhone),
+      emails: list(c.emails, "emails", normaliseEmail),
+      birthday: date,
+    };
+  });
+}
+
+/**
+ * Fill-only. A card's birthday goes to the one active person it matches by
+ * Contacts card id, phone (last 10 digits) or email; names alone never match.
+ * Skipped: a card matching several people (ambiguous), a person matched by
+ * cards with different birthdays (conflicting), and anyone whose CRM birthday
+ * is already set, which is never overwritten.
+ */
+export function planBirthdayFill(cards: BirthdayCard[], people: BirthdayHolder[]): BirthdayFillPlan {
+  const external = new Map<string, string>();
+  const phones = new Map<string, Set<string>>();
+  const emails = new Map<string, Set<string>>();
+  const index = (map: Map<string, Set<string>>, key: string, id: string) => {
+    if (key) map.set(key, (map.get(key) ?? new Set()).add(id));
+  };
+  for (const p of people) {
+    if (p.externalId) external.set(p.externalId, p.id);
+    if (p.phone) index(phones, phoneKey(p.phone), p.id);
+    if (p.email) index(emails, p.email.trim().toLowerCase(), p.id);
+  }
+  const counts: BirthdayFillCounts = { alreadySet: 0, unmatched: 0, ambiguous: 0, conflicting: 0 };
+  const proposed = new Map<string, Set<string>>();
+  for (const card of cards) {
+    const ids = new Set<string>();
+    const own = external.get(contactsExternalId(card.cardId));
+    if (own) ids.add(own);
+    for (const phone of card.phones) phones.get(phoneKey(phone))?.forEach((id) => ids.add(id));
+    for (const email of card.emails) emails.get(email)?.forEach((id) => ids.add(id));
+    if (!ids.size) counts.unmatched++;
+    else if (ids.size > 1) counts.ambiguous++;
+    else index(proposed, [...ids][0], card.birthday);
+  }
+  const current = new Map(people.map((p) => [p.id, p.birthday]));
+  const fill: BirthdayFillPlan["fill"] = [];
+  for (const [personId, dates] of proposed) {
+    if (current.get(personId)) counts.alreadySet++;
+    else if (dates.size > 1) counts.conflicting++;
+    else fill.push({ personId, birthday: parseBirthday([...dates][0])! });
+  }
+  return { fill, counts };
 }
