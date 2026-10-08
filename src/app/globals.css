@@ -205,7 +205,16 @@
     border-color: var(--color-border);
   }
 
+  /* Nothing may widen the page sideways on a phone (that makes iOS zoom the
+     whole layout out). clip, not hidden, so position: sticky keeps working;
+     touch-action kills double-tap zoom everywhere, not just on buttons. */
+  html {
+    overflow-x: clip;
+    touch-action: manipulation;
+  }
+
   body {
+    overflow-x: clip;
     background: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);

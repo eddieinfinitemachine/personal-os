@@ -152,9 +152,12 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
 
   return (
     <>
-      {/* Mobile: scrollable pill bar (one chip per list with count) + pager. */}
+      {/* Mobile: scrollable pill bar (one chip per list with count) + pager.
+          Both bleed to the screen edge by cancelling the page gutter
+          (px-4, sm:px-6 in app/page.tsx), so each w-screen slide is exactly
+          one track width and nothing overflows the viewport. */}
       <div className="md:hidden">
-        <div className="mb-3 -mx-4 px-4 flex gap-1.5 overflow-x-auto scrollbar-none">
+        <div className="mb-3 -mx-4 px-4 sm:-mx-6 sm:px-6 flex gap-1.5 overflow-x-auto scrollbar-none">
           {tiles.map((t, i) => {
             const p = palette(t.list.color);
             const active = activeIdx === i;
@@ -185,7 +188,7 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
           ref={trackRef}
           onScroll={onTrackScroll}
           data-pager-track
-          className="flex -mx-4 overflow-x-auto snap-x snap-mandatory scrollbar-none"
+          className="flex -mx-4 sm:-mx-6 overflow-x-auto snap-x snap-mandatory scrollbar-none"
           style={{
             scrollSnapStop: "always",
             overscrollBehaviorX: "contain",
@@ -194,7 +197,7 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
           {tiles.map((t) => (
             <div
               key={t.list.id}
-              className="snap-start shrink-0 w-screen px-4"
+              className="snap-start shrink-0 w-screen px-4 sm:px-6"
             >
               <ListTile
                 list={t.list}
