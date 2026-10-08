@@ -1398,8 +1398,11 @@ Review: `tsc --noEmit` clean; full suite 886 passed (140 opt-in skipped); dating
 ## 2026-10-08 — Dating intake: far fewer suggestions
 
 Ask (Eddie): "it's pulling in a lot of old things even though i've dismissed it… it's going through my texts with other people about women in general… it's fine to suggest but it's way too many things". Existing inbox left as is (Eddie: leave them).
-- [ ] Texts: only ever suggest the person being texted (drop `correspondent:false` mentions for the texts source, prompt says so too). Journal/Granola unchanged
-- [ ] Dismiss is durable: new evidence never reopens a dismissed candidate; dismissed handles join discovery `excludedHandles` + the acceptRecord guard
-- [ ] Journal/Granola third-person mentions skip names the user already dismissed/excluded
-- [ ] Overlap/re-sent messages: a quote already on the candidate never becomes a second suggestion
-- [ ] Tests (unit + scratch-Postgres integration) for each of the above. No schema change; Mac worker unchanged (exclusions come from the server)
+- [x] Texts: only ever suggest the person being texted (drop `correspondent:false` mentions for the texts source, prompt says so too). Journal/Granola unchanged
+- [x] Dismiss is durable: new evidence never reopens a dismissed candidate; dismissed handles join discovery `excludedHandles` + the acceptRecord guard (409)
+- [x] Journal/Granola third-person mentions skip names the user already dismissed/excluded (normalized name; approved people still get evidence)
+- [x] Overlap/re-sent messages: a quote already on the candidate (any status) never becomes a second suggestion
+- [x] Tests: new `noise.integration.test.ts` (5 cases) + unit tests. No schema change; Mac worker unchanged (exclusions come from the server)
+- Side effects: Restore (un-exclude) and deleting a profile without exclude now set candidates to `pending` (was `dismissed`, which is now final). Dismissed has no undo in the UI; Don't suggest again does. Inbox help text updated to say so
+- Verified (Fable, independently): typecheck clean; dating unit suites 132 pass; with scratch Postgres + `RUN_DATING_INTAKE_INTEGRATION=1` all 24 files / 173 tests pass. Worker also ran full `pnpm test` (939 pass, 0 fail) and `pnpm build`, and mutation-checked each guard
+- NOT verified: live model behaviour of the tightened prompt; real data. Open question: the legacy Granola filer (`syncGranola`) still runs from the cron when the new Granola intake state isn't enabled; couldn't check prod state (prod reads blocked)

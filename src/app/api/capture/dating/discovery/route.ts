@@ -15,7 +15,7 @@ async function enabledState(userId: string) {
 async function excludedHandles(userId: string, db: Pick<typeof prisma, "datingPerson" | "datingCandidate"> = prisma) {
   const [people, excluded] = await Promise.all([
     db.datingPerson.findMany({ where: { userId }, select: { handles: true } }),
-    db.datingCandidate.findMany({ where: { userId, OR: [{ status: "excluded" }, { status: "approved", personId: { not: null } }] }, select: { identities: true } }),
+    db.datingCandidate.findMany({ where: { userId, OR: [{ status: { in: ["excluded", "dismissed"] } }, { status: "approved", personId: { not: null } }] }, select: { identities: true } }),
   ]);
   return [...new Set([...people.flatMap((person) => person.handles), ...excluded.flatMap((candidate) => Array.isArray(candidate.identities) ? candidate.identities.filter((value): value is string => typeof value === "string") : [])])];
 }
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
       await lockOwner(tx, userId);
       const current = await tx.datingSourceState.findFirst({ where: { id: state.id, userId, enabled: true } });
       if (!current) throw new IntakeError("Message discovery is no longer enabled", 409);
-      // Approved/excluded conversations are intentionally no longer discovery input, including expired retries.
+      // Approved/dismissed/excluded conversations are intentionally no longer discovery input, including expired retries.
       const blocked = await excludedHandles(userId, tx);
       if (blocked.length) await tx.datingSourceRecord.updateMany({ where: { userId, stateId: state.id, status: "expired", title: { in: blocked } }, data: { status: "withdrawn", leaseUntil: null, version: { increment: 1 } } });
       await tx.datingSourceState.update({ where: { id: state.id }, data: {

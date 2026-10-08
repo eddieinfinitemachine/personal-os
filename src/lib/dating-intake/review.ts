@@ -10,7 +10,14 @@ import {
   personPatch,
   personPatchError,
 } from "@/lib/dating-server";
-import { hash, IntakeError, object, aliases } from "./contracts";
+import {
+  hash,
+  IntakeError,
+  object,
+  aliases,
+  normalizeName,
+  normalizeQuote,
+} from "./contracts";
 import { lockOwner, json, eventHash, type Tx } from "./store";
 
 export type Mention = {
@@ -181,7 +188,23 @@ export async function publishMentions(
   // the same suggestion twice; creating both would violate its unique key and
   // roll back the whole document on every retry.
   const seen = new Set<string>();
+  // Texts are one-to-one threads: only the person on the other end is ever suggested,
+  // never someone the owner and that person talk about.
+  const direct = record.source === "texts";
+  // Names the owner already turned down, for sources that can't verify identity.
+  const declined = new Set(
+    (
+      await tx.datingCandidate.findMany({
+        where: {
+          userId: record.userId,
+          status: { in: ["dismissed", "excluded"] },
+        },
+        select: { name: true },
+      })
+    ).map((c) => normalizeName(c.name)),
+  );
   for (const m of mentions) {
+    if (direct && !m.correspondent) continue;
     const once = `${m.name.toLowerCase()}\u0000${m.quote}`;
     if (seen.has(once)) continue;
     seen.add(once);
@@ -191,9 +214,17 @@ export async function publishMentions(
       : `source:${hash(`${record.stateId}:${record.externalId}:${m.name.toLocaleLowerCase("en-US")}`)}`;
     const resolution = await resolveIdentity(tx, record.userId, ids, key);
     if (resolution.excluded) continue;
-    let candidate =
-      resolution.matches.find((c) => c.status === "approved") ??
-      resolution.matches[0];
+    const approved = resolution.matches.find((c) => c.status === "approved");
+    // Evidence for an approved person always attaches. Otherwise a dismissal is
+    // final: new evidence never reopens it, and a name without a verified identity
+    // that was dismissed or excluded anywhere is not suggested again.
+    if (
+      !approved &&
+      (resolution.matches.some((c) => c.status === "dismissed") ||
+        (!ids.length && declined.has(normalizeName(m.name))))
+    )
+      continue;
+    let candidate = approved ?? resolution.matches[0];
     if (!candidate)
       candidate = await tx.datingCandidate.create({
         data: {
@@ -260,17 +291,26 @@ export async function publishMentions(
         m.eventDate,
       ]),
     );
-    // Exact prior dismissals survive payload purging/repeated classification.
-    const prior = await tx.datingSuggestion.findFirst({
+    // Exact prior dismissals survive payload purging/repeated classification, and
+    // the same excerpt re-sent in a later chunk (message overlap) is not new evidence.
+    const quote = normalizeQuote(m.quote);
+    const prior = await tx.datingSuggestion.findMany({
       where: {
         userId: record.userId,
         candidateId: {
           in: [...new Set([candidate.id, ...resolution.matches.map((c) => c.id)])],
         },
-        sourceFingerprint,
       },
+      select: { sourceFingerprint: true, note: true },
     });
-    if (prior) continue;
+    if (
+      prior.some(
+        (s) =>
+          s.sourceFingerprint === sourceFingerprint ||
+          normalizeQuote(s.note) === quote,
+      )
+    )
+      continue;
     const suggestion = await tx.datingSuggestion.create({
       data: {
         userId: record.userId,
@@ -302,11 +342,6 @@ export async function publishMentions(
       await attachEvidence(tx, record.userId, candidate.personId, [
         { ...suggestion, sourceRecord: record },
       ]);
-    else if (candidate.status === "dismissed")
-      await tx.datingCandidate.update({
-        where: { id: candidate.id },
-        data: { status: "pending" },
-      });
   }
 }
 async function reviewRows(tx: Tx, userId: string, candidateId: string) {
@@ -353,12 +388,14 @@ export async function reviewCandidate(
           identityList(c.identities),
           c.identityKey,
         );
+        // Restored people may be suggested again by new evidence; a dismissal
+        // would keep them silent for good.
         for (const excluded of group.matches.filter(
           (m) => m.status === "excluded",
         ))
           await tx.datingCandidate.update({
             where: { id: excluded.id },
-            data: { status: "dismissed" },
+            data: { status: "pending" },
           });
         return { ok: true };
       }

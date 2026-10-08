@@ -13,6 +13,21 @@ export class IntakeError extends Error {
 }
 export const hash = (text: string) =>
   createHash("sha256").update(text, "utf8").digest("hex");
+/** A display name compared for "already dismissed": case, accents and spacing don't count. */
+export const normalizeName = (name: string) =>
+  name
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("en-US");
+/** An excerpt compared for "already seen": a re-sent overlap may differ only in spacing or case. */
+export const normalizeQuote = (quote: string) =>
+  quote
+    .normalize("NFKC")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("en-US");
 export function safeURL(value: unknown): string | null {
   if (value == null || value === "") return null;
   if (typeof value !== "string" || value.length > 2000)

@@ -130,7 +130,8 @@ describe.skipIf(!enabled)('intake regressions across revisions and identity chan
     await reviewCandidate(userId, second.id, {action: 'restore', fingerprint: fingerprint([])});
     expect((await listReview(userId)).excluded).toHaveLength(0);
     const statuses = await prisma.datingCandidate.findMany({where: {userId}, select: {status: true}});
-    expect(statuses.every(candidate => candidate.status === 'dismissed')).toBe(true);
+    // Restored people can be suggested again; a dismissal would be final.
+    expect(statuses.every(candidate => candidate.status === 'pending')).toBe(true);
   });
 
   it.each([false, true])('ordinary deletion permits new review unless exclusion is explicitly chosen (%s)', async exclude => {

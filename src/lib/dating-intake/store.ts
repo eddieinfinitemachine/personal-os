@@ -159,8 +159,9 @@ export async function acceptRecord(
         throw new IntakeError("Unauthorized", 401);
       if (!state.enabled) throw new IntakeError("Source paused", 409);
       if (state.source === "texts" && e.identities.length) {
+        // Dismissed people stay dismissed: their conversations are not read again.
         const excluded = await tx.datingCandidate.findMany({
-          where: { userId, status: "excluded" },
+          where: { userId, status: { in: ["excluded", "dismissed"] } },
           select: { identities: true },
         });
         const approved = await tx.datingPerson.count({
@@ -177,7 +178,7 @@ export async function acceptRecord(
           )
         )
           throw new IntakeError(
-            "This conversation is already linked or excluded",
+            "This conversation is already linked, dismissed or excluded",
             409,
           );
       }

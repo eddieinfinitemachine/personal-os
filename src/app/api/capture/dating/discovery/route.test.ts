@@ -27,7 +27,7 @@ describe("capture discovery authorization and progress", () => {
     expect((await POST(req({ action: "record", envelope: record }))).status).toBe(409);
     expect(mocks.accept).not.toHaveBeenCalled();
   });
-  it("returns approved/excluded exact handles and bounded expired source IDs only for the owner", async () => {
+  it("returns approved/dismissed/excluded exact handles and bounded expired source IDs only for the owner", async () => {
     mocks.people.mockResolvedValue([{ handles: ["+15557654321"] }]);
     mocks.candidates.mockResolvedValue([{ identities: ["+15559876543"] }]);
     mocks.records.mockResolvedValue([{ externalId: record.externalId }]);
@@ -48,7 +48,7 @@ describe("capture discovery authorization and progress", () => {
   it("retires expired retries for excluded identities and does not globally suppress a deleted profile", async () => {
     mocks.candidates.mockResolvedValue([{ identities: [record.title] }]);
     await POST(req({ action: "progress", complete: true, error: false, remaining: 0, coverageStart: "2026-08-28T00:00:00Z", coverageEnd: "2026-09-27T00:00:00Z" }));
-    expect(mocks.candidates).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: "owner", OR: [{ status: "excluded" }, { status: "approved", personId: { not: null } }] } }));
+    expect(mocks.candidates).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: "owner", OR: [{ status: { in: ["excluded", "dismissed"] } }, { status: "approved", personId: { not: null } }] } }));
     expect(mocks.retire).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: "owner", stateId: "owned-source", status: "expired", title: { in: [record.title] } }, data: expect.objectContaining({ status: "withdrawn" }) }));
   });
   it("does not claim completed coverage while there is unuploaded work", async () => {
