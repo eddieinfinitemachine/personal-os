@@ -5,6 +5,7 @@ import { IntakeError, type Envelope } from "./contracts";
 import {
   classifyFailure,
   failureMessage,
+  SYSTEM,
   validateExtraction,
 } from "./extract";
 
@@ -54,6 +55,38 @@ describe("validateExtraction", () => {
       env,
     );
     expect(kept).toEqual([expect.objectContaining({ eventDate: "2026-09-01" })]);
+  });
+
+  it("keeps only the correspondent from a direct conversation", () => {
+    const thread = {
+      text: `2026-09-27T00:00:00Z +15551234567: ${text}`,
+      title: "+15551234567",
+      identities: ["+15551234567"],
+    } as unknown as Envelope;
+    const kept = validateExtraction(
+      {
+        mentions: [
+          good({ correspondent: false }),
+          good({ name: "+15551234567", correspondent: true }),
+        ],
+      },
+      thread,
+    );
+    expect(kept).toEqual([
+      expect.objectContaining({ name: "+15551234567", correspondent: true }),
+    ]);
+    expect(
+      validateExtraction({ mentions: [good({ correspondent: false })] }, thread),
+    ).toEqual([]);
+    // Journals keep the people they discuss.
+    expect(
+      validateExtraction({ mentions: [good({ correspondent: false })] }, env),
+    ).toHaveLength(1);
+  });
+
+  it("tells the model a direct thread is only about the correspondent", () => {
+    expect(SYSTEM).toMatch(/directConversation is true/);
+    expect(SYSTEM).toMatch(/Never report people the two of them talk about/);
   });
 
   it("still fails a reply without a mentions array", () => {

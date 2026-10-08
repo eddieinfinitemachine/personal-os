@@ -1400,7 +1400,7 @@ Review: `tsc --noEmit` clean; full suite 886 passed (140 opt-in skipped); dating
 Ask (Eddie, on phone): top bar looks faded; collapse the menu's Lists to 3 + expand; reorder trackers and have the order follow him across devices; inventory on mobile should be a readable list (see item, open, delete from the row), grouped by category not status; stop the page zooming out.
 - [x] Top bar solid (drop `/95` + `backdrop-blur` on the mobile header). No colour change
 - [x] Drawer Lists: first 3, then "N more" toggle (same pattern as dormant projects)
-- [ ] ⚠️ SCHEMA (code done; prod push pending) (approved 2026-10-08): `User.sidebarTrackers Json?` — ordered enabled tracker slugs; null = never synced. Additive, nullable; rollback = drop column. Prod `db push` from merged main BEFORE deploy, verify via information_schema
+- [x] ⚠️ SCHEMA (shipped 2026-10-08) (approved 2026-10-08): `User.sidebarTrackers Json?` — ordered enabled tracker slugs; null = never synced. Additive, nullable; rollback = drop column. PR #53 was merged before the push; added at 14:03Z (~1 min after deploy) with a targeted `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "sidebarTrackers" JSONB` (not `db push`, which could drop other branches' columns). Verified via information_schema (jsonb, nullable); no prod error/5xx logs since the merge
 - [x] `GET/PUT /api/settings/trackers`; `useEnabledTemplates` ordered + server-synced (localStorage stays as cache, first load migrates local up)
 - [x] Reorder: drawer Edit mode with up/down; desktop sidebar drag (mirror project reorder)
 - [x] Inventory < md: list rows (photo, title, brand/model, where), tap opens editor, inline two-tap delete; spreadsheet stays desktop-only. Default grouping = category (old saved status pref dropped)
@@ -1410,3 +1410,15 @@ Ask (Eddie, on phone): top bar looks faded; collapse the menu's Lists to 3 + exp
 - Verified (Fable): typecheck clean, `pnpm test` 965 pass / 143 skipped (DB-gated) / 0 fail. Worker: `pnpm build` OK; scratch-Postgres browser pass at 390x844 — opaque bar, 3 lists + "N more", Edit/up/down persists to server and survives reload, fresh device adopts server order, remote reorder appears on `visibilitychange`, desktop drag reorder saves, inventory list grouped by category, row opens editor, two-tap delete removes (DB 7→6), no horizontal overflow on /, /inventory, /dating, /places, /media
 - Judgment calls: legacy localStorage set is sorted into TEMPLATES order once so nothing reshuffles on deploy; reorders over a visible subset keep hidden trackers' slots; delete pill uses the editor's existing destructive rose
 - NOT verified: real iOS (pinch/double-tap blocked, focus zoom), light mode, real touch delete
+
+## 2026-10-08 — Dating intake: far fewer suggestions
+
+Ask (Eddie): "it's pulling in a lot of old things even though i've dismissed it… it's going through my texts with other people about women in general… it's fine to suggest but it's way too many things". Existing inbox left as is (Eddie: leave them).
+- [x] Texts: only ever suggest the person being texted (drop `correspondent:false` mentions for the texts source, prompt says so too). Journal/Granola unchanged
+- [x] Dismiss is durable: new evidence never reopens a dismissed candidate; dismissed handles join discovery `excludedHandles` + the acceptRecord guard (409)
+- [x] Journal/Granola third-person mentions skip names the user already dismissed/excluded (normalized name; approved people still get evidence)
+- [x] Overlap/re-sent messages: a quote already on the candidate (any status) never becomes a second suggestion
+- [x] Tests: new `noise.integration.test.ts` (5 cases) + unit tests. No schema change; Mac worker unchanged (exclusions come from the server)
+- Side effects: Restore (un-exclude) and deleting a profile without exclude now set candidates to `pending` (was `dismissed`, which is now final). Dismissed has no undo in the UI; Don't suggest again does. Inbox help text updated to say so
+- Verified (Fable, independently): typecheck clean; dating unit suites 132 pass; with scratch Postgres + `RUN_DATING_INTAKE_INTEGRATION=1` all 24 files / 173 tests pass. Worker also ran full `pnpm test` (939 pass, 0 fail) and `pnpm build`, and mutation-checked each guard
+- NOT verified: live model behaviour of the tightened prompt; real data. Open question: the legacy Granola filer (`syncGranola`) still runs from the cron when the new Granola intake state isn't enabled; couldn't check prod state (prod reads blocked)

@@ -172,3 +172,12 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 ## 2026-10-05 — a bare `catch {}` in a background pipeline hides the root cause
 **Context**: "Some evidence could not be analyzed" on Texts and EC Pad. `processSource` caught every extraction error without logging, so production logs had nothing and the cause had to be inferred from record states and a synthetic benchmark.
 **Rule**: Background workers log a failure *class* (timeout, HTTP status, parse, validation, storage) on every catch — never bodies. Give each call a deadline that doesn't shrink with the loop; when the run's own budget cuts a call short, requeue it uncounted instead of recording a failure. A status message must clear when its condition clears, not when the whole backlog drains.
+
+## 2026-10-08 — scratch Postgres in the session scratchpad won't start
+**Context**: Running the dating integration suite on a throwaway Homebrew Postgres.
+**Mistake / surprise**: `pg_ctl -o "-k <scratchpad dir>"` failed silently ("could not start server") — the session scratchpad path pushes the Unix socket path past the ~103-char limit. Every integration test then "failed" on connection refused, which looks like a real regression at a glance.
+**Rule**: Put scratch clusters at a short path (`/private/tmp/claude-501/pgXX`), start with `pg_ctl -w`, and check the server is up before reading test results.
+
+## 2026-10-08 — a schema PR got merged before the prod column existed
+**Context**: PR #53 added `User.sidebarTrackers Json?`; the plan was "merge, then db push, then deploy". Eddie merged it himself minutes after it opened, and Vercel deployed while prod still lacked the column (every unselected `User` query would have 500'd). Caught ~1 min later; no errors logged.
+**Rule**: For an approved additive (nullable/defaulted) column, add it to prod BEFORE the PR is opened — old code ignores extra columns, so ahead-of-code is safe. Use a targeted `ALTER TABLE … ADD COLUMN IF NOT EXISTS` (not `db push` from a branch, see the drop-columns lesson) and verify via information_schema. If that's not possible, open the PR as a draft and say why in the title.

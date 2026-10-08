@@ -42,7 +42,8 @@ describe.skipIf(!enabled)("transitive verified identity resolution", () => {
     expect(fromA.excluded).toBe(true);
     expect(new Set(fromA.matches.map((row) => row.id))).toEqual(new Set(rows.map((row) => row.id)));
     await reviewCandidate(userId, rows[0].id, { action: "restore", fingerprint: empty });
-    expect((await prisma.datingCandidate.findMany({ where: { userId } })).every((row) => row.status === "dismissed")).toBe(true);
+    // Restored people can be suggested again; a dismissal would be final.
+    expect((await prisma.datingCandidate.findMany({ where: { userId } })).every((row) => row.status === "pending")).toBe(true);
     expect((await prisma.datingCandidate.findUniqueOrThrow({ where: { id: foreign.id } })).status).toBe("pending");
   });
 

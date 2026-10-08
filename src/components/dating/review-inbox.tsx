@@ -135,7 +135,7 @@ function ReviewCard({ candidate, people, disabled, busy, act }: { candidate: Rev
         <blockquote className="whitespace-pre-wrap break-words text-sm">{evidence.quote}</blockquote>
       </li>)}</ul>
     </details>
-    <p className="mb-2 text-xs text-[var(--color-muted-foreground)]">{candidate.identities.length ? "Don’t suggest again excludes the linked contact identities. You can restore them below." : "Identity is unconfirmed. Don’t suggest again applies only to this name in this source; the same name elsewhere may still appear."}</p>
+    <p className="mb-2 text-xs text-[var(--color-muted-foreground)]">{candidate.identities.length ? "Dismiss or Don’t suggest again: this person isn’t suggested again and the conversation is no longer read. Only Don’t suggest again can be undone, below." : "Identity is unconfirmed. Dismiss or Don’t suggest again: this name isn’t suggested again from EC Pad or Granola. Only Don’t suggest again can be undone, below."}</p>
     <div className="flex flex-wrap gap-1">
       <button type="button" className={primary} disabled={disabled} aria-expanded={adding} aria-controls={`${id}-draft`} onClick={() => setAdding(!adding)}>{adding ? "Hide draft" : "Add person"}</button>
       {people.length > 0 && <button type="button" className={button} disabled={disabled} aria-haspopup="dialog" onClick={() => setLinking(true)}>Link existing</button>}
@@ -168,7 +168,7 @@ function ExcludedCard({ candidate, disabled, act }: { candidate: ReviewCandidate
       setError(null);
       try { await act(candidate, "restore"); } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not restore. Try again."); }
     }}>Restore</button></div>
-    {!candidate.identities.length && <p className="text-xs text-[var(--color-muted-foreground)]">Excluded only in the original source; identity is unconfirmed.</p>}
+    {!candidate.identities.length && <p className="text-xs text-[var(--color-muted-foreground)]">Identity is unconfirmed; this name isn’t suggested from EC Pad or Granola.</p>}
     {error && <p role="alert" className="text-sm text-[var(--color-destructive)]">{error}</p>}
   </li>;
 }
