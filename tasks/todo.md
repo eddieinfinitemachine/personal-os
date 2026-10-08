@@ -1394,3 +1394,12 @@ Review: `tsc --noEmit` clean; full suite 886 passed (140 opt-in skipped); dating
 - [x] "N of M checked in today" counts every row on the page, birthday rows included
 - [x] Verified: `tsc --noEmit` clean; full suite 935 passed (143 opt-in skipped); call-sheet integration on the scratch cluster on :55442 passed 38/38 (10 of 10 runs, plus the known "counts stable existing categories" flake once, which also happens on origin/main and involves no birthdays). `pnpm lint` is broken repo-wide (`next lint` was removed in Next 16, and there is no ESLint config)
 - NOT verified: in a browser, against prod
+
+## 2026-10-08 — Dating intake: far fewer suggestions
+
+Ask (Eddie): "it's pulling in a lot of old things even though i've dismissed it… it's going through my texts with other people about women in general… it's fine to suggest but it's way too many things". Existing inbox left as is (Eddie: leave them).
+- [ ] Texts: only ever suggest the person being texted (drop `correspondent:false` mentions for the texts source, prompt says so too). Journal/Granola unchanged
+- [ ] Dismiss is durable: new evidence never reopens a dismissed candidate; dismissed handles join discovery `excludedHandles` + the acceptRecord guard
+- [ ] Journal/Granola third-person mentions skip names the user already dismissed/excluded
+- [ ] Overlap/re-sent messages: a quote already on the candidate never becomes a second suggestion
+- [ ] Tests (unit + scratch-Postgres integration) for each of the above. No schema change; Mac worker unchanged (exclusions come from the server)
