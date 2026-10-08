@@ -26,6 +26,7 @@ export default async function InventoryPage() {
       <AssetGrid
         kind="inventory"
         spreadsheet
+        defaultGroupBy="category"
         showMoneyTotal
         initialAssets={assets.map(({ _count, ...asset }) => ({ ...asset, attachmentCount: _count.attachments }))}
         attachments

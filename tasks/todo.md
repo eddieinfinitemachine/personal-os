@@ -1395,6 +1395,22 @@ Review: `tsc --noEmit` clean; full suite 886 passed (140 opt-in skipped); dating
 - [x] Verified: `tsc --noEmit` clean; full suite 935 passed (143 opt-in skipped); call-sheet integration on the scratch cluster on :55442 passed 38/38 (10 of 10 runs, plus the known "counts stable existing categories" flake once, which also happens on origin/main and involves no birthdays). `pnpm lint` is broken repo-wide (`next lint` was removed in Next 16, and there is no ESLint config)
 - NOT verified: in a browser, against prod
 
+## 2026-10-08 — Mobile polish: top bar, menu, tracker order, inventory, zoom
+
+Ask (Eddie, on phone): top bar looks faded; collapse the menu's Lists to 3 + expand; reorder trackers and have the order follow him across devices; inventory on mobile should be a readable list (see item, open, delete from the row), grouped by category not status; stop the page zooming out.
+- [x] Top bar solid (drop `/95` + `backdrop-blur` on the mobile header). No colour change
+- [x] Drawer Lists: first 3, then "N more" toggle (same pattern as dormant projects)
+- [x] ⚠️ SCHEMA (shipped 2026-10-08) (approved 2026-10-08): `User.sidebarTrackers Json?` — ordered enabled tracker slugs; null = never synced. Additive, nullable; rollback = drop column. PR #53 was merged before the push; added at 14:03Z (~1 min after deploy) with a targeted `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "sidebarTrackers" JSONB` (not `db push`, which could drop other branches' columns). Verified via information_schema (jsonb, nullable); no prod error/5xx logs since the merge
+- [x] `GET/PUT /api/settings/trackers`; `useEnabledTemplates` ordered + server-synced (localStorage stays as cache, first load migrates local up)
+- [x] Reorder: drawer Edit mode with up/down; desktop sidebar drag (mirror project reorder)
+- [x] Inventory < md: list rows (photo, title, brand/model, where), tap opens editor, inline two-tap delete; spreadsheet stays desktop-only. Default grouping = category (old saved status pref dropped)
+- [x] Zoom: viewport maximumScale 1 / userScalable false, html/body overflow-x clip, double-tap zoom off, fix pager -mx mismatch at sm
+- [x] Verify: typecheck, tests, build, scratch-DB browser pass at 390px
+- Quick capture on mobile: long-press + works already (Eddie), no change
+- Verified (Fable): typecheck clean, `pnpm test` 965 pass / 143 skipped (DB-gated) / 0 fail. Worker: `pnpm build` OK; scratch-Postgres browser pass at 390x844 — opaque bar, 3 lists + "N more", Edit/up/down persists to server and survives reload, fresh device adopts server order, remote reorder appears on `visibilitychange`, desktop drag reorder saves, inventory list grouped by category, row opens editor, two-tap delete removes (DB 7→6), no horizontal overflow on /, /inventory, /dating, /places, /media
+- Judgment calls: legacy localStorage set is sorted into TEMPLATES order once so nothing reshuffles on deploy; reorders over a visible subset keep hidden trackers' slots; delete pill uses the editor's existing destructive rose
+- NOT verified: real iOS (pinch/double-tap blocked, focus zoom), light mode, real touch delete
+
 ## 2026-10-08 — Dating intake: far fewer suggestions
 
 Ask (Eddie): "it's pulling in a lot of old things even though i've dismissed it… it's going through my texts with other people about women in general… it's fine to suggest but it's way too many things". Existing inbox left as is (Eddie: leave them).
