@@ -924,6 +924,9 @@ model User {
   lastSeenAt     DateTime @default(now())
   kindleEmail    String?
   kindleAutoSend Boolean  @default(true)
+  // Ordered list of enabled sidebar tracker slugs (see src/lib/templates.ts).
+  // null = never synced; the first browser to load uploads its localStorage.
+  sidebarTrackers Json?
 
   callSheetSettings CallSheetSettings?
   callSheetContacts CallSheetContact[]

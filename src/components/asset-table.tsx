@@ -428,10 +428,35 @@ export function useSpreadsheetRows(initialAssets: AssetRow[]) {
       router.refresh();
     }
   }
+  // Single-row delete (mobile list): same DELETE call as the editor, applied
+  // optimistically like a bulk delete and restored on failure.
+  async function remove(id: string): Promise<boolean> {
+    if (busyRef.current || pendingRef.current.size) return false;
+    busyRef.current = true;
+    setBusy(true);
+    const before = current.current;
+    changeRows((prev) => prev.filter((a) => a.id !== id));
+    try {
+      const response = await fetch(`/api/assets/${id}`, { method: "DELETE" });
+      // 404: already gone (another tab or device) — nothing to restore.
+      if (!response.ok && response.status !== 404) throw new Error("delete failed");
+      haptic("success");
+      return true;
+    } catch {
+      changeRows(() => before);
+      setError(true);
+      retryAction.current = () => { void remove(id); };
+      return false;
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+      router.refresh();
+    }
+  }
   function retry() {
     if (busyRef.current || pendingRef.current.size) return;
     setError(false);
     retryAction.current?.();
   }
-  return { rows, commit, bulk, busy, pending, error, retry };
+  return { rows, commit, bulk, remove, busy, pending, error, retry };
 }

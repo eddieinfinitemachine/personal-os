@@ -13,8 +13,10 @@ import {
   Paperclip,
   Star,
   Table2,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { haptic } from "@/lib/haptic";
 import { TableView, SpreadsheetTable, BulkBar, useSpreadsheetRows } from "./asset-table";
 import { AssetEditor, detailStr, type EditorField } from "./asset-editor";
 
@@ -42,6 +44,11 @@ export type AssetRow = {
 type View = "cards" | "table";
 type GroupBy = "none" | "status" | "category";
 
+// Saved prefs from before `defaultGroupBy` existed carry no version. Their
+// groupBy was very likely just the old "status" default, so it's dropped for
+// grids whose default has since changed (Inventory → category).
+const PREF_VERSION = 2;
+
 export function AssetGrid({
   kind,
   initialAssets,
@@ -52,6 +59,7 @@ export function AssetGrid({
   smartFill,
   attachments,
   spreadsheet = false,
+  defaultGroupBy = "status",
 }: {
   kind: string;
   initialAssets: AssetRow[];
@@ -62,15 +70,16 @@ export function AssetGrid({
   smartFill?: "inventory";
   attachments?: boolean;
   spreadsheet?: boolean;
+  defaultGroupBy?: GroupBy;
 }) {
   const [editing, setEditing] = useState<AssetRow | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [view, setView] = useState<View>("table");
-  const [groupBy, setGroupBy] = useState<GroupBy>("status");
+  const [groupBy, setGroupBy] = useState<GroupBy>(defaultGroupBy);
   const [showImages, setShowImages] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
-  const { rows, commit, bulk, busy, pending, error, retry } = useSpreadsheetRows(initialAssets);
+  const { rows, commit, bulk, remove, busy, pending, error, retry } = useSpreadsheetRows(initialAssets);
   const assets = spreadsheet ? rows : initialAssets;
   const statuses = useMemo(() => [...new Set(initialAssets.map((a) => a.status ?? "—"))], [initialAssets]);
   const ownedStatuses = useMemo(() => {
@@ -105,12 +114,17 @@ export function AssetGrid({
       const raw = localStorage.getItem(prefKey);
       if (raw) {
         const p = JSON.parse(raw) as {
+          v?: number;
           view?: View;
           groupBy?: GroupBy;
           showImages?: boolean;
           statusFilter?: string[];
         };
         if (spreadsheet && Array.isArray(p.statusFilter) && p.statusFilter.every((s) => typeof s === "string")) setStatusFilter(p.statusFilter);
+        if (p.v !== PREF_VERSION) {
+          if (defaultGroupBy !== "status") delete p.groupBy;
+          localStorage.setItem(prefKey, JSON.stringify({ ...p, v: PREF_VERSION }));
+        }
         if (p.view) setView(p.view);
         if (p.groupBy) setGroupBy(p.groupBy);
         if (typeof p.showImages === "boolean") setShowImages(p.showImages);
@@ -122,7 +136,7 @@ export function AssetGrid({
     try {
       const raw = localStorage.getItem(prefKey);
       const cur = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-      localStorage.setItem(prefKey, JSON.stringify({ ...cur, ...p }));
+      localStorage.setItem(prefKey, JSON.stringify({ ...cur, ...p, v: PREF_VERSION }));
     } catch {}
   }
 
@@ -269,8 +283,9 @@ export function AssetGrid({
       ) : null}
       {/* Toolbar */}
       <div className="mb-3 flex items-center gap-2 flex-wrap">
-        {spreadsheet && view === "cards" ? <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" aria-label="Select all visible rows" checked={visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))} ref={(el) => { if (el) el.indeterminate = visibleIds.some((id) => selected.has(id)) && !visibleIds.every((id) => selected.has(id)); }} onChange={selectAll} className="accent-[var(--color-foreground)]" />Select all</label> : null}
-        <div className={cn(spreadsheet ? "inline-flex" : "hidden md:inline-flex", "rounded-md border border-[var(--color-border)] overflow-hidden")}>
+        {spreadsheet && view === "cards" ? <label className="hidden md:flex items-center gap-1.5 text-xs"><input type="checkbox" aria-label="Select all visible rows" checked={visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))} ref={(el) => { if (el) el.indeterminate = visibleIds.some((id) => selected.has(id)) && !visibleIds.every((id) => selected.has(id)); }} onChange={selectAll} className="accent-[var(--color-foreground)]" />Select all</label> : null}
+        {/* The view toggle is desktop-only; on phones Inventory is always the list. */}
+        <div className="hidden md:inline-flex rounded-md border border-[var(--color-border)] overflow-hidden">
           <ToolbarBtn
             active={view === "table"}
             onClick={() => {
@@ -373,8 +388,17 @@ export function AssetGrid({
             ) : null}
 
             {open ? (
-              view === "table" ? (
-                spreadsheet ? <SpreadsheetTable rows={g.rows} fields={fields} onEdit={setEditing} onCommit={commit} selected={selected} onSelect={selectRow} onSelectAll={selectAll} visibleIds={visibleIds} busy={busy} pending={pending} /> : <>
+              spreadsheet ? <>
+                {/* Phones: a tap-to-open list. The spreadsheet's inline cells
+                    and far-right Open column don't work at this width. */}
+                <div className="md:hidden">
+                  <MobileList rows={g.rows} onEdit={setEditing} onDelete={(a) => void remove(a.id)} />
+                </div>
+                <div className="hidden md:block">
+                  {view === "table" ? <SpreadsheetTable rows={g.rows} fields={fields} onEdit={setEditing} onCommit={commit} selected={selected} onSelect={selectRow} onSelectAll={selectAll} visibleIds={visibleIds} busy={busy} pending={pending} /> : <CardView rows={g.rows} showImages={showImages} onEdit={setEditing} selection={{ selected, onSelect: selectRow }} />}
+                </div>
+              </> : view === "table" ? (
+                <>
                   <div className="md:hidden">
                     <MobileList rows={g.rows} onEdit={setEditing} />
                   </div>
@@ -383,12 +407,7 @@ export function AssetGrid({
                   </div>
                 </>
               ) : (
-                <CardView
-                  rows={g.rows}
-                  showImages={showImages}
-                  onEdit={setEditing}
-                  selection={spreadsheet ? { selected, onSelect: selectRow } : undefined}
-                />
+                <CardView rows={g.rows} showImages={showImages} onEdit={setEditing} />
               )
             ) : null}
           </div>
@@ -587,13 +606,107 @@ function CardView({
   );
 }
 
+// Phone list for every Asset tracker. `onDelete` (Inventory only) switches the
+// row to the owned-things layout: photo thumbnail, brand/model, quiet
+// where · status text, and a trailing two-tap delete.
 function MobileList({
   rows,
   onEdit,
+  onDelete,
 }: {
   rows: AssetRow[];
   onEdit: (a: AssetRow) => void;
+  onDelete?: (a: AssetRow) => void;
 }) {
+  // Inline two-tap confirm (iOS PWAs suppress window.confirm, see AssetEditor):
+  // first tap arms the row, second deletes; it disarms after 3 s or on any
+  // tap elsewhere.
+  const [armedId, setArmedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!armedId) return;
+    const timer = window.setTimeout(() => setArmedId(null), 3000);
+    const onPointerDown = (e: PointerEvent) => {
+      const el = e.target instanceof Element ? e.target.closest("[data-delete-for]") : null;
+      if (el?.getAttribute("data-delete-for") !== armedId) setArmedId(null);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [armedId]);
+
+  if (onDelete) {
+    return (
+      <ul className="rounded-xl border border-[var(--color-border)] overflow-hidden divide-y divide-[var(--color-border)]">
+        {rows.map((a) => {
+          const value = a.currentValue ?? a.amountUsd;
+          const meta = [a.location, a.status].filter(Boolean).join(" · ");
+          const armed = armedId === a.id;
+          return (
+            <li key={a.id} className="flex items-center">
+              <button
+                onClick={() => onEdit(a)}
+                className="flex-1 min-w-0 flex items-center gap-3 pl-3 pr-1 py-2.5 text-left active:bg-[var(--color-accent)]/40 min-h-[60px]"
+              >
+                {a.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={a.imageUrl}
+                    alt=""
+                    loading="lazy"
+                    className="size-10 shrink-0 rounded-md object-cover bg-[var(--color-muted)]"
+                  />
+                ) : null}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-2">
+                    <div className="font-medium text-sm truncate flex-1">{a.title}</div>
+                    {value != null ? (
+                      <div className="text-sm tabular-nums shrink-0 text-[var(--color-muted-foreground)]">
+                        ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </div>
+                    ) : null}
+                  </div>
+                  {a.subtitle ? (
+                    <div className="text-xs text-[var(--color-muted-foreground)] truncate mt-0.5">
+                      {a.subtitle}
+                    </div>
+                  ) : null}
+                  {meta ? (
+                    <div className="text-[11px] text-[var(--color-muted-foreground)]/80 truncate mt-0.5">
+                      {meta}
+                    </div>
+                  ) : null}
+                </div>
+              </button>
+              <button
+                data-delete-for={a.id}
+                onClick={() => {
+                  if (!armed) {
+                    setArmedId(a.id);
+                    haptic("tick");
+                    return;
+                  }
+                  setArmedId(null);
+                  onDelete(a);
+                }}
+                aria-label={armed ? `Confirm delete ${a.title}` : `Delete ${a.title}`}
+                className={cn(
+                  "shrink-0 mr-2 inline-flex items-center justify-center gap-1 rounded-full h-8 text-xs font-medium transition-all duration-200",
+                  armed
+                    ? "px-3 bg-rose-500 text-white"
+                    : "w-8 text-[var(--color-muted-foreground)] active:bg-[var(--color-accent)]"
+                )}
+              >
+                {armed ? "Delete" : <Trash2 className="size-4" />}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
   return (
     <ul className="rounded-xl border border-[var(--color-border)] overflow-hidden divide-y divide-[var(--color-border)]">
       {rows.map((a) => {
