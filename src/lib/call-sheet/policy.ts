@@ -67,6 +67,32 @@ export function addLocalDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 export const REMINDER_REASON = "You asked to be reminded today.";
+/** "yesterday", "on Thursday" (within the week) or "on Oct 2" for a local
+ * YYYY-MM-DD before `today`. */
+export function sincePhrase(from: string, today: string): string {
+  const days = Math.round(
+    (Date.parse(`${today}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) /
+      DAY_MS,
+  );
+  if (days <= 1) return "yesterday";
+  const at = new Date(`${from}T12:00:00Z`);
+  return `on ${new Intl.DateTimeFormat(
+    "en-US",
+    days < 7
+      ? { weekday: "long", timeZone: "UTC" }
+      : { month: "short", day: "numeric", timeZone: "UTC" },
+  ).format(at)}`;
+}
+/** The reason on a reminder row: today's, or one kept from an earlier sheet. */
+export function reminderReason(carriedFrom: string | undefined, today: string) {
+  return carriedFrom && carriedFrom < today
+    ? `You asked to be reminded ${sincePhrase(carriedFrom, today)}.`
+    : REMINDER_REASON;
+}
+/** The reason on a birthday row kept past the day. */
+export function pastBirthdayReason(birthdayOn: string, today: string) {
+  return `Their birthday was ${sincePhrase(birthdayOn, today)}.`;
+}
 export const BIRTHDAY_TODAY_REASON = "It’s their birthday today.";
 /** A birthday this many days ahead (or today) shows as a badge on a row. */
 export const BIRTHDAY_WINDOW_DAYS = 7;
