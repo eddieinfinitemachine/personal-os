@@ -1432,3 +1432,25 @@ Ask (Eddie): "If call sheet is not done keep the people until it's done."
 - [x] No storage change: `carriedFrom` is an optional field in the day JSON
 - Verified: `tsc --noEmit` clean; `pnpm test` 946 pass / 165 skipped; 11 fails are `scripts/*-sync` + `dating-whatsapp-*` needing `/usr/bin/sqlite3`, absent in this container, untouched by this change. Call-sheet integration on a scratch Postgres on :55442: 39/39 (one new test). `pnpm lint` still broken repo-wide (Next 16)
 - NOT verified: in a browser, against prod
+
+## 2026-10-11 — Workout: a demo video for every exercise
+
+Ask (Eddie): "for workout pull in videos for each work out so I can see."
+- [x] `src/lib/workout-video.ts`: Claude web search (3 uses, low effort, 40 s cap) finds one YouTube demo per exercise name + equipment, JSON reply parsed with the board's `youtubeId`; cached for everyone by `videoKey(name)` ("Goblet-Squat (heels up)" = "goblet squat"), first write wins, misses not cached
+- [x] ⚠️ SCHEMA (not on prod yet): `ExerciseVideo` (key PK, name, youtubeId, title, channel?, createdAt). Shared lookup, no userId, no personal data. The code tolerates the table being absent (P2021 → no cache, still finds videos), so it is safe to deploy before the table; add it to prod with `CREATE TABLE IF NOT EXISTS "ExerciseVideo" ("key" TEXT PRIMARY KEY, "name" TEXT NOT NULL, "youtubeId" TEXT NOT NULL, "title" TEXT NOT NULL, "channel" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);` and verify via information_schema
+- [x] `GET /api/workout/video?name=&equipment=` → `{ video }` or `{ video: null }`; 400/401/502
+- [x] Client (`exercise-video.tsx`): after a plan arrives, look up each exercise (3 at a time, one per movement), store the answer on the exercise in the plan/session (localStorage) plus a 200-entry per-device cache; failed lookups retry next visit. Plan review row: tap-to-play embed under the cues (thumbnail → youtube-nocookie iframe) with title · channel and a YouTube link. Player: folded "Watch how it's done" so the screen stays on the set
+- [x] Tests: lib (key, prompt, parse, cache/miss/P2021), route, component (withVideo, hook dedupe + cache + failure, embed tap-to-play, toggle)
+- Verified: `tsc` clean; `pnpm test` 962 pass (the 11 failures are `scripts/*-sync` + `dating-whatsapp-*` tests needing `/usr/bin/sqlite3`, absent in this container); scratch Postgres on :55442: miss → upsert → hit, second write ignored, `DROP TABLE` tolerated
+- NOT verified: a live Claude search (no ANTHROPIC_API_KEY here), so video quality is unproven; in a browser; against prod. `pnpm build` (webpack) passes with the new route
+
+## 2026-10-11 — Workout: weight mid-set, +10/20/30 min, no "+" on the page
+
+Ask (Eddie): "change weight amount in the middle of set", "add items like 10/20/30 minutes of additional workout", "Hide plus button from workout".
+- [x] Load: the weight lives on the exercise in the session, not on the set. `parseLoad("2×25 lb dumbbells")` → stepper −/+ (5 lb or 2.5 kg) around the text field; a change carries to the remaining sets, the card and "Up next"; sets already logged keep theirs. Timed moves with a weight (carries) get the row too; "bodyweight" stays text-only
+- [x] Add time: `POST /api/workout/extend` `{ minutes: 10|20|30, focus, intensity, equipment, exercises }` → Claude (same coach system prompt) returns `{ blocks }` only, no warm-up/cool-down, avoiding movements already done. Client appends before the cool-down (`appendBlocks`), new exercises get fresh ids and demo videos; mid-session the current set keeps its place (a cool-down set jumps to the new work); from the summary the session reopens on the first new set and the history entry is replaced on the next finish, so minutes are the whole session
+- [x] Player: "Add time +10 min +20 min +30 min" above "End workout"; Summary: "Not done yet? +10…" above Log to Personal; spinner + inline error
+- [x] `MobileFab` returns null on `/workout` (and sub-paths); other pages unchanged
+- [x] Tests: loads/updateExercise/appendBlocks/normalizeExtension/prompt (lib), extend route (prompt body, 400/401/502/503), MobileFab path rule, and a jsdom `WorkoutStudio` run: resume → log → +5/+5/−5 → log → carry stepper → typed load; +20 mid-session (payload, placement, step kept); summary +10 failure then success (reopens on step 4)
+- Verified: `tsc` clean; `pnpm test` 968 pass (11 sqlite3-less failures as above); `pnpm build` passes
+- NOT verified: a live Claude extension (no key here); in a browser; against prod

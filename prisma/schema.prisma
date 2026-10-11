@@ -417,6 +417,17 @@ model FitnessSession {
   @@index([userId])
 }
 
+// Shared lookup of exercise demo videos, keyed by exercise name. No personal
+// data: the same "goblet squat" demo serves every user, found once.
+model ExerciseVideo {
+  key       String   @id
+  name      String
+  youtubeId String
+  title     String
+  channel   String?
+  createdAt DateTime @default(now())
+}
+
 model DnaResult {
   id      String @id @default(cuid())
   humanId String

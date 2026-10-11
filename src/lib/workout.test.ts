@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  adjustLoad,
+  appendBlocks,
+  buildExtendPrompt,
   estimatePlanMinutes,
   flattenPlan,
+  loadStep,
+  normalizeExtension,
   normalizePlanResponse,
+  parseLoad,
+  planExercises,
+  updateExercise,
   type WorkoutPlan,
 } from "./workout";
 
@@ -102,5 +110,74 @@ describe("flattenPlan", () => {
     expect(steps[steps.length - 1].restSec).toBe(0);
     expect(steps[1].restSec).toBe(90);
     expect(estimatePlanMinutes(plan)).toBeGreaterThan(5);
+  });
+});
+
+describe("loads", () => {
+  it("reads the number and unit out of plain words, and steps it", () => {
+    expect(parseLoad("2×25 lb dumbbells")).toEqual({ prefix: "2×", amount: 25, unit: "lb", suffix: " dumbbells" });
+    expect(parseLoad("16 kg kettlebell")?.unit).toBe("kg");
+    expect(parseLoad("35 lbs")).toMatchObject({ amount: 35, unit: "lb" });
+    expect(parseLoad("bodyweight")).toBeNull();
+    expect(parseLoad("light band")).toBeNull();
+    expect(adjustLoad("2×25 lb dumbbells", 5)).toBe("2×30 lb dumbbells");
+    expect(adjustLoad("16 kg kettlebell", -2.5)).toBe("16 kg kettlebell".replace("16", "13.5"));
+    expect(adjustLoad("2.5 lb plates", -5)).toBe("0 lb plates");
+    expect(adjustLoad("bodyweight", 5)).toBe("bodyweight");
+    expect(loadStep("kg")).toBe(2.5);
+    expect(loadStep("lb")).toBe(5);
+  });
+});
+
+describe("changing and extending a plan", () => {
+  const plan = normalizePlanResponse(raw).plan;
+  it("updateExercise changes one exercise anywhere and keeps the plan when nothing changes", () => {
+    const target = plan.blocks[0].exercises[1];
+    const next = updateExercise(plan, target.id, { load: "heavy" });
+    expect(next.blocks[0].exercises[1].load).toBe("heavy");
+    expect(next.blocks[0].exercises[0]).toBe(plan.blocks[0].exercises[0]);
+    expect(next.warmup).not.toBe(plan.warmup);
+    expect(updateExercise(next, target.id, { load: "heavy" })).toBe(next);
+    expect(updateExercise(plan, "missing", { load: "x" })).toBe(plan);
+    expect(planExercises(plan).map((e) => e.name)).toEqual(["Arm circles", "DB bench press", "Plank", "Curl", "Child's pose"]);
+  });
+  it("normalizeExtension takes blocks from Claude's reply with fresh ids, and rejects an empty one", () => {
+    const blocks = normalizeExtension({
+      blocks: [{ name: "C · Finisher", type: "circuit", exercises: [{ name: "Burpees", pattern: "cardio", sets: 3, durationSec: 40, restSec: 20 }] }],
+    });
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].exercises[0]).toMatchObject({ name: "Burpees", sets: 3, durationSec: 40 });
+    expect(blocks[0].exercises[0].id).toMatch(/^extra-/);
+    expect(normalizeExtension({ plan: { blocks: [{ name: "x", exercises: ["Lunges"] }] } })[0].exercises[0].name).toBe("Lunges");
+    expect(() => normalizeExtension({ blocks: [] })).toThrow("no exercises");
+    expect(() => normalizeExtension("nope")).toThrow("not an object");
+  });
+  it("appendBlocks puts the new work before the cool-down and grows the estimate", () => {
+    const extra = normalizeExtension({
+      blocks: [{ name: "C", type: "straight", exercises: [{ name: "Curl", pattern: "curl", sets: 3, reps: 12, restSec: 60 }] }],
+    });
+    const next = appendBlocks(plan, extra);
+    expect(next.blocks.map((b) => b.name)).toEqual(["A", "B", "C"]);
+    expect(next.cooldown).toBe(plan.cooldown);
+    expect(next.estimatedMinutes).toBe(plan.estimatedMinutes + 5);
+    const steps = flattenPlan(next);
+    expect(steps.map((s) => s.section).lastIndexOf("main")).toBeLessThan(steps.findIndex((s) => s.section === "cooldown"));
+  });
+  it("buildExtendPrompt asks for blocks only, on the same equipment, avoiding what was done", () => {
+    const prompt = buildExtendPrompt({
+      minutes: 20,
+      focus: "push",
+      intensity: "hard",
+      equipment: [{ name: "Dumbbells", detail: "10–50 lb" }, { name: "Bench" }],
+      exercises: ["DB bench press", "Plank"],
+      notes: "shoulder is sore",
+    });
+    expect(prompt).toContain("wants 20 more minutes of work at hard intensity");
+    expect(prompt).toContain("Dumbbells (10–50 lb); Bench.");
+    expect(prompt).toContain("- DB bench press\n- Plank");
+    expect(prompt).toContain("shoulder is sore");
+    expect(prompt).toContain("No warm-up or cool-down");
+    expect(prompt).toContain('{"blocks": [<Block object>, ...]}');
+    expect(buildExtendPrompt({ minutes: 10, focus: "core", intensity: "easy", equipment: [], exercises: [], notes: "" })).toContain("bodyweight only");
   });
 });

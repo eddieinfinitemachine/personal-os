@@ -20,13 +20,22 @@ import { compressImage } from "@/lib/image-compress";
 import { haptic } from "@/lib/haptic";
 import { PageHeader } from "@/components/mobile-chrome";
 import {
+  EXTEND_MINUTES,
   FOCUS_OPTIONS,
   INTENSITY_OPTIONS,
+  adjustLoad,
+  appendBlocks,
   estimatePlanMinutes,
   flattenPlan,
   formatClock,
+  loadStep,
+  parseLoad,
+  planExercises,
+  updateExercise,
+  type Block,
   type EquipmentItem,
   type Exercise,
+  type ExtendMinutes,
   type Focus,
   type Intensity,
   type PlanResponse,
@@ -36,6 +45,7 @@ import {
   type WorkoutSession,
 } from "@/lib/workout";
 import { ExerciseFigure, propForEquipment } from "./exercise-figure";
+import { ExerciseVideoEmbed, ExerciseVideoToggle, useExerciseVideos, withVideo } from "./exercise-video";
 import { MuscleMap } from "./muscle-map";
 import { beep, unlockAudio, useCountdownCues, useNow, useWakeLock } from "./workout-timer";
 
@@ -124,6 +134,13 @@ export function WorkoutStudio() {
     if (hydrated) write(KEYS.prefs, prefs);
   }, [prefs, hydrated]);
 
+  // Demo videos arrive after the plan does; whichever plan is live gets them.
+  const livePlan = session && !session.finishedAt ? session.plan : (proposal?.plan ?? null);
+  useExerciseVideos(hydrated ? livePlan : null, (id, video) => {
+    setProposal((p) => (p ? { ...p, plan: withVideo(p.plan, id, video) } : p));
+    setSession((s) => (s && !s.finishedAt ? { ...s, plan: withVideo(s.plan, id, video) } : s));
+  });
+
   const startSession = useCallback(
     (p: PlanResponse) => {
       unlockAudio();
@@ -179,6 +196,38 @@ export function WorkoutStudio() {
     setPhase("setup");
   }, []);
 
+  // "10 more minutes": new main blocks join the session before its cool-down.
+  // From the summary the session reopens on the first new set; mid-session the
+  // current set keeps its place unless it is already the cool-down.
+  const extendSession = useCallback(
+    async (minutes: ExtendMinutes) => {
+      const s = session;
+      if (!s) return;
+      const res = await fetch("/api/workout/extend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          minutes,
+          focus: s.plan.focus,
+          intensity: prefs.intensity,
+          equipment: s.equipment,
+          exercises: planExercises(s.plan).map((e) => e.name),
+        }),
+      });
+      const data = (await res.json()) as { blocks?: Block[]; error?: string };
+      if (!res.ok || !data.blocks?.length) throw new Error(data.error ?? `Request failed (${res.status})`);
+      const plan = appendBlocks(s.plan, data.blocks);
+      const steps = flattenPlan(plan);
+      const firstNew = steps.findIndex((step) => step.exercise.id === data.blocks![0].exercises[0].id);
+      const current = flattenPlan(s.plan)[Math.min(s.stepIndex, Math.max(0, flattenPlan(s.plan).length - 1))];
+      const stepIndex = s.finishedAt || !current || current.section === "cooldown" ? firstNew : s.stepIndex;
+      setSession({ ...s, plan, stepIndex, finishedAt: null, timerEndsAt: null, timerKind: null, timerPausedRemainingMs: null });
+      haptic("success");
+      setPhase("play");
+    },
+    [session, prefs.intensity],
+  );
+
   if (!hydrated) {
     return (
       <div className="px-4 py-4 sm:px-6 md:px-8 md:py-6">
@@ -195,6 +244,7 @@ export function WorkoutStudio() {
         onChange={setSession}
         onFinish={() => finishSession(session)}
         onExit={() => setPhase("setup")}
+        onExtend={extendSession}
       />
     );
   }
@@ -206,6 +256,7 @@ export function WorkoutStudio() {
         history={history}
         onHistoryChange={setHistory}
         onNew={discardSession}
+        onExtend={extendSession}
       />
     );
   }
@@ -716,6 +767,11 @@ function ExerciseRow({ exercise: e }: { exercise: Exercise }) {
           <MuscleMap muscles={e.muscles} className="h-24 shrink-0" />
         </div>
       )}
+      {open && e.video && (
+        <div className="border-t border-[var(--color-separator)] bg-[var(--color-fill-secondary)]/60 px-3 pb-3">
+          <ExerciseVideoEmbed video={e.video} name={e.name} />
+        </div>
+      )}
     </li>
   );
 }
@@ -733,11 +789,13 @@ function Player({
   onChange,
   onFinish,
   onExit,
+  onExtend,
 }: {
   session: WorkoutSession;
   onChange: (s: WorkoutSession) => void;
   onFinish: () => void;
   onExit: () => void;
+  onExtend: (minutes: ExtendMinutes) => Promise<void>;
 }) {
   const steps = useMemo(() => flattenPlan(session.plan), [session.plan]);
   const idx = Math.min(session.stepIndex, steps.length - 1);
@@ -757,12 +815,13 @@ function Player({
   const remainingSec = remainingMs === null ? null : Math.max(0, remainingMs / 1000);
 
   const [reps, setReps] = useState<number>(e.reps ?? 0);
-  const [load, setLoad] = useState<string>(e.load);
   const [confirmEnd, setConfirmEnd] = useState(false);
   useEffect(() => {
     setReps(e.reps ?? 0);
-    setLoad(e.load);
-  }, [e.id, e.reps, e.load, step.setIndex]);
+  }, [e.id, e.reps, step.setIndex]);
+  // The weight lives on the exercise: changing it mid-set carries to the
+  // remaining sets, the card and "Up next". Sets already logged keep theirs.
+  const setLoad = (load: string) => onChange({ ...session, plan: updateExercise(session.plan, e.id, { load }) });
 
   const onCue = useCallback((s: number) => {
     if (s === 0) return; // handled by the completion effect
@@ -802,7 +861,7 @@ function Player({
       setIndex: step.setIndex,
       reps: v.reps,
       durationSec: v.durationSec,
-      load,
+      load: e.load,
       completedAt: Date.now(),
     };
     const logs = [...session.logs.filter((l) => l.stepKey !== step.key), log];
@@ -909,6 +968,7 @@ function Player({
                 ))}
               </ul>
             )}
+            {e.video && <ExerciseVideoToggle key={e.id} video={e.video} name={e.name} />}
           </div>
 
           {/* Work controls */}
@@ -928,17 +988,24 @@ function Player({
                   </div>
                 </div>
               ) : (
-                <button
-                  onClick={() => {
-                    unlockAudio();
-                    haptic("press");
-                    beep("go");
-                    startTimer("work", e.durationSec!);
-                  }}
-                  className={btnPrimary + " w-full py-4 text-lg"}
-                >
-                  <Play className="size-5" /> Start {e.durationSec}s
-                </button>
+                <div>
+                  {parseLoad(e.load) && (
+                    <div className="mb-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-3">
+                      <LoadRow load={e.load} onChange={setLoad} />
+                    </div>
+                  )}
+                  <button
+                    onClick={() => {
+                      unlockAudio();
+                      haptic("press");
+                      beep("go");
+                      startTimer("work", e.durationSec!);
+                    }}
+                    className={btnPrimary + " w-full py-4 text-lg"}
+                  >
+                    <Play className="size-5" /> Start {e.durationSec}s
+                  </button>
+                </div>
               )
             ) : (
               <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-3">
@@ -954,9 +1021,8 @@ function Player({
                     </button>
                   </div>
                 </div>
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <div className="text-sm text-[var(--color-muted-foreground)]">Load</div>
-                  <input value={load} onChange={(ev) => setLoad(ev.target.value)} className={input + " max-w-[60%] text-right"} />
+                <div className="mt-2">
+                  <LoadRow load={e.load} onChange={setLoad} />
                 </div>
                 <button
                   onClick={() => {
@@ -988,7 +1054,8 @@ function Player({
         </div>
       )}
 
-      <div className="mt-6 flex justify-center">
+      <ExtendRow onExtend={onExtend} className="mt-6" />
+      <div className="mt-4 flex justify-center">
         {confirmEnd ? (
           <div className="flex items-center gap-2 text-sm">
             <span className="text-[var(--color-muted-foreground)]">End the workout?</span>
@@ -1101,11 +1168,13 @@ function Summary({
   history,
   onHistoryChange,
   onNew,
+  onExtend,
 }: {
   session: WorkoutSession;
   history: HistoryEntry[];
   onHistoryChange: (h: HistoryEntry[]) => void;
   onNew: () => void;
+  onExtend: (minutes: ExtendMinutes) => Promise<void>;
 }) {
   const entry = history.find((h) => h.id === session.id);
   const [logState, setLogState] = useState<"idle" | "busy" | "done" | "none" | "error">(entry?.loggedToPersonal ? "done" : "idle");
@@ -1168,6 +1237,7 @@ function Summary({
           ))}
         </ul>
       )}
+      <ExtendRow onExtend={onExtend} className="mb-5" label="Not done yet?" />
       <div className="flex flex-col gap-2">
         <button onClick={() => void logToPersonal()} disabled={logState === "busy" || logState === "done"} className={btnSecondary + " w-full py-3"}>
           {logState === "busy" ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
@@ -1177,6 +1247,63 @@ function Summary({
           <Dumbbell className="size-4" /> New workout
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Weight for this exercise: step a "2×25 lb" load by 5 lb / 2.5 kg, or type anything. */
+function LoadRow({ load, onChange }: { load: string; onChange: (load: string) => void }) {
+  const parsed = parseLoad(load);
+  const delta = parsed ? loadStep(parsed.unit) : 0;
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="text-sm text-[var(--color-muted-foreground)]">Load</div>
+      <div className="flex min-w-0 items-center gap-2">
+        {parsed && (
+          <button onClick={() => { haptic("tick"); onChange(adjustLoad(load, -delta)); }} className={stepper} aria-label={`Less weight (${delta} ${parsed.unit})`}>
+            <Minus className="size-5" />
+          </button>
+        )}
+        <input value={load} onChange={(ev) => onChange(ev.target.value)} aria-label="Load" className={input + " w-36 min-w-0 text-center"} />
+        {parsed && (
+          <button onClick={() => { haptic("tick"); onChange(adjustLoad(load, delta)); }} className={stepper} aria-label={`More weight (${delta} ${parsed.unit})`}>
+            <Plus className="size-5" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** "+10 · +20 · +30 min": more main blocks for this session, built by Claude. */
+function ExtendRow({ onExtend, label = "Add time", className = "" }: { onExtend: (minutes: ExtendMinutes) => Promise<void>; label?: string; className?: string }) {
+  const [busy, setBusy] = useState<ExtendMinutes | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  async function add(minutes: ExtendMinutes) {
+    if (busy) return;
+    setError(null);
+    setBusy(minutes);
+    haptic("press");
+    try {
+      await onExtend(minutes);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setBusy(null);
+    }
+  }
+  return (
+    <div className={className}>
+      <div className="flex flex-wrap items-center justify-center gap-2 text-sm">
+        <span className="text-[var(--color-muted-foreground)]">{label}</span>
+        {EXTEND_MINUTES.map((m) => (
+          <button key={m} onClick={() => void add(m)} disabled={busy !== null} className={btnSecondary + " tabular-nums"} aria-label={`Add ${m} minutes of workout`}>
+            {busy === m ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}+{m} min
+          </button>
+        ))}
+      </div>
+      {busy !== null && <p className="mt-2 text-center text-xs text-[var(--color-muted-foreground)]">Building {busy} more minutes…</p>}
+      {error && <p className="mt-2 text-center text-xs text-[var(--color-destructive)]">{error}</p>}
     </div>
   );
 }
