@@ -36,6 +36,7 @@ import {
   type WorkoutSession,
 } from "@/lib/workout";
 import { ExerciseFigure, propForEquipment } from "./exercise-figure";
+import { ExerciseVideoEmbed, ExerciseVideoToggle, useExerciseVideos, withVideo } from "./exercise-video";
 import { MuscleMap } from "./muscle-map";
 import { beep, unlockAudio, useCountdownCues, useNow, useWakeLock } from "./workout-timer";
 
@@ -123,6 +124,13 @@ export function WorkoutStudio() {
   useEffect(() => {
     if (hydrated) write(KEYS.prefs, prefs);
   }, [prefs, hydrated]);
+
+  // Demo videos arrive after the plan does; whichever plan is live gets them.
+  const livePlan = session && !session.finishedAt ? session.plan : (proposal?.plan ?? null);
+  useExerciseVideos(hydrated ? livePlan : null, (id, video) => {
+    setProposal((p) => (p ? { ...p, plan: withVideo(p.plan, id, video) } : p));
+    setSession((s) => (s && !s.finishedAt ? { ...s, plan: withVideo(s.plan, id, video) } : s));
+  });
 
   const startSession = useCallback(
     (p: PlanResponse) => {
@@ -716,6 +724,11 @@ function ExerciseRow({ exercise: e }: { exercise: Exercise }) {
           <MuscleMap muscles={e.muscles} className="h-24 shrink-0" />
         </div>
       )}
+      {open && e.video && (
+        <div className="border-t border-[var(--color-separator)] bg-[var(--color-fill-secondary)]/60 px-3 pb-3">
+          <ExerciseVideoEmbed video={e.video} name={e.name} />
+        </div>
+      )}
     </li>
   );
 }
@@ -909,6 +922,7 @@ function Player({
                 ))}
               </ul>
             )}
+            {e.video && <ExerciseVideoToggle key={e.id} video={e.video} name={e.name} />}
           </div>
 
           {/* Work controls */}

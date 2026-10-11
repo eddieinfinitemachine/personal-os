@@ -1422,3 +1422,14 @@ Ask (Eddie): "it's pulling in a lot of old things even though i've dismissed it�
 - Side effects: Restore (un-exclude) and deleting a profile without exclude now set candidates to `pending` (was `dismissed`, which is now final). Dismissed has no undo in the UI; Don't suggest again does. Inbox help text updated to say so
 - Verified (Fable, independently): typecheck clean; dating unit suites 132 pass; with scratch Postgres + `RUN_DATING_INTAKE_INTEGRATION=1` all 24 files / 173 tests pass. Worker also ran full `pnpm test` (939 pass, 0 fail) and `pnpm build`, and mutation-checked each guard
 - NOT verified: live model behaviour of the tightened prompt; real data. Open question: the legacy Granola filer (`syncGranola`) still runs from the cron when the new Granola intake state isn't enabled; couldn't check prod state (prod reads blocked)
+
+## 2026-10-11 — Workout: a demo video for every exercise
+
+Ask (Eddie): "for workout pull in videos for each work out so I can see."
+- [x] `src/lib/workout-video.ts`: Claude web search (3 uses, low effort, 40 s cap) finds one YouTube demo per exercise name + equipment, JSON reply parsed with the board's `youtubeId`; cached for everyone by `videoKey(name)` ("Goblet-Squat (heels up)" = "goblet squat"), first write wins, misses not cached
+- [x] ⚠️ SCHEMA (not on prod yet): `ExerciseVideo` (key PK, name, youtubeId, title, channel?, createdAt). Shared lookup, no userId, no personal data. The code tolerates the table being absent (P2021 → no cache, still finds videos), so it is safe to deploy before the table; add it to prod with `CREATE TABLE IF NOT EXISTS "ExerciseVideo" ("key" TEXT PRIMARY KEY, "name" TEXT NOT NULL, "youtubeId" TEXT NOT NULL, "title" TEXT NOT NULL, "channel" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);` and verify via information_schema
+- [x] `GET /api/workout/video?name=&equipment=` → `{ video }` or `{ video: null }`; 400/401/502
+- [x] Client (`exercise-video.tsx`): after a plan arrives, look up each exercise (3 at a time, one per movement), store the answer on the exercise in the plan/session (localStorage) plus a 200-entry per-device cache; failed lookups retry next visit. Plan review row: tap-to-play embed under the cues (thumbnail → youtube-nocookie iframe) with title · channel and a YouTube link. Player: folded "Watch how it's done" so the screen stays on the set
+- [x] Tests: lib (key, prompt, parse, cache/miss/P2021), route, component (withVideo, hook dedupe + cache + failure, embed tap-to-play, toggle)
+- Verified: `tsc` clean; `pnpm test` 962 pass (the 11 failures are `scripts/*-sync` + `dating-whatsapp-*` tests needing `/usr/bin/sqlite3`, absent in this container); scratch Postgres on :55442: miss → upsert → hit, second write ignored, `DROP TABLE` tolerated
+- NOT verified: a live Claude search (no ANTHROPIC_API_KEY here), so video quality is unproven; in a browser; against prod. `pnpm build` (webpack) passes with the new route

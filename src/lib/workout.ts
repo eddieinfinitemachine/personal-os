@@ -59,9 +59,25 @@ export type Intensity = (typeof INTENSITY_OPTIONS)[number];
 
 export type EquipmentItem = { name: string; detail?: string };
 
+/** A YouTube demonstration of the movement, found once per exercise name. */
+export type ExerciseVideo = { youtubeId: string; title: string; channel: string | null };
+
+/** Exercise names that mean the same movement share one video lookup. */
+export function videoKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\(.*?\)/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 80);
+}
+
 export type Exercise = {
   id: string;
   name: string;
+  /** undefined = not looked up yet; null = no demo found. Filled in client-side. */
+  video?: ExerciseVideo | null;
   /** Which animated figure to show. */
   pattern: MovementPattern;
   equipment: string;
