@@ -243,6 +243,15 @@ describe("daily call sheet", () => {
     expect(container.textContent).toContain("1 of 2 checked in today");
     expect(container.querySelector('section[aria-labelledby="call-sheet-birthdays"]')!.textContent).toContain("Checked in");
   });
+  it("marks a row kept from an earlier day, only while it is pending", async () => {
+    const data = sheet();
+    data.entries[0].carriedFrom = "2026-09-27";
+    data.entries.push({ ...data.entries[0], id: "old", personId: "old", name: "Old Example", carriedFrom: "2026-09-24", cues: [], topic: null });
+    data.entries.push({ ...data.entries[0], id: "done", personId: "done", name: "Done Example", status: "done", carriedFrom: "2026-09-27", cues: [], topic: null });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(data))); await render();
+    const badges = [...container.querySelectorAll("span")].filter(s => s.textContent?.startsWith("Since ")).map(s => s.textContent);
+    expect(badges).toEqual(["Since yesterday", "Since Thursday"]);
+  });
   it("shows nothing about birthdays when there are none", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(sheet()))); await render();
     expect(container.textContent).not.toContain("Birthday");

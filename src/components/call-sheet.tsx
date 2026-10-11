@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Cake, Check, ChevronDown, Loader2, MessageCircle, Phone, Plus, RotateCcw, Settings2, X } from "lucide-react";
+import { Cake, Check, ChevronDown, History, Loader2, MessageCircle, Phone, Plus, RotateCcw, Settings2, X } from "lucide-react";
 import { Sheet } from "@/components/dating/sheet";
 import { CallSheetReview, initials } from "@/components/call-sheet-review";
 import { REACH_OUT_METHODS, type ReachOutMethod } from "@/lib/call-sheet/reach-out";
@@ -22,6 +22,12 @@ function birthdayDay(value: string, today: string) {
   if (value === today) return "today";
   const tomorrow = new Date(Date.parse(`${today}T12:00:00Z`) + 86400000).toISOString().slice(0, 10);
   return value === tomorrow ? "tomorrow" : dueDay(value);
+}
+/** "yesterday", "Thursday" (within the week) or "Oct 2" for a local YYYY-MM-DD before the sheet's day. */
+function sinceDay(value: string, today: string) {
+  const days = Math.round((Date.parse(`${today}T12:00:00Z`) - Date.parse(`${value}T12:00:00Z`)) / 86400000);
+  if (days <= 1) return "yesterday";
+  return new Intl.DateTimeFormat("en-US", days < 7 ? { weekday: "long", timeZone: "UTC" } : { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${value}T12:00:00Z`));
 }
 
 export function CallSheet() {
@@ -173,6 +179,7 @@ export function CallSheet() {
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-medium">{entry.name}</span>
             {entry.status !== "pending" ? <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><Check className="size-3" />{entry.status === "done" ? "Checked in" : "Recently contacted"}</span> : null}
+            {entry.status === "pending" && entry.carriedFrom ? <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted-foreground)]" title="Kept from an earlier day until it is done"><History className="size-3" aria-hidden="true" />Since {sinceDay(entry.carriedFrom, data.day.localDate)}</span> : null}
             {entry.birthday && entry.section !== "birthday" ? <span className={"inline-flex items-center gap-1 text-xs " + (entry.birthday === data.day.localDate ? "font-medium" : "text-[var(--color-muted-foreground)]")}><Cake className="size-3" aria-hidden="true" />Birthday {birthdayDay(entry.birthday, data.day.localDate)}</span> : null}
           </div>
           <p className="mt-0.5 text-sm text-[var(--color-muted-foreground)]">{entry.reason}</p>

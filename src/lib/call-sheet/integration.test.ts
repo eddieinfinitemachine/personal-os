@@ -1142,6 +1142,40 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
       expect(JSON.stringify(data)).not.toContain("Revoked identity snippet");
     }
   });
+  it("keeps pending rows for the next day, first, until they are done", async () => {
+    const monday = await getCallSheet(userId, now);
+    expect(monday.entries).toHaveLength(5);
+    await mutateCallSheet(
+      userId,
+      {
+        dayId: monday.day.id,
+        version: monday.day.version,
+        entryId: monday.entries[0].id,
+        action: "done",
+        method: "call",
+      },
+      now,
+    );
+    const tuesday = await getCallSheet(userId, new Date("2026-09-29T16:00:00Z"));
+    expect(tuesday.entries).toHaveLength(5);
+    expect(tuesday.entries.slice(0, 4).map((entry) => entry.personId)).toEqual(
+      monday.entries.slice(1).map((entry) => entry.personId),
+    );
+    for (const entry of tuesday.entries.slice(0, 4))
+      expect(entry).toMatchObject({
+        status: "pending",
+        carriedFrom: "2026-09-28",
+      });
+    expect(tuesday.entries[4].carriedFrom).toBeUndefined();
+    expect(
+      tuesday.entries.some(
+        (entry) => entry.personId === monday.entries[0].personId,
+      ),
+    ).toBe(false);
+    const again = await getCallSheet(userId, new Date("2026-09-29T18:00:00Z"));
+    expect(again.entries).toEqual(tuesday.entries);
+    expect(again.day.version).toBe(tuesday.day.version);
+  });
   it("replaces newly discovered pre-sheet contact but marks genuinely later contact as contacted", async () => {
     const initial = await updateCallSheetSettings(
       userId,

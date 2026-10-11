@@ -21,9 +21,11 @@ import {
   relationshipCategory,
   localDate,
   NO_CONTACT_REASON,
+  pastBirthdayReason,
   personName,
   rankCandidates,
   REMINDER_REASON,
+  reminderReason,
   reviewQueue,
   selectCandidates,
   snoozeUntil,
@@ -298,6 +300,56 @@ function makeEntry(candidate: Candidate, now: Date): StoredEntry {
     ...(candidate.reminder ? { reminder: candidate.reminder } : {}),
   };
 }
+const PAST_BIRTHDAY_PREFIX = "Their birthday was ";
+/** Pending rows from the latest earlier sheet, kept for a new day: the user
+ * has not acted on them and nobody has been in touch since. Done, contacted
+ * and set-aside rows stay where they were, and so does anyone since hidden,
+ * archived, re-identified or given a reminder for a later day. */
+function carryOver(
+  previous: { localDate: string; data: DayData } | undefined,
+  people: Map<string, PolicyPerson>,
+  sources: SourceState,
+  now: Date,
+  date: string,
+): StoredEntry[] {
+  if (!previous) return [];
+  return previous.data.entries
+    .flatMap((entry) => {
+      const person = people.get(entry.personId);
+      if (
+        entry.status !== "pending" ||
+        !person ||
+        person.preference?.excludedAt ||
+        entry.identityKey !== identityKey(person) ||
+        (person.preference?.dueOn && person.preference.dueOn > date)
+      )
+        return [];
+      // Any contact since the row was made is the check-in.
+      const last = latestContact(person, sources, now);
+      if (
+        last.at &&
+        Date.parse(last.at) > Date.parse(entry.lastContactAt ?? "1970-01-01")
+      )
+        return [];
+      const carriedFrom = entry.carriedFrom ?? previous.localDate;
+      const birthdayRow =
+        inBirthdaySection(entry, person.birthday, previous.localDate) ||
+        entry.reason.startsWith(PAST_BIRTHDAY_PREFIX);
+      return [
+        {
+          ...entry,
+          id: randomUUID(),
+          carriedFrom,
+          reason: birthdayRow
+            ? pastBirthdayReason(carriedFrom, date)
+            : entry.reminder
+              ? reminderReason(carriedFrom, date)
+              : entry.reason,
+        },
+      ];
+    })
+    .slice(0, MAX_DAY_ENTRIES);
+}
 async function markSuggested(
   tx: Tx,
   userId: string,
@@ -340,9 +392,16 @@ export async function sheetInTransaction(
     where: { userId },
     select: { id: true, entries: true, localDate: true },
   });
+  // The latest earlier sheet: whoever is still pending on it carries over.
+  let previous: { localDate: string; data: DayData } | undefined;
   for (const item of history) {
     const stored = readDay(item.entries);
     const before = JSON.stringify(stored);
+    if (
+      item.localDate < date &&
+      (!previous || item.localDate > previous.localDate)
+    )
+      previous = { localDate: item.localDate, data: stored };
     if (item.localDate === date)
       for (const entry of stored.entries)
         if (
@@ -394,21 +453,49 @@ export async function sheetInTransaction(
   const regular = candidates.filter(
     (candidate) => !candidate.reminder && !candidate.birthdayToday,
   );
+  const people = new Map(ctx.people.map((person) => [person.id, person]));
   if (!day) {
-    const reminders = due.slice(0, MAX_DAY_ENTRIES);
+    // Not done yesterday means still to do: carried rows come first and
+    // count toward the five, so the list never grows past what was asked.
+    const carried = carryOver(previous, people, ctx.sources, now, date);
+    const carriedIds = new Set(carried.map((entry) => entry.personId));
+    const fresh = (candidate: Candidate) =>
+      !carriedIds.has(candidate.person.id);
+    const reminders = due
+      .filter(fresh)
+      .slice(0, Math.max(0, MAX_DAY_ENTRIES - carried.length));
+    const listedCarried = carried.filter(
+      (entry) =>
+        !inBirthdaySection(entry, people.get(entry.personId)?.birthday, date),
+    );
     const suggested = selectCandidates(
-      regular,
-      Math.max(0, 5 - reminders.length),
-      reminders,
+      regular.filter(fresh),
+      Math.max(0, 5 - reminders.length - listedCarried.length),
+      [
+        ...reminders,
+        ...listedCarried.map((entry) => ({
+          category: relationshipCategory(people.get(entry.personId)!),
+        })),
+      ],
     );
     const entries = [
-      ...reminders,
-      ...birthdays.slice(
-        0,
-        Math.max(0, MAX_DAY_ENTRIES - reminders.length - suggested.length),
-      ),
-      ...suggested,
-    ].map((candidate) => makeEntry(candidate, now));
+      ...reminders.map((candidate) => makeEntry(candidate, now)),
+      ...carried,
+      ...birthdays
+        .filter(fresh)
+        .slice(
+          0,
+          Math.max(
+            0,
+            MAX_DAY_ENTRIES -
+              reminders.length -
+              carried.length -
+              suggested.length,
+          ),
+        )
+        .map((candidate) => makeEntry(candidate, now)),
+      ...suggested.map((candidate) => makeEntry(candidate, now)),
+    ];
     day = await tx.callSheetDay.create({
       data: {
         userId,
@@ -421,7 +508,6 @@ export async function sheetInTransaction(
   }
   const data = readDay(day.entries);
   const before = JSON.stringify(data);
-  const people = new Map(ctx.people.map((person) => [person.id, person]));
   const staleContactSlots: number[] = [];
   data.entries = data.entries.flatMap((entry, index) => {
     const person = people.get(entry.personId);
@@ -488,7 +574,7 @@ export async function sheetInTransaction(
                 ? `${REACH_OUT_METHODS[entry.method].label} check-in logged today.`
                 : "Check-in logged today."
               : requested
-                ? REMINDER_REASON
+                ? reminderReason(entry.carriedFrom, date)
                 : birthdayToday
                   ? BIRTHDAY_TODAY_REASON
                   : (!last.reliable && !entry.reason.includes("birthday")) ||
@@ -515,6 +601,8 @@ export async function sheetInTransaction(
     if (entry.status === "pending") {
       entry.reminder = candidate.reminder;
       entry.reason = REMINDER_REASON;
+      // Asked for today: this is today's row now, however long it has waited.
+      delete entry.carriedFrom;
     }
   }
   if (satisfied.length)
