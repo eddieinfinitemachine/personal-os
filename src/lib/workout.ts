@@ -301,6 +301,24 @@ function exerciseList(v: unknown, section: string, max: number): Exercise[] {
     .slice(0, max);
 }
 
+export function normalizeBlocks(raw: unknown): Block[] {
+  const blocksRaw = Array.isArray(raw) ? raw : [];
+  return blocksRaw
+    .map((b, i): Block | null => {
+      if (!b || typeof b !== "object") return null;
+      const o = b as Record<string, unknown>;
+      const exercises = exerciseList(o.exercises, "main", 8);
+      if (exercises.length === 0) return null;
+      return {
+        name: str(o.name) || `Block ${i + 1}`,
+        type: oneOf(o.type, ["straight", "superset", "circuit"] as const, "straight"),
+        exercises,
+      };
+    })
+    .filter((b): b is Block => b !== null)
+    .slice(0, 6);
+}
+
 export function normalizePlanResponse(raw: unknown): PlanResponse {
   if (!raw || typeof raw !== "object") throw new Error("plan is not an object");
   const r = raw as Record<string, unknown>;
@@ -320,22 +338,7 @@ export function normalizePlanResponse(raw: unknown): PlanResponse {
     : [];
 
   const p = (r.plan && typeof r.plan === "object" ? r.plan : {}) as Record<string, unknown>;
-  const blocksRaw = Array.isArray(p.blocks) ? p.blocks : [];
-  const blocks: Block[] = blocksRaw
-    .map((b, i): Block | null => {
-      if (!b || typeof b !== "object") return null;
-      const o = b as Record<string, unknown>;
-      const exercises = exerciseList(o.exercises, "main", 8);
-      if (exercises.length === 0) return null;
-      return {
-        name: str(o.name) || `Block ${i + 1}`,
-        type: oneOf(o.type, ["straight", "superset", "circuit"] as const, "straight"),
-        exercises,
-      };
-    })
-    .filter((b): b is Block => b !== null)
-    .slice(0, 6);
-
+  const blocks = normalizeBlocks(p.blocks);
   if (blocks.length === 0) throw new Error("plan has no exercises");
 
   const warmup = exerciseList(p.warmup, "warmup", 6).map((e) => ({ ...e, sets: 1, restSec: 0 }));
@@ -357,6 +360,113 @@ export function normalizePlanResponse(raw: unknown): PlanResponse {
       cooldown,
     },
   };
+}
+
+// ---- Extending a session --------------------------------------------------
+// "Give me 10 more minutes": one or two more main blocks on the same
+// equipment, avoiding what the session already holds. No warm-up or cool-down.
+
+export const EXTEND_MINUTES = [10, 20, 30] as const;
+export type ExtendMinutes = (typeof EXTEND_MINUTES)[number];
+
+export type ExtendRequest = {
+  minutes: ExtendMinutes;
+  focus: Focus;
+  intensity: Intensity;
+  equipment: EquipmentItem[];
+  /** Names of the exercises already in the session, so the extra work varies. */
+  exercises: string[];
+  notes: string;
+};
+
+export function buildExtendPrompt(req: ExtendRequest): string {
+  const lines = [
+    `The athlete has just finished a ${req.focus} session and wants ${req.minutes} more minutes of work at ${req.intensity} intensity.`,
+    req.equipment.length
+      ? "Equipment available: " + req.equipment.map((e) => (e.detail ? `${e.name} (${e.detail})` : e.name)).join("; ") + "."
+      : "No equipment: bodyweight only.",
+  ];
+  if (req.exercises.length) lines.push("Already done today (choose different movements, or a clear progression of one):\n" + req.exercises.map((n) => `- ${n}`).join("\n"));
+  if (req.notes.trim()) lines.push(`Notes from the athlete: ${req.notes.trim()}`);
+  lines.push(
+    `Design main blocks that fit in ${req.minutes} minutes including rest. No warm-up or cool-down. They are already warm.`,
+    'Return ONLY a JSON object {"blocks": [<Block object>, ...]} using the Block and Exercise shapes above.',
+  );
+  return lines.join("\n");
+}
+
+export function normalizeExtension(raw: unknown): Block[] {
+  if (!raw || typeof raw !== "object") throw new Error("extension is not an object");
+  const r = raw as Record<string, unknown>;
+  const blocks = normalizeBlocks(Array.isArray(r.blocks) ? r.blocks : Array.isArray(r.plan) ? r.plan : (r.plan as Record<string, unknown> | undefined)?.blocks);
+  if (blocks.length === 0) throw new Error("extension has no exercises");
+  return blocks.map((b) => ({ ...b, exercises: b.exercises.map((e) => ({ ...e, id: nextId("extra") })) }));
+}
+
+/** Every exercise on the plan, in the order the player visits them. */
+export function planExercises(plan: WorkoutPlan): Exercise[] {
+  return [...plan.warmup, ...plan.blocks.flatMap((b) => b.exercises), ...plan.cooldown];
+}
+
+/** The plan with one exercise changed; the same object when nothing changes. */
+export function updateExercise(plan: WorkoutPlan, exerciseId: string, patch: Partial<Exercise>): WorkoutPlan {
+  let changed = false;
+  const apply = (list: Exercise[]) =>
+    list.map((e) => {
+      if (e.id !== exerciseId) return e;
+      if ((Object.keys(patch) as (keyof Exercise)[]).every((k) => e[k] === patch[k])) return e;
+      changed = true;
+      return { ...e, ...patch };
+    });
+  const next: WorkoutPlan = {
+    ...plan,
+    warmup: apply(plan.warmup),
+    blocks: plan.blocks.map((b) => ({ ...b, exercises: apply(b.exercises) })),
+    cooldown: apply(plan.cooldown),
+  };
+  return changed ? next : plan;
+}
+
+/** More main blocks go after the existing ones, before the cool-down. */
+export function appendBlocks(plan: WorkoutPlan, blocks: Block[]): WorkoutPlan {
+  const extra = blocks.reduce((sec, b) => sec + b.exercises.reduce((s, e) => s + e.sets * ((e.durationSec ?? 40) + e.restSec), 0), 0);
+  return {
+    ...plan,
+    blocks: [...plan.blocks, ...blocks],
+    estimatedMinutes: Math.min(300, plan.estimatedMinutes + Math.round(extra / 60)),
+  };
+}
+
+// ---- Load ("2×25 lb dumbbells") -------------------------------------------
+// Loads are plain words from the model. When they hold a number with a unit we
+// can step it; otherwise the text stays editable as is.
+
+export type ParsedLoad = { prefix: string; amount: number; unit: string; suffix: string };
+
+const LOAD_RE = /(\d+(?:\.\d+)?)\s*(lbs?|kg|#)\b/i;
+
+export function parseLoad(load: string): ParsedLoad | null {
+  const m = LOAD_RE.exec(load);
+  if (!m || m.index === undefined) return null;
+  return {
+    prefix: load.slice(0, m.index),
+    amount: Number(m[1]),
+    unit: m[2].toLowerCase() === "lbs" ? "lb" : m[2].toLowerCase(),
+    suffix: load.slice(m.index + m[0].length),
+  };
+}
+
+/** One click of the stepper: 2.5 kg or 5 lb. */
+export function loadStep(unit: string): number {
+  return unit === "kg" ? 2.5 : 5;
+}
+
+/** The same load text with its number moved by `delta`, never below zero. */
+export function adjustLoad(load: string, delta: number): string {
+  const parsed = parseLoad(load);
+  if (!parsed) return load;
+  const amount = Math.max(0, Math.round((parsed.amount + delta) * 2) / 2);
+  return `${parsed.prefix}${amount} ${parsed.unit}${parsed.suffix}`;
 }
 
 // ---- Session model (client) ----------------------------------------------

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ExternalLink, Play } from "lucide-react";
-import { videoKey, type Exercise, type ExerciseVideo, type WorkoutPlan } from "@/lib/workout";
+import { planExercises, updateExercise, videoKey, type Exercise, type ExerciseVideo, type WorkoutPlan } from "@/lib/workout";
 
 // A demo video for each exercise so the movement can be seen, not just read.
 // The server finds one per exercise name; the answer rides along with the plan
@@ -32,26 +32,11 @@ function remember(key: string, video: ExerciseVideo) {
   }
 }
 
-export function planExercises(plan: WorkoutPlan): Exercise[] {
-  return [...plan.warmup, ...plan.blocks.flatMap((b) => b.exercises), ...plan.cooldown];
-}
+export { planExercises };
 
 /** The plan with one exercise's video set; the same object when nothing changes. */
 export function withVideo(plan: WorkoutPlan, exerciseId: string, video: ExerciseVideo | null): WorkoutPlan {
-  let changed = false;
-  const patch = (list: Exercise[]) =>
-    list.map((e) => {
-      if (e.id !== exerciseId || e.video === video) return e;
-      changed = true;
-      return { ...e, video };
-    });
-  const next: WorkoutPlan = {
-    ...plan,
-    warmup: patch(plan.warmup),
-    blocks: plan.blocks.map((b) => ({ ...b, exercises: patch(b.exercises) })),
-    cooldown: patch(plan.cooldown),
-  };
-  return changed ? next : plan;
+  return updateExercise(plan, exerciseId, { video });
 }
 
 async function lookup(name: string, equipment: string, signal: AbortSignal): Promise<ExerciseVideo | null> {

@@ -1433,3 +1433,14 @@ Ask (Eddie): "for workout pull in videos for each work out so I can see."
 - [x] Tests: lib (key, prompt, parse, cache/miss/P2021), route, component (withVideo, hook dedupe + cache + failure, embed tap-to-play, toggle)
 - Verified: `tsc` clean; `pnpm test` 962 pass (the 11 failures are `scripts/*-sync` + `dating-whatsapp-*` tests needing `/usr/bin/sqlite3`, absent in this container); scratch Postgres on :55442: miss → upsert → hit, second write ignored, `DROP TABLE` tolerated
 - NOT verified: a live Claude search (no ANTHROPIC_API_KEY here), so video quality is unproven; in a browser; against prod. `pnpm build` (webpack) passes with the new route
+
+## 2026-10-11 — Workout: weight mid-set, +10/20/30 min, no "+" on the page
+
+Ask (Eddie): "change weight amount in the middle of set", "add items like 10/20/30 minutes of additional workout", "Hide plus button from workout".
+- [x] Load: the weight lives on the exercise in the session, not on the set. `parseLoad("2×25 lb dumbbells")` → stepper −/+ (5 lb or 2.5 kg) around the text field; a change carries to the remaining sets, the card and "Up next"; sets already logged keep theirs. Timed moves with a weight (carries) get the row too; "bodyweight" stays text-only
+- [x] Add time: `POST /api/workout/extend` `{ minutes: 10|20|30, focus, intensity, equipment, exercises }` → Claude (same coach system prompt) returns `{ blocks }` only, no warm-up/cool-down, avoiding movements already done. Client appends before the cool-down (`appendBlocks`), new exercises get fresh ids and demo videos; mid-session the current set keeps its place (a cool-down set jumps to the new work); from the summary the session reopens on the first new set and the history entry is replaced on the next finish, so minutes are the whole session
+- [x] Player: "Add time +10 min +20 min +30 min" above "End workout"; Summary: "Not done yet? +10…" above Log to Personal; spinner + inline error
+- [x] `MobileFab` returns null on `/workout` (and sub-paths); other pages unchanged
+- [x] Tests: loads/updateExercise/appendBlocks/normalizeExtension/prompt (lib), extend route (prompt body, 400/401/502/503), MobileFab path rule, and a jsdom `WorkoutStudio` run: resume → log → +5/+5/−5 → log → carry stepper → typed load; +20 mid-session (payload, placement, step kept); summary +10 failure then success (reopens on step 4)
+- Verified: `tsc` clean; `pnpm test` 968 pass (11 sqlite3-less failures as above); `pnpm build` passes
+- NOT verified: a live Claude extension (no key here); in a browser; against prod
