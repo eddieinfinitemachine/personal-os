@@ -1454,3 +1454,11 @@ Ask (Eddie): "change weight amount in the middle of set", "add items like 10/20/
 - [x] Tests: loads/updateExercise/appendBlocks/normalizeExtension/prompt (lib), extend route (prompt body, 400/401/502/503), MobileFab path rule, and a jsdom `WorkoutStudio` run: resume → log → +5/+5/−5 → log → carry stepper → typed load; +20 mid-session (payload, placement, step kept); summary +10 failure then success (reopens on step 4)
 - Verified: `tsc` clean; `pnpm test` 968 pass (11 sqlite3-less failures as above); `pnpm build` passes
 - NOT verified: a live Claude extension (no key here); in a browser; against prod
+
+## 2026-10-11 — Workout: the ExerciseVideo table creates itself
+
+Ask (Eddie): "Do it" (the prod table). No prod credentials or Neon connector in the cloud session, so the app does it: on the first Prisma P2021 the video cache runs the same additive `CREATE TABLE IF NOT EXISTS "ExerciseVideo" (...)` a hand migration would, once per process, then retries the read/write. If the role cannot create it, videos still work uncached as before.
+- [x] `ensureExerciseVideoTable` + `withTable` in `src/lib/workout-video.ts`; `CREATE_TABLE_SQL` exported and asserted in tests
+- [x] Tests: creates once then uses the table; creation refused → uncached, other errors rethrown
+- Verified: `tsc` clean; scratch Postgres on :55442: `DROP TABLE` → first read creates it (information_schema 0 → 1), upsert + hit, columns match the Prisma model
+- NOT verified: on prod until the next workout plan is opened after deploy (Vercel logs show `[workout/video] could not create ExerciseVideo` if the role refuses)

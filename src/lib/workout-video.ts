@@ -51,32 +51,67 @@ export function parseVideoReply(content: ClaudeResponseBlock[]): ExerciseVideo |
   return { youtubeId: id, title: title || "Demonstration", channel: channel || null };
 }
 
-// The cache table may not exist yet on an environment whose schema is behind
-// the code (P2021). Videos still work then, just without the cache.
+// The cache table is additive and shared, so the app creates it itself the
+// first time a database is missing it (Prisma P2021): the same
+// CREATE TABLE IF NOT EXISTS a hand migration would run, nothing else.
+export const CREATE_TABLE_SQL = `CREATE TABLE IF NOT EXISTS "ExerciseVideo" (
+  "key" TEXT PRIMARY KEY,
+  "name" TEXT NOT NULL,
+  "youtubeId" TEXT NOT NULL,
+  "title" TEXT NOT NULL,
+  "channel" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`;
+
 function missingTable(error: unknown): boolean {
   return !!error && typeof error === "object" && (error as { code?: string }).code === "P2021";
 }
 
-export async function cachedExerciseVideo(key: string): Promise<ExerciseVideo | null> {
+let tableEnsured: Promise<boolean> | null = null;
+/** Create the table once per process; false when the database refuses. */
+export function ensureExerciseVideoTable(): Promise<boolean> {
+  tableEnsured ??= prisma
+    .$executeRawUnsafe(CREATE_TABLE_SQL)
+    .then(() => true)
+    .catch((error: unknown) => {
+      console.error("[workout/video] could not create ExerciseVideo", error instanceof Error ? error.message : error);
+      tableEnsured = null;
+      return false;
+    });
+  return tableEnsured;
+}
+
+/** Run a cache operation; when the table is missing, create it and try once more. */
+async function withTable<T>(work: () => Promise<T>, fallback: T): Promise<T> {
   try {
-    const row = await prisma.exerciseVideo.findUnique({ where: { key } });
-    return row ? { youtubeId: row.youtubeId, title: row.title, channel: row.channel } : null;
+    return await work();
   } catch (error) {
-    if (missingTable(error)) return null;
-    throw error;
+    if (!missingTable(error)) throw error;
+    if (!(await ensureExerciseVideoTable())) return fallback;
+    try {
+      return await work();
+    } catch (again) {
+      if (missingTable(again)) return fallback;
+      throw again;
+    }
   }
 }
 
+export async function cachedExerciseVideo(key: string): Promise<ExerciseVideo | null> {
+  return withTable(async () => {
+    const row = await prisma.exerciseVideo.findUnique({ where: { key } });
+    return row ? { youtubeId: row.youtubeId, title: row.title, channel: row.channel } : null;
+  }, null);
+}
+
 async function remember(key: string, name: string, video: ExerciseVideo): Promise<void> {
-  try {
+  await withTable(async () => {
     await prisma.exerciseVideo.upsert({
       where: { key },
       create: { key, name, ...video },
       update: {},
     });
-  } catch (error) {
-    if (!missingTable(error)) throw error;
-  }
+  }, undefined);
 }
 
 /** The cached demo for this exercise, or a fresh search; null when none is found. */

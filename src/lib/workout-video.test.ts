@@ -2,13 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   findUnique: vi.fn(),
   upsert: vi.fn(),
+  raw: vi.fn(),
   claude: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => ({
-  prisma: { exerciseVideo: { findUnique: mocks.findUnique, upsert: mocks.upsert } },
+  prisma: { exerciseVideo: { findUnique: mocks.findUnique, upsert: mocks.upsert }, $executeRawUnsafe: mocks.raw },
 }));
 vi.mock("@/lib/claude", () => ({ callClaudeWithServerTools: mocks.claude }));
-import { buildVideoPrompt, findExerciseVideo, parseVideoReply } from "./workout-video";
+import { buildVideoPrompt, CREATE_TABLE_SQL, findExerciseVideo, parseVideoReply } from "./workout-video";
 import { videoKey } from "./workout";
 
 const reply = (text: string) => ({
@@ -25,6 +26,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.findUnique.mockResolvedValue(null);
   mocks.upsert.mockResolvedValue({});
+  mocks.raw.mockResolvedValue(0);
 });
 
 describe("videoKey", () => {
@@ -99,13 +101,33 @@ describe("findExerciseVideo", () => {
     expect(await findExerciseVideo("  ( ) ", "")).toBeNull();
     expect(mocks.claude).toHaveBeenCalledTimes(1);
   });
-  it("still finds a video when the cache table is not there yet, and rethrows other errors", async () => {
+  it("creates the cache table the first time a database lacks it, then uses it", async () => {
+    const missing = Object.assign(new Error("table does not exist"), { code: "P2021" });
+    mocks.findUnique.mockRejectedValueOnce(missing).mockResolvedValueOnce(null);
+    mocks.claude.mockResolvedValue(reply('{"url": "https://youtu.be/dQw4w9WgXcQ", "title": "T"}'));
+    expect(await findExerciseVideo("Plank", "bodyweight")).toMatchObject({ youtubeId: "dQw4w9WgXcQ" });
+    expect(mocks.raw).toHaveBeenCalledTimes(1);
+    expect(mocks.raw.mock.calls[0][0]).toBe(CREATE_TABLE_SQL);
+    expect(CREATE_TABLE_SQL).toContain('CREATE TABLE IF NOT EXISTS "ExerciseVideo"');
+    expect(mocks.findUnique).toHaveBeenCalledTimes(2);
+    expect(mocks.upsert).toHaveBeenCalledTimes(1);
+    // Once created in this process, a later miss goes straight to the table.
+    mocks.findUnique.mockResolvedValue(null);
+    await findExerciseVideo("Squat", "");
+    expect(mocks.raw).toHaveBeenCalledTimes(1);
+  });
+  it("still finds a video when the table cannot be created, and rethrows other errors", async () => {
+    vi.resetModules();
+    const fresh = await import("./workout-video");
     const missing = Object.assign(new Error("table does not exist"), { code: "P2021" });
     mocks.findUnique.mockRejectedValue(missing);
     mocks.upsert.mockRejectedValue(missing);
+    mocks.raw.mockRejectedValue(new Error("permission denied"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
     mocks.claude.mockResolvedValue(reply('{"url": "https://youtu.be/dQw4w9WgXcQ", "title": "T"}'));
-    expect(await findExerciseVideo("Plank", "bodyweight")).toMatchObject({ youtubeId: "dQw4w9WgXcQ" });
+    expect(await fresh.findExerciseVideo("Plank", "bodyweight")).toMatchObject({ youtubeId: "dQw4w9WgXcQ" });
+    expect(mocks.raw).toHaveBeenCalledTimes(2);
     mocks.findUnique.mockRejectedValue(new Error("connection refused"));
-    await expect(findExerciseVideo("Plank", "bodyweight")).rejects.toThrow("connection refused");
+    await expect(fresh.findExerciseVideo("Plank", "bodyweight")).rejects.toThrow("connection refused");
   });
 });
