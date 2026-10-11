@@ -1422,3 +1422,13 @@ Ask (Eddie): "it's pulling in a lot of old things even though i've dismissed itâ
 - Side effects: Restore (un-exclude) and deleting a profile without exclude now set candidates to `pending` (was `dismissed`, which is now final). Dismissed has no undo in the UI; Don't suggest again does. Inbox help text updated to say so
 - Verified (Fable, independently): typecheck clean; dating unit suites 132 pass; with scratch Postgres + `RUN_DATING_INTAKE_INTEGRATION=1` all 24 files / 173 tests pass. Worker also ran full `pnpm test` (939 pass, 0 fail) and `pnpm build`, and mutation-checked each guard
 - NOT verified: live model behaviour of the tightened prompt; real data. Open question: the legacy Granola filer (`syncGranola`) still runs from the cron when the new Granola intake state isn't enabled; couldn't check prod state (prod reads blocked)
+
+## 2026-10-11 â€” Call Sheet: not done means still on the list
+
+Ask (Eddie): "If call sheet is not done keep the people until it's done."
+- [x] A new day starts from the latest earlier sheet: every row still `pending` there carries over, first, with its original reason, and counts toward the five (the list never grows past what was asked). New ids; `carriedFrom` = the local date the person first appeared. Row badge "Since yesterday / Thursday / Oct 2"
+- [x] Nothing else carries: done, contacted, "Someone else today", snoozed (the row was already off), "Don't suggest", archived, identity edited, a reminder for a later day, or any contact newer than the row's recorded last contact (that contact is the check-in)
+- [x] A kept reminder says when it was asked ("You asked to be reminded yesterday / on Monday / on Sep 28."); a kept birthday row joins the list ("Their birthday was yesterday."). A reminder for today on a kept row makes it today's row again
+- [x] No storage change: `carriedFrom` is an optional field in the day JSON
+- Verified: `tsc --noEmit` clean; `pnpm test` 946 pass / 165 skipped; 11 fails are `scripts/*-sync` + `dating-whatsapp-*` needing `/usr/bin/sqlite3`, absent in this container, untouched by this change. Call-sheet integration on a scratch Postgres on :55442: 39/39 (one new test). `pnpm lint` still broken repo-wide (Next 16)
+- NOT verified: in a browser, against prod

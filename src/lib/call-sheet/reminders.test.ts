@@ -297,9 +297,23 @@ describe("setCallSheetReminder", () => {
     });
     const later = await getCallSheet("u", new Date(now.getTime() + 3_600_000));
     expect(later.entries[0].reason).toBe("You asked to be reminded today.");
-    // The next day it does not come back on its own.
+    // Not acted on: the row is kept, and says when it was asked for.
     const next = await getCallSheet("u", new Date("2026-09-29T16:00:00Z"));
-    expect(next.entries).toEqual([]);
+    expect(next.entries).toHaveLength(1);
+    expect(next.entries[0]).toMatchObject({
+      personId: "alex",
+      reason: "You asked to be reminded yesterday.",
+      reminder: { note: null },
+      carriedFrom: "2026-09-28",
+    });
+    expect(next.entries[0].id).not.toBe(late.entries[0].id);
+    const twoDays = await getCallSheet("u", new Date("2026-09-30T16:00:00Z"));
+    expect(twoDays.entries[0]).toMatchObject({
+      reason: "You asked to be reminded on Monday.",
+      carriedFrom: "2026-09-28",
+    });
+    const week = await getCallSheet("u", new Date("2026-10-06T16:00:00Z"));
+    expect(week.entries[0].reason).toBe("You asked to be reminded on Sep 28.");
   });
 
   it("re-issues a fired reminder row when the person's name is edited that day", async () => {
@@ -490,5 +504,123 @@ describe("birthdays on the sheet", () => {
       reason: "You have been in touch today.",
       birthday: "2026-09-28",
     });
+  });
+});
+
+describe("kept until done", () => {
+  const overdue = (...ids: string[]) =>
+    (async () =>
+      [
+        { personIds: ids, occurredAt: new Date("2026-01-01T00:00:00Z") },
+      ]) as never;
+  const stored = () =>
+    db.state.days[db.state.days.length - 1].entries as {
+      entries: { personId: string; status: string }[];
+      skipped: string[];
+    };
+  const ids = (sheet: { entries: { personId: string }[] }) =>
+    sheet.entries.map((e) => e.personId);
+
+  it("carries pending rows into a new day, first, counted toward the five, until they are done", async () => {
+    for (const id of ["a", "b", "c", "d", "e", "f", "g", "h"]) addPerson(id);
+    db.tx.interaction.findMany = overdue("a", "b", "c", "d", "e", "f", "g", "h");
+    const monday = await getCallSheet("u", now);
+    expect(ids(monday)).toEqual(["a", "b", "c", "d", "e"]);
+    expect(monday.entries.some((e) => e.carriedFrom)).toBe(false);
+    for (const entry of stored().entries) {
+      if (entry.personId === "a") entry.status = "done";
+      if (entry.personId === "b") entry.status = "contacted";
+    }
+    const tuesday = await getCallSheet("u", new Date("2026-09-29T16:00:00Z"));
+    expect(ids(tuesday)).toEqual(["c", "d", "e", "f", "g"]);
+    expect(tuesday.entries.map((e) => e.carriedFrom)).toEqual([
+      "2026-09-28",
+      "2026-09-28",
+      "2026-09-28",
+      undefined,
+      undefined,
+    ]);
+    expect(tuesday.entries[0]).toMatchObject({
+      status: "pending",
+      reason: "Time for your 90-day check-in.",
+    });
+    expect(tuesday.entries[0].id).not.toBe(monday.entries[2].id);
+    expect(db.state.days).toHaveLength(2);
+    // Done on Tuesday; the app is next opened on Thursday.
+    for (const entry of stored().entries)
+      if (entry.personId === "c") entry.status = "done";
+    const thursday = await getCallSheet("u", new Date("2026-10-01T16:00:00Z"));
+    expect(ids(thursday)).toEqual(["d", "e", "f", "g", "h"]);
+    expect(thursday.entries.map((e) => e.carriedFrom)).toEqual([
+      "2026-09-28",
+      "2026-09-28",
+      "2026-09-29",
+      "2026-09-29",
+      undefined,
+    ]);
+    // Reading the same day again changes nothing.
+    const again = await getCallSheet("u", new Date("2026-10-01T18:00:00Z"));
+    expect(again.entries).toEqual(thursday.entries);
+  });
+
+  it("does not carry anyone contacted since, hidden, set aside, or given a later reminder", async () => {
+    for (const id of ["a", "b", "c", "d"]) addPerson(id);
+    db.tx.interaction.findMany = overdue("a", "b", "c", "d");
+    expect(ids(await getCallSheet("u", now))).toEqual(["a", "b", "c", "d"]);
+    // a: a chat after the row was made.
+    db.tx.interaction.findMany = async () =>
+      [
+        { personIds: ["a"], occurredAt: new Date("2026-09-28T20:00:00Z") },
+        {
+          personIds: ["a", "b", "c", "d"],
+          occurredAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      ] as never;
+    // b: "Don't suggest". c: a reminder for next week.
+    Object.assign(contact("b")!, { excludedAt: now });
+    Object.assign(contact("c")!, { dueOn: "2026-10-05", dueNote: "her trip" });
+    // d: "Someone else today" took the row off and set them aside.
+    const day = stored();
+    day.entries = day.entries.filter((e) => e.personId !== "d");
+    day.skipped = ["d"];
+    const tuesday = await getCallSheet("u", new Date("2026-09-29T16:00:00Z"));
+    expect(tuesday.entries).toEqual([]);
+    expect(tuesday.upcoming.map((item) => item.personId)).toEqual(["c"]);
+  });
+
+  it("keeps a birthday row past the day, in the list, saying when it was", async () => {
+    addPerson("bea", { firstName: "Bea", lastName: "Day", birthday: new Date("1990-09-28T00:00:00.000Z") });
+    const birthday = await getCallSheet("u", now);
+    expect(birthday.entries[0]).toMatchObject({ personId: "bea", section: "birthday" });
+    const tuesday = await getCallSheet("u", new Date("2026-09-29T16:00:00Z"));
+    expect(tuesday.entries).toHaveLength(1);
+    expect(tuesday.entries[0]).toMatchObject({
+      personId: "bea",
+      status: "pending",
+      reason: "Their birthday was yesterday.",
+      carriedFrom: "2026-09-28",
+    });
+    expect(tuesday.entries[0].section).toBeUndefined();
+    expect(tuesday.entries[0].birthday).toBeUndefined();
+    const thursday = await getCallSheet("u", new Date("2026-10-01T16:00:00Z"));
+    expect(thursday.entries[0].reason).toBe("Their birthday was on Monday.");
+  });
+
+  it("a reminder for today on a kept row makes it today's row", async () => {
+    addPerson("a");
+    db.tx.interaction.findMany = overdue("a");
+    expect(ids(await getCallSheet("u", now))).toEqual(["a"]);
+    Object.assign(contact("a")!, { dueOn: "2026-09-29", dueNote: "the lease" });
+    const tuesday = await getCallSheet("u", new Date("2026-09-29T16:00:00Z"));
+    expect(tuesday.entries).toHaveLength(1);
+    expect(tuesday.entries[0]).toMatchObject({
+      personId: "a",
+      reason: "You asked to be reminded today.",
+      reminder: { note: "the lease" },
+    });
+    expect(tuesday.entries[0].carriedFrom).toBeUndefined();
+    expect(contact("a")!.dueOn).toBeNull();
+    const later = await getCallSheet("u", new Date("2026-09-29T18:00:00Z"));
+    expect(later.entries[0].reason).toBe("You asked to be reminded today.");
   });
 });

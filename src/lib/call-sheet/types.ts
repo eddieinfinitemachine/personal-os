@@ -39,6 +39,9 @@ export type CallSheetEntry = {
   birthday?: string;
   /** "birthday": shown under "Birthdays today", outside the regular five. */
   section?: "birthday";
+  /** Local YYYY-MM-DD of the earlier sheet this row was first on. A pending
+   * row is kept day after day until it is done, contacted or set aside. */
+  carriedFrom?: string;
 };
 export type CallSheetUpcoming = {
   personId: string;
