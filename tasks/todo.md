@@ -1454,3 +1454,12 @@ Ask (Eddie): "change weight amount in the middle of set", "add items like 10/20/
 - [x] Tests: loads/updateExercise/appendBlocks/normalizeExtension/prompt (lib), extend route (prompt body, 400/401/502/503), MobileFab path rule, and a jsdom `WorkoutStudio` run: resume → log → +5/+5/−5 → log → carry stepper → typed load; +20 mid-session (payload, placement, step kept); summary +10 failure then success (reopens on step 4)
 - Verified: `tsc` clean; `pnpm test` 968 pass (11 sqlite3-less failures as above); `pnpm build` passes
 - NOT verified: a live Claude extension (no key here); in a browser; against prod
+
+## 2026-10-12 — Call Sheet: a 00-prefixed phone never matched its chat
+Ask (Eddie): link WhatsApp chats to people; a recently contacted person showed "No contact on record". Root cause was not a missing link: the CRM phone was saved as `00<country>…`, normalized to `+00…`, and never equalled the `+<country>…` from the WhatsApp JID or iMessage handle. Eddie chose the bug fix only (no manual linking, no schema change).
+- [x] `normalizeHandle` (call sheet `policy.ts` and dating `dating.ts`): a leading `00` is the international prefix, same as `+`. An explicit `+` or `00` also means no US `1` is added to a 10-digit number (call sheet used to turn `+45 12 34 56 78` into `+1…`; dating already treated `+` this way). A single leading `0` is unchanged
+- [x] Tests: `00` cases in both normalizer suites, plus a target with `0044 …` resolving to a handle that matches its `…@s.whatsapp.net` session
+- Verified: targeted suites 132 pass, `tsc` clean; worker run of full `pnpm test` 1020 pass / 148 skipped, and the new tests fail with the normalizers reverted
+- Rollout: update the Mac sync checkout before deploying the server. A fixed server rejects the old worker's `+00…` handles as non-canonical, which marks the source "error" until the worker catches up (per-person, retried hourly). Affected people get a new identity key, so their evidence is cleared and recaptured on the next sync; cadence/snooze/hide are kept
+- NOT done: existing `DatingPerson.handles` already stored as `+00…` stay stale until re-saved; `normalizePhone` in `scripts/link-contacts.ts` and `scripts/imessage-stats.ts` has the same flaw (one-off scripts, left alone)
+- NOT verified: how many CRM people are saved with a `00` prefix (production read was blocked); against production; in a browser

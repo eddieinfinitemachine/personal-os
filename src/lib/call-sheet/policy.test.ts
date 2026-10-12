@@ -15,6 +15,7 @@ import {
   limitPersonCues,
   localDate,
   messageVolume,
+  normalizeHandle,
   rankCandidates,
   reviewQueue,
   selectCandidates,
@@ -50,6 +51,25 @@ function person(id: string, extra: Partial<PolicyPerson> = {}): PolicyPerson {
     ...extra,
   };
 }
+describe("normalizeHandle", () => {
+  it.each([
+    ["0044 7700 900123", "+447700900123"],
+    ["00 44 (7700) 900-123", "+447700900123"],
+    ["+0044 7700 900123", "+447700900123"],
+    ["001 415 555 0123", "+14155550123"],
+    ["00 49 30 1234 5678", "+493012345678"],
+    ["00 49 30 1234 56", "+4930123456"],
+    ["+44 7700 900123", "+447700900123"],
+    ["(415) 555-0123", "+14155550123"],
+    ["Person@Example.com ", "person@example.com"],
+    ["123456", ""],
+    ["1234567890123456", ""],
+  ])("%s → %s", (raw, want) => expect(normalizeHandle(raw)).toBe(want));
+
+  it("leaves a single national trunk prefix unchanged", () => {
+    expect(normalizeHandle("07700 900123")).toBe("+07700900123");
+  });
+});
 describe("call sheet policy", () => {
   it("uses explicit timezone dates across midnight and DST", () => {
     expect(

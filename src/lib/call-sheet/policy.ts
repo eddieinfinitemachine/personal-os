@@ -27,8 +27,11 @@ export function normalizeHandle(value: string): string {
   if (input.includes("@"))
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input) ? input : "";
   const digits = input.replace(/\D/g, "");
-  if (digits.length < 7 || digits.length > 15) return "";
-  return `+${digits.length === 10 ? "1" : ""}${digits}`;
+  const international = input.startsWith("+") || digits.startsWith("00");
+  // 00 is an international call prefix, equivalent to +.
+  const number = digits.startsWith("00") ? digits.slice(2) : digits;
+  if (number.length < 7 || number.length > 15) return "";
+  return `+${!international && number.length === 10 ? "1" : ""}${number}`;
 }
 export function identityKey(person: Identity) {
   return createHash("sha256")

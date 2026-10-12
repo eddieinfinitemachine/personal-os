@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { boundMessages, resolveCallSheetTargets, syncCallSheet, type Checkpoint } from "./call-sheet-sync";
+import { matchWhatsAppSessions } from "../src/lib/dating-message-sync";
 import type { CaptureConfig } from "../src/lib/call-sheet/types";
 const now = new Date("2026-09-28T12:00:00Z");
 const person = { id: "one", name: "Avery Example", phone: "+15551234567", email: null, identityKey: "v1", starred: true };
@@ -20,6 +21,15 @@ describe("call sheet local connector", () => {
     expect(result[0].handles).toEqual(["+15559999999"]); expect(result[1].handles).toEqual([]);
     expect(resolveCallSheetTargets({ ...config, people: [{ ...person, name: "Avery", phone: null }] }, contacts)[0].handles).toEqual([]);
     expect(resolveCallSheetTargets({ ...config, people: [person, { ...person, id: "two" }] }, contacts).every(p => p.handles.length === 0)).toBe(true);
+  });
+  it("matches an international-prefix CRM phone to its WhatsApp session", () => {
+    const [target] = resolveCallSheetTargets({
+      ...config,
+      people: [{ ...person, phone: "0044 7700 900123" }],
+    }, []);
+    expect(matchWhatsAppSessions([
+      { pk: 1, jid: "447700900123@s.whatsapp.net", type: 0 },
+    ], target.handles)).toEqual([1]);
   });
   it("records metadata before summaries and checkpoints only successful extraction", async () => {
     const posted: any[] = [], checkpoint = fresh();
