@@ -68,6 +68,12 @@ describe("friends list AI context", () => {
     const notesLabel = [...container.querySelectorAll("label")].find(l => l.textContent === "Notes")!;
     expect(card.compareDocumentPosition(notesLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
+  it("opens the profile named by ?person= and drops the param", async () => {
+    window.history.replaceState(null, "", "/friends?person=a");
+    await render([person("a", "Avery", context()), person("b", "Blake", null)]);
+    expect(container.querySelector('section[aria-label="Context"]')!.textContent).toContain("They talk every few months.");
+    expect(window.location.search).toBe("");
+  });
   it("omits the Context card for a person without context", async () => {
     await render([person("b", "Blake", null)]);
     const nameButton = [...rowFor("Blake").querySelectorAll("button")].find(b => b.textContent?.includes("Blake Example"))!;

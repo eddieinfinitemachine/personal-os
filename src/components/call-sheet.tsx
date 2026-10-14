@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Check, ChevronDown, Loader2, MessageCircle, Phone, RotateCcw, Settings2 } from "lucide-react";
 import { Sheet } from "@/components/dating/sheet";
 import { REACH_OUT_METHODS, type ReachOutMethod } from "@/lib/call-sheet/reach-out";
@@ -138,10 +139,12 @@ export function CallSheet() {
           {data.entries.map(entry => (
             <li key={entry.id} className="py-4 sm:flex sm:items-start sm:justify-between sm:gap-4" data-person-id={entry.personId}>
               <div className="flex min-w-0 flex-1 items-start gap-3">
-                {entry.imageUrl ? <img src={entry.imageUrl} alt="" className="size-10 shrink-0 rounded-full object-cover" /> : <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--color-muted)] text-xs text-[var(--color-muted-foreground)]">{initials(entry.name)}</span>}
+                <Link href={`/friends?person=${entry.personId}`} aria-label={`Open ${entry.name}’s profile`} className="shrink-0 rounded-full">
+                  {entry.imageUrl ? <img src={entry.imageUrl} alt="" className="size-10 rounded-full object-cover" /> : <span className="grid size-10 place-items-center rounded-full bg-[var(--color-muted)] text-xs text-[var(--color-muted-foreground)]">{initials(entry.name)}</span>}
+                </Link>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="font-medium">{entry.name}</span>
+                    <Link href={`/friends?person=${entry.personId}`} className="font-medium hover:underline underline-offset-2">{entry.name}</Link>
                     {entry.status !== "pending" ? <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><Check className="size-3" />{entry.status === "done" ? "Checked in" : "Recently contacted"}</span> : null}
                   </div>
                   <p className="mt-0.5 text-sm text-[var(--color-muted-foreground)]">{entry.reason}</p>
