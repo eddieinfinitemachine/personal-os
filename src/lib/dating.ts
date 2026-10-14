@@ -24,11 +24,14 @@ export function normalizeHandle(raw: string): string {
   if (!s) return "";
   if (s.includes("@")) return s.toLowerCase();
   const digits = s.replace(/[^\d]/g, "");
-  if (digits.length < 7) return "";
-  if (s.startsWith("+")) return `+${digits}`;
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  return `+${digits}`;
+  const international = s.startsWith("+") || digits.startsWith("00");
+  // 00 is an international call prefix, equivalent to +.
+  const number = digits.startsWith("00") ? digits.slice(2) : digits;
+  if (number.length < 7) return "";
+  if (international) return `+${number}`;
+  if (number.length === 10) return `+1${number}`;
+  if (number.length === 11 && number.startsWith("1")) return `+${number}`;
+  return `+${number}`;
 }
 
 /** Split a free-form "phone, email; other phone" field into unique handles. */

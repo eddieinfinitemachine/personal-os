@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 type SourceKind = "ecpad" | "texts" | "granola";
@@ -88,27 +89,34 @@ export function DatingSourcesProvider({ children }: { children: ReactNode }) {
   }}>{children}</SourcesContext.Provider>;
 }
 
-export function SourceStatus() {
+/** Anchor of the Imports and sync section on the Settings page. */
+export const IMPORTS_SETTINGS_HREF = "/settings#imports-and-sync";
+
+/** One quiet line on Dating, only when a source needs attention. */
+export function SourceAttention() {
   const { sources, loading, error } = useSources();
-  return <section aria-label="Source status" className="mb-4">
-    <ul className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-[var(--color-muted-foreground)]">{kinds.map((kind) => {
-      const source = sources.find((item) => item.source === kind) ?? blank(kind);
-      return <li key={kind} className="min-w-0"><span className="font-medium text-[var(--color-foreground)]">{labels[kind]}</span> · {error ? "Status unavailable" : loading ? "Checking status…" : health(source)}{!loading && !error && source.lastSuccessAt && <span className="block">Last successful scan {date(source.lastSuccessAt)}</span>}</li>;
-    })}</ul>
-  </section>;
+  if (loading || error) return null;
+  const names = kinds
+    .map((kind) => sources.find((item) => item.source === kind))
+    .filter((source): source is DatingSource => !!source && health(source) === "Needs attention")
+    .map((source) => labels[source.source]);
+  if (!names.length) return null;
+  const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0];
+  return <p role="status" aria-label="Source status" className="mb-4 text-sm text-[var(--color-muted-foreground)]">
+    {list} {names.length > 1 ? "need" : "needs"} attention.{" "}
+    <Link href={IMPORTS_SETTINGS_HREF} className="font-medium text-[var(--color-foreground)] underline underline-offset-2">Open Settings › Imports and sync</Link>
+  </p>;
 }
 
+/** Every source with its controls. Lives in Settings › Imports and sync. */
 export function SourceSettings({ children }: { children?: ReactNode }) {
   const { sources, loading, error, load, busy } = useSources();
-  return <details className="mt-8 rounded-xl border border-[var(--color-card-border)] bg-[var(--color-card)] p-4">
-    <summary className="min-h-11 cursor-pointer content-center text-sm font-semibold">Imports and sync</summary>
-    <div className="space-y-4 pt-3">
-      {error && <p role="alert" className="text-sm text-[var(--color-destructive)]">{error}</p>}
-      <button type="button" className={button} disabled={loading || busy} onClick={() => void load()}>Refresh source status</button>
-      {kinds.map((kind) => <SourceControl key={kind} source={sources.find((item) => item.source === kind) ?? blank(kind)} />)}
-      {children}
-    </div>
-  </details>;
+  return <div className="space-y-4">
+    {error && <p role="alert" className="text-sm text-[var(--color-destructive)]">{error}</p>}
+    <button type="button" className={button} disabled={loading || busy} onClick={() => void load()}>Refresh source status</button>
+    {kinds.map((kind) => <SourceControl key={kind} source={sources.find((item) => item.source === kind) ?? blank(kind)} />)}
+    {children}
+  </div>;
 }
 
 function SourceControl({ source }: { source: DatingSource }) {
@@ -135,7 +143,7 @@ function SourceControl({ source }: { source: DatingSource }) {
   return <section aria-label={`${labels[source.source]} settings`} className="border-t border-[var(--color-card-border)] pt-3">
     <h3 className="text-sm font-semibold">{labels[source.source]} · {loadError ? "Status unavailable" : loading ? "Checking status…" : health(source)}</h3>
     {source.source === "texts" && <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">Message discovery is optional. When enabled, your Mac checks the last 30 days of one-to-one iMessage and WhatsApp conversations for explicit dating context. Group chats are excluded. Suggestions need your approval; subtle context may be missed. Existing approved conversations keep their separate import.</p>}
-    {source.source === "ecpad" && <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">Pair in EC Pad’s Dating settings, then choose notes or folders. Completing a new pairing replaces the previous connection. Selected folders include Markdown notes below them, except hidden files, Trash and connected Granola notes. Sync runs while EC Pad is open and unlocked on your Mac. iPhone changes join after they sync to the Mac.</p>}
+    {source.source === "ecpad" && <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">Pair in EC Pad › Settings › Personal OS, then choose notes or folders. Completing a new pairing replaces the previous connection. Selected folders include Markdown notes below them, except hidden files, Trash and connected Granola notes. Sync runs while EC Pad is open and unlocked on your Mac. iPhone changes join after they sync to the Mac.</p>}
     {source.source === "granola" && <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">Checks meeting notes for dating evidence. Recent edits are checked again; older edits may require a separate import.{!available && " Granola is not available for this account."}</p>}
     <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs text-[var(--color-muted-foreground)] sm:grid-cols-2">
       <div><dt className="inline">Last successful scan: </dt><dd className="inline">{date(source.lastSuccessAt) ?? "No successful scan yet"}</dd></div>

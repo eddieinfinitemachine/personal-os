@@ -5,6 +5,10 @@ import { parseCapture, type CaptureProposal } from "@/lib/smart-capture";
 import { parseAliasToken } from "@/lib/alias";
 import { resolveCaptureUser } from "@/lib/capture-auth";
 import { syncRecentTodos } from "@/lib/gcal";
+import {
+  commitCallSheetProposal,
+  userLocalToday,
+} from "@/lib/call-sheet/reminder-capture";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -13,7 +17,7 @@ export const maxDuration = 60;
 // preview screen. Designed for the macOS Quick Todo / iOS Shortcut flow that
 // used to hit /api/capture/todo and always create a Todo, regardless of the
 // intent. This one routes to the right table (asset / interaction / person /
-// trip / todo) based on the text.
+// trip / todo / call sheet) based on the text.
 //
 // Auth: bearer token resolved to a user via lib/capture-auth — CAPTURE_TOKEN
 // maps to the founder, CAPTURE_TOKENS maps extra tokens to teammate emails.
@@ -111,7 +115,7 @@ async function handle(
 
   // Stitch the URL into the text so Claude can read it as part of the capture.
   const combined = rawUrl ? `${text}\n\n${rawUrl}` : text;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = await userLocalToday(userId);
 
   let proposal: CaptureProposal;
   try {
@@ -142,6 +146,25 @@ async function handle(
 
   // Commit. Inlined per-type rather than calling /commit because we have a
   // bearer-token context, not a session cookie.
+  if (proposal.type === "call_sheet") {
+    // No preview here, so an ambiguous name is an error, never a guess.
+    const result = await commitCallSheetProposal(userId, proposal);
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error, candidates: result.candidates },
+        { status: result.status },
+      );
+    }
+    return NextResponse.json({
+      ok: true,
+      type: "call_sheet",
+      id: result.personId,
+      dueOn: result.dueOn,
+      created: result.created,
+      message: result.message,
+    });
+  }
+
   if (proposal.type === "asset") {
     const DEFAULT_STATUS: Record<string, string> = {
       inventory: "owned",

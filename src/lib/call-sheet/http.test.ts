@@ -6,6 +6,7 @@ vi.mock("./service", () => ({
   deletePersonWithCallSheetCleanup: vi.fn(),
   mutateCallSheet: vi.fn(),
   updateCallSheetSettings: vi.fn(),
+  setCallSheetReminder: vi.fn(),
 }));
 vi.mock("./capture", () => ({
   getCaptureConfig: vi.fn(),
@@ -18,11 +19,13 @@ import {
   deletePersonWithCallSheetCleanup,
   mutateCallSheet,
   updateCallSheetSettings,
+  setCallSheetReminder,
 } from "./service";
 import { captureCallSheet, getCaptureConfig } from "./capture";
 import { GET, POST } from "@/app/api/call-sheet/route";
 import { DELETE as personDELETE } from "@/app/api/people/[id]/route";
 import { POST as settingsPOST } from "@/app/api/call-sheet/settings/route";
+import { POST as remindersPOST } from "@/app/api/call-sheet/reminders/route";
 import {
   GET as captureGET,
   POST as capturePOST,
@@ -34,7 +37,14 @@ describe("call sheet HTTP authentication", () => {
     vi.mocked(resolveCaptureUser).mockResolvedValue(null);
   });
   it("gates every UI and capture route without touching data, and returns private no-store", async () => {
-    for (const handler of [GET, POST, settingsPOST, captureGET, capturePOST]) {
+    for (const handler of [
+      GET,
+      POST,
+      settingsPOST,
+      remindersPOST,
+      captureGET,
+      capturePOST,
+    ]) {
       const response = await handler(
         new Request("http://localhost/api/call-sheet"),
       );
@@ -46,6 +56,7 @@ describe("call sheet HTTP authentication", () => {
       deletePersonWithCallSheetCleanup,
       mutateCallSheet,
       updateCallSheetSettings,
+      setCallSheetReminder,
       getCaptureConfig,
       captureCallSheet,
     ])
@@ -70,6 +81,32 @@ describe("call sheet HTTP authentication", () => {
     );
     expect(response.status).toBe(413);
     expect(mutateCallSheet).not.toHaveBeenCalled();
+  });
+  it("passes the reminder body for the authenticated owner and maps validation errors", async () => {
+    vi.mocked(getCurrentUserId).mockResolvedValue("authenticated-owner");
+    vi.mocked(setCallSheetReminder).mockResolvedValueOnce({ entries: [] } as never);
+    const body = { personId: "p", dueOn: "2026-10-06", note: "lease" };
+    const ok = await remindersPOST(
+      new Request("http://localhost/api/call-sheet/reminders", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    );
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("cache-control")).toBe("private, no-store");
+    expect(setCallSheetReminder).toHaveBeenCalledWith("authenticated-owner", body);
+    const { IntakeError } = await import("@/lib/dating-intake/contracts");
+    vi.mocked(setCallSheetReminder).mockRejectedValueOnce(
+      new IntakeError("That date has already passed"),
+    );
+    const bad = await remindersPOST(
+      new Request("http://localhost/api/call-sheet/reminders", {
+        method: "POST",
+        body: JSON.stringify({ ...body, dueOn: "2020-01-01" }),
+      }),
+    );
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ error: "That date has already passed" });
   });
   it("routes authenticated person deletion through scoped snapshot cleanup", async () => {
     const request = new Request("http://localhost/api/people/person-id", {

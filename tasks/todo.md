@@ -1311,6 +1311,171 @@ Ask (Eddie): "can you search more and backfill the crm with context about the pe
 - [x] Tests: `src/lib/linkify.test.tsx`, `src/components/todo-row.test.tsx` (jsdom). `pnpm test` green (722 passed). `pnpm typecheck`: only pre-existing errors from the shared node_modules' stale Prisma client (`granolaImport`), none in touched files.
 - [ ] Not verified in a real browser: native drag-vs-select arbitration, Safari/Firefox behaviour, iOS long-press selection in the modal, link inside the agenda `<button>` (invalid nesting; clicks work in modern browsers but worth a look).
 
+## 2026-09-29 — Contacts → CRM auto-add
+
+Ask (Eddie): "would also be cool to have anyone i add to my contact get added automatically". New cards only, from install; no backfill unless `--since`.
+- [x] `POST /api/capture/people` (CAPTURE_TOKEN bearer, 200 KB body, ≤200 cards) + pure `src/lib/people-capture.ts` (normalise; skip no first name / no phone+email / business card; dedupe on externalId `contacts:<cardId>`, phone last-10, email, exact full name of an active person; tag `from-contacts`)
+- [x] Mac worker `scripts/contacts-crm-sync.ts` (JXA export with id + creationDate, checkpoint `since`/`floor`/`posted`, 3-day lookback for iCloud-late cards, batches of 50, `--dry-run`/`--verbose`/`--since`). Import guard: >20 new cards in one run (Contacts restamped ~2,000 cards on 2026-09-23) → nothing posted, floor moves past them; `--since` bypasses
+- [x] LaunchAgent `com.personal-os.contacts-crm-sync.plist` (every 5 min), not installed
+- [x] Tests: people-capture, route (mocked Prisma), worker. Typecheck clean, suite green
+- [x] Verified: real JXA export (6,649 cards, id/creationDate populated), worker dry run end to end
+- [ ] Merge, deploy, update personal-os-sync worktree, install LaunchAgent (first run records "now"), add a test contact on the iPhone and watch it arrive
+- NOT verified: route against a real database (no local Postgres); first-run Automation prompt under launchd (Terminal already has Contacts access)
+
+## 2026-10-01 — Call sheet reminders via natural language
+
+Ask (Eddie): "put Alex Rivera on my call sheet for Tuesday" puts that person on the Call Sheet on that date.
+- [x] Schema (additive): `CallSheetContact.dueOn` / `dueNote` (TEXT, nullable); `prisma/changes/20261001_call_sheet_reminders.sql` (`ADD COLUMN IF NOT EXISTS`). Not applied to any DB
+- [x] Policy: due reminder (`dueOn <= today` in sheet timezone) is tier 0, reason "You asked to be reminded today.", bypasses snooze / 7-day cooldown / recent contact / cadence; respects archived and hidden; future dates don't change ranking
+- [x] Service: reminders are extra rows on top (no 2-per-category balancing), count toward the regular five, win over `skipped`, are cleared on placement (fires once; late if the day was missed); refresh keeps their reason and never auto-flips/removes them; row cap raised 5 → 25 (`MAX_DAY_ENTRIES`); hide clears a pending reminder (Undo restores it); a fired row survives Undo of an earlier action and an identity edit the same day
+- [x] `setCallSheetReminder` + `POST /api/call-sheet/reminders` `{ personId, dueOn | null, note? }`; `CallSheetResponse.upcoming`
+- [x] Smart capture: sixth proposal type `call_sheet` (prompt rules, validator, `forceType: "call_sheet"` with no web search); person resolver `src/lib/call-sheet/resolve-person.ts` (full name incl. whole-name-in-firstName rows, unique first name only, else 409 with candidates, else create); commit + auto routes; preview fields on /capture
+- [x] Call Sheet page: quick-add ("Alex Rivera Tuesday" → parse pinned → commit, no preview), Upcoming list with cancel, reminder note on the row
+- [x] Tests: policy, in-memory service (`reminders.test.ts`), resolver, capture commit, smart-capture validator/prompt, HTTP auth, component; integration spec extended (not run: no scratch DB)
+- [ ] Apply the SQL to prod from merged main (flag first), deploy, then try "Alex Rivera Tuesday" for real
+- Review: TODAY for smart capture is now the user's Call Sheet-timezone date instead of the UTC date (affects every capture type in US evenings). NOT verified: integration tests against Postgres, live Claude classification, real browser
+
+## 2026-10-01 — "Someone else today" made the person vanish with no replacement
+
+Report (Eddie): "when i selected somebody else for call sheet, they disappeared".
+Cause: the 4:50am message sync ran during a string of 5–30 s dark wakes, so some requests failed and both sources were marked `error`. `latestContact` treated an errored source as incomplete, which made every message-based candidate unreliable: the pool went from 171 people to 0. Replace then removed the row, found nobody to put in the slot, and said nothing.
+- [x] Replace with nobody else due is declined (422, transaction rolled back, no snooze, no undo entry) and the sheet says "No one else is due for a check-in right now, so <name> stays on today’s list." Snooze and Don’t suggest still remove the row
+- [x] Policy: a failed sync attempt no longer discards the last good scan. Reliability is bounded by freshness only (source `lastSuccessAt` and the person's `capturedAt`, both within 2 days), same bound a `ready` source already had
+- [x] Verified: 3 new tests fail without the fix and pass with it (policy, component, real-Postgres integration on a throwaway local cluster); all 24 integration tests, 785 unit tests, `tsc --noEmit` clean
+- [x] Prod data (read-only check): after re-running the sync both sources are `ready` and 171 candidates are back; today's sheet refills to 5 on its next load
+- NOT verified: in a browser (the only app DATABASE_URL is prod; a click-through would write real check-ins)
+- No schema or API shape change. The Mac worker is unchanged, so the sync worktree needs no update
+
+## 2026-10-01 — Call sheet: closeness from message volume, unknowns in the pool, quick review
+
+Ask (Eddie): "use my imessage or whatsapp volume to determine how close i am with somebody. you can put people that have no contact on record and i can skip them. maybe there is a fast way to go thru this".
+Context: 966 people; 464 have 0 messages in the past year, 50 have 500+. Strength labels in the CRM are "4 - close friend" style, which the old `close`/`strong`/`weak` check never matched, so only starred people got a short interval.
+Defaults picked (no schema change):
+- [x] Closeness = the closer of the CRM label and 365-day message volume (iMessage + WhatsApp, 1:1). Volume: 500+ close, 150+ strong, 10+ casual, 1–9 weak. Labels: 5/4 close, 3 strong, 2 casual, 1/0 weak. Interval 30 / 60 / 90 / 180 days; starred stays 30; a per-person override still wins
+- [x] People with no contact on record join the pool at the lowest priority ("No contact on record."), only when every enabled source has a fresh scan for them. Starred ones, and ones given an interval in the review, rank as a year overdue instead
+- [x] Quick review: `GET/POST /api/call-sheet/review` and a one-person-at-a-time sheet on the call sheet. Keys 1–4 keep with an interval (monthly / 3 months / 6 months / yearly), X don't suggest, S skip, Z undo. Optimistic, sequential saves
+- [x] Capture config sends the volume-aware interval so the Mac worker needs no change
+- [x] Tests: policy, real-Postgres integration, component. Typecheck
+- [x] Review of the worker's diff (Fable). Fixed: category balancing in `selectCandidates` reached into the no-contact tier, so on real data one no-contact person took a slot every day ahead of ~170 due people; balancing now stays among due people until they run out
+- [x] Verified: `tsc --noEmit` clean; 803 unit/component tests pass; 63 call-sheet tests incl. 27 real-Postgres integration tests pass on a throwaway local cluster
+- [x] Verified in a browser against that throwaway database with synthetic people: footer count, Review opens, keys 1 / X / S / Z / Z saved keep, hide, and the undo reset (checked the rows), Esc closes and the count drops
+- Real data, read-only simulation: closeness close 64 / strong 92 / casual 709 / weak 101; due pool 176 (37 priority); 449 in the review queue; a fresh day's five are all due people
+- [x] Merged with #45 (call sheet reminders). One rule added where the two meet: someone with a reminder set for a later day is not offered as no-contact filler before it, and is left out of the review queue (unless starred or given an interval). After the merge: `tsc` clean, 854 tests pass, 104 call-sheet tests incl. both features' integration tests pass on real Postgres. Prod already has `dueOn` / `dueNote` (checked `information_schema`)
+- NOT verified: against prod data in the UI, on a phone
+
+## 2026-10-05 — EC Pad activities and Call Sheet "EC Pad notes" source
+
+Spec: EC Pad → Personal OS contract (approved 2026-10-05; schema change pending approval). Personal OS side only; the EC Pad side ships separately.
+- [x] Schema (additive, NOT applied anywhere but a throwaway local cluster): `Interaction.externalKey String?` + `@@unique([userId, externalKey])`; `prisma/changes/20261005_interaction_external_key.sql` (`ADD COLUMN IF NOT EXISTS` + `CREATE UNIQUE INDEX IF NOT EXISTS`; rollback lines in the file). NULLs are distinct, so existing rows cannot conflict
+- [x] `POST /api/capture/activities` (capture bearer via `resolveCaptureUser`, `readJSON` 160 KB, `IntakeError`, no-store): body `{ activities?: [...], deleted?: [...] }`, at least one non-empty; ≤ 100 activities (413), ≤ 500 deleted keys (413); unknown fields rejected at both levels; `externalKey` = `ecpad:` + 64 hex; each key at most once per request (activities + deleted); `personIds` 1–20, unique, all owned by the caller (else 400 "Unknown personId", whole batch rejected); `occurredAt` ISO-8601 UTC (`…Z`), real calendar date, within the last 5 years and ≤ now + 1 day; `kind` dinner|call|meeting|event|message|other; `title` ≤ 120, `notes` ≤ 600, `sourceTitle` ≤ 200, `sourceRef` ≤ 1000 starting `ecpad://note/` (all three optional). One transaction: upsert by `(userId, externalKey)` with `source = "ecpad"`, then `deleteMany` where userId + `source = "ecpad"` + key. Returns `{ upserted, deleted }`. Concurrent first insert → 409 (retry)
+- [x] Stored notes = `notes` + "From EC Pad: <sourceTitle>"; `sourceRef` is validated but not stored (no column). Person page shows "<kind> · EC Pad" for these rows
+- [x] EC Pad activities do NOT bump `Person.lastInteractionAt` and are not in the Call Sheet's manual-contact sources, so a note never counts as contact
+- [x] Call Sheet source `"ecpad"` (types, `SOURCES`, capture config `sources`/`sourceEpochs`, settings row "EC Pad notes", evidence label). Context-only: new `CONTACT_SOURCES` (iMessage, WhatsApp) drive message volume/closeness, last contact and the freshness gate; ecpad only adds cues within the shared three-snippet budget. ecpad person captures must have no handles; an ecpad `ready` health report does not require a scan of every person; a stale note scan does not show the "still waiting to refresh" warning
+- [x] Cue prompt: for ecpad only, adds "ecpad messages are the owner's own note excerpts, not a conversation; suggest topics, never infer an obligation or a missed reply from them."
+- [x] Tests: parser unit tests, mocked route tests (auth, caps, unknown fields, foreign people, upsert/delete shapes, 409/500), real-Postgres route integration (`RUN_ACTIVITIES_INTEGRATION=1`: idempotency, edit in place, delete scoped to the caller's ecpad rows, foreign people), call-sheet policy/capture/extract/component tests and a real-Postgres ecpad flow in the call-sheet integration suite
+- [x] Verified: `tsc --noEmit` clean; full suite passes (opt-in DB suites skipped); with the throwaway cluster on :55442 the activities and call-sheet integration suites pass; migration applied twice (idempotent) and `prisma migrate diff` reports no difference; `next build --webpack` passes
+- Pre-existing flake (also on origin/main, 5 of 20 runs): call-sheet integration "counts stable existing categories when replacing or filling an archived slot"
+- Open: the people directory (`GET /api/capture/call-sheet`) returns people only while at least one Call Sheet source is enabled, so EC Pad activities need "EC Pad notes" (or another source) turned on to see anyone
+- [ ] Eddie approves the schema change → apply `20261005_interaction_external_key.sql` to prod from merged main, check `information_schema`, deploy
+- NOT verified: in a browser, against prod, with the real EC Pad client
+
+## 2026-10-05 — "Some evidence could not be analyzed" on Texts and EC Pad
+
+Prod evidence (read-only counts, no content): Texts had 254 records processed since Oct 5 01:00 and only one ever failed (it recovered at 06:00), yet the message stayed because `updateHealth` cleared `error` only when backlog hit 0 and the Mac still reports ~620 unsent conversations. EC Pad's current 4-segment journal has 3 segments `extracted` and segment 2 in `retry` after 3 attempts; 5 earlier revisions failed the same way. `processSource`'s catch swallowed every error, so Vercel logs had no failure lines at all. Synthetic 12k-char journal on `claude-opus-4-8`: 11–15 s and ~1.3–1.5k output tokens per call (model id and key are fine: Granola succeeds on the same path).
+- [x] Root cause 1: the per-call timeout was `min(20 s, what is left of a 45 s run)`, so the 3rd/4th ~12 s segment of a long journal got <10 s and always "failed"; a dense segment needing >20 s could never pass
+- [x] Root cause 2: one unprovable mention (paraphrased quote, unknown name, a 13th item) rejected the whole segment, identically on every retry; same name+quote with two dates collided on `DatingSuggestion @@unique([userId, meetingId, name])` and rolled back the document
+- [x] Root cause 3: a stale failure message never cleared while a backlog remained
+- [x] Fix: 55 s per-call cap, 60 s run, don't start a call with <20 s left; a call cut short by the run budget goes back to `pending` uncounted, without an error; `maxTokens` 4096; publish tx 30 s; leases and `maxDuration` (records/discovery 150 s) widened to fit
+- [x] Validation drops bad mentions instead of failing the segment, caps at 12, dedupes by (name, quote); publish also skips repeats from extractions stored before the fix
+- [x] `error` clears whenever no record needs attention (adapter errors still win)
+- [x] Failures are logged by class only (`config|budget|timeout|provider|invalid|storage` + HTTP status); 401/403/404 or a missing key shows "Analysis is paused: Claude rejected the server's API key or model (HTTP n). Check ANTHROPIC_API_KEY on Vercel…" and stops the run
+- [x] Tests: `extract.test.ts` (unit) and `extract.integration.test.ts` (scratch Postgres, Claude mocked at `callClaudeJSON` with a simulated clock). All 6 integration cases fail on origin/main and pass now
+
+## 2026-10-05 — Imports and sync moves to Settings
+- [x] Settings › Imports and sync (`#imports-and-sync`): every source control, Refresh, Pair EC Pad, Pause/Disconnect/Remove evidence, Granola sync (founder only) and the Mac sync help, in the Settings card style
+- [x] Dating keeps only `SourceAttention`: one line when a source needs attention, linking to the Settings anchor; nothing otherwise
+- [x] Copy: "Pair in EC Pad › Settings › Personal OS"; Granola paused error points to Settings › Imports and sync
+
+Review: `tsc --noEmit` clean; full suite 886 passed (140 opt-in skipped); dating-intake suites with the scratch cluster on :55442: 63 passed; `next build --webpack` passes. Not verified in a browser or against prod. After deploy: Texts' message should clear on its next successful extraction; EC Pad's segment 2 retries on its own at its next `retryAt` — if it still fails, Vercel logs now show the class (`Dating intake extraction failed: <kind>`).
+
+## 2026-10-06 — Call Sheet: birthdays on the day, in their own section
+- [x] A birthday later this week no longer puts someone on the list (no more "coming up this week" tier). Cadence alone decides; the row badge ("Birthday Fri, Oct 9") and "Upcoming birthdays" stay as the heads-up
+- [x] On the day (sheet timezone; Feb 29 → Feb 28, yearless 1604), the person shows under "Birthdays today" above the list, with the same Call / Text / Done / ••• actions. These rows don't count against the five and don't affect circle balance. No storage change: the response tags `section: "birthday"` when the person's birthday is today and the row is not a reminder
+- [x] A reminder on someone's birthday is one row, in the list, with the "Birthday today" badge. A reminder that fires for a birthday row moves that row into the list
+- [x] Guarantees from 5a2a295 still hold: snooze, cooldown and recent contact are bypassed on the day; only "Don't suggest" and archive keep someone off; "Someone else today" or a snooze sets the row aside for the day, with no replacement and no 422; Done marks them in touch; Undo restores the row
+- [x] "N of M checked in today" counts every row on the page, birthday rows included
+- [x] Verified: `tsc --noEmit` clean; full suite 935 passed (143 opt-in skipped); call-sheet integration on the scratch cluster on :55442 passed 38/38 (10 of 10 runs, plus the known "counts stable existing categories" flake once, which also happens on origin/main and involves no birthdays). `pnpm lint` is broken repo-wide (`next lint` was removed in Next 16, and there is no ESLint config)
+- NOT verified: in a browser, against prod
+
+## 2026-10-08 — Mobile polish: top bar, menu, tracker order, inventory, zoom
+
+Ask (Eddie, on phone): top bar looks faded; collapse the menu's Lists to 3 + expand; reorder trackers and have the order follow him across devices; inventory on mobile should be a readable list (see item, open, delete from the row), grouped by category not status; stop the page zooming out.
+- [x] Top bar solid (drop `/95` + `backdrop-blur` on the mobile header). No colour change
+- [x] Drawer Lists: first 3, then "N more" toggle (same pattern as dormant projects)
+- [x] ⚠️ SCHEMA (shipped 2026-10-08) (approved 2026-10-08): `User.sidebarTrackers Json?` — ordered enabled tracker slugs; null = never synced. Additive, nullable; rollback = drop column. PR #53 was merged before the push; added at 14:03Z (~1 min after deploy) with a targeted `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "sidebarTrackers" JSONB` (not `db push`, which could drop other branches' columns). Verified via information_schema (jsonb, nullable); no prod error/5xx logs since the merge
+- [x] `GET/PUT /api/settings/trackers`; `useEnabledTemplates` ordered + server-synced (localStorage stays as cache, first load migrates local up)
+- [x] Reorder: drawer Edit mode with up/down; desktop sidebar drag (mirror project reorder)
+- [x] Inventory < md: list rows (photo, title, brand/model, where), tap opens editor, inline two-tap delete; spreadsheet stays desktop-only. Default grouping = category (old saved status pref dropped)
+- [x] Zoom: viewport maximumScale 1 / userScalable false, html/body overflow-x clip, double-tap zoom off, fix pager -mx mismatch at sm
+- [x] Verify: typecheck, tests, build, scratch-DB browser pass at 390px
+- Quick capture on mobile: long-press + works already (Eddie), no change
+- Verified (Fable): typecheck clean, `pnpm test` 965 pass / 143 skipped (DB-gated) / 0 fail. Worker: `pnpm build` OK; scratch-Postgres browser pass at 390x844 — opaque bar, 3 lists + "N more", Edit/up/down persists to server and survives reload, fresh device adopts server order, remote reorder appears on `visibilitychange`, desktop drag reorder saves, inventory list grouped by category, row opens editor, two-tap delete removes (DB 7→6), no horizontal overflow on /, /inventory, /dating, /places, /media
+- Judgment calls: legacy localStorage set is sorted into TEMPLATES order once so nothing reshuffles on deploy; reorders over a visible subset keep hidden trackers' slots; delete pill uses the editor's existing destructive rose
+- NOT verified: real iOS (pinch/double-tap blocked, focus zoom), light mode, real touch delete
+
+## 2026-10-08 — Dating intake: far fewer suggestions
+
+Ask (Eddie): "it's pulling in a lot of old things even though i've dismissed it… it's going through my texts with other people about women in general… it's fine to suggest but it's way too many things". Existing inbox left as is (Eddie: leave them).
+- [x] Texts: only ever suggest the person being texted (drop `correspondent:false` mentions for the texts source, prompt says so too). Journal/Granola unchanged
+- [x] Dismiss is durable: new evidence never reopens a dismissed candidate; dismissed handles join discovery `excludedHandles` + the acceptRecord guard (409)
+- [x] Journal/Granola third-person mentions skip names the user already dismissed/excluded (normalized name; approved people still get evidence)
+- [x] Overlap/re-sent messages: a quote already on the candidate (any status) never becomes a second suggestion
+- [x] Tests: new `noise.integration.test.ts` (5 cases) + unit tests. No schema change; Mac worker unchanged (exclusions come from the server)
+- Side effects: Restore (un-exclude) and deleting a profile without exclude now set candidates to `pending` (was `dismissed`, which is now final). Dismissed has no undo in the UI; Don't suggest again does. Inbox help text updated to say so
+- Verified (Fable, independently): typecheck clean; dating unit suites 132 pass; with scratch Postgres + `RUN_DATING_INTAKE_INTEGRATION=1` all 24 files / 173 tests pass. Worker also ran full `pnpm test` (939 pass, 0 fail) and `pnpm build`, and mutation-checked each guard
+- NOT verified: live model behaviour of the tightened prompt; real data. Open question: the legacy Granola filer (`syncGranola`) still runs from the cron when the new Granola intake state isn't enabled; couldn't check prod state (prod reads blocked)
+
+## 2026-10-11 — Call Sheet: not done means still on the list
+
+Ask (Eddie): "If call sheet is not done keep the people until it's done."
+- [x] A new day starts from the latest earlier sheet: every row still `pending` there carries over, first, with its original reason, and counts toward the five (the list never grows past what was asked). New ids; `carriedFrom` = the local date the person first appeared. Row badge "Since yesterday / Thursday / Oct 2"
+- [x] Nothing else carries: done, contacted, "Someone else today", snoozed (the row was already off), "Don't suggest", archived, identity edited, a reminder for a later day, or any contact newer than the row's recorded last contact (that contact is the check-in)
+- [x] A kept reminder says when it was asked ("You asked to be reminded yesterday / on Monday / on Sep 28."); a kept birthday row joins the list ("Their birthday was yesterday."). A reminder for today on a kept row makes it today's row again
+- [x] No storage change: `carriedFrom` is an optional field in the day JSON
+- Verified: `tsc --noEmit` clean; `pnpm test` 946 pass / 165 skipped; 11 fails are `scripts/*-sync` + `dating-whatsapp-*` needing `/usr/bin/sqlite3`, absent in this container, untouched by this change. Call-sheet integration on a scratch Postgres on :55442: 39/39 (one new test). `pnpm lint` still broken repo-wide (Next 16)
+- NOT verified: in a browser, against prod
+
+## 2026-10-11 — Workout: a demo video for every exercise
+
+Ask (Eddie): "for workout pull in videos for each work out so I can see."
+- [x] `src/lib/workout-video.ts`: Claude web search (3 uses, low effort, 40 s cap) finds one YouTube demo per exercise name + equipment, JSON reply parsed with the board's `youtubeId`; cached for everyone by `videoKey(name)` ("Goblet-Squat (heels up)" = "goblet squat"), first write wins, misses not cached
+- [x] ⚠️ SCHEMA (not on prod yet): `ExerciseVideo` (key PK, name, youtubeId, title, channel?, createdAt). Shared lookup, no userId, no personal data. The code tolerates the table being absent (P2021 → no cache, still finds videos), so it is safe to deploy before the table; add it to prod with `CREATE TABLE IF NOT EXISTS "ExerciseVideo" ("key" TEXT PRIMARY KEY, "name" TEXT NOT NULL, "youtubeId" TEXT NOT NULL, "title" TEXT NOT NULL, "channel" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);` and verify via information_schema
+- [x] `GET /api/workout/video?name=&equipment=` → `{ video }` or `{ video: null }`; 400/401/502
+- [x] Client (`exercise-video.tsx`): after a plan arrives, look up each exercise (3 at a time, one per movement), store the answer on the exercise in the plan/session (localStorage) plus a 200-entry per-device cache; failed lookups retry next visit. Plan review row: tap-to-play embed under the cues (thumbnail → youtube-nocookie iframe) with title · channel and a YouTube link. Player: folded "Watch how it's done" so the screen stays on the set
+- [x] Tests: lib (key, prompt, parse, cache/miss/P2021), route, component (withVideo, hook dedupe + cache + failure, embed tap-to-play, toggle)
+- Verified: `tsc` clean; `pnpm test` 962 pass (the 11 failures are `scripts/*-sync` + `dating-whatsapp-*` tests needing `/usr/bin/sqlite3`, absent in this container); scratch Postgres on :55442: miss → upsert → hit, second write ignored, `DROP TABLE` tolerated
+- NOT verified: a live Claude search (no ANTHROPIC_API_KEY here), so video quality is unproven; in a browser; against prod. `pnpm build` (webpack) passes with the new route
+
+## 2026-10-11 — Workout: weight mid-set, +10/20/30 min, no "+" on the page
+
+Ask (Eddie): "change weight amount in the middle of set", "add items like 10/20/30 minutes of additional workout", "Hide plus button from workout".
+- [x] Load: the weight lives on the exercise in the session, not on the set. `parseLoad("2×25 lb dumbbells")` → stepper −/+ (5 lb or 2.5 kg) around the text field; a change carries to the remaining sets, the card and "Up next"; sets already logged keep theirs. Timed moves with a weight (carries) get the row too; "bodyweight" stays text-only
+- [x] Add time: `POST /api/workout/extend` `{ minutes: 10|20|30, focus, intensity, equipment, exercises }` → Claude (same coach system prompt) returns `{ blocks }` only, no warm-up/cool-down, avoiding movements already done. Client appends before the cool-down (`appendBlocks`), new exercises get fresh ids and demo videos; mid-session the current set keeps its place (a cool-down set jumps to the new work); from the summary the session reopens on the first new set and the history entry is replaced on the next finish, so minutes are the whole session
+- [x] Player: "Add time +10 min +20 min +30 min" above "End workout"; Summary: "Not done yet? +10…" above Log to Personal; spinner + inline error
+- [x] `MobileFab` returns null on `/workout` (and sub-paths); other pages unchanged
+- [x] Tests: loads/updateExercise/appendBlocks/normalizeExtension/prompt (lib), extend route (prompt body, 400/401/502/503), MobileFab path rule, and a jsdom `WorkoutStudio` run: resume → log → +5/+5/−5 → log → carry stepper → typed load; +20 mid-session (payload, placement, step kept); summary +10 failure then success (reopens on step 4)
+- Verified: `tsc` clean; `pnpm test` 968 pass (11 sqlite3-less failures as above); `pnpm build` passes
+- NOT verified: a live Claude extension (no key here); in a browser; against prod
+
+## 2026-10-12 — Call Sheet: a 00-prefixed phone never matched its chat
+Ask (Eddie): link WhatsApp chats to people; a recently contacted person showed "No contact on record". Root cause was not a missing link: the CRM phone was saved as `00<country>…`, normalized to `+00…`, and never equalled the `+<country>…` from the WhatsApp JID or iMessage handle. Eddie chose the bug fix only (no manual linking, no schema change).
+- [x] `normalizeHandle` (call sheet `policy.ts` and dating `dating.ts`): a leading `00` is the international prefix, same as `+`. An explicit `+` or `00` also means no US `1` is added to a 10-digit number (call sheet used to turn `+45 12 34 56 78` into `+1…`; dating already treated `+` this way). A single leading `0` is unchanged
+- [x] Tests: `00` cases in both normalizer suites, plus a target with `0044 …` resolving to a handle that matches its `…@s.whatsapp.net` session
+- Verified: targeted suites 132 pass, `tsc` clean; worker run of full `pnpm test` 1020 pass / 148 skipped, and the new tests fail with the normalizers reverted
+- Rollout: update the Mac sync checkout before deploying the server. A fixed server rejects the old worker's `+00…` handles as non-canonical, which marks the source "error" until the worker catches up (per-person, retried hourly). Affected people get a new identity key, so their evidence is cleared and recaptured on the next sync; cadence/snooze/hide are kept
+- NOT done: existing `DatingPerson.handles` already stored as `+00…` stay stale until re-saved; `normalizePhone` in `scripts/link-contacts.ts` and `scripts/imessage-stats.ts` has the same flaw (one-off scripts, left alone)
+- NOT verified: how many CRM people are saved with a `00` prefix (production read was blocked); against production; in a browser
+
 ## 2026-10-14 — Call sheet on the print page
 
 Ask (Eddie, screenshot of /print/today): "put call sheet in the print view".

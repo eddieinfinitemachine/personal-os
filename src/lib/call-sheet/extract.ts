@@ -1,13 +1,15 @@
 import { callClaudeJSON } from "@/lib/claude";
-import type { EvidenceCue } from "./types";
+import type { CallSheetSource, EvidenceCue } from "./types";
 
 export type CueMessage = { guid: string; sentAt: string; fromMe: boolean; text: string };
 const MAX_AGE = 90 * 86400000;
+export const ECPAD_CUE_RULE =
+  "ecpad messages are the owner's own note excerpts, not a conversation; suggest topics, never infer an obligation or a missed reply from them.";
 
 /** All returned evidence comes from supplied messages, never model-written quotes. */
 export async function extractCallSheetCues(
   messages: CueMessage[],
-  source: "imessage" | "whatsapp",
+  source: CallSheetSource,
   now = new Date(),
 ): Promise<EvidenceCue[]> {
   const byId = new Map<string, CueMessage>();
@@ -37,7 +39,7 @@ The final incoming message alone does not mean a reply is owed. If uncertain, of
 Avoid stale logistics, access codes, passwords, account numbers, intimate details, diagnoses and speculation about feelings or relationship quality.
 Do not infer a missed call or broken promise from missing messages; calls and offline meetings may not be recorded.
 Return JSON {"cues":[{"kind":"topic"|"follow_up","text":"Ask how marathon training went.","messageId":"exact supplied guid","excerpt":"optional exact short substring"}]}.
-Each cue must be supported by its cited message. Use topic for general check-ins and follow_up only for explicit possibly unresolved questions or commitments. No markdown. Empty cues is a valid result.`,
+Each cue must be supported by its cited message. Use topic for general check-ins and follow_up only for explicit possibly unresolved questions or commitments. No markdown. Empty cues is a valid result.${source === "ecpad" ? `\n${ECPAD_CUE_RULE}` : ""}`,
     user: JSON.stringify({ today: now.toISOString(), source, messages: bounded }),
     maxTokens: 1000,
     timeoutMs: 35000,

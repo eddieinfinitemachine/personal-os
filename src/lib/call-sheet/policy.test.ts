@@ -1,14 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
+  BIRTHDAY_TODAY_REASON,
+  CASUAL_MESSAGE_VOLUME,
+  CLOSE_MESSAGE_VOLUME,
+  STRONG_MESSAGE_VOLUME,
+  addLocalDays,
   cadence,
+  closeness,
   identityKey,
+  isBirthday,
+  isLocalDate,
   latestContact,
   liveCues,
   limitPersonCues,
   localDate,
+  messageVolume,
+  normalizeHandle,
   rankCandidates,
+  reviewQueue,
   selectCandidates,
   snoozeUntil,
+  upcomingBirthday,
   type PolicyPerson,
 } from "./policy";
 import type { SourceHealth } from "./types";
@@ -19,7 +31,7 @@ const off: SourceHealth = {
   lastSuccessAt: null,
   error: null,
 };
-const sources = { imessage: off, whatsapp: off };
+const sources = { imessage: off, whatsapp: off, ecpad: off };
 function person(id: string, extra: Partial<PolicyPerson> = {}): PolicyPerson {
   return {
     id,
@@ -39,6 +51,25 @@ function person(id: string, extra: Partial<PolicyPerson> = {}): PolicyPerson {
     ...extra,
   };
 }
+describe("normalizeHandle", () => {
+  it.each([
+    ["0044 7700 900123", "+447700900123"],
+    ["00 44 (7700) 900-123", "+447700900123"],
+    ["+0044 7700 900123", "+447700900123"],
+    ["001 415 555 0123", "+14155550123"],
+    ["00 49 30 1234 5678", "+493012345678"],
+    ["00 49 30 1234 56", "+4930123456"],
+    ["+44 7700 900123", "+447700900123"],
+    ["(415) 555-0123", "+14155550123"],
+    ["Person@Example.com ", "person@example.com"],
+    ["123456", ""],
+    ["1234567890123456", ""],
+  ])("%s → %s", (raw, want) => expect(normalizeHandle(raw)).toBe(want));
+
+  it("leaves a single national trunk prefix unchanged", () => {
+    expect(normalizeHandle("07700 900123")).toBe("+07700900123");
+  });
+});
 describe("call sheet policy", () => {
   it("uses explicit timezone dates across midnight and DST", () => {
     expect(
@@ -123,14 +154,51 @@ describe("call sheet policy", () => {
       },
     });
     expect(
-      rankCandidates([p], { imessage: health, whatsapp: health }, now, "UTC"),
+      rankCandidates([p], { imessage: health, whatsapp: health, ecpad: off }, now, "UTC"),
     ).toEqual([]);
     expect(
-      rankCandidates([p], { imessage: health, whatsapp: off }, now, "UTC"),
+      rankCandidates([p], { imessage: health, whatsapp: off, ecpad: off }, now, "UTC"),
     ).toHaveLength(1);
     p.sourceData.imessage!.capturedAt = "2026-09-20T00:00:00Z";
     expect(
-      rankCandidates([p], { imessage: health, whatsapp: off }, now, "UTC"),
+      rankCandidates([p], { imessage: health, whatsapp: off, ecpad: off }, now, "UTC"),
+    ).toEqual([]);
+  });
+  it("keeps trusting a fresh scan after a later attempt fails", () => {
+    const failed = {
+      ...off,
+      enabled: true,
+      status: "error" as const,
+      lastSuccessAt: now.toISOString(),
+      error: "The local source could not finish syncing.",
+    };
+    const p = person("a", {
+      manualAt: null,
+      sourceData: {
+        imessage: {
+          capturedAt: now.toISOString(),
+          coverageStart: "2025-09-28T16:00:00Z",
+          lastContactAt: "2026-01-01T00:00:00Z",
+          messageCount: 1,
+          cues: [],
+          extractionPending: false,
+        },
+      },
+    });
+    expect(
+      rankCandidates([p], { imessage: failed, whatsapp: off, ecpad: off }, now, "UTC"),
+    ).toHaveLength(1);
+    expect(
+      rankCandidates(
+        [p],
+        {
+          imessage: { ...failed, lastSuccessAt: "2026-09-20T00:00:00Z" },
+          whatsapp: off,
+          ecpad: off,
+        },
+        now,
+        "UTC",
+      ),
     ).toEqual([]);
   });
   it("recent direct evidence suppresses prompts even during partial sync", () => {
@@ -166,6 +234,8 @@ describe("call sheet policy", () => {
       snoozedUntil: null,
       excludedAt: null,
       lastSuggestedAt: now,
+      dueOn: null,
+      dueNote: null,
     };
     expect(
       rankCandidates(
@@ -179,14 +249,14 @@ describe("call sheet policy", () => {
       ),
     ).toEqual([]);
   });
-  it("prioritizes imminent birthday and balances explicit circles", () => {
+  it("puts a birthday today first and balances explicit circles", () => {
     const list = ["a", "b", "c", "d"].map((id) =>
       person(id, { circles: ["friends"] }),
     );
     list.push(
       person("family", { circles: ["family"] }),
       person("work", { circles: ["work"] }),
-      person("birthday", { birthday: new Date("1990-09-29"), manualAt: null }),
+      person("birthday", { birthday: new Date("1990-09-28"), manualAt: null }),
     );
     const selected = selectCandidates(
       rankCandidates(list, sources, now, "UTC"),
@@ -245,6 +315,8 @@ describe("call sheet policy", () => {
       snoozedUntil: null,
       excludedAt: null,
       lastSuggestedAt: null,
+      dueOn: null,
+      dueNote: null,
     };
     const eligible = rankCandidates([p], connected, now, "UTC")[0];
     expect(eligible.reason).toBe("Time for your 14-day check-in.");
@@ -308,5 +380,691 @@ describe("call sheet policy", () => {
     expect(identityKey(person("a"))).not.toBe(
       identityKey(person("a", { phone: "+15555550101" })),
     );
+  });
+  it("maps CRM strength labels case-insensitively, close before friend", () => {
+    const of = (strength: string | null) => closeness({ strength });
+    expect(of("5 - family")).toBe("close");
+    expect(of("4 - close friend")).toBe("close");
+    expect(of("4 - Close Friend")).toBe("close");
+    expect(of("3 - friend")).toBe("strong");
+    expect(of("2 - acquaintance")).toBe("casual");
+    expect(of("1 - met")).toBe("weak");
+    expect(of("0 - don't know")).toBe("weak");
+    expect(of("0 - don’t know")).toBe("weak");
+    expect(of("close")).toBe("close");
+    expect(of("STRONG")).toBe("strong");
+    expect(of("casual")).toBe("casual");
+    expect(of("weak")).toBe("weak");
+    expect(of(null)).toBe("casual");
+    expect(of("mystery")).toBe("casual");
+  });
+  it("reads message volume at the threshold boundaries", () => {
+    const data = (imessage: number, whatsapp?: number) => {
+      const base = {
+        capturedAt: now.toISOString(),
+        coverageStart: "2025-09-28T16:00:00Z",
+        lastContactAt: null,
+        cues: [],
+        extractionPending: false,
+      };
+      return {
+        imessage: { ...base, messageCount: imessage },
+        ...(whatsapp === undefined
+          ? {}
+          : { whatsapp: { ...base, messageCount: whatsapp } }),
+      };
+    };
+    expect(messageVolume(data(300, 200))).toBe(500);
+    expect(messageVolume(data(5, Number.NaN))).toBe(5);
+    expect(messageVolume(data(-3, 4))).toBe(4);
+    expect(messageVolume(undefined)).toBe(0);
+    expect([
+      CLOSE_MESSAGE_VOLUME,
+      STRONG_MESSAGE_VOLUME,
+      CASUAL_MESSAGE_VOLUME,
+    ]).toEqual([500, 150, 10]);
+    const of = (count: number) =>
+      closeness({ strength: null, sourceData: data(count) });
+    expect(of(500)).toBe("close");
+    expect(of(499)).toBe("strong");
+    expect(of(150)).toBe("strong");
+    expect(of(149)).toBe("casual");
+    expect(of(10)).toBe("casual");
+    expect(of(9)).toBe("weak");
+    expect(of(1)).toBe("weak");
+    expect(of(0)).toBe("casual");
+    expect(closeness({ strength: null, sourceData: data(250, 250) })).toBe(
+      "close",
+    );
+    // The closer of the two signals wins, in either direction.
+    expect(closeness({ strength: "1 - met", sourceData: data(600) })).toBe(
+      "close",
+    );
+    expect(
+      closeness({ strength: "4 - close friend", sourceData: data(3) }),
+    ).toBe("close");
+    expect(closeness({ strength: "weak", sourceData: data(20) })).toBe(
+      "casual",
+    );
+    expect(
+      closeness({ strength: "2 - acquaintance", sourceData: data(0) }),
+    ).toBe("casual");
+    expect(
+      cadence({ starred: false, strength: "4 - close friend", sourceData: {} }),
+    ).toBe(30);
+    expect(
+      cadence({ starred: false, strength: "3 - friend", sourceData: {} }),
+    ).toBe(60);
+    expect(
+      cadence({ starred: false, strength: "2 - acquaintance", sourceData: {} }),
+    ).toBe(90);
+    expect(
+      cadence({ starred: false, strength: "1 - met", sourceData: {} }),
+    ).toBe(180);
+    expect(cadence({ starred: false, strength: null, sourceData: {} })).toBe(
+      90,
+    );
+    expect(
+      cadence({ starred: false, strength: null, sourceData: data(9) }),
+    ).toBe(180);
+    expect(
+      cadence({ starred: false, strength: null, sourceData: data(200) }),
+    ).toBe(60);
+    expect(
+      cadence({ starred: false, strength: "1 - met", sourceData: data(500) }),
+    ).toBe(30);
+    expect(
+      cadence({ starred: true, strength: "1 - met", sourceData: {} }),
+    ).toBe(30);
+    expect(
+      cadence(
+        { starred: false, strength: "5 - family", sourceData: data(900) },
+        200,
+      ),
+    ).toBe(200);
+  });
+  it("labelled close friends rank as important", () => {
+    const [close, plain] = rankCandidates(
+      [
+        person("b", { strength: "4 - close friend" }),
+        person("a", { strength: "2 - acquaintance" }),
+      ],
+      sources,
+      now,
+      "UTC",
+    );
+    expect(close).toMatchObject({ tier: 2, cadenceDays: 30 });
+    expect(close.person.id).toBe("b");
+    expect(plain).toMatchObject({ tier: 3, cadenceDays: 90 });
+  });
+  describe("people with no contact on record", () => {
+    const connected = {
+      ...sources,
+      imessage: {
+        ...off,
+        enabled: true,
+        status: "ready" as const,
+        lastSuccessAt: now.toISOString(),
+      },
+    };
+    const scanned = (
+      lastContactAt: string | null,
+      capturedAt = now.toISOString(),
+    ) => ({
+      imessage: {
+        capturedAt,
+        coverageStart: "2025-09-28T16:00:00Z",
+        lastContactAt,
+        messageCount: 0,
+        cues: [],
+        extractionPending: false,
+      },
+    });
+    const silent = (id: string, extra: Partial<PolicyPerson> = {}) =>
+      person(id, { manualAt: null, sourceData: scanned(null), ...extra });
+    const preference = (extra = {}) => ({
+      cadenceDays: null,
+      snoozedUntil: null,
+      excludedAt: null,
+      lastSuggestedAt: null,
+      dueOn: null,
+      dueNote: null,
+      ...extra,
+    });
+    it("joins after everyone with a known overdue date", () => {
+      const ranked = rankCandidates(
+        [
+          silent("a"),
+          person("z", {
+            manualAt: null,
+            sourceData: scanned("2026-01-01T00:00:00Z"),
+          }),
+        ],
+        connected,
+        now,
+        "UTC",
+      );
+      expect(ranked.map((item) => item.person.id)).toEqual(["z", "a"]);
+      expect(ranked[1]).toMatchObject({
+        tier: 4,
+        score: 0,
+        reason: "No contact on record.",
+        lastContactAt: null,
+        lastContactSource: null,
+      });
+    });
+    it("ranks starred or explicit-cadence silence as a year overdue", () => {
+      const ranked = rankCandidates(
+        [
+          silent("plain"),
+          silent("kept", { preference: preference({ cadenceDays: 180 }) }),
+          silent("star", { starred: true }),
+          person("known", {
+            manualAt: null,
+            sourceData: scanned("2026-01-01T00:00:00Z"),
+          }),
+        ],
+        connected,
+        now,
+        "UTC",
+      );
+      expect(ranked.map((item) => [item.person.id, item.tier])).toEqual([
+        ["star", 2],
+        ["known", 3],
+        ["kept", 3],
+        ["plain", 4],
+      ]);
+      expect(ranked[0].score).toBeCloseTo(365 / 30);
+      expect(ranked[2].score).toBeCloseTo(365 / 180);
+      expect(ranked[0].reason).toBe("No contact on record.");
+    });
+    it("stays excluded when an enabled source is stale or never scanned them", () => {
+      expect(
+        rankCandidates(
+          [
+            silent("a", { sourceData: scanned(null, "2026-09-20T00:00:00Z") }),
+            silent("b", { sourceData: {} }),
+          ],
+          connected,
+          now,
+          "UTC",
+        ),
+      ).toEqual([]);
+      expect(
+        rankCandidates(
+          [silent("a", { starred: true })],
+          {
+            ...connected,
+            imessage: {
+              ...connected.imessage,
+              lastSuccessAt: "2026-09-20T00:00:00Z",
+            },
+          },
+          now,
+          "UTC",
+        ),
+      ).toEqual([]);
+    });
+    it("still honours hide, snooze, archive and the suggestion cooldown", () => {
+      expect(
+        rankCandidates(
+          [
+            silent("hidden", { preference: preference({ excludedAt: now }) }),
+            silent("snoozed", {
+              preference: preference({ snoozedUntil: new Date("2026-10-05") }),
+            }),
+            silent("archived", { archived: true }),
+            silent("recent", {
+              preference: preference({
+                lastSuggestedAt: new Date("2026-09-25"),
+              }),
+            }),
+          ],
+          connected,
+          now,
+          "UTC",
+        ),
+      ).toEqual([]);
+    });
+    it("builds the review queue from verifiably silent, unreviewed people in name order", () => {
+      const queue = reviewQueue(
+        [
+          silent("3", { firstName: "Zed", lastName: null }),
+          silent("2", { firstName: "Amy", lastName: "B" }),
+          silent("1", { firstName: "Amy", lastName: "B" }),
+          silent("snoozed", {
+            firstName: "Bea",
+            lastName: null,
+            preference: preference({
+              snoozedUntil: new Date("2026-10-05"),
+              lastSuggestedAt: now,
+            }),
+          }),
+          silent("star", { starred: true }),
+          silent("kept", { preference: preference({ cadenceDays: 90 }) }),
+          silent("hidden", { preference: preference({ excludedAt: now }) }),
+          silent("archived", { archived: true }),
+          silent("stale", {
+            sourceData: scanned(null, "2026-09-20T00:00:00Z"),
+          }),
+          person("known", {
+            manualAt: null,
+            sourceData: scanned("2026-01-01T00:00:00Z"),
+          }),
+          person("manual"),
+        ],
+        connected,
+        now,
+      );
+      expect(queue.map((item) => item.id)).toEqual(["1", "2", "snoozed", "3"]);
+    });
+    it("a pending reminder keeps them out of the filler tier and the review", () => {
+      const waiting = silent("waiting", {
+        preference: preference({ dueOn: "2026-10-06" }),
+      });
+      expect(rankCandidates([waiting], connected, now, "UTC")).toEqual([]);
+      expect(reviewQueue([waiting], connected, now)).toEqual([]);
+      const kept = silent("kept", {
+        preference: preference({ dueOn: "2026-10-06", cadenceDays: 90 }),
+      });
+      expect(rankCandidates([kept], connected, now, "UTC")[0].tier).toBe(3);
+    });
+    it("category balance does not pull them ahead of people who are due", () => {
+      const due = ["a", "b", "c", "d"].map((id) =>
+        person(id, {
+          manualAt: null,
+          sourceData: scanned("2026-01-01T00:00:00Z"),
+        }),
+      );
+      const ranked = rankCandidates(
+        [silent("family", { circles: ["family"] }), ...due],
+        connected,
+        now,
+        "UTC",
+      );
+      expect(selectCandidates(ranked, 4).map((c) => c.person.id)).toEqual([
+        "a",
+        "b",
+        "c",
+        "d",
+      ]);
+      // Once the due people are taken, the tier fills the remaining slot.
+      expect(selectCandidates(ranked, 5).map((c) => c.tier)).toEqual([
+        3, 3, 3, 3, 4,
+      ]);
+    });
+  });
+});
+describe("user-set call sheet reminders", () => {
+  const pref = (extra: Partial<NonNullable<PolicyPerson["preference"]>>) => ({
+    cadenceDays: null,
+    snoozedUntil: null,
+    excludedAt: null,
+    lastSuggestedAt: null,
+    dueOn: null,
+    dueNote: null,
+    ...extra,
+  });
+  it("puts a due reminder first as tier 0 with its note", () => {
+    const ranked = rankCandidates(
+      [
+        person("birthday", {
+          birthday: new Date("1990-09-28"),
+          manualAt: null,
+        }),
+        person("overdue"),
+        person("asked", {
+          preference: pref({ dueOn: "2026-09-28", dueNote: "the lease" }),
+        }),
+      ],
+      sources,
+      now,
+      "UTC",
+    );
+    expect(ranked.map((item) => item.person.id)).toEqual([
+      "asked",
+      "birthday",
+      "overdue",
+    ]);
+    expect(ranked[0]).toMatchObject({
+      tier: 0,
+      reason: "You asked to be reminded today.",
+      reminder: { note: "the lease" },
+    });
+    expect(ranked[1].reminder).toBeUndefined();
+  });
+  it("bypasses snooze, the 7-day cooldown, recent contact and cadence", () => {
+    const ranked = rankCandidates(
+      [
+        person("snoozed", {
+          preference: pref({
+            dueOn: "2026-09-28",
+            snoozedUntil: new Date("2026-10-20T00:00:00Z"),
+          }),
+        }),
+        person("cooldown", {
+          preference: pref({ dueOn: "2026-09-28", lastSuggestedAt: now }),
+        }),
+        person("recent", {
+          manualAt: new Date("2026-09-27T00:00:00Z"),
+          preference: pref({ dueOn: "2026-09-28" }),
+        }),
+        person("unknown", {
+          manualAt: null,
+          preference: pref({ dueOn: "2026-09-28", cadenceDays: 365 }),
+        }),
+      ],
+      sources,
+      now,
+      "UTC",
+    );
+    expect(ranked.map((item) => item.person.id).sort()).toEqual([
+      "cooldown",
+      "recent",
+      "snoozed",
+      "unknown",
+    ]);
+    expect(ranked.every((item) => item.tier === 0 && item.reminder)).toBe(true);
+  });
+  it("fires late when the due day was missed, using the sheet's timezone", () => {
+    const missed = person("missed", {
+      manualAt: null,
+      preference: pref({ dueOn: "2026-09-20" }),
+    });
+    expect(rankCandidates([missed], sources, now, "UTC")[0].tier).toBe(0);
+    // 02:00 UTC on the 28th is still the 27th in New York.
+    const early = new Date("2026-09-28T02:00:00Z");
+    const tomorrow = person("tomorrow", {
+      manualAt: null,
+      preference: pref({ dueOn: "2026-09-28" }),
+    });
+    expect(
+      rankCandidates([tomorrow], sources, early, "America/New_York"),
+    ).toEqual([]);
+    expect(rankCandidates([tomorrow], sources, early, "UTC")[0].tier).toBe(0);
+  });
+  it("ignores a future date and leaves normal ranking alone", () => {
+    const future = person("future", {
+      manualAt: null,
+      preference: pref({ dueOn: "2026-10-06" }),
+    });
+    expect(rankCandidates([future], sources, now, "UTC")).toEqual([]);
+    const overdue = person("overdue", {
+      preference: pref({ dueOn: "2026-10-06" }),
+    });
+    const [ranked] = rankCandidates([overdue], sources, now, "UTC");
+    expect(ranked.tier).toBe(3);
+    expect(ranked.reminder).toBeUndefined();
+  });
+  it("still respects archived and hidden people", () => {
+    expect(
+      rankCandidates(
+        [
+          person("archived", {
+            archived: true,
+            preference: pref({ dueOn: "2026-09-28" }),
+          }),
+          person("hidden", {
+            preference: pref({ dueOn: "2026-09-28", excludedAt: now }),
+          }),
+        ],
+        sources,
+        now,
+        "UTC",
+      ),
+    ).toEqual([]);
+  });
+  it("validates local dates and does calendar arithmetic", () => {
+    expect(isLocalDate("2026-10-06")).toBe(true);
+    for (const bad of [
+      "2026-02-30",
+      "2026-1-06",
+      "2026-10-06T00:00",
+      "",
+      null,
+      20261006,
+    ])
+      expect(isLocalDate(bad)).toBe(false);
+    expect(addLocalDays("2026-09-28", 730)).toBe("2028-09-27");
+    expect(addLocalDays("2026-03-07", 2)).toBe("2026-03-09");
+  });
+  it("treats EC Pad notes as topics only: never contact, volume or proof of silence", () => {
+    const base = {
+      capturedAt: now.toISOString(),
+      coverageStart: "2025-09-28T16:00:00.000Z",
+      extractionPending: false,
+    };
+    const noteCue = {
+      kind: "topic" as const,
+      text: "Ask how the new job is going.",
+      evidence: [
+        {
+          source: "ecpad" as const,
+          messageId: "passage-1",
+          sentAt: "2026-09-27T00:00:00.000Z",
+          excerpt: "Alex Rivera starts the new job in March.",
+        },
+      ],
+    };
+    const p = person("notes", {
+      manualAt: null,
+      sourceData: {
+        imessage: {
+          ...base,
+          lastContactAt: "2026-05-01T00:00:00.000Z",
+          messageCount: 20,
+          cues: [],
+        },
+        ecpad: {
+          ...base,
+          lastContactAt: "2026-09-27T00:00:00.000Z",
+          messageCount: 900,
+          cues: [noteCue],
+        },
+      },
+    });
+    const ready = {
+      ...off,
+      enabled: true,
+      status: "ready" as const,
+      lastSuccessAt: now.toISOString(),
+    };
+    // A note scan that is days old must not mark message evidence incomplete.
+    const connected = {
+      ...sources,
+      imessage: ready,
+      ecpad: { ...ready, lastSuccessAt: "2026-09-01T00:00:00.000Z" },
+    };
+    expect(messageVolume(p.sourceData)).toBe(20);
+    expect(closeness({ strength: null, sourceData: p.sourceData })).toBe("casual");
+    const last = latestContact(p, connected, now);
+    expect(last).toMatchObject({
+      at: "2026-05-01T00:00:00.000Z",
+      source: "imessage",
+      complete: true,
+    });
+    const [ranked] = rankCandidates([p], connected, now, "UTC");
+    expect(ranked.reason).toBe("Time for your 90-day check-in.");
+    expect(ranked.lastContactSource).toBe("imessage");
+    expect(ranked.cues).toEqual([noteCue]);
+    // Disabling the source hides its cues.
+    expect(
+      rankCandidates([p], { ...connected, ecpad: off }, now, "UTC")[0].cues,
+    ).toEqual([]);
+  });
+});
+describe("birthdays on the call sheet", () => {
+  const pref = (extra: Partial<NonNullable<PolicyPerson["preference"]>> = {}) => ({
+    cadenceDays: null,
+    snoozedUntil: null,
+    excludedAt: null,
+    lastSuggestedAt: null,
+    dueOn: null,
+    dueNote: null,
+    ...extra,
+  });
+  const born = (date: string) => new Date(`${date}T00:00:00.000Z`);
+  const ids = (list: { person: { id: string } }[]) =>
+    list.map((item) => item.person.id);
+  const yesterday = new Date("2026-09-27T16:00:00Z");
+  it("only the day itself is a birthday; later this week is an ordinary check-in", () => {
+    const ranked = rankCandidates(
+      [
+        person("in8", { birthday: born("1985-10-06") }),
+        person("in7", { birthday: born("1985-10-05") }),
+        person("in1", { birthday: born("1985-09-29") }),
+        person("today", { birthday: born("1990-09-28") }),
+      ],
+      sources,
+      now,
+      "UTC",
+    );
+    expect(
+      ranked.map((c) => [c.person.id, c.tier, c.birthdayToday, c.reason]),
+    ).toEqual([
+      ["today", 1, true, BIRTHDAY_TODAY_REASON],
+      ["in1", 3, undefined, "Time for your 90-day check-in."],
+      ["in7", 3, undefined, "Time for your 90-day check-in."],
+      ["in8", 3, undefined, "Time for your 90-day check-in."],
+    ]);
+  });
+  it("a recent chat never hides a birthday today; one later this week waits for cadence", () => {
+    const ranked = rankCandidates(
+      [
+        person("today", { birthday: born("1990-09-28"), manualAt: yesterday }),
+        person("soon", { birthday: born("1990-10-01"), manualAt: yesterday }),
+        person("plain", { manualAt: yesterday }),
+      ],
+      sources,
+      now,
+      "UTC",
+    );
+    expect(ids(ranked)).toEqual(["today"]);
+    expect(ranked[0].lastContactAt).toBe(yesterday.toISOString());
+  });
+  it("on the day it outranks a snooze and the suggestion cooldown; before it, both hold", () => {
+    const later = new Date("2026-12-01T00:00:00Z");
+    const ranked = rankCandidates(
+      [
+        person("snoozed-today", {
+          birthday: born("1990-09-28"),
+          preference: pref({ snoozedUntil: later }),
+        }),
+        person("cooldown-today", {
+          birthday: born("1990-09-28"),
+          preference: pref({ lastSuggestedAt: yesterday }),
+        }),
+        person("snoozed-soon", {
+          birthday: born("1990-10-01"),
+          preference: pref({ snoozedUntil: later }),
+        }),
+        person("cooldown-soon", {
+          birthday: born("1990-10-01"),
+          preference: pref({ lastSuggestedAt: yesterday }),
+        }),
+      ],
+      sources,
+      now,
+      "UTC",
+    );
+    expect(ids(ranked).sort()).toEqual(["cooldown-today", "snoozed-today"]);
+  });
+  it("hidden and archived people stay off even on their birthday", () => {
+    expect(
+      rankCandidates(
+        [
+          person("hidden", {
+            birthday: born("1990-09-28"),
+            preference: pref({ excludedAt: now }),
+          }),
+          person("archived", { birthday: born("1990-09-28"), archived: true }),
+        ],
+        sources,
+        now,
+        "UTC",
+      ),
+    ).toEqual([]);
+  });
+  it("needs no contact history or fresh scan, and handles yearless birthdays", () => {
+    const stale = {
+      ...off,
+      enabled: true,
+      status: "ready" as const,
+      lastSuccessAt: "2026-09-01T00:00:00Z",
+    };
+    const ranked = rankCandidates(
+      [
+        person("unscanned", { manualAt: null, birthday: born("1990-09-30") }),
+        person("yearless", { manualAt: null, birthday: born("1604-09-28") }),
+      ],
+      { ...sources, imessage: stale },
+      now,
+      "UTC",
+    );
+    // Two days out, an unscanned person still waits for a fresh scan.
+    expect(ranked.map((c) => [c.person.id, c.birthdayToday])).toEqual([
+      ["yearless", true],
+    ]);
+  });
+  it("marks a Feb 29 birthday on Feb 28 outside leap years", () => {
+    const leapling = person("leap", { birthday: born("2000-02-29") });
+    const at = (iso: string) =>
+      rankCandidates([leapling], sources, new Date(iso), "UTC")[0];
+    expect(at("2027-02-28T16:00:00Z")).toMatchObject({
+      birthdayToday: true,
+      reason: BIRTHDAY_TODAY_REASON,
+    });
+    expect(at("2027-03-01T16:00:00Z").birthdayToday).toBeUndefined();
+    expect(at("2028-02-28T16:00:00Z").birthdayToday).toBeUndefined();
+    expect(at("2028-02-29T16:00:00Z")).toMatchObject({
+      birthdayToday: true,
+      reason: BIRTHDAY_TODAY_REASON,
+    });
+    expect(isBirthday(born("2000-02-29"), "2027-02-28")).toBe(true);
+    expect(isBirthday(born("2000-02-29"), "2028-02-28")).toBe(false);
+    expect(isBirthday(born("1604-02-29"), "2027-02-28")).toBe(true);
+    expect(isBirthday(null, "2027-02-28")).toBe(false);
+  });
+  it("counts days in the sheet's timezone near midnight and across the new year", () => {
+    // 02:30 UTC on the 29th is still 22:30 on the 28th in New York.
+    const late = new Date("2026-09-29T02:30:00Z");
+    const p = person("p", { birthday: born("1990-09-29") });
+    const ny = rankCandidates([p], sources, late, "America/New_York")[0];
+    expect(ny.birthdayToday).toBeUndefined();
+    expect(ny.reason).toBe("Time for your 90-day check-in.");
+    expect(rankCandidates([p], sources, late, "UTC")[0]).toMatchObject({
+      birthdayToday: true,
+      reason: BIRTHDAY_TODAY_REASON,
+    });
+    expect(upcomingBirthday(born("1990-01-02"), "2026-12-28")).toBe(
+      "2027-01-02",
+    );
+    expect(upcomingBirthday(born("1990-01-05"), "2026-12-28")).toBeNull();
+    expect(upcomingBirthday(null, "2026-12-28")).toBeNull();
+  });
+  it("never balances a birthday away by circle", () => {
+    const friends = ["f1", "f2", "f3"].map((id, i) =>
+      person(id, { circles: ["friends"], birthday: born(`198${i}-09-28`) }),
+    );
+    const work = ["w1", "w2", "w3"].map((id) =>
+      person(id, { circles: ["work"] }),
+    );
+    const ranked = rankCandidates([...work, ...friends], sources, now, "UTC");
+    expect(ids(selectCandidates(ranked))).toEqual([
+      "f1",
+      "f2",
+      "f3",
+      "w1",
+      "w2",
+    ]);
+    // Even with two friends already on today's sheet.
+    expect(
+      ids(
+        selectCandidates(ranked, 1, [
+          { category: "friends" },
+          { category: "friends" },
+        ]),
+      ),
+    ).toEqual(["f1"]);
   });
 });

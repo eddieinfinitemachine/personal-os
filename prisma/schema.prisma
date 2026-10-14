@@ -417,6 +417,17 @@ model FitnessSession {
   @@index([userId])
 }
 
+// Shared lookup of exercise demo videos, keyed by exercise name. No personal
+// data: the same "goblet squat" demo serves every user, found once.
+model ExerciseVideo {
+  key       String   @id
+  name      String
+  youtubeId String
+  title     String
+  channel   String?
+  createdAt DateTime @default(now())
+}
+
 model DnaResult {
   id      String @id @default(cuid())
   humanId String
@@ -924,6 +935,9 @@ model User {
   lastSeenAt     DateTime @default(now())
   kindleEmail    String?
   kindleAutoSend Boolean  @default(true)
+  // Ordered list of enabled sidebar tracker slugs (see src/lib/templates.ts).
+  // null = never synced; the first browser to load uploads its localStorage.
+  sidebarTrackers Json?
 
   callSheetSettings CallSheetSettings?
   callSheetContacts CallSheetContact[]
@@ -1033,16 +1047,19 @@ model PersonalRecord {
 // Person.lastInteractionAt as the only signal. One row per encounter, with
 // optional people / project / photo links.
 model Interaction {
-  id         String   @id @default(cuid())
-  occurredAt DateTime
-  kind       String // "dinner" | "call" | "meeting" | "event" | "message" | "other"
-  title      String
-  location   String?
-  notes      String?
-  photoUrl   String?
-  personIds  String[] @default([])
-  source     String   @default("manual") // "manual" | "smart-capture"
-  createdAt  DateTime @default(now())
+  id          String   @id @default(cuid())
+  occurredAt  DateTime
+  kind        String // "dinner" | "call" | "meeting" | "event" | "message" | "other"
+  title       String
+  location    String?
+  notes       String?
+  photoUrl    String?
+  personIds   String[] @default([])
+  source      String   @default("manual") // "manual" | "smart-capture" | "ecpad" | …
+  // Stable id from an external writer (EC Pad: "ecpad:<sha256>"), so re-sends
+  // upsert instead of duplicating. Null for everything entered in the app.
+  externalKey String?
+  createdAt   DateTime @default(now())
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1050,6 +1067,7 @@ model Interaction {
   projectId String?
   project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
+  @@unique([userId, externalKey])
   @@index([userId, occurredAt])
   @@index([projectId])
 }
@@ -1414,6 +1432,10 @@ model CallSheetContact {
   excludedAt      DateTime?
   lastSuggestedAt DateTime?
   lastCompletedAt DateTime?
+  // User-set reminder: put this person on the sheet on/after this local date
+  // (YYYY-MM-DD in CallSheetSettings.timezone). Cleared once placed on a day.
+  dueOn           String?
+  dueNote         String?
   updatedAt       DateTime  @updatedAt
 
   @@unique([userId, personId])

@@ -199,8 +199,7 @@ export default async function HomePage() {
         <div>
           <h1 className="text-large-title font-bold">Home</h1>
           <p className="text-sm text-[var(--color-muted-foreground)] mt-1">
-            Compiled across everything. Drag tiles to reorder, drag tasks
-            between lists.
+            Compiled across everything. Drag tasks between lists.
           </p>
         </div>
         <div className="flex items-center gap-2">

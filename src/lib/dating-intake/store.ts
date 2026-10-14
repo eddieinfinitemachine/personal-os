@@ -131,9 +131,15 @@ export async function updateHealth(tx: Tx, userId: string, stateId: string) {
           : backlog || !scanComplete
             ? "backlog"
             : "up_to_date",
-      ...(adapterError ? { error: adapterError } : {}),
+      // A failure message lasts only while a record still needs attention: once
+      // retries succeed it clears, even if a large backlog is still draining.
+      ...(adapterError
+        ? { error: adapterError }
+        : !needsAttention
+          ? { error: null }
+          : {}),
       ...(!backlog && scanComplete && state.enabled && !adapterError
-        ? { lastSuccessAt: state.lastAttemptAt, error: null }
+        ? { lastSuccessAt: state.lastAttemptAt }
         : {}),
     },
   });
@@ -153,8 +159,9 @@ export async function acceptRecord(
         throw new IntakeError("Unauthorized", 401);
       if (!state.enabled) throw new IntakeError("Source paused", 409);
       if (state.source === "texts" && e.identities.length) {
+        // Dismissed people stay dismissed: their conversations are not read again.
         const excluded = await tx.datingCandidate.findMany({
-          where: { userId, status: "excluded" },
+          where: { userId, status: { in: ["excluded", "dismissed"] } },
           select: { identities: true },
         });
         const approved = await tx.datingPerson.count({
@@ -171,7 +178,7 @@ export async function acceptRecord(
           )
         )
           throw new IntakeError(
-            "This conversation is already linked or excluded",
+            "This conversation is already linked, dismissed or excluded",
             409,
           );
       }

@@ -1,5 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { envelope, hash, segments, safeURL } from "./contracts";
+import {
+  envelope,
+  hash,
+  normalizeName,
+  normalizeQuote,
+  segments,
+  safeURL,
+} from "./contracts";
+describe("review comparisons", () => {
+  it("matches names regardless of case, accents and spacing", () => {
+    expect(normalizeName("  Zoë   Ríos ")).toBe("zoe rios");
+    expect(normalizeName("ZOE\tRIOS")).toBe(normalizeName("Zoë Ríos"));
+    expect(normalizeName("Zoe Rios")).not.toBe(normalizeName("Zoe Ross"));
+  });
+  it("matches re-sent excerpts that differ only in spacing or case", () => {
+    const quote = "2026-09-27T00:00:00Z Me: Want to get dinner Friday?";
+    expect(normalizeQuote(` ${quote.replace(" Me", "\n Me")} `)).toBe(
+      normalizeQuote(quote.toUpperCase()),
+    );
+    expect(normalizeQuote(quote)).not.toBe(
+      normalizeQuote("2026-09-27T00:00:00Z Me: Want to get dinner Saturday?"),
+    );
+  });
+});
 describe("intake envelope", () => {
   it("round trips Unicode without changing source bytes", () => {
     const text = "a".repeat(11999) + "🦊\r\n" + "é".repeat(12000);

@@ -145,3 +145,39 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 **Context**: CRM context backfill added `Person.context` / `Person.contextAt`; pushed to prod from the feature branch at 9:25 and the endpoint worked at 9:45.
 **Mistake / surprise**: Another PR (#35) merged at 9:49 from a branch based on older main and pushed its schema; Prisma dropped the two still-empty columns without any data-loss prompt. Every Person query 5xx'd ("column does not exist") while `db push` had said "in sync". The worker only logged "failed" with no status, so it took the Vercel runtime logs to see it.
 **Rule**: Push schema only from an up-to-date main after merging, never from a feature branch. Verify with an information_schema query on the same DATABASE_URL the app uses. If several sessions ship schema the same day, re-push from main last. Workers should log the HTTP status of a failed request (never bodies).
+
+## 2026-09-29 — Killed Mac workers leave multi-GB snapshots in tmp
+**Context**: The CRM context backfill was killed by a Claude session restart; the next LaunchAgent run crashed with ENOSPC.
+**Mistake / surprise**: Each worker copies chat.db / WhatsApp DBs (~2.7 GB) into `$TMPDIR/<worker>-*` and only removes them in `finally`/signal handlers. SIGKILL, session teardown and crashes skip both, so orphans accumulate until the disk fills. (The bulk of the full disk was a 56 GB Finder `TemporaryItems/NSIRD_*` item, not ours, but ours pushed it over.)
+**Rule**: Every worker that snapshots to tmp sweeps stale siblings (`sweepStaleTempRoots`, > 2 h old) on start. When a run "died with the session", check `du -sh $TMPDIR/*` before rerunning.
+
+## 2026-10-01 — never put a real contact's name in UI copy, prompts or fixtures
+**Context**: Building call sheet reminders from Eddie's ask "put Grace Kotick on my call sheet for Tuesday".
+**Mistake / surprise**: The example sentence went straight into the quick-add placeholder, the Claude prompt and the test fixtures, along with a second real name pulled from the people table. Eddie: "i dont want this to be the preview."
+**Rule**: A person named in a request or seen in the database is data, not copy. Placeholders, prompt examples, comments, commit/PR text and fixtures use synthetic names (Alex Rivera, Sam). Grep for the real name before committing.
+
+## 2026-10-01 — a "last attempt failed" flag is not a staleness signal
+**Context**: Call sheet "Someone else today" removed a person and offered nobody; the candidate pool was empty all morning.
+**Mistake / surprise**: The hourly Mac worker runs during overnight dark wakes (5–30 s each), so the daily full re-post gets chopped and reports `error`. Policy treated `status === "error"` as "evidence incomplete" even though the last good scan was 15 hours old and every row was fresh, so one bad attempt zeroed 171 candidates until the next clean run. The UI then dropped the row silently.
+**Rule**: (1) Gate on data age (`lastSuccessAt`, per-row `capturedAt`), never on the outcome of the latest attempt; LaunchAgent jobs on a laptop fail routinely while it sleeps. (2) An action that asks for a substitute must refuse out loud when there is none, not half-apply. (3) When a list "loses" something, check the pool size in prod before reading UI code.
+
+## 2026-10-01 — adding a low-priority tier to a pool breaks every "search the whole pool" rule
+**Context**: No-contact people joined the call sheet pool as tier 4, meant to appear only after everyone who is due.
+**Mistake / surprise**: `selectCandidates` balances categories by scanning the whole pool for an under-represented one, so a tier-4 person with a `family`/`professional` circle jumped ahead of 170 due people every day. Unit tests on ranking passed; only a read-only simulation on real data showed it.
+**Rule**: When widening a candidate pool, re-read every consumer of the pool, not just the ranker, and simulate the final pick on real data (counts only) before calling it done.
+
+## 2026-10-01 — browser-checking against a scratch DB
+**Rule**: `next dev --webpack -p <port>` with `DATABASE_URL` set to the scratch cluster; sign a session with `signSession` (dev secret) and set it from the page. Use `http://<name>.localhost:<port>`: plain `localhost` may hold an HttpOnly `ec-session` that JS cannot replace, and `127.0.0.1` is blocked from dev resources so the page never hydrates. A background automation tab reports `visibilityState: "hidden"`, which pauses the call sheet's loader; override it and dispatch `visibilitychange`. Local Postgres needs `-c unix_socket_directories=''` when the data dir path is long.
+
+## 2026-10-05 — a bare `catch {}` in a background pipeline hides the root cause
+**Context**: "Some evidence could not be analyzed" on Texts and EC Pad. `processSource` caught every extraction error without logging, so production logs had nothing and the cause had to be inferred from record states and a synthetic benchmark.
+**Rule**: Background workers log a failure *class* (timeout, HTTP status, parse, validation, storage) on every catch — never bodies. Give each call a deadline that doesn't shrink with the loop; when the run's own budget cuts a call short, requeue it uncounted instead of recording a failure. A status message must clear when its condition clears, not when the whole backlog drains.
+
+## 2026-10-08 — scratch Postgres in the session scratchpad won't start
+**Context**: Running the dating integration suite on a throwaway Homebrew Postgres.
+**Mistake / surprise**: `pg_ctl -o "-k <scratchpad dir>"` failed silently ("could not start server") — the session scratchpad path pushes the Unix socket path past the ~103-char limit. Every integration test then "failed" on connection refused, which looks like a real regression at a glance.
+**Rule**: Put scratch clusters at a short path (`/private/tmp/claude-501/pgXX`), start with `pg_ctl -w`, and check the server is up before reading test results.
+
+## 2026-10-08 — a schema PR got merged before the prod column existed
+**Context**: PR #53 added `User.sidebarTrackers Json?`; the plan was "merge, then db push, then deploy". Eddie merged it himself minutes after it opened, and Vercel deployed while prod still lacked the column (every unselected `User` query would have 500'd). Caught ~1 min later; no errors logged.
+**Rule**: For an approved additive (nullable/defaulted) column, add it to prod BEFORE the PR is opened — old code ignores extra columns, so ahead-of-code is safe. Use a targeted `ALTER TABLE … ADD COLUMN IF NOT EXISTS` (not `db push` from a branch, see the drop-columns lesson) and verify via information_schema. If that's not possible, open the PR as a draft and say why in the title.

@@ -101,10 +101,11 @@ export async function removeWithIdentity(
         data: { status: "excluded" },
       });
     }
+    // Ordinary deletion lets new evidence suggest them again; "dismissed" is final.
     if (!exclude)
       await tx.datingCandidate.updateMany({
         where: { userId, personId: id, status: "approved" },
-        data: { status: "dismissed" },
+        data: { status: "pending" },
       });
     await tx.datingPerson.delete({ where: { id } });
     return true;

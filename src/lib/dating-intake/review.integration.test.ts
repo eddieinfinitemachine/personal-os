@@ -66,7 +66,15 @@ describe.skipIf(!enabled)(
       await prisma.user.deleteMany({ where: { id: { in: [userId, other] } } });
     });
     afterAll(() => prisma.$disconnect());
+    // Texts only ever suggest the verified correspondent; these cases use
+    // journal-style evidence without a contact identity.
+    const asJournal = () =>
+      prisma.datingSourceState.update({
+        where: { id: stateId },
+        data: { source: "ecpad" },
+      });
     it("handles bounded work across runs, exact quotes and undated approval", async () => {
+      await asJournal();
       for (let i = 0; i < 3; i++)
         await acceptRecord(userId, stateId, env(`n${i}`));
       expect(
@@ -144,6 +152,7 @@ describe.skipIf(!enabled)(
       expect((await listReview(userId)).excluded).toHaveLength(0);
     });
     it("preserves manually edited imported events when sources are withdrawn and clears stale insights", async () => {
+      await asJournal();
       await acceptRecord(userId, stateId, env());
       await processSource(userId, stateId, {
         extract: async () => ({
@@ -201,22 +210,27 @@ describe.skipIf(!enabled)(
         ).notes,
       ).toBe("My edited reflection");
     });
-    it("rejects fabricated quotes and recovers provider failures without advancing success", async () => {
-      expect(() =>
-        validateExtraction(
-          {
-            mentions: [
-              {
-                name: "Robin",
-                summary: "Date",
-                quote: "This is not in source",
-                eventDate: null,
-              },
-            ],
-          },
-          env(),
-        ),
-      ).toThrow();
+    it("drops fabricated quotes and recovers provider failures without advancing success", async () => {
+      const kept = validateExtraction(
+        {
+          mentions: [
+            {
+              name: "Robin",
+              summary: "Date",
+              quote: "This is not in source",
+              eventDate: null,
+            },
+            {
+              name: "Robin",
+              summary: "Date with Robin",
+              quote: text,
+              eventDate: null,
+            },
+          ],
+        },
+        env(),
+      );
+      expect(kept.map((m) => m.quote)).toEqual([text]);
       await acceptRecord(userId, stateId, env());
       await processSource(userId, stateId, {
         extract: async () => {

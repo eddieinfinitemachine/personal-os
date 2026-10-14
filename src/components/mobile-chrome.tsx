@@ -6,6 +6,7 @@ import {
   Calendar,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   Folder,
   Home,
   Inbox as InboxIcon,
@@ -129,7 +130,7 @@ function MobileTopBar() {
   return (
     <header
       data-focus-hide
-      className="md:hidden print:hidden fixed top-0 inset-x-0 z-30 bg-[var(--color-background)]/95 backdrop-blur border-b border-[var(--color-border)] pt-[env(safe-area-inset-top)]"
+      className="md:hidden print:hidden fixed top-0 inset-x-0 z-30 bg-[var(--color-background)] border-b border-[var(--color-border)] pt-[env(safe-area-inset-top)]"
       style={{
         transform: "translate3d(0,0,0)",
         WebkitTransform: "translate3d(0,0,0)",
@@ -165,6 +166,8 @@ function MobileTopBar() {
 // The drawer is the sole mobile nav (no bottom tab bar). Kept deliberately
 // minimal: the lists/trackers/projects below are the point; Home, Calendar, Board,
 // and Settings ride along at the bottom so they stay reachable on phones.
+const DRAWER_LISTS_SHOWN = 3;
+
 const DRAWER_PRIMARY = [
   { href: "/", label: "Home", Icon: Home },
   { href: "/calendar", label: "Calendar", Icon: Calendar },
@@ -173,7 +176,7 @@ const DRAWER_PRIMARY = [
 ];
 
 function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: MobileProject[]; lists: MobileList[]; appName: string; isPrivate: boolean }) {
-  const { enabled, available, add } = useEnabledTemplates(isPrivate);
+  const { enabled, available, add, reorder } = useEnabledTemplates(isPrivate);
   const { drawerOpen, closeDrawer } = useMobileChrome();
   const pathname = usePathname();
   const router = useRouter();
@@ -185,6 +188,18 @@ function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: Mobil
     ? pathname.slice("/projects/".length)
     : null;
   const [dormantOpen, setDormantOpen] = useState(false);
+  // Lists beyond the first few fold behind "N more", like dormant projects.
+  const [moreListsOpen, setMoreListsOpen] = useState(false);
+  const leadLists = lists.slice(0, DRAWER_LISTS_SHOWN);
+  const moreLists = lists.slice(DRAWER_LISTS_SHOWN);
+  const [editingTrackers, setEditingTrackers] = useState(false);
+  function moveTracker(index: number, delta: -1 | 1) {
+    const order = trackers.map((t) => t.slug);
+    const to = index + delta;
+    if (to < 0 || to >= order.length) return;
+    [order[index], order[to]] = [order[to], order[index]];
+    reorder(order);
+  }
   const {
     inbox: inboxProject,
     active: activeProjects,
@@ -201,13 +216,37 @@ function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: Mobil
   }, [pathname]);
   // Lock body scroll while open.
   useEffect(() => {
-    if (!drawerOpen) return;
+    if (!drawerOpen) {
+      setEditingTrackers(false);
+      return;
+    }
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
   }, [drawerOpen]);
+  const renderList = (l: MobileList) => (
+    <button
+      key={l.id}
+      onClick={() => {
+        closeDrawer();
+        sessionStorage.setItem("personalos:goto-list", l.id);
+        if (pathname === "/") {
+          window.dispatchEvent(new Event("personalos:goto-list"));
+        } else {
+          router.push("/");
+        }
+      }}
+      className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[var(--color-foreground)] hover:bg-[var(--color-accent)] active:bg-[var(--color-accent)]"
+    >
+      <span
+        aria-hidden
+        className={cn("size-2.5 rounded-full", palette(l.color).dot)}
+      />
+      <span className="flex-1 truncate text-left">{l.name}</span>
+    </button>
+  );
   return (
     <>
       <div
@@ -241,45 +280,80 @@ function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: Mobil
         {/* Lists lead the drawer — this is the primary navigation; pages are
             the footnote below. */}
         <div className="px-2 space-y-0.5">
-          {lists.map((l) => (
-            <button
-              key={l.id}
-              onClick={() => {
-                closeDrawer();
-                sessionStorage.setItem("personalos:goto-list", l.id);
-                if (pathname === "/") {
-                  window.dispatchEvent(new Event("personalos:goto-list"));
-                } else {
-                  router.push("/");
-                }
-              }}
-              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[var(--color-foreground)] hover:bg-[var(--color-accent)] active:bg-[var(--color-accent)]"
-            >
-              <span
-                aria-hidden
-                className={cn("size-2.5 rounded-full", palette(l.color).dot)}
-              />
-              <span className="flex-1 truncate text-left">{l.name}</span>
-            </button>
-          ))}
+          {leadLists.map(renderList)}
+          {moreLists.length > 0 ? (
+            <>
+              <button
+                onClick={() => setMoreListsOpen((v) => !v)}
+                className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)] active:bg-[var(--color-accent)] rounded-md"
+              >
+                {moreListsOpen ? (
+                  <ChevronDown className="size-3" />
+                ) : (
+                  <ChevronRight className="size-3" />
+                )}
+                <span className="tabular-nums">{moreLists.length} more</span>
+              </button>
+              {moreListsOpen ? moreLists.map(renderList) : null}
+            </>
+          ) : null}
           <DrawerNewList />
         </div>
         {trackers.length > 0 || available.length > 0 ? (
           <div className="mt-4 px-2">
-            <div className="px-3 mb-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
-              Trackers
+            <div className="px-3 mb-1.5 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+                Trackers
+              </span>
+              {trackers.length > 1 ? (
+                <button
+                  onClick={() => setEditingTrackers((v) => !v)}
+                  aria-pressed={editingTrackers}
+                  className="-my-1 -mr-1.5 rounded-md px-1.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)] active:bg-[var(--color-accent)]"
+                >
+                  {editingTrackers ? "Done" : "Edit"}
+                </button>
+              ) : null}
             </div>
             <div className="space-y-0.5">
-              {trackers.map((t) => (
-                <DrawerLink
-                  key={t.slug}
-                  href={t.href}
-                  active={pathname.startsWith(t.href)}
-                  icon={<t.Icon className="size-4" />}
-                  label={t.label}
-                />
-              ))}
-              <AddTemplateButton available={available} onAdd={add} variant="drawer" />
+              {trackers.map((t, i) =>
+                editingTrackers ? (
+                  <div
+                    key={t.slug}
+                    className="flex items-center gap-3 rounded-md pl-3 pr-1 py-1 text-sm text-[var(--color-muted-foreground)]"
+                  >
+                    <t.Icon className="size-4" />
+                    <span className="flex-1 truncate text-[var(--color-foreground)]">{t.label}</span>
+                    <button
+                      onClick={() => moveTracker(i, -1)}
+                      disabled={i === 0}
+                      aria-label={`Move ${t.label} up`}
+                      className="pressable grid place-items-center size-8 rounded-md active:bg-[var(--color-accent)] disabled:opacity-30"
+                    >
+                      <ChevronUp className="size-4" />
+                    </button>
+                    <button
+                      onClick={() => moveTracker(i, 1)}
+                      disabled={i === trackers.length - 1}
+                      aria-label={`Move ${t.label} down`}
+                      className="pressable grid place-items-center size-8 rounded-md active:bg-[var(--color-accent)] disabled:opacity-30"
+                    >
+                      <ChevronDown className="size-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <DrawerLink
+                    key={t.slug}
+                    href={t.href}
+                    active={pathname.startsWith(t.href)}
+                    icon={<t.Icon className="size-4" />}
+                    label={t.label}
+                  />
+                ),
+              )}
+              {editingTrackers ? null : (
+                <AddTemplateButton available={available} onAdd={add} variant="drawer" />
+              )}
             </div>
           </div>
         ) : null}

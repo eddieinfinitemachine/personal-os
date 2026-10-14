@@ -70,6 +70,10 @@ export const viewport: Viewport = {
   viewportFit: "cover",
   width: "device-width",
   initialScale: 1,
+  // Personal app: no pinch or auto zoom, so a stray wide element can't leave
+  // the page zoomed out.
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export const dynamic = "force-dynamic";

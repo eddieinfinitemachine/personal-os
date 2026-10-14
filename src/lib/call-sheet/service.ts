@@ -8,18 +8,29 @@ import {
 import { prisma } from "@/lib/prisma";
 import { IntakeError, object } from "@/lib/dating-intake/contracts";
 import {
+  addLocalDays,
+  BIRTHDAY_LIST_DAYS,
+  BIRTHDAY_TODAY_REASON,
   cadence,
   identityKey,
+  isBirthday,
+  isLocalDate,
   latestContact,
   liveCues,
   limitPersonCues,
   relationshipCategory,
   localDate,
+  NO_CONTACT_REASON,
+  pastBirthdayReason,
   personName,
   rankCandidates,
+  REMINDER_REASON,
+  reminderReason,
+  reviewQueue,
   selectCandidates,
   snoozeUntil,
   SOURCES,
+  upcomingBirthday,
   validTimezone,
   type Candidate,
   type PolicyPerson,
@@ -27,7 +38,10 @@ import {
 import type {
   CallSheetEntry,
   CallSheetMutation,
+  CallSheetReminderInput,
   CallSheetResponse,
+  CallSheetReview,
+  CallSheetReviewDecision,
   CallSheetSettingsMutation,
   CallSheetSource,
   ContactSourceData,
@@ -50,6 +64,8 @@ type PreferenceSnapshot = {
   excludedAt: string | null;
   lastSuggestedAt: string | null;
   lastCompletedAt: string | null;
+  dueOn?: string | null;
+  dueNote?: string | null;
 };
 type Undo = {
   token: string;
@@ -70,6 +86,18 @@ export type DayData = {
   skipped: string[];
   undo?: Undo;
 };
+/** Five regular suggestions, plus room for people the user explicitly asked
+ * for and people whose birthday is today. */
+export const MAX_DAY_ENTRIES = 25;
+/** A birthday today is its own section of the sheet, outside the regular five.
+ * A reminder for the same person keeps them in the list, as that row. */
+export function inBirthdaySection(
+  entry: { reminder?: unknown },
+  birthday: Date | null | undefined,
+  date: string,
+) {
+  return !entry.reminder && isBirthday(birthday ?? null, date);
+}
 export const json = (value: unknown) =>
   JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 export function readSources(raw: unknown): SourceState {
@@ -99,7 +127,9 @@ export function readSourceData(
 export function readDay(raw: unknown): DayData {
   const data = raw as Partial<DayData> | null;
   return {
-    entries: Array.isArray(data?.entries) ? data.entries.slice(0, 5) : [],
+    entries: Array.isArray(data?.entries)
+      ? data.entries.slice(0, MAX_DAY_ENTRIES)
+      : [],
     skipped: Array.isArray(data?.skipped) ? data.skipped.slice(-100) : [],
     ...(data?.undo ? { undo: data.undo } : {}),
   };
@@ -267,7 +297,58 @@ function makeEntry(candidate: Candidate, now: Date): StoredEntry {
     cadenceDays: candidate.cadenceDays,
     identityKey: identityKey(person),
     generatedAt: now.toISOString(),
+    ...(candidate.reminder ? { reminder: candidate.reminder } : {}),
   };
+}
+const PAST_BIRTHDAY_PREFIX = "Their birthday was ";
+/** Pending rows from the latest earlier sheet, kept for a new day: the user
+ * has not acted on them and nobody has been in touch since. Done, contacted
+ * and set-aside rows stay where they were, and so does anyone since hidden,
+ * archived, re-identified or given a reminder for a later day. */
+function carryOver(
+  previous: { localDate: string; data: DayData } | undefined,
+  people: Map<string, PolicyPerson>,
+  sources: SourceState,
+  now: Date,
+  date: string,
+): StoredEntry[] {
+  if (!previous) return [];
+  return previous.data.entries
+    .flatMap((entry) => {
+      const person = people.get(entry.personId);
+      if (
+        entry.status !== "pending" ||
+        !person ||
+        person.preference?.excludedAt ||
+        entry.identityKey !== identityKey(person) ||
+        (person.preference?.dueOn && person.preference.dueOn > date)
+      )
+        return [];
+      // Any contact since the row was made is the check-in.
+      const last = latestContact(person, sources, now);
+      if (
+        last.at &&
+        Date.parse(last.at) > Date.parse(entry.lastContactAt ?? "1970-01-01")
+      )
+        return [];
+      const carriedFrom = entry.carriedFrom ?? previous.localDate;
+      const birthdayRow =
+        inBirthdaySection(entry, person.birthday, previous.localDate) ||
+        entry.reason.startsWith(PAST_BIRTHDAY_PREFIX);
+      return [
+        {
+          ...entry,
+          id: randomUUID(),
+          carriedFrom,
+          reason: birthdayRow
+            ? pastBirthdayReason(carriedFrom, date)
+            : entry.reminder
+              ? reminderReason(carriedFrom, date)
+              : entry.reason,
+        },
+      ];
+    })
+    .slice(0, MAX_DAY_ENTRIES);
 }
 async function markSuggested(
   tx: Tx,
@@ -284,7 +365,11 @@ async function markSuggested(
         identityKey: entry.identityKey,
         lastSuggestedAt: now,
       },
-      update: { lastSuggestedAt: now },
+      // A placed reminder has fired; clearing it here keeps it to one day.
+      update: {
+        lastSuggestedAt: now,
+        ...(entry.reminder ? { dueOn: null, dueNote: null } : {}),
+      },
     });
 }
 export async function sheetInTransaction(
@@ -293,18 +378,39 @@ export async function sheetInTransaction(
   now: Date,
 ): Promise<CallSheetResponse> {
   const ctx = await context(tx, userId, now);
+  const timezone = ctx.settings.timezone;
+  const date = localDate(now, timezone);
   const activeIdentities = new Map(
     ctx.people.map((person) => [person.id, identityKey(person)]),
   );
+  // A pending reminder row scrubbed today only because the person's identity was
+  // edited is re-issued below; its stored reminder was already cleared.
+  const reissued = new Map<string, string | null>();
   // Retained history and Undo must respect the current active identity, including
   // changes or deletions made through another code path.
   const history = await tx.callSheetDay.findMany({
     where: { userId },
-    select: { id: true, entries: true },
+    select: { id: true, entries: true, localDate: true },
   });
+  // The latest earlier sheet: whoever is still pending on it carries over.
+  let previous: { localDate: string; data: DayData } | undefined;
   for (const item of history) {
     const stored = readDay(item.entries);
     const before = JSON.stringify(stored);
+    if (
+      item.localDate < date &&
+      (!previous || item.localDate > previous.localDate)
+    )
+      previous = { localDate: item.localDate, data: stored };
+    if (item.localDate === date)
+      for (const entry of stored.entries)
+        if (
+          entry.reminder &&
+          entry.status === "pending" &&
+          activeIdentities.has(entry.personId) &&
+          activeIdentities.get(entry.personId) !== entry.identityKey
+        )
+          reissued.set(entry.personId, entry.reminder.note);
     scrubDayPeople(
       stored,
       (entry) => activeIdentities.get(entry.personId) === entry.identityKey,
@@ -320,16 +426,76 @@ export async function sheetInTransaction(
         data: { entries: json(stored), version: { increment: 1 } },
       });
   }
-  const timezone = ctx.settings.timezone;
-  const date = localDate(now, timezone);
+  for (const person of ctx.people) {
+    if (!reissued.has(person.id) || person.preference?.excludedAt) continue;
+    person.preference = {
+      cadenceDays: null,
+      snoozedUntil: null,
+      excludedAt: null,
+      lastSuggestedAt: null,
+      ...person.preference,
+      dueOn: date,
+      dueNote: reissued.get(person.id) ?? null,
+    };
+  }
   let day = await tx.callSheetDay.findUnique({
     where: { userId_localDate: { userId, localDate: date } },
   });
   const candidates = rankCandidates(ctx.people, ctx.sources, now, timezone);
+  // Reminders are explicit requests: they are extra rows on top of the regular
+  // five, never balanced away by category, and they count toward the five.
+  const due = candidates.filter((candidate) => candidate.reminder);
+  // A birthday today goes in its own section: never balanced away, and it
+  // leaves the regular five alone.
+  const birthdays = candidates.filter(
+    (candidate) => !candidate.reminder && candidate.birthdayToday,
+  );
+  const regular = candidates.filter(
+    (candidate) => !candidate.reminder && !candidate.birthdayToday,
+  );
+  const people = new Map(ctx.people.map((person) => [person.id, person]));
   if (!day) {
-    const entries = selectCandidates(candidates).map((candidate) =>
-      makeEntry(candidate, now),
+    // Not done yesterday means still to do: carried rows come first and
+    // count toward the five, so the list never grows past what was asked.
+    const carried = carryOver(previous, people, ctx.sources, now, date);
+    const carriedIds = new Set(carried.map((entry) => entry.personId));
+    const fresh = (candidate: Candidate) =>
+      !carriedIds.has(candidate.person.id);
+    const reminders = due
+      .filter(fresh)
+      .slice(0, Math.max(0, MAX_DAY_ENTRIES - carried.length));
+    const listedCarried = carried.filter(
+      (entry) =>
+        !inBirthdaySection(entry, people.get(entry.personId)?.birthday, date),
     );
+    const suggested = selectCandidates(
+      regular.filter(fresh),
+      Math.max(0, 5 - reminders.length - listedCarried.length),
+      [
+        ...reminders,
+        ...listedCarried.map((entry) => ({
+          category: relationshipCategory(people.get(entry.personId)!),
+        })),
+      ],
+    );
+    const entries = [
+      ...reminders.map((candidate) => makeEntry(candidate, now)),
+      ...carried,
+      ...birthdays
+        .filter(fresh)
+        .slice(
+          0,
+          Math.max(
+            0,
+            MAX_DAY_ENTRIES -
+              reminders.length -
+              carried.length -
+              suggested.length,
+          ),
+        )
+        .map((candidate) => makeEntry(candidate, now)),
+      ...suggested.map((candidate) => makeEntry(candidate, now)),
+    ];
     day = await tx.callSheetDay.create({
       data: {
         userId,
@@ -342,7 +508,6 @@ export async function sheetInTransaction(
   }
   const data = readDay(day.entries);
   const before = JSON.stringify(data);
-  const people = new Map(ctx.people.map((person) => [person.id, person]));
   const staleContactSlots: number[] = [];
   data.entries = data.entries.flatMap((entry, index) => {
     const person = people.get(entry.personId);
@@ -353,15 +518,25 @@ export async function sheetInTransaction(
     )
       return [];
     const last = latestContact(person, ctx.sources, now);
+    // The user asked for this person today: keep the row until they act on it.
+    const requested = entry.status === "pending" && !!entry.reminder;
+    // On their birthday only contact made that day counts as in touch, and
+    // earlier contact never swaps the row out.
+    const birthdayToday = isBirthday(person.birthday, date);
     const newlyContacted =
+      !requested &&
       entry.status === "pending" &&
-      last.at &&
-      Date.parse(last.at) > Date.parse(entry.lastContactAt ?? "1970-01-01") &&
-      now.getTime() - Date.parse(last.at) < 7 * 86_400_000;
+      !!last.at &&
+      (birthdayToday
+        ? localDate(new Date(last.at), timezone) === date
+        : Date.parse(last.at) >
+            Date.parse(entry.lastContactAt ?? "1970-01-01") &&
+          now.getTime() - Date.parse(last.at) < 7 * 86_400_000);
     // Initial source sync can discover a conversation that preceded this sheet.
     // Replace that stale suggestion; only an actual later encounter is progress.
     if (
       newlyContacted &&
+      !birthdayToday &&
       Date.parse(last.at!) < Date.parse(entry.generatedAt)
     ) {
       staleContactSlots.push(index);
@@ -391,47 +566,138 @@ export async function sheetInTransaction(
         status: newlyContacted ? ("contacted" as const) : entry.status,
         reason:
           newlyContacted || entry.status === "contacted"
-            ? "You have been in touch since this was suggested."
+            ? birthdayToday
+              ? "You have been in touch today."
+              : "You have been in touch since this was suggested."
             : entry.status === "done"
               ? isReachOutMethod(entry.method)
                 ? `${REACH_OUT_METHODS[entry.method].label} check-in logged today.`
                 : "Check-in logged today."
-              : (!last.reliable && !entry.reason.includes("birthday")) ||
-                  (entry.reason.startsWith("A possible follow-up") &&
-                    !cues.some((cue) => cue.kind === "follow_up"))
-                ? "A suggested check-in."
-                : entry.reason.startsWith("Time for your")
-                  ? `Time for your ${cadence(person, person.preference?.cadenceDays)}-day check-in.`
-                  : entry.reason,
+              : requested
+                ? reminderReason(entry.carriedFrom, date)
+                : birthdayToday
+                  ? BIRTHDAY_TODAY_REASON
+                  : (!last.reliable && !entry.reason.includes("birthday")) ||
+                      (entry.reason.startsWith("A possible follow-up") &&
+                        !cues.some((cue) => cue.kind === "follow_up")) ||
+                      // Older contact surfaced after suggesting: no longer "none".
+                      (entry.reason === NO_CONTACT_REASON && last.at)
+                    ? "A suggested check-in."
+                    : entry.reason.startsWith("Time for your")
+                      ? `Time for your ${cadence(person, person.preference?.cadenceDays)}-day check-in.`
+                      : entry.reason,
         cues,
         topic: cues[0]?.text ?? null,
       },
     ];
   });
+  const onSheet = new Map(data.entries.map((entry) => [entry.personId, entry]));
+  // Already on today's sheet: the reminder is satisfied by that row.
+  const satisfied = due.filter((candidate) =>
+    onSheet.has(candidate.person.id),
+  );
+  for (const candidate of satisfied) {
+    const entry = onSheet.get(candidate.person.id)!;
+    if (entry.status === "pending") {
+      entry.reminder = candidate.reminder;
+      entry.reason = REMINDER_REASON;
+      // Asked for today: this is today's row now, however long it has waited.
+      delete entry.carriedFrom;
+    }
+  }
+  if (satisfied.length)
+    await tx.callSheetContact.updateMany({
+      where: {
+        userId,
+        personId: { in: satisfied.map((candidate) => candidate.person.id) },
+      },
+      data: { dueOn: null, dueNote: null },
+    });
+  const requested = due
+    .filter((candidate) => !onSheet.has(candidate.person.id))
+    .slice(0, Math.max(0, MAX_DAY_ENTRIES - data.entries.length));
+  const requestedIds = new Set(requested.map((item) => item.person.id));
+  // An explicit request outranks an earlier "Someone else today" or snooze.
+  data.skipped = data.skipped.filter((personId) => !requestedIds.has(personId));
+  const reminders = requested.map((candidate) => makeEntry(candidate, now));
+  // Only the list counts toward the five; birthday rows sit beside it.
+  const listed = new Set(
+    data.entries
+      .filter(
+        (entry) =>
+          !inBirthdaySection(
+            entry,
+            people.get(entry.personId)?.birthday,
+            date,
+          ),
+      )
+      .map((entry) => entry.personId),
+  );
   const excluded = new Set([
     ...data.entries.map((entry) => entry.personId),
     ...data.skipped,
+    ...requestedIds,
   ]);
   const additions = selectCandidates(
-    candidates.filter((candidate) => !excluded.has(candidate.person.id)),
-    5 - data.entries.length,
+    regular.filter((candidate) => !excluded.has(candidate.person.id)),
+    Math.max(0, 5 - listed.size - reminders.length),
     ctx.people
-      .filter((person) =>
-        data.entries.some((entry) => entry.personId === person.id),
-      )
+      .filter((person) => requestedIds.has(person.id) || listed.has(person.id))
       .map((person) => ({ category: relationshipCategory(person) })),
   ).map((candidate) => makeEntry(candidate, now));
+  // A birthday today joins its section, unless it was set aside for today
+  // ("Someone else today" or a snooze from this sheet).
+  const birthdayRows = birthdays
+    .filter(
+      (candidate) =>
+        !onSheet.has(candidate.person.id) &&
+        !data.skipped.includes(candidate.person.id),
+    )
+    .slice(
+      0,
+      Math.max(
+        0,
+        MAX_DAY_ENTRIES -
+          data.entries.length -
+          reminders.length -
+          additions.length,
+      ),
+    )
+    .map((candidate) => makeEntry(candidate, now));
   additions.forEach((entry, index) => {
     const slot = staleContactSlots[index] ?? data.entries.length;
     data.entries.splice(Math.min(slot, data.entries.length), 0, entry);
   });
-  await markSuggested(tx, userId, additions, now);
+  data.entries.unshift(...reminders, ...birthdayRows);
+  // Undo restores a snapshot of the rows; a reminder that has fired (and been
+  // cleared) must survive undoing an unrelated earlier action.
+  if (data.undo)
+    data.undo.entries.unshift(
+      ...structuredClone(reminders).filter(
+        (entry) =>
+          !data.undo!.entries.some((item) => item.personId === entry.personId),
+      ),
+    );
+  await markSuggested(
+    tx,
+    userId,
+    [...reminders, ...birthdayRows, ...additions],
+    now,
+  );
   if (JSON.stringify(data) !== before)
     day = await tx.callSheetDay.update({
       where: { id: day.id },
       data: { entries: json(data), version: { increment: 1 } },
     });
-  return response(day, data, ctx.sources, timezone, ctx.people);
+  return response(
+    day,
+    data,
+    ctx.sources,
+    timezone,
+    ctx.people,
+    date,
+    reviewQueue(ctx.people, ctx.sources, now).length,
+  );
 }
 function response(
   day: CallSheetDay,
@@ -439,11 +705,24 @@ function response(
   sources: SourceState,
   timezone: string,
   people: PolicyPerson[],
+  today: string,
+  reviewCount: number,
 ): CallSheetResponse {
+  const byId = new Map(people.map((person) => [person.id, person]));
   return {
     day: { id: day.id, localDate: day.localDate, version: day.version },
     entries: data.entries.map(
-      ({ identityKey: _identity, generatedAt: _generated, ...entry }) => entry,
+      ({ identityKey: _identity, generatedAt: _generated, ...entry }) => {
+        const born = byId.get(entry.personId)?.birthday;
+        const birthday = upcomingBirthday(born ?? null, today);
+        return {
+          ...entry,
+          ...(birthday ? { birthday } : {}),
+          ...(inBirthdaySection(entry, born, today)
+            ? { section: "birthday" as const }
+            : {}),
+        };
+      },
     ),
     sources: Object.fromEntries(
       SOURCES.map((source) => {
@@ -459,6 +738,33 @@ function response(
     hidden: people
       .filter((person) => person.preference?.excludedAt)
       .map((person) => ({ personId: person.id, name: personName(person) })),
+    reviewCount,
+    upcoming: people
+      .flatMap((person) => {
+        const dueOn = person.preference?.dueOn;
+        return dueOn && dueOn > today && !person.preference?.excludedAt
+          ? [
+              {
+                personId: person.id,
+                name: personName(person),
+                dueOn,
+                note: person.preference?.dueNote ?? null,
+              },
+            ]
+          : [];
+      })
+      .sort(
+        (a, b) => a.dueOn.localeCompare(b.dueOn) || a.name.localeCompare(b.name),
+      ),
+    // Today's birthdays are rows on the sheet; this looks ahead from tomorrow.
+    birthdays: people
+      .flatMap((person) => {
+        const on = upcomingBirthday(person.birthday, today, BIRTHDAY_LIST_DAYS);
+        return on && on > today && !person.preference?.excludedAt
+          ? [{ personId: person.id, name: personName(person), on }]
+          : [];
+      })
+      .sort((a, b) => a.on.localeCompare(b.on) || a.name.localeCompare(b.name)),
     ...(data.undo ? { undoToken: data.undo.token } : {}),
   };
 }
@@ -519,6 +825,8 @@ function snapshot(
     excludedAt: contact.excludedAt?.toISOString() ?? null,
     lastSuggestedAt: contact.lastSuggestedAt?.toISOString() ?? null,
     lastCompletedAt: contact.lastCompletedAt?.toISOString() ?? null,
+    dueOn: contact.dueOn,
+    dueNote: contact.dueNote,
   };
 }
 export function mutateCallSheet(
@@ -591,7 +899,11 @@ export function mutateCallSheet(
         data: Object.fromEntries(
           Object.entries(preference).map(([key, value]) => [
             key,
-            value ? new Date(value) : null,
+            key === "dueOn" || key === "dueNote"
+              ? (value ?? null)
+              : value
+                ? new Date(value)
+                : null,
           ]),
         ),
       });
@@ -674,7 +986,8 @@ export function mutateCallSheet(
           where: { id: contact.id },
           data:
             action.action === "hide"
-              ? { excludedAt: now }
+              ? // "Don't suggest" also cancels a pending reminder (Undo restores it).
+                { excludedAt: now, dueOn: null, dueNote: null }
               : {
                   snoozedUntil: snoozeUntil(
                     now,
@@ -684,6 +997,12 @@ export function mutateCallSheet(
                 },
         });
         data.skipped = [...data.skipped, person.id].slice(-100);
+        // A birthday row is set aside for the day; the list keeps its five.
+        const birthdayRow = inBirthdaySection(
+          entry,
+          person.birthday,
+          current.day.localDate,
+        );
         // Insert the replacement into the removed slot, keeping all other IDs and positions stable.
         const ctx = await context(tx, userId, now);
         const candidates = rankCandidates(
@@ -696,18 +1015,38 @@ export function mutateCallSheet(
           ...data.entries.map((item) => item.personId),
           ...data.skipped,
         ]);
-        const replacement = selectCandidates(
-          candidates.filter((item) => !excluded.has(item.person.id)),
-          1,
-          ctx.people
-            .filter((person) =>
-              data.entries.some(
-                (existing) =>
-                  existing.personId === person.id && existing.id !== entry.id,
+        const replacement = birthdayRow
+          ? undefined
+          : selectCandidates(
+              candidates.filter(
+                (item) =>
+                  !item.birthdayToday && !excluded.has(item.person.id),
               ),
-            )
-            .map((person) => ({ category: relationshipCategory(person) })),
-        )[0];
+              1,
+              ctx.people
+                .filter((person) =>
+                  data.entries.some(
+                    (existing) =>
+                      existing.personId === person.id &&
+                      existing.id !== entry.id &&
+                      !inBirthdaySection(
+                        existing,
+                        person.birthday,
+                        current.day.localDate,
+                      ),
+                  ),
+                )
+                .map((person) => ({
+                  category: relationshipCategory(person),
+                })),
+            )[0];
+        // "Someone else" with nobody else due would only shorten the list.
+        // Throwing rolls back the snooze above, so the person stays put.
+        if (!replacement && action.action === "replace" && !birthdayRow)
+          throw new IntakeError(
+            `No one else is due for a check-in right now, so ${personName(person)} stays on today’s list.`,
+            422,
+          );
         const index = data.entries.findIndex((item) => item.id === entry.id);
         if (replacement) {
           undo.replacement = {
@@ -851,5 +1190,158 @@ export function updateCallSheetSettings(
       });
     }
     return sheetInTransaction(tx, userId, now);
+  });
+}
+export function parseReminder(raw: unknown): CallSheetReminderInput {
+  const input = object(raw);
+  strictFields(input, ["personId", "dueOn", "note"]);
+  const personId = id(input.personId);
+  if (input.dueOn !== null && !isLocalDate(input.dueOn))
+    throw new IntakeError("Choose a valid date");
+  if (
+    input.note !== undefined &&
+    input.note !== null &&
+    typeof input.note !== "string"
+  )
+    throw new IntakeError("Invalid note");
+  const note = typeof input.note === "string" ? input.note.trim() : "";
+  if (note.length > 200)
+    throw new IntakeError("Keep the note to 200 characters");
+  return { personId, dueOn: input.dueOn as string | null, note: note || null };
+}
+/** A reminder date is today or later in the sheet's timezone, within two years. */
+export function checkReminderDate(dueOn: string, timezone: string, now: Date) {
+  const today = localDate(now, timezone);
+  if (dueOn < today) throw new IntakeError("That date has already passed");
+  if (dueOn > addLocalDays(today, 730))
+    throw new IntakeError("Choose a date within the next two years");
+}
+/** Put a person on the sheet on a chosen local date (or cancel with dueOn: null).
+ * Explicit intent overrides an earlier hide or snooze. Returns the refreshed sheet. */
+export function setCallSheetReminder(
+  userId: string,
+  raw: unknown,
+  now = new Date(),
+): Promise<CallSheetResponse> {
+  const input = parseReminder(raw);
+  return ownerTransaction(userId, async (tx) => {
+    const settings = await ensureSettings(tx, userId);
+    if (input.dueOn) checkReminderDate(input.dueOn, settings.timezone, now);
+    const person = await tx.person.findFirst({
+      where: { id: input.personId, userId, archived: false },
+    });
+    if (!person) throw new IntakeError("Person not found", 404);
+    const values = input.dueOn
+      ? {
+          dueOn: input.dueOn,
+          dueNote: input.note ?? null,
+          snoozedUntil: null,
+          excludedAt: null,
+        }
+      : { dueOn: null, dueNote: null };
+    await tx.callSheetContact.upsert({
+      where: { userId_personId: { userId, personId: person.id } },
+      create: {
+        userId,
+        personId: person.id,
+        identityKey: identityKey(person),
+        ...values,
+      },
+      update: values,
+    });
+    return sheetInTransaction(tx, userId, now);
+  });
+}
+function reviewSummary(raw: unknown): string | null {
+  const summary =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as { summary?: unknown }).summary
+      : null;
+  if (typeof summary !== "string" || !summary.trim()) return null;
+  const text = summary.trim().replace(/\s+/g, " ");
+  return text.length > 240 ? `${text.slice(0, 239).trimEnd()}…` : text;
+}
+export function getCallSheetReview(
+  userId: string,
+  now = new Date(),
+): Promise<CallSheetReview> {
+  return ownerTransaction(userId, async (tx) => {
+    const ctx = await context(tx, userId, now);
+    const records = new Map(ctx.records.map((person) => [person.id, person]));
+    const people = reviewQueue(ctx.people, ctx.sources, now).flatMap((item) => {
+      const person = records.get(item.id);
+      if (!person) return [];
+      return [
+        {
+          personId: person.id,
+          name: personName(person),
+          imageUrl: person.imageUrl,
+          company: person.company,
+          role: person.role,
+          city: person.city,
+          howWeMet: person.howWeMet,
+          strength: person.strength,
+          circles: person.circles,
+          tags: person.tags,
+          summary: reviewSummary(person.context),
+          reachable: !!(person.phone?.trim() || person.email?.trim()),
+        },
+      ];
+    });
+    return { total: people.length, people };
+  });
+}
+export function parseReviewDecision(raw: unknown): CallSheetReviewDecision {
+  const input = object(raw);
+  strictFields(input, ["personId", "decision", "cadenceDays"]);
+  const personId = id(input.personId);
+  if (input.decision === "keep") {
+    if (
+      !Number.isInteger(input.cadenceDays) ||
+      (input.cadenceDays as number) < 7 ||
+      (input.cadenceDays as number) > 730
+    )
+      throw new IntakeError("Cadence must be 7 to 730 days");
+    return {
+      personId,
+      decision: "keep",
+      cadenceDays: input.cadenceDays as number,
+    };
+  }
+  if (input.decision !== "hide" && input.decision !== "reset")
+    throw new IntakeError("Invalid decision");
+  if (input.cadenceDays !== undefined)
+    throw new IntakeError("Cadence is only for keep");
+  return { personId, decision: input.decision };
+}
+/** One quick-review answer. Light on purpose: the sheet re-ranks on its next read. */
+export function decideCallSheetReview(
+  userId: string,
+  raw: unknown,
+  now = new Date(),
+) {
+  const input = parseReviewDecision(raw);
+  return ownerTransaction(userId, async (tx) => {
+    const person = await tx.person.findFirst({
+      where: { id: input.personId, userId, archived: false },
+    });
+    if (!person) throw new IntakeError("Person not found", 404);
+    const values =
+      input.decision === "keep"
+        ? { cadenceDays: input.cadenceDays }
+        : input.decision === "hide"
+          ? { excludedAt: now }
+          : { excludedAt: null, cadenceDays: null };
+    await tx.callSheetContact.upsert({
+      where: { userId_personId: { userId, personId: person.id } },
+      create: {
+        userId,
+        personId: person.id,
+        identityKey: identityKey(person),
+        ...values,
+      },
+      update: values,
+    });
+    return { ok: true as const };
   });
 }

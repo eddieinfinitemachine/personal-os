@@ -7,13 +7,11 @@ import { ChevronDown, Link2, Loader2, Plus, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SimpleMarkdown } from "@/components/simple-markdown";
 import { DictateCard } from "./dictate-card";
-import { GranolaSync } from "./granola-sync";
-import { SyncHelp } from "./sync-help";
 import { PeopleBoard, type DatingCard } from "./people-board";
 import { LinkPicker, type PickablePerson } from "./link-picker";
 import { QuickAdd } from "./quick-add";
 import { ReviewInbox } from "./review-inbox";
-import { DatingSourcesProvider, SourceStatus, SourceSettings } from "./source-status";
+import { DatingSourcesProvider, SourceAttention } from "./source-status";
 
 export type { DatingCard };
 
@@ -34,12 +32,9 @@ const LESSONS_OPEN_KEY = "personalos:dating-lessons-open";
 export function DatingHome({
   people,
   suggestions,
-  granola = false,
 }: {
   people: DatingCard[];
   suggestions: GranolaSuggestion[];
-  /** Show the Granola sync control (founder only: the API key is personal). */
-  granola?: boolean;
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
@@ -97,7 +92,7 @@ export function DatingHome({
         <div className="mb-4 rounded-md bg-[var(--color-fill)] px-3 py-2 text-sm text-[var(--color-destructive)]">{error}</div>
       )}
 
-      <SourceStatus />
+      <SourceAttention />
       <ReviewInbox people={people} />
       <PeopleBoard people={people} />
 
@@ -158,14 +153,6 @@ export function DatingHome({
             )}
           </div>
         </section>
-
-        <SourceSettings>
-          {/* Keep controls mounted: collapsing must not reset an active import. */}
-          <div className="pt-3">
-            {granola && <GranolaSync />}
-            <SyncHelp compact />
-          </div>
-        </SourceSettings>
       </div>
     </div>
     </DatingSourcesProvider>

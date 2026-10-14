@@ -1,5 +1,6 @@
 import type { ReachOutMethod } from "./reach-out";
-export type CallSheetSource = "imessage" | "whatsapp";
+/** "ecpad" carries the owner's own note excerpts: context for cues only, never contact evidence. */
+export type CallSheetSource = "imessage" | "whatsapp" | "ecpad";
 export type EvidenceCue = {
   kind: "topic" | "follow_up";
   text: string;
@@ -32,6 +33,27 @@ export type CallSheetEntry = {
   cadenceDays: number;
   interactionId?: string;
   method?: ReachOutMethod;
+  /** Set when the user asked for this person on this day ("call sheet: Alex Tuesday"). */
+  reminder?: { note: string | null };
+  /** Local YYYY-MM-DD of their birthday when it is today or within the next week. */
+  birthday?: string;
+  /** "birthday": shown under "Birthdays today", outside the regular five. */
+  section?: "birthday";
+  /** Local YYYY-MM-DD of the earlier sheet this row was first on. A pending
+   * row is kept day after day until it is done, contacted or set aside. */
+  carriedFrom?: string;
+};
+export type CallSheetUpcoming = {
+  personId: string;
+  name: string;
+  dueOn: string;
+  note: string | null;
+};
+export type CallSheetBirthday = {
+  personId: string;
+  name: string;
+  /** Local YYYY-MM-DD. */
+  on: string;
 };
 export type CallSheetResponse = {
   day: { id: string; localDate: string; version: number };
@@ -39,7 +61,40 @@ export type CallSheetResponse = {
   sources: Record<CallSheetSource, SourceHealth>;
   timezone: string;
   hidden: { personId: string; name: string }[];
+  /** People with no contact on record waiting for a quick review. */
+  reviewCount: number;
+  /** Future-dated reminders, soonest first. */
+  upcoming: CallSheetUpcoming[];
+  /** Birthdays from tomorrow through the next two weeks, soonest first. */
+  birthdays: CallSheetBirthday[];
   undoToken?: string;
+};
+export type CallSheetReviewPerson = {
+  personId: string;
+  name: string;
+  imageUrl: string | null;
+  company: string | null;
+  role: string | null;
+  city: string | null;
+  howWeMet: string | null;
+  strength: string | null;
+  circles: string[];
+  tags: string[];
+  summary: string | null;
+  reachable: boolean;
+};
+export type CallSheetReview = {
+  total: number;
+  people: CallSheetReviewPerson[];
+};
+export type CallSheetReviewDecision =
+  | { personId: string; decision: "keep"; cadenceDays: number }
+  | { personId: string; decision: "hide" | "reset" };
+export type CallSheetReminderInput = {
+  personId: string;
+  /** Local YYYY-MM-DD, or null to cancel. */
+  dueOn: string | null;
+  note?: string | null;
 };
 export type CallSheetMutation = {
   dayId: string;

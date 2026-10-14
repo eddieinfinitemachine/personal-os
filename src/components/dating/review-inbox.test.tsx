@@ -43,7 +43,7 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 
 describe("People to review", () => {
-  it("shows exact evidence and unknown dates, rejects unsafe source links and explains source-only exclusions", async () => {
+  it("shows exact evidence and unknown dates, rejects unsafe source links and explains name-only dismissals", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok(response())));
     await render();
     expect(container.textContent).toContain("People to review (1)");
@@ -52,7 +52,7 @@ describe("People to review", () => {
     expect(container.querySelector("blockquote")?.textContent).toBe(candidate.evidence[0].quote);
     expect(container.querySelectorAll("a")).toHaveLength(1);
     expect(container.querySelector("a")?.href).toBe("https://example.com/note");
-    expect(container.textContent).toContain("applies only to this name in this source");
+    expect(container.textContent).toContain("this name isn’t suggested again from EC Pad or Granola");
     for (const control of container.querySelectorAll("button, input, select, summary")) expect(control.className).toContain("min-h-11");
   });
 

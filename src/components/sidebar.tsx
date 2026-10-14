@@ -7,6 +7,8 @@ import { AddTemplateButton, useEnabledTemplates } from "./sidebar-template-picke
 import { useEffect, useRef, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
 import { partitionProjects } from "@/lib/project-groups";
+import type { TemplateSlug } from "@/lib/templates";
+import { moveSlug, orderedTemplates } from "@/lib/tracker-order";
 import { ThemeToggle } from "./theme-toggle";
 
 type SidebarProject = {
@@ -106,10 +108,33 @@ export function Sidebar({
 
   // Trackers (template pages) are lifted here so the footer can pull
   // Print lists out of the content group and park it next to Settings.
-  const { enabled: enabledTemplates, available: availableTemplates, add: addTemplate } =
-    useEnabledTemplates(isPrivate);
-  const trackers = enabledTemplates.filter((t) => t.slug !== "print-lists");
+  const {
+    enabled: enabledTemplates,
+    available: availableTemplates,
+    add: addTemplate,
+    reorder: reorderTemplates,
+  } = useEnabledTemplates(isPrivate);
+  const enabledTrackers = enabledTemplates.filter((t) => t.slug !== "print-lists");
   const printLists = enabledTemplates.find((t) => t.slug === "print-lists") ?? null;
+  // Drag-reorder trackers the same way projects reorder: rows shuffle live
+  // during the drag (local order), and the drop persists it via the hook.
+  const [trackerDrag, setTrackerDrag] = useState<{ slug: TemplateSlug; order: TemplateSlug[] } | null>(null);
+  const trackers = trackerDrag ? orderedTemplates(trackerDrag.order, enabledTrackers) : enabledTrackers;
+
+  function moveTrackerTo(toSlug: TemplateSlug) {
+    setTrackerDrag((prev) => {
+      if (!prev || prev.slug === toSlug) return prev;
+      const toIdx = prev.order.indexOf(toSlug);
+      if (toIdx < 0) return prev;
+      const order = moveSlug(prev.order, prev.slug, toIdx);
+      return order === prev.order ? prev : { ...prev, order };
+    });
+  }
+
+  function persistTrackerOrder() {
+    if (trackerDrag) reorderTemplates(trackerDrag.order);
+    setTrackerDrag(null);
+  }
 
   function moveTo(fromId: string, toId: string) {
     if (fromId === toId) return;
@@ -224,13 +249,37 @@ export function Sidebar({
         </div>
         <nav className="space-y-0.5">
           {trackers.map((t) => (
-            <SidebarLink
+            <div
               key={t.slug}
-              href={t.href}
-              icon={<t.Icon className="size-4" />}
-              label={t.label}
-              active={pathname.startsWith(t.href)}
-            />
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData(TRACKER_MIME, t.slug);
+                setTrackerDrag({ slug: t.slug, order: enabledTrackers.map((x) => x.slug) });
+              }}
+              onDragOver={(e) => {
+                if (!e.dataTransfer.types.includes(TRACKER_MIME)) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                moveTrackerTo(t.slug);
+              }}
+              onDrop={(e) => {
+                if (!e.dataTransfer.types.includes(TRACKER_MIME)) return;
+                e.preventDefault();
+                persistTrackerOrder();
+              }}
+              // Dropped outside a row (or cancelled): snap back.
+              onDragEnd={() => setTrackerDrag(null)}
+              className={cn("rounded-md transition", trackerDrag?.slug === t.slug && "opacity-40")}
+            >
+              <SidebarLink
+                href={t.href}
+                icon={<t.Icon className="size-4" />}
+                label={t.label}
+                active={pathname.startsWith(t.href)}
+                draggable={false}
+              />
+            </div>
           ))}
           <AddTemplateButton available={availableTemplates} onAdd={addTemplate} />
         </nav>
@@ -496,22 +545,27 @@ function formatRelative(d: Date): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+const TRACKER_MIME = "application/x-personalos-tracker";
+
 function SidebarLink({
   href,
   icon,
   label,
   count,
   active,
+  draggable,
 }: {
   href: string;
   icon: React.ReactNode;
   label: string;
   count?: number;
   active?: boolean;
+  draggable?: boolean;
 }) {
   return (
     <Link
       href={href}
+      draggable={draggable}
       className={cn(
         "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition",
         active

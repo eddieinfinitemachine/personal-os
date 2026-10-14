@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/claude", () => ({ callClaudeJSON: vi.fn() }));
 import { callClaudeJSON } from "@/lib/claude";
-import { extractCallSheetCues } from "./extract";
+import { ECPAD_CUE_RULE, extractCallSheetCues } from "./extract";
 const now = new Date("2026-09-28T15:00:00Z");
 const message = { guid: "m1", sentAt: "2026-09-20T12:00:00Z", fromMe: false, text: "I am training for the marathon in November." };
 describe("call sheet grounded cues", () => {
@@ -39,5 +39,15 @@ describe("call sheet grounded cues", () => {
   it("propagates provider failure so ingestion can retry", async () => {
     vi.mocked(callClaudeJSON).mockRejectedValue(new Error("unavailable"));
     await expect(extractCallSheetCues([message], "imessage", now)).rejects.toThrow("unavailable");
+  });
+  it("tells the model EC Pad excerpts are the owner's notes, only for that source", async () => {
+    vi.mocked(callClaudeJSON).mockResolvedValue({ cues: [] });
+    await extractCallSheetCues([{ ...message, fromMe: true }], "ecpad", now);
+    await extractCallSheetCues([message], "imessage", now);
+    const [ecpad, imessage] = vi.mocked(callClaudeJSON).mock.calls.map(([arg]) => arg.system);
+    expect(ECPAD_CUE_RULE).toBe("ecpad messages are the owner's own note excerpts, not a conversation; suggest topics, never infer an obligation or a missed reply from them.");
+    expect(ecpad).toContain(ECPAD_CUE_RULE);
+    expect(imessage).not.toContain(ECPAD_CUE_RULE);
+    expect(JSON.parse(vi.mocked(callClaudeJSON).mock.calls[0][0].user!).source).toBe("ecpad");
   });
 });

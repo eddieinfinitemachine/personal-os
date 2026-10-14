@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { mkdtemp, mkdir, readFile, writeFile, rename, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
+import { sweepStaleTempRoots } from "./sync-temp";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -251,6 +252,7 @@ export async function runCallSheetWorker() {
         typeof value.metadata === "object" && !Array.isArray(value.metadata) &&
         typeof value.cues === "object" && !Array.isArray(value.cues)) checkpoint = value;
   } catch {}
+  sweepStaleTempRoots("call-sheet-sync-", 2 * 3600_000);
   const root = await mkdtemp(join(tmpdir(), "call-sheet-sync-"));
   try {
     const result = await syncCallSheet({

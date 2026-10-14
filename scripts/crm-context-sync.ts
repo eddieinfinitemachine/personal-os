@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
+import { sweepStaleTempRoots } from "./sync-temp";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -230,6 +231,8 @@ export async function runCrmContextWorker(argv: string[]): Promise<number> {
     if (value?.version === 1 && value.digests && typeof value.digests === "object" && !Array.isArray(value.digests)) checkpoint = value;
   } catch {}
 
+  // A killed run (session teardown, ENOSPC) never reaches cleanup; its multi-GB snapshot stays in tmp.
+  sweepStaleTempRoots("crm-context-sync-", 2 * 3600_000);
   const root = mkdtempSync(join(tmpdir(), "crm-context-sync-"));
   const cleanup = () => rmSync(root, { recursive: true, force: true });
   const onSignal = (signal: NodeJS.Signals) => { cleanup(); process.exit(signal === "SIGINT" ? 130 : 143); };

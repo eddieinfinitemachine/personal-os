@@ -2,7 +2,7 @@
 
 import { Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { haptic } from "@/lib/haptic";
 
@@ -17,8 +17,13 @@ import { haptic } from "@/lib/haptic";
 const LONG_PRESS_MS = 500;
 const MID_PRESS_MS = 250;
 
+// Pages where a floating "+" has nothing to add and gets in the way of the
+// page's own controls.
+const HIDDEN_ON = ["/workout"];
+
 export function MobileFab() {
   const router = useRouter();
+  const pathname = usePathname();
   const [activeListId, setActiveListId] = useState<string | null>(null);
   const [pressing, setPressing] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -92,6 +97,8 @@ export function MobileFab() {
     }
     quickReminder();
   }
+
+  if (HIDDEN_ON.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return null;
 
   return (
     <button

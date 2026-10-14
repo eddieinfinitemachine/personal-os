@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { ListTile, type ListInfo } from "./list-tile";
 import { palette } from "@/lib/lists";
 import { CallSheetShortcut, useCallSheetProgress } from "./call-sheet-shortcut";
@@ -16,15 +15,11 @@ export type HomeTile = {
 };
 
 export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
-  const router = useRouter();
   const callSheetProgress = useCallSheetProgress();
   const callSheet = (list: ListInfo) => list.isDefault && !list.shared && list.name === "To Do"
     ? <CallSheetShortcut progress={callSheetProgress} />
     : null;
   const [tiles, setTiles] = useState(initialTiles);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
 
   // Re-sync from server snapshots (e.g. todo counts updating).
   useEffect(() => {
@@ -53,32 +48,6 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
     return () =>
       window.removeEventListener("personalos:list-created", onCreated);
   }, []);
-
-  const orderedIds = useMemo(() => tiles.map((t) => t.list.id), [tiles]);
-
-  function moveTile(fromId: string, toId: string) {
-    if (fromId === toId) return;
-    setTiles((prev) => {
-      const fromIdx = prev.findIndex((t) => t.list.id === fromId);
-      const toIdx = prev.findIndex((t) => t.list.id === toId);
-      if (fromIdx < 0 || toIdx < 0) return prev;
-      const next = [...prev];
-      const [moved] = next.splice(fromIdx, 1);
-      next.splice(toIdx, 0, moved);
-      return next;
-    });
-  }
-
-  async function persistOrder() {
-    setDraggingId(null);
-    setOverId(null);
-    await fetch("/api/lists/reorder", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: orderedIds }),
-    });
-    startTransition(() => router.refresh());
-  }
 
   // Mobile pager: horizontal scroll-snap track with a segmented tab indicator.
   const trackRef = useRef<HTMLDivElement>(null);
@@ -152,9 +121,12 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
 
   return (
     <>
-      {/* Mobile: scrollable pill bar (one chip per list with count) + pager. */}
+      {/* Mobile: scrollable pill bar (one chip per list with count) + pager.
+          Both bleed to the screen edge by cancelling the page gutter
+          (px-4, sm:px-6 in app/page.tsx), so each w-screen slide is exactly
+          one track width and nothing overflows the viewport. */}
       <div className="md:hidden">
-        <div className="mb-3 -mx-4 px-4 flex gap-1.5 overflow-x-auto scrollbar-none">
+        <div className="mb-3 -mx-4 px-4 sm:-mx-6 sm:px-6 flex gap-1.5 overflow-x-auto scrollbar-none">
           {tiles.map((t, i) => {
             const p = palette(t.list.color);
             const active = activeIdx === i;
@@ -185,7 +157,7 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
           ref={trackRef}
           onScroll={onTrackScroll}
           data-pager-track
-          className="flex -mx-4 overflow-x-auto snap-x snap-mandatory scrollbar-none"
+          className="flex -mx-4 sm:-mx-6 overflow-x-auto snap-x snap-mandatory scrollbar-none"
           style={{
             scrollSnapStop: "always",
             overscrollBehaviorX: "contain",
@@ -194,7 +166,7 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
           {tiles.map((t) => (
             <div
               key={t.list.id}
-              className="snap-start shrink-0 w-screen px-4"
+              className="snap-start shrink-0 w-screen px-4 sm:px-6"
             >
               <ListTile
                 list={t.list}
@@ -208,7 +180,7 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
         </div>
       </div>
 
-      {/* Desktop: grid (drag-to-reorder tiles is desktop-only). */}
+      {/* Desktop: grid. */}
       <div className="hidden md:grid gap-4 grid-cols-1 lg:grid-cols-3">
         {tiles.map((t) => (
           <ListTile
@@ -216,19 +188,8 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
             list={t.list}
             todos={t.todos}
             totalCount={t.totalCount}
-            reorderable
             groupByProject
             leadingContent={callSheet(t.list)}
-            onReorderStart={(id) => setDraggingId(id)}
-            onReorderOver={(id) => {
-              if (!draggingId || draggingId === id) return;
-              if (overId === id) return;
-              setOverId(id);
-              moveTile(draggingId, id);
-            }}
-            onReorderDrop={() => {
-              persistOrder();
-            }}
           />
         ))}
       </div>

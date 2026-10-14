@@ -52,7 +52,7 @@ Output ONLY a single JSON object on one line, no prose. Schema:
       "howWeMet": string | null,           // the CONTEXT: where/how/when met (e.g. "AI dinner in SF, May 2026")
       "interests": string[],               // hobbies/topics they're into; [] if none
       "tags": string[],                    // short labels worth filtering on (e.g. "founder", "climber"); [] if none
-      "birthday": "YYYY-MM-DD" | null,     // only if an actual date is given
+      "birthday": "YYYY-MM-DD" | null,     // only if an actual date is given; no year given → year 1604 ("March 5" → "1604-03-05")
       "notes": string | null,              // any leftover detail that doesn't fit a field above
       "socialUrls": { "linkedin"?: string, "twitter"?: string, "instagram"?: string, "website"?: string } | null
     }

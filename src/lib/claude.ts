@@ -17,6 +17,18 @@ export type ClaudeImageBlock = {
 export type ClaudeTextBlock = { type: "text"; text: string };
 export type ClaudeContentBlock = ClaudeTextBlock | ClaudeImageBlock;
 
+/** A non-2xx reply from the Messages API. `status` lets callers tell
+ * configuration problems (401/403/404) from transient ones (429/5xx). */
+export class ClaudeAPIError extends Error {
+  constructor(
+    readonly status: number,
+    body: string,
+  ) {
+    super(`Claude error ${status}: ${body}`);
+    this.name = "ClaudeAPIError";
+  }
+}
+
 export interface ClaudeMessage {
   role: "user" | "assistant";
   /** Plain text, or content blocks (text + base64 images for vision). */
@@ -65,9 +77,7 @@ export async function callClaudeText({
       messages: msgs,
     }),
   });
-  if (!res.ok) {
-    throw new Error(`Claude error ${res.status}: ${await res.text()}`);
-  }
+  if (!res.ok) throw new ClaudeAPIError(res.status, await res.text());
   const data = (await res.json()) as {
     content?: Array<{ type: string; text?: string }>;
   };
@@ -144,9 +154,7 @@ export async function callClaudeWithServerTools({
         messages,
       }),
     });
-    if (!res.ok) {
-      throw new Error(`Claude error ${res.status}: ${await res.text()}`);
-    }
+    if (!res.ok) throw new ClaudeAPIError(res.status, await res.text());
     const data = (await res.json()) as { content?: ClaudeResponseBlock[]; stop_reason?: string | null };
     const content = data.content ?? [];
     all.push(...content);

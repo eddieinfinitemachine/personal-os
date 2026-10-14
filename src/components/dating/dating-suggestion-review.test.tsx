@@ -11,8 +11,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
 vi.mock("./review-inbox", () => ({ ReviewInbox: () => <section aria-label="People to review">New intake review</section> }));
 vi.mock("./source-status", () => ({
   DatingSourcesProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
-  SourceStatus: () => null,
-  SourceSettings: ({ children }: { children: ReactNode }) => <details><summary>Imports and sync</summary>{children}</details>,
+  SourceAttention: () => <p role="status" aria-label="Source status">Texts needs attention.</p>,
 }));
 vi.mock("./people-board", () => ({ PeopleBoard: () => <div data-testid="people-board" /> }));
 vi.mock("./dictate-card", () => ({ DictateCard: () => <div data-testid="dictate">Dictate a note</div> }));
@@ -49,7 +48,7 @@ afterEach(async () => {
   container.remove();
   vi.unstubAllGlobals();
 });
-const render = async (granola = false) => act(async () => root.render(<DatingHome people={[person]} suggestions={suggestions} granola={granola} />));
+const render = async () => act(async () => root.render(<DatingHome people={[person]} suggestions={suggestions} />));
 const review = () => container.querySelector('section[aria-label="Review from Granola"]')!;
 const count = (n: number) => expect(review().querySelector("h2")?.textContent).toMatch(new RegExp(`\\(${n}\\)`));
 const row = (summary = "Earlier relationship") => [...review().querySelectorAll("li")].find((item) => item.textContent?.includes(summary))!;
@@ -180,51 +179,18 @@ describe("home actions and imports disclosure", () => {
     expect(inbox.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(review().querySelector("h2")?.textContent).toContain("Earlier Granola mentions");
   });
-  it("labels Add person clearly and leaves notes and review outside collapsed import controls", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok({ remaining: 0 })));
-    await render(true);
-    const details = [...container.querySelectorAll("details")].find((item) => item.querySelector("summary")?.textContent === "Imports and sync")!;
-    expect(details).toBeDefined();
-    expect(details.open).toBe(false);
-    expect(details.contains(review())).toBe(false);
-    expect(details.contains(container.querySelector('[data-testid="dictate"]'))).toBe(false);
-    expect(details.contains(button("Sync now"))).toBe(true);
-    expect(details.contains(button("Sync iMessage and WhatsApp from your Mac"))).toBe(true);
+  it("labels Add person clearly and leaves imports and sync to Settings", async () => {
+    const fetch = vi.fn().mockResolvedValue(ok({ remaining: 0 }));
+    vi.stubGlobal("fetch", fetch);
+    await render();
+    const banner = container.querySelector('[aria-label="Source status"]')!;
+    expect(banner.compareDocumentPosition(container.querySelector('[aria-label="People to review"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.textContent).not.toContain("Imports and sync");
+    expect(container.querySelector("details")).toBeNull();
+    expect(button("Sync now")).toBeUndefined();
+    expect(button("Refresh source status")).toBeUndefined();
+    expect(container.querySelector('[data-testid="dictate"]')).not.toBeNull();
     await click(button("Add person"));
     expect(container.querySelector('[role="dialog"]')?.textContent).toBe("New person form");
-  });
-
-  it("keeps an in-progress import mounted across collapse and does not start another request when toggled", async () => {
-    const pending = deferred();
-    const fetch = vi.fn((url: string) => url === "/api/dating/organize-all" ? Promise.resolve(ok({ remaining: 0 })) : pending.promise);
-    vi.stubGlobal("fetch", fetch);
-    await render(true);
-    const details = [...container.querySelectorAll("details")].find((item) => item.querySelector("summary")?.textContent === "Imports and sync")!;
-    const summary = details.querySelector("summary")!;
-    expect(fetch).toHaveBeenCalledTimes(1); // read-only count on mount
-    await click(summary);
-    expect(details.open).toBe(true);
-    expect(fetch).toHaveBeenCalledTimes(1);
-    await click(button("Import since…", details));
-    const date = details.querySelector<HTMLInputElement>('[aria-label="Import meetings since"]')!;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(date, "2025-01-01");
-      date.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    await click(button("Import", details));
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(button("Import", details).disabled).toBe(true);
-    await click(summary);
-    expect(details.open).toBe(false);
-    await click(summary);
-    expect(details.querySelector('[aria-label="Import meetings since"]')).toBe(date);
-    expect(date.value).toBe("2025-01-01");
-    expect(button("Import", details).disabled).toBe(true);
-    expect(fetch).toHaveBeenCalledTimes(2);
-    await act(async () => pending.resolve(ok({ processed: 2, filed: 2, suggestions: 0, remaining: 0, errors: [], nextSince: "2026-01-01", nextAfterId: null })));
-    expect(details.querySelector('[role="status"]')?.textContent).toContain("2 filed");
-    expect(details.querySelector('[role="status"]')?.textContent).toContain("done");
-    expect(button("Sync now", details).disabled).toBe(false);
-    expect(fetch).toHaveBeenCalledTimes(2);
   });
 });

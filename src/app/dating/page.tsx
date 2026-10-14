@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { isFounderUser } from "@/lib/cron";
 import { toPersonDTO } from "@/lib/dating-server";
 import { pickAvatar } from "@/lib/dating-photos";
 import { DatingHome, type DatingCard, type GranolaSuggestion } from "@/components/dating/dating-home";
@@ -13,7 +12,7 @@ export default async function DatingPage() {
   if (!session) redirect("/login");
   const userId = session.userId;
 
-  const [people, events, pending, founder] = await Promise.all([
+  const [people, events, pending] = await Promise.all([
     prisma.datingPerson.findMany({
       where: { userId },
       orderBy: [{ lastMessageAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
@@ -29,7 +28,6 @@ export default async function DatingPage() {
       orderBy: { occurredAt: "desc" },
       select: { id: true, name: true, summary: true, title: true, url: true, occurredAt: true },
     }),
-    isFounderUser(userId),
   ]);
   const suggestions: GranolaSuggestion[] = pending.map((s) => ({ ...s, occurredAt: s.occurredAt.toISOString() }));
 
@@ -57,5 +55,5 @@ export default async function DatingPage() {
     };
   });
 
-  return <DatingHome people={cards} suggestions={suggestions} granola={founder} />;
+  return <DatingHome people={cards} suggestions={suggestions} />;
 }

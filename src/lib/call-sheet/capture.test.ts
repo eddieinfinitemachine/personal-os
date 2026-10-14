@@ -84,4 +84,16 @@ describe("capture validation", () => {
       "Metadata-only",
     );
   });
+  it("accepts EC Pad note excerpts without handles and rejects handles for them", () => {
+    const ecpad = {
+      ...valid,
+      source: "ecpad",
+      handles: [],
+      messages: [{ ...valid.messages[0], fromMe: true, text: "Dinner with Alex Rivera; she starts the new job in March." }],
+    };
+    expect(parseCapture(ecpad, now)).toEqual(ecpad);
+    expect(() => parseCapture({ ...ecpad, handles: ["+15555550101"] }, now)).toThrow("no handles");
+    expect(parseCapture({ type: "health", source: "ecpad", sourceEpoch: "epoch", status: "ready", capturedAt: now.toISOString() }, now)).toMatchObject({ source: "ecpad" });
+    expect(() => parseCapture({ ...ecpad, source: "notes" }, now)).toThrow("Invalid source");
+  });
 });

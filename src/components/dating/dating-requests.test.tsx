@@ -16,8 +16,7 @@ vi.mock("./sync-help", () => ({ SyncHelp: () => null }));
 vi.mock("./review-inbox", () => ({ ReviewInbox: () => null }));
 vi.mock("./source-status", () => ({
   DatingSourcesProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
-  SourceStatus: () => null,
-  SourceSettings: ({ children }: { children: ReactNode }) => <details><summary>Imports and sync</summary>{children}</details>,
+  SourceAttention: () => null,
 }));
 vi.mock("./people-board", () => ({ PeopleBoard: () => null }));
 

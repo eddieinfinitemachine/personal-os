@@ -35,10 +35,6 @@ export function ListTile({
   totalCount,
   projectId,
   projectLabel,
-  reorderable,
-  onReorderStart,
-  onReorderOver,
-  onReorderDrop,
   groupByProject,
   leadingContent,
 }: {
@@ -50,10 +46,6 @@ export function ListTile({
   // this tile is scoped to a project. Helps differentiate project-scoped
   // tiles from personal tiles on the Home view.
   projectLabel?: string;
-  reorderable?: boolean;
-  onReorderStart?: (id: string) => void;
-  onReorderOver?: (id: string) => void;
-  onReorderDrop?: (id: string) => void;
   // When true, group items by their project under collapsible sub-headers
   // (Personal first, then each project). Used on the Home unified tiles.
   groupByProject?: boolean;
@@ -965,15 +957,8 @@ export function ListTile({
   }
 
   const DRAG_MIME = "application/x-personalos-todo";
-  const TILE_MIME = "application/x-personalos-list";
 
   function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
-    if (e.dataTransfer.types.includes(TILE_MIME)) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      onReorderOver?.(list.id);
-      return;
-    }
     if (!e.dataTransfer.types.includes(DRAG_MIME)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -986,21 +971,8 @@ export function ListTile({
     setIsDragOver(false);
   }
 
-  function handleTileDragStart(e: React.DragEvent<HTMLDivElement>) {
-    if (!reorderable) return;
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData(TILE_MIME, list.id);
-    onReorderStart?.(list.id);
-  }
-
   async function handleDrop(e: React.DragEvent<HTMLDivElement>) {
     setIsDragOver(false);
-    const tileId = e.dataTransfer.getData(TILE_MIME);
-    if (tileId) {
-      e.preventDefault();
-      onReorderDrop?.(list.id);
-      return;
-    }
     const raw = e.dataTransfer.getData(DRAG_MIME);
     if (!raw) return;
     e.preventDefault();
@@ -1086,8 +1058,6 @@ export function ListTile({
 
   return (
     <div
-      draggable={reorderable}
-      onDragStart={handleTileDragStart}
       onClick={handleTileClick}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
