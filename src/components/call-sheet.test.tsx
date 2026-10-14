@@ -26,6 +26,7 @@ describe("daily call sheet", () => {
     expect(container.textContent).toContain("Avery Example"); expect(container.textContent).toContain("Ask how the project went.");
     expect(container.querySelector("blockquote")!.closest("details")!.open).toBe(false);
     expect(container.querySelector('a[href^="tel:"], a[href^="sms:"], a[href^="mailto:"]')).toBeNull();
+    expect([...container.querySelectorAll('a[href="/friends?person=person"]')].map(a => a.textContent)).toEqual(["AE", "Avery Example"]);
     expect(button("Call").getAttribute("aria-label")).toBe("Log a call with Avery Example");
     expect(button("Text").getAttribute("aria-label")).toBe("Log a text with Avery Example");
     expect(fetch).toHaveBeenCalledOnce();

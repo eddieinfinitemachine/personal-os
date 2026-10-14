@@ -5,6 +5,8 @@ import { ensureDefaultLists, palette } from "@/lib/lists";
 import { formatCalendarDate } from "@/lib/utils";
 import { initials } from "@/lib/initials";
 import { PrintButton } from "@/components/print-button";
+import { getCallSheet } from "@/lib/call-sheet/service";
+import type { CallSheetResponse } from "@/lib/call-sheet/types";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +23,7 @@ export default async function PrintListsPage() {
   });
   const appName = (me && initials(me.name, me.email)) || "EC";
 
-  const [lists, todos] = await Promise.all([
+  const [lists, todos, callSheet] = await Promise.all([
     prisma.list.findMany({
       where: { userId },
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
@@ -41,6 +43,8 @@ export default async function PrintListsPage() {
         },
       },
     }),
+    // The printed page should still come out if the call sheet can't load.
+    getCallSheet(userId).catch((): CallSheetResponse | null => null),
   ]);
 
   const byList = new Map<string, typeof todos>();
@@ -84,10 +88,15 @@ export default async function PrintListsPage() {
           </div>
           <div className="text-[11px] text-black/60">
             {todos.length} open · {listsWithTodos.length} lists
+            {callSheet?.entries.length ? ` · ${callSheet.entries.filter((e) => e.status === "pending").length} to call` : ""}
           </div>
         </header>
 
         <PrintButton />
+
+        {callSheet && callSheet.entries.length > 0 ? (
+          <PrintCallSheet sheet={callSheet} />
+        ) : null}
 
         <div className="lists-columns mt-4">
           {listsWithTodos.map(({ list, items }) => {
@@ -117,6 +126,52 @@ export default async function PrintListsPage() {
         </div>
       </div>
     </>
+  );
+}
+
+function PrintCallSheet({ sheet }: { sheet: CallSheetResponse }) {
+  const when = (value: string | null) =>
+    value
+      ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: sheet.timezone }).format(new Date(value))
+      : null;
+  return (
+    <section className="avoid-break mt-4 border-y border-black/30 py-2.5">
+      <div className="mb-1.5 flex items-baseline gap-2">
+        <span
+          className="inline-block size-2.5 rounded-sm bg-black"
+          style={{ printColorAdjust: "exact" }}
+          aria-hidden
+        />
+        <h2 className="text-[13px] font-semibold tracking-tight">Call Sheet</h2>
+        <span className="text-[10px] text-black/45">{sheet.entries.length}</span>
+      </div>
+      <ul className="grid gap-x-5 gap-y-[5px] sm:grid-cols-2">
+        {sheet.entries.map((entry) => {
+          const done = entry.status !== "pending";
+          const last = when(entry.lastContactAt);
+          const detail = done
+            ? entry.status === "done" ? "Checked in" : "Recently contacted"
+            : entry.topic ?? entry.reason;
+          return (
+            <li key={entry.id} className="flex items-start gap-1.5 text-[11.5px] leading-[1.35]">
+              <span
+                aria-hidden
+                className={`mt-[3px] inline-block size-[11px] shrink-0 border border-black/70 ${done ? "bg-black/70" : ""}`}
+                style={{ printColorAdjust: "exact" }}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-baseline gap-x-1.5">
+                  <span className={`font-medium ${done ? "text-black/50 line-through" : ""}`}>{entry.name}</span>
+                  {entry.phone ? <span className="text-[10px] text-black/55">{entry.phone}</span> : null}
+                  {last ? <span className="text-[10px] text-black/35">last {last}</span> : null}
+                </div>
+                <div className={`text-[10.5px] ${done ? "text-black/55" : "text-black/75"}`}>{detail}</div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

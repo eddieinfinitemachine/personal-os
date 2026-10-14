@@ -156,6 +156,20 @@ export function FriendsList({ initialPeople }: { initialPeople: PersonRow[] }) {
     setPeople(initialPeople);
   }, [initialPeople]);
 
+  // Deep link from elsewhere (e.g. the call sheet): /friends?person=<id> opens
+  // that person's profile, then drops the param so closing doesn't reopen it.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const id = url.searchParams.get("person");
+    if (!id) return;
+    const target = initialPeople.find((p) => p.id === id);
+    if (target) setEditing(target);
+    url.searchParams.delete("person");
+    window.history.replaceState(window.history.state, "", url);
+    // Only on mount: later initialPeople refreshes shouldn't reopen the sheet.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem(VIEWS_KEY);

@@ -25,8 +25,8 @@ import { commitItems, extractFromNote, provenanceLine } from "@/lib/meeting-impo
 
 const LISTS = [
   { id: "todo", name: "To Do", isDefault: true, userId: "founder" },
-  { id: "ob", name: "EC/OB", isDefault: false, userId: "founder" },
-  { id: "dv", name: "EC/DV", isDefault: false, userId: "founder" },
+  { id: "ob", name: "EC/Obie", isDefault: false, userId: "founder" },
+  { id: "dv", name: "EC/Dave", isDefault: false, userId: "founder" },
 ];
 
 const base = {
@@ -76,7 +76,7 @@ describe("commitItems", () => {
     expect(res).toEqual({
       created: 3,
       byList: [
-        { listId: "ob", listName: "EC/OB", count: 1 },
+        { listId: "ob", listName: "EC/Obie", count: 1 },
         { listId: "todo", listName: "To Do", count: 2 },
       ],
     });
@@ -169,9 +169,24 @@ describe("extractFromNote", () => {
       meetingDate: "2026-09-28",
       webUrl: "https://notes.granola.ai/d/note-1",
     });
-    expect(ext.items.map((i) => i.listName)).toEqual(["EC/OB", "EC/DV", null]);
+    expect(ext.items.map((i) => i.listName)).toEqual(["EC/Obie", "EC/Dave", null]);
     const call = mocks.claude.mock.calls[0][0];
     expect(call.user).toContain("Meeting: GTM Meeting 9/28\nDate: 2026-09-28\nAttendees: Obie Odom");
     expect(call.user).toContain("Obi: I'll automate the no-show texts.");
+  });
+
+  it("tells the model the folder and the 1:1 list, and defaults items there", async () => {
+    mocks.claude.mockResolvedValueOnce({
+      items: [
+        { title: "Have Amalia plan the dinner", owner: "Amalia" },
+        { title: "Ask Zach about the signage", owner: "Eddie" },
+      ],
+    });
+    const note = { ...NOTE, calendar_event: { event_title: "Eddie/Dave Weekly 1:1", scheduled_start_time: "2026-09-30T14:00:00Z" } };
+    const ext = await extractFromNote({ userId: "founder", note, lists: LISTS, folder: "GTM" });
+    expect(ext.items.map((i) => i.listName)).toEqual(["EC/Dave", null]);
+    const call = mocks.claude.mock.calls.at(-1)![0];
+    expect(call.user).toContain("Granola folder: GTM");
+    expect(call.user).toContain('This is a 1:1; its list is "EC/Dave".');
   });
 });

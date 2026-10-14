@@ -62,6 +62,18 @@ the summary says (Dave). EC/DV still got 3 items (Das Auto follow-up,
 fleet/B2B cadence, signage to Zach). "Launch ads today" got a due date of the
 meeting day, so it is already overdue.
 
+## Granola import: list routing (2026-09-30)
+
+Items from Granola were landing on To Do whenever the owner wasn't Dave or
+Obie, and the TEAM roster named lists (EC/DV, EC/OB) that don't exist.
+
+- [x] `src/lib/team.ts` — roster matches the real lists (EC/Dave, EC/Obie, EC/Nolan), roles the prompt shows, and `reports` (Ash, Analia, Marta → Dave)
+- [x] `src/lib/meeting-extract.ts` — owner → own list → alias → manager's list; `oneOnOneList()` from the title ("Eddie/Dave Weekly 1:1") or exactly two attendees; non-Eddie items in a 1:1 default to that list
+- [x] `src/lib/meeting-import.ts` — prompt header carries the Granola folder and the 1:1 list; cron passes its folder
+- [x] Tests: meeting-extract (+3), meeting-import (+1); fixtures renamed to the real list names
+- [ ] Live check: Import Granola on the next 1:1 and confirm the review's list column (a dry run against prod notes was blocked by permissions here)
+- [x] EC/JC (Joseph Cohen), EC/HG (Hudson Groner), EC/Ben (Ben Rubin) added to TEAM
+
 ## Granola auto-import cron (GTM / C2 / Leads)
 
 Every 30 minutes, Granola notes in the folders named exactly GTM, C2 or Leads
@@ -1463,3 +1475,12 @@ Ask (Eddie): link WhatsApp chats to people; a recently contacted person showed "
 - Rollout: update the Mac sync checkout before deploying the server. A fixed server rejects the old worker's `+00…` handles as non-canonical, which marks the source "error" until the worker catches up (per-person, retried hourly). Affected people get a new identity key, so their evidence is cleared and recaptured on the next sync; cadence/snooze/hide are kept
 - NOT done: existing `DatingPerson.handles` already stored as `+00…` stay stale until re-saved; `normalizePhone` in `scripts/link-contacts.ts` and `scripts/imessage-stats.ts` has the same flaw (one-off scripts, left alone)
 - NOT verified: how many CRM people are saved with a `00` prefix (production read was blocked); against production; in a browser
+
+## 2026-10-14 — Call sheet on the print page
+
+Ask (Eddie, screenshot of /print/today): "put call sheet in the print view".
+- [x] `/print/today` loads today's call sheet server-side (`getCallSheet`, same read the Call Sheet page does) alongside the lists; a failure there is swallowed so the lists still print
+- [x] New `PrintCallSheet` band between the print button and the list columns: checkbox, name, phone, last contact, and the topic (or reason) per person; checked-in rows get a filled box, strikethrough, and "Checked in"
+- [x] Header count gains "· N to call" (pending entries)
+- [x] Verified: `tsc --noEmit` clean; dev server + signed-in render of `/print/today` showed 5 entries and "4 to call"; screenshot checked
+- No schema or API change

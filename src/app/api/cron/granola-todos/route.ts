@@ -88,7 +88,7 @@ export async function GET(request: Request) {
     for (const { note: summary, folder } of batch) {
       try {
         const note = await client.getNote(summary.id, { transcript: true });
-        const ext = await extractFromNote({ userId: founder.id, note, lists });
+        const ext = await extractFromNote({ userId: founder.id, note, lists, folder });
         const result = await commitItems({
           userId: founder.id,
           items: ext.items,

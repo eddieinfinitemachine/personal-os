@@ -34,7 +34,7 @@ beforeEach(() => {
   mocks.getNote.mockResolvedValue(NOTE);
   mocks.lists.mockResolvedValue([
     { id: "todo", name: "To Do", isDefault: true, userId: "founder" },
-    { id: "dv", name: "EC/DV", isDefault: false, userId: "founder" },
+    { id: "dv", name: "EC/Dave", isDefault: false, userId: "founder" },
     { id: "ob", name: "EC/OB", isDefault: false, userId: "founder" },
   ]);
   mocks.claude.mockResolvedValue({
@@ -70,12 +70,12 @@ describe("POST /api/meetings/granola/parse", () => {
       meetingDate: "2026-09-28",
       webUrl: "https://notes.granola.ai/d/note-1",
     });
-    expect(body.items.map((i: { listName: string | null }) => i.listName)).toEqual(["EC/OB", "EC/DV", null]);
-    expect(body.lists).toEqual([{ id: "dv", name: "EC/DV" }, { id: "ob", name: "EC/OB" }]);
+    expect(body.items.map((i: { listName: string | null }) => i.listName)).toEqual(["EC/OB", "EC/Dave", null]);
+    expect(body.lists).toEqual([{ id: "dv", name: "EC/Dave" }, { id: "ob", name: "EC/OB" }]);
 
     const call = mocks.claude.mock.calls[0][0];
     expect(call.maxTokens).toBe(4000);
-    expect(call.system).toContain(`"EC/DV" — Dave (David Vollbach), sales`);
+    expect(call.system).toContain(`"EC/Dave" — Dave (David Vollbach), sales`);
     expect(call.user).toContain("Meeting: GTM Meeting 9/28");
     expect(call.user).toContain("Attendees: Obie Odom, dave@example.com");
     expect(call.user).toContain("Deposit backlog cleanup");
