@@ -874,10 +874,6 @@ function TodoRowImpl({
 
   function onDragStart(e: React.DragEvent<HTMLLIElement>) {
     if (!sourceListId) return;
-    // Prevent the parent tile's drag-to-reorder handler from also firing,
-    // which would set TILE_MIME data and shuffle the home tiles when the
-    // user is just trying to move a single todo between lists.
-    e.stopPropagation();
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData(
       "application/x-personalos-todo",
