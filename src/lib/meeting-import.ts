@@ -5,7 +5,7 @@ import { callClaudeJSON } from "@/lib/claude";
 import { granolaNoteText, type GranolaNote } from "@/lib/granola";
 import { listAccessWhere } from "@/lib/list-access";
 import { CAPTURE_LIST_NAME, ensureDefaultLists, ensureInboxProject } from "@/lib/lists";
-import { buildSystem, meetingDay, normalizeItems, type MeetingItem } from "@/lib/meeting-extract";
+import { buildSystem, meetingDay, normalizeItems, oneOnOneList, type MeetingItem } from "@/lib/meeting-extract";
 import { prisma } from "@/lib/prisma";
 
 export type ImportList = { id: string; name: string; isDefault: boolean; userId: string };
@@ -33,15 +33,21 @@ export type Extraction = {
 export async function extractFromNote({
   note,
   lists,
+  folder = null,
 }: {
   userId: string;
   note: GranolaNote;
   lists: { id: string; name: string }[];
+  /** Granola folder the note came from (cron), shown to the model as context. */
+  folder?: string | null;
 }): Promise<Extraction> {
   const meetingTitle = note.title?.trim() || note.calendar_event?.event_title?.trim() || null;
   const meetingDate = meetingDay(note.calendar_event?.scheduled_start_time ?? note.created_at);
+  const oneOnOne = oneOnOneList(meetingTitle, note.attendees, lists);
   const header = [
     meetingTitle ? `Meeting: ${meetingTitle}` : null,
+    folder ? `Granola folder: ${folder}` : null,
+    oneOnOne ? `This is a 1:1; its list is "${oneOnOne.name}".` : null,
     meetingDate ? `Date: ${meetingDate}` : null,
     note.attendees?.length
       ? `Attendees: ${note.attendees.map((a) => a.name || a.email).join(", ")}`
@@ -61,7 +67,7 @@ export async function extractFromNote({
     meetingTitle,
     meetingDate,
     webUrl: note.web_url ?? null,
-    items: normalizeItems(parsed?.items, lists),
+    items: normalizeItems(parsed?.items, lists, oneOnOne),
   };
 }
 

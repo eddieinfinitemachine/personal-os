@@ -48,7 +48,8 @@ function teamWithLists(lists: ListRef[]): { member: TeamMember; list: ListRef }[
 function describeMember(m: TeamMember): string {
   const [first] = m.names;
   const full = m.names.find((n) => n.includes(" ") && n !== first);
-  return `${first}${full ? ` (${full})` : ""}, ${m.role}`;
+  const reports = m.reports?.length ? `; also items owned by ${m.reports.join(", ")}` : "";
+  return `${first}${full ? ` (${full})` : ""}, ${m.role}${reports}`;
 }
 
 /** The team-lists block of the prompt: TEAM entries first, then other EC/* aliases. */
@@ -91,7 +92,9 @@ Rules:
 - One item per distinct commitment; collapse restatements of the same commitment into one.
 - owner is whoever will DO the work (addressed by name or volunteering), not whoever raised the topic. Names are often transcribed sloppily ("Obi"/"Obie") — normalize to the team-list spelling when it's clearly the same person.
 - Items owned by Eddie himself, or with no clear owner, get listName null (they go to Eddie's own To Do). Set owner to "Eddie" for his own items, null when nobody is clearly responsible.
-- If the owner doesn't map to a team list, leave listName null.
+- A commitment owned by someone who works under a team member (their report, per the list above, or clearly their staff in the meeting) goes to that member's list: Eddie follows up through them.
+- In a 1:1 with a team member (their name in the title, or they are the only other attendee), everything that isn't Eddie's own work goes to that member's list, including things others will do that the two of them agreed on.
+- Otherwise, if the owner doesn't map to a team list, leave listName null.
 - Today is ${today}. Resolve relative deadlines ("by end of day", "Wednesday") against the meeting date if known, else today.
 - If nothing actionable, return { "items": [] }.`;
 }
@@ -115,7 +118,8 @@ export function resolveList(
   const o = norm(owner);
   const oFirst = firstToken(owner);
 
-  for (const { member, list } of teamWithLists(lists)) {
+  const team = teamWithLists(lists);
+  for (const { member, list } of team) {
     const names = member.names.map(norm);
     if (names.includes(o) || names.includes(oFirst)) return list;
   }
@@ -124,7 +128,46 @@ export function resolveList(
   const t =
     targets.find((t) => t.alias === o || t.alias === oFirst) ??
     targets.find((t) => commonPrefixLen(t.alias, oFirst) >= 3);
-  return t ? { id: t.listId, name: t.listName } : null;
+  if (t) return { id: t.listId, name: t.listName };
+
+  // No list of their own: file under whoever they report to.
+  for (const { member, list } of team) {
+    const reports = (member.reports ?? []).map(norm);
+    if (reports.includes(o) || reports.includes(oFirst)) return list;
+  }
+  return null;
+}
+
+const EDDIE = new Set(["eddie", "eddie cohen", "me"]);
+const isEddie = (owner: string | null) => !!owner && EDDIE.has(norm(owner));
+
+const ONE_ON_ONE = /\b(1[:\-]1|1on1|one[- ]on[- ]one)\b/i;
+
+/**
+ * The team list a meeting is a 1:1 with, if any: the title names exactly one
+ * TEAM member and either says 1:1 or names Eddie too ("Eddie/Dave Weekly
+ * 1:1", "Dave 1-1"); or the attendees are exactly Eddie and one TEAM member.
+ * Items in that meeting that aren't Eddie's own default to that list.
+ */
+export function oneOnOneList(
+  meetingTitle: string | null,
+  attendees: { name?: string | null; email?: string | null }[] | null | undefined,
+  lists: ListRef[],
+): ListRef | null {
+  const team = teamWithLists(lists);
+  const title = meetingTitle ?? "";
+  const words = new Set(norm(title).split(/[^\p{L}\d]+/u).filter(Boolean));
+  const inTitle = team.filter((t) => t.member.names.some((n) => !n.includes(" ") && words.has(norm(n))));
+  if (inTitle.length === 1 && (ONE_ON_ONE.test(title) || words.has("eddie"))) return inTitle[0].list;
+  if (inTitle.length > 1) return null;
+
+  const names = (attendees ?? []).map((a) => norm(a.name || a.email?.split("@")[0] || "")).filter(Boolean);
+  const eddie = names.filter((n) => isEddie(n) || n.startsWith("eddie"));
+  const others = names.filter((n) => !eddie.includes(n));
+  if (names.length !== 2 || eddie.length !== 1 || others.length !== 1) return null;
+  const [other] = others;
+  const hit = team.filter((t) => t.member.names.map(norm).some((n) => n === other || n === firstToken(other)));
+  return hit.length === 1 ? hit[0].list : null;
 }
 
 const str = (v: unknown): string | null => (typeof v === "string" ? v.trim() || null : null);
@@ -135,15 +178,19 @@ function validDate(v: unknown): string | null {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v ? v : null;
 }
 
-/** Validate the model's items and attach each one's resolved list. */
-export function normalizeItems(raw: unknown, lists: ListRef[]): MeetingItem[] {
+/**
+ * Validate the model's items and attach each one's resolved list. With a
+ * 1:1 list, items nobody on the roster owns default there unless they are
+ * Eddie's own (owner "Eddie"): those stay on To Do.
+ */
+export function normalizeItems(raw: unknown, lists: ListRef[], oneOnOne: ListRef | null = null): MeetingItem[] {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((it: RawItem | null) => {
     if (!it || typeof it !== "object") return [];
     const title = str(it.title);
     if (!title) return [];
     const owner = str(it.owner);
-    const list = resolveList(str(it.listName), owner, lists);
+    const list = resolveList(str(it.listName), owner, lists) ?? (oneOnOne && !isEddie(owner) ? oneOnOne : null);
     return [
       {
         title,
