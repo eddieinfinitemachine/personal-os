@@ -588,10 +588,11 @@ function TodoRowImpl({
     },
   ];
 
-  // Desktop text selection: a mouse press that starts on the title/notes
-  // text turns off HTML5 drag until mouseup, so dragging across the text
-  // selects it instead of picking up the row. Pressing anywhere else
-  // (checkbox, padding, meta line) still drags the todo as before.
+  // Desktop text selection: an Option (Alt) mouse press that starts on the
+  // title/notes text turns off HTML5 drag until mouseup, so Option-dragging
+  // across the text selects it. A plain press anywhere on the row, text
+  // included, picks the todo up (a plain text press used to select, which
+  // made dragging a todo by its title highlight it instead).
   const [textPress, setTextPress] = useState(false);
   // Where the last primary mouse press inside the title wrapper landed; the
   // wrapper's click compares against it to tell a click from a drag-select.
@@ -997,7 +998,11 @@ function TodoRowImpl({
           onMouseDown={(e) => {
             if (touchEnv || e.button !== 0) return;
             pressRef.current = { x: e.clientX, y: e.clientY };
-            if (!editing && (e.target as HTMLElement).closest("[data-todo-text]")) {
+            if (
+              e.altKey &&
+              !editing &&
+              (e.target as HTMLElement).closest("[data-todo-text]")
+            ) {
               // Flip the DOM attribute synchronously so the browser treats
               // this press as a selection gesture, not a drag; state keeps
               // React's render in agreement until mouseup.

@@ -181,3 +181,8 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 ## 2026-10-08 — a schema PR got merged before the prod column existed
 **Context**: PR #53 added `User.sidebarTrackers Json?`; the plan was "merge, then db push, then deploy". Eddie merged it himself minutes after it opened, and Vercel deployed while prod still lacked the column (every unselected `User` query would have 500'd). Caught ~1 min later; no errors logged.
 **Rule**: For an approved additive (nullable/defaulted) column, add it to prod BEFORE the PR is opened — old code ignores extra columns, so ahead-of-code is safe. Use a targeted `ALTER TABLE … ADD COLUMN IF NOT EXISTS` (not `db push` from a branch, see the drop-columns lesson) and verify via information_schema. If that's not possible, open the PR as a draft and say why in the title.
+
+## 2026-10-15 — drag wins over text selection on list rows
+**Context**: 2026-09-29 made a mouse press on a todo's text start a text selection (so text could be selected without editing). Two weeks later Eddie: "when trying to drag its highlighting".
+**Mistake / surprise**: The title is where people grab a row to drag it. Giving that surface to selection broke the primary gesture to serve a secondary one.
+**Rule**: On draggable list rows (todos, projects, trackers) a plain press-and-move anywhere on the row drags. Put text selection behind edit mode or a modifier (Option-drag), never on the plain gesture. When a fix adds a new gesture to a surface, name the gesture it displaces in the todo entry.

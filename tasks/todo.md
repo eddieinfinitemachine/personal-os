@@ -1484,3 +1484,11 @@ Ask (Eddie, screenshot of /print/today): "put call sheet in the print view".
 - [x] Header count gains "· N to call" (pending entries)
 - [x] Verified: `tsc --noEmit` clean; dev server + signed-in render of `/print/today` showed 5 entries and "4 to call"; screenshot checked
 - No schema or API change
+
+## 2026-10-15 — Todos: drag by the title again
+
+Ask (Eddie): "when trying to drag its highlighting" — grabbing a todo by its text selected the text instead of picking the row up (since 2dd3592 on 2026-09-29, which made a text press a selection gesture).
+- [x] `todo-row.tsx`: a plain mouse press anywhere on the row, title/notes included, is a drag again. Text selection without editing stays available behind Option (Alt) + drag on the text; the click guard that keeps a finished drag-select from flipping into edit mode is unchanged. Links in notes and the non-draggable detail modal are untouched
+- [x] Tests: plain press keeps `draggable="true"`; Option-press turns it off until mouseup; the drag-select → no-edit case now uses Option
+- Verified: `todo-row.test.tsx` 11 pass and the plain-press test fails with the change reverted (the Option test passes either way, since the old code disabled drag on any press); `tsc --noEmit` clean
+- NOT verified: in a browser (native HTML5 drag can't be driven synthetically); touch path not touched

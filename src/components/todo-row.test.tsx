@@ -46,9 +46,11 @@ const render = () =>
 const li = () => container.querySelector("li")!;
 const titleText = () => container.querySelector("[data-todo-text]") as HTMLElement;
 const wrapper = () => titleText().parentElement as HTMLElement;
-const mouse = (el: EventTarget, type: string, x = 10, y = 10) =>
+const mouse = (el: EventTarget, type: string, x = 10, y = 10, init: MouseEventInit = {}) =>
   act(async () => {
-    el.dispatchEvent(new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y }));
+    el.dispatchEvent(
+      new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y, ...init }),
+    );
   });
 
 describe("TodoRow text selection and links", () => {
@@ -59,10 +61,18 @@ describe("TodoRow text selection and links", () => {
     for (const a of container.querySelectorAll("a")) expect(a.getAttribute("draggable")).toBe("false");
   });
 
-  it("stops the row being draggable while a press on the text is held", async () => {
+  it("keeps the row draggable during a plain press on the text (drag by the title)", async () => {
     await render();
     expect(li().getAttribute("draggable")).toBe("true");
     await mouse(titleText(), "mousedown");
+    expect(li().getAttribute("draggable")).toBe("true");
+    await mouse(window, "mouseup");
+    expect(li().getAttribute("draggable")).toBe("true");
+  });
+
+  it("stops the row being draggable while an Option-press on the text is held", async () => {
+    await render();
+    await mouse(titleText(), "mousedown", 10, 10, { altKey: true });
     expect(li().getAttribute("draggable")).toBe("false");
     await mouse(window, "mouseup");
     expect(li().getAttribute("draggable")).toBe("true");
@@ -81,10 +91,10 @@ describe("TodoRow text selection and links", () => {
     expect(wrapper().querySelector("textarea")).not.toBeNull();
   });
 
-  it("does not enter edit mode after a drag-select", async () => {
+  it("does not enter edit mode after an Option drag-select", async () => {
     await render();
-    await mouse(titleText(), "mousedown", 10, 10);
-    await mouse(titleText(), "click", 60, 10);
+    await mouse(titleText(), "mousedown", 10, 10, { altKey: true });
+    await mouse(titleText(), "click", 60, 10, { altKey: true });
     expect(wrapper().querySelector("textarea")).toBeNull();
   });
 
