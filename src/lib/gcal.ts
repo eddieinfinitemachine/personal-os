@@ -53,7 +53,7 @@ async function resolveCalendarId(token: string): Promise<string> {
   cachedCalendarId = created.id;
   return created.id;
 }
-const appUrl = () =>
+export const appUrl = () =>
   process.env.APP_URL ??
   process.env.NEXT_PUBLIC_APP_URL ??
   "http://localhost:3000";
