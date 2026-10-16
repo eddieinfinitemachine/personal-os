@@ -1492,3 +1492,14 @@ Ask (Eddie): "when trying to drag its highlighting" — grabbing a todo by its t
 - [x] Tests: plain press keeps `draggable="true"`; Option-press turns it off until mouseup; the drag-select → no-edit case now uses Option
 - Verified: `todo-row.test.tsx` 11 pass and the plain-press test fails with the change reverted (the Option test passes either way, since the old code disabled drag on any press); `tsc --noEmit` clean
 - NOT verified: in a browser (native HTML5 drag can't be driven synthetically); touch path not touched
+
+## 2026-10-16 — Call sheet: check off / swap from native clients
+
+Ask (via Fork Calendar): let the native app check people off today's call sheet and ask for "someone else", behind the capture bearer.
+- [x] `POST /api/capture/call-sheet/today`, body `{ personId, done: boolean }` or `{ personId, replace: true }`; answers with the GET's feed. Server resolves day/version/entry from a fresh `getCallSheet`, then `mutateCallSheet`
+- [x] `done: true` → `action: "done"`, `method: "other"` (the service requires a method; the native client doesn't know the channel)
+- [x] `done: false` → `action: "undo"` with the sheet's single-slot Undo token, only when that slot is this person's check-in (new read-only `checkInUndoToken` in service.ts); otherwise 409 "Only the most recent call-sheet change can be undone."
+- [x] `replace: true` → `action: "replace"`; the service's 422 "No one else is due…" maps to 409
+- [x] Idempotent against the feed's `done` (`contacted` counts as done and is never undone); one re-read-and-retry on a service 409
+- Verified: route tests 30 pass; `tsc --noEmit` clean; call-sheet integration on a scratch Postgres on :55442 40/40 (one new test); a throwaway end-to-end run of the real route on that DB (done → repeat no-op → undo → replace → undo-after-replace 409 → replace until exhausted 409) passed and was deleted
+- No schema change

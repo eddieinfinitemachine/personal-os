@@ -771,6 +771,24 @@ function response(
 export function getCallSheet(userId: string, now = new Date()) {
   return ownerTransaction(userId, (tx) => sheetInTransaction(tx, userId, now));
 }
+/** Undo is single-slot ("Undo last change"). Returns its token only when that
+ * last change was `personId`'s check-in on this day, so a client that can't
+ * see the slot never reverts someone else's action. Read-only: the undo itself
+ * still goes through mutateCallSheet, which re-checks the token under lock. */
+export async function checkInUndoToken(
+  userId: string,
+  dayId: string,
+  personId: string,
+): Promise<string | null> {
+  const day = await prisma.callSheetDay.findFirst({
+    where: { id: dayId, userId },
+    select: { entries: true },
+  });
+  const undo = day ? readDay(day.entries).undo : undefined;
+  return undo?.interactionId && undo.preference.personId === personId
+    ? undo.token
+    : null;
+}
 function strictFields(input: Record<string, unknown>, fields: string[]) {
   if (Object.keys(input).some((key) => !fields.includes(key)))
     throw new IntakeError("Unknown field");
