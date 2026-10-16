@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { captureCallSheet, getCaptureConfig } from "./capture";
 import { extractCallSheetCues } from "./extract";
 import {
+  checkInUndoToken,
   decideCallSheetReview,
   getCallSheet,
   getCallSheetReview,
@@ -224,6 +225,19 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
       (await prisma.person.findUniqueOrThrow({ where: { id: personId } }))
         .lastInteractionAt,
     ).toEqual(later);
+  });
+  it("hands out the Undo token only while the last change is that person's check-in", async () => {
+    const sheet = await getCallSheet(userId, now);
+    const [a, b] = sheet.entries;
+    expect(await checkInUndoToken(userId, sheet.day.id, a.personId)).toBeNull();
+    const done = await mutateCallSheet(userId, { dayId: sheet.day.id, version: sheet.day.version, entryId: a.id, action: "done", method: "other" }, now);
+    expect(await checkInUndoToken(userId, sheet.day.id, a.personId)).toBe(done.undoToken);
+    expect(await checkInUndoToken(userId, sheet.day.id, b.personId)).toBeNull();
+    expect(await checkInUndoToken(otherId, sheet.day.id, a.personId)).toBeNull();
+    // A later snooze takes the single Undo slot; a's check-in is no longer undoable.
+    await mutateCallSheet(userId, { dayId: done.day.id, version: done.day.version, entryId: b.id, action: "snooze", days: 7 }, now);
+    expect(await checkInUndoToken(userId, sheet.day.id, a.personId)).toBeNull();
+    expect(await checkInUndoToken(userId, sheet.day.id, b.personId)).toBeNull();
   });
   it("Replace changes only one slot and only the latest action can be undone", async () => {
     const sheet = await getCallSheet(userId, now);
