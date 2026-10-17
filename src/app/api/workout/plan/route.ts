@@ -10,6 +10,7 @@ import {
   type EquipmentItem,
   type PlanRequest,
 } from "@/lib/workout";
+import { historyPrompt, normalizeRecords, PROMPT_RECORDS } from "@/lib/workout-history";
 
 export const maxDuration = 120;
 
@@ -68,7 +69,15 @@ export async function POST(request: Request) {
   const minutesRaw = Number(form.get("minutes"));
   const focusRaw = form.get("focus");
   const intensityRaw = form.get("intensity");
-  const recentRaw = form.get("recentTitles");
+  const historyRaw = form.get("history");
+  let history: unknown = [];
+  if (typeof historyRaw === "string" && historyRaw) {
+    try {
+      history = JSON.parse(historyRaw) as unknown;
+    } catch {
+      return NextResponse.json({ error: "history must be JSON" }, { status: 400 });
+    }
+  }
 
   const req: PlanRequest = {
     minutes: Number.isFinite(minutesRaw) ? Math.min(120, Math.max(10, Math.round(minutesRaw))) : 30,
@@ -81,14 +90,7 @@ export async function POST(request: Request) {
     notes: typeof form.get("notes") === "string" ? String(form.get("notes")).slice(0, 1000) : "",
     knownEquipment,
     hasPhotos: images.length > 0,
-    recentTitles:
-      typeof recentRaw === "string"
-        ? recentRaw
-            .split("\n")
-            .map((s) => s.trim())
-            .filter(Boolean)
-            .slice(0, 8)
-        : [],
+    history: historyPrompt(normalizeRecords(history, PROMPT_RECORDS), Date.now()),
   };
 
   if (!req.hasPhotos && knownEquipment.length === 0 && !req.notes) {

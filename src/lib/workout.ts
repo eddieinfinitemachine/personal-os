@@ -5,6 +5,8 @@
 // Kept framework-free so it can be unit-tested and shared by the API route
 // and the client.
 
+import type { ExerciseLast } from "./workout-history";
+
 export const MOVEMENT_PATTERNS = [
   "squat",
   "hinge",
@@ -93,6 +95,8 @@ export type Exercise = {
   muscles: Muscle[];
   /** Same-side or unilateral: the player shows "each side". */
   perSide: boolean;
+  /** The last logged performance and the load advice from it. Filled in client-side. */
+  last?: ExerciseLast;
 };
 
 export type Block = {
@@ -125,8 +129,8 @@ export type PlanRequest = {
   /** Equipment the user already confirmed (no photos needed). */
   knownEquipment: EquipmentItem[];
   hasPhotos: boolean;
-  /** Short lines like "2026-09-18 · Upper · 42 min" for variety. */
-  recentTitles: string[];
+  /** The training log (historyPrompt), "" without one. */
+  history: string;
 };
 
 export function buildSystemPrompt(): string {
@@ -187,7 +191,8 @@ export function buildSystemPrompt(): string {
     "- 2–5 short cues per exercise. Loads should reference the weights you actually saw.",
     "- Always include 2–4 warm-up movements (timed, 20–45 s) and 2–3 cool-down stretches (timed, 20–40 s).",
     "- Keep total time (work + rest + warm-up + cool-down) inside the requested minutes.",
-    "- If recent sessions are listed, vary the selection so the week is balanced.",
+    "- If a training log is included, vary the selection so the week is balanced and skip the exercises it says not to repeat.",
+    "- When you program an exercise the log has a next load for, name it exactly as in the log and use that load (or the closest the equipment allows).",
   ].join("\n");
 }
 
@@ -212,9 +217,7 @@ export function buildUserPrompt(req: PlanRequest): string {
     lines.push("No equipment photos or list — assume bodyweight only.");
   }
   if (req.notes.trim()) lines.push(`Notes from the athlete: ${req.notes.trim()}`);
-  if (req.recentTitles.length) {
-    lines.push("Recent sessions:\n" + req.recentTitles.map((t) => `- ${t}`).join("\n"));
-  }
+  if (req.history) lines.push(req.history);
   return lines.join("\n");
 }
 
@@ -377,6 +380,8 @@ export type ExtendRequest = {
   /** Names of the exercises already in the session, so the extra work varies. */
   exercises: string[];
   notes: string;
+  /** The training log (historyPrompt), "" without one. */
+  history: string;
 };
 
 export function buildExtendPrompt(req: ExtendRequest): string {
@@ -388,6 +393,7 @@ export function buildExtendPrompt(req: ExtendRequest): string {
   ];
   if (req.exercises.length) lines.push("Already done today (choose different movements, or a clear progression of one):\n" + req.exercises.map((n) => `- ${n}`).join("\n"));
   if (req.notes.trim()) lines.push(`Notes from the athlete: ${req.notes.trim()}`);
+  if (req.history) lines.push(req.history);
   lines.push(
     `Design main blocks that fit in ${req.minutes} minutes including rest. No warm-up or cool-down. They are already warm.`,
     'Return ONLY a JSON object {"blocks": [<Block object>, ...]} using the Block and Exercise shapes above.',

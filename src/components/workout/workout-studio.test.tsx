@@ -99,7 +99,7 @@ describe("adding time", () => {
     await flush();
     const call = fetch.mock.calls.find((c) => String(c[0]).startsWith("/api/workout/extend"))!;
     expect(JSON.parse(String(call[1]?.body))).toEqual({
-      minutes: 20, focus: "lower", intensity: "hard", equipment: [{ name: "Dumbbells", detail: "10–50 lb" }], exercises: ["Goblet squat", "Farmer carry", "Hamstring stretch"],
+      minutes: 20, focus: "lower", intensity: "hard", equipment: [{ name: "Dumbbells", detail: "10–50 lb" }], exercises: ["Goblet squat", "Farmer carry", "Hamstring stretch"], history: [],
     });
     const s = stored();
     expect(s.plan.blocks.map((b) => b.name)).toEqual(["A", "B · Extra"]);
@@ -125,5 +125,77 @@ describe("adding time", () => {
     const s = stored();
     expect(s.finishedAt).toBeNull();
     expect(s.stepIndex).toBe(4);
+  });
+});
+
+describe("the workout log", () => {
+  const sets = [{ reps: 10, durationSec: null, load: "2×25 lb dumbbells" }, { reps: 10, durationSec: null, load: "2×25 lb dumbbells" }];
+  const past = {
+    id: "w-past", title: "Leg day", focus: "lower", startedAt: Date.now() - 2 * 86_400_000 - 1_800_000, finishedAt: Date.now() - 2 * 86_400_000, durationMin: 30,
+    exercises: [{ name: "Goblet squat", equipment: "dumbbell", targetReps: 10, sets }],
+  };
+  const history = () => JSON.parse(localStorage.getItem("personalos:workout:history")!) as { id: string; synced?: boolean; exercises: { sets: unknown[] }[] }[];
+  const routes = (handlers: Record<string, (init?: RequestInit) => unknown>) =>
+    vi.fn(async (url: string, init?: RequestInit): Promise<Reply> => {
+      const key = `${init?.method ?? "GET"} ${url.split("?")[0]}`;
+      const body = handlers[key]?.(init) ?? (url.startsWith("/api/workout/video") ? { video: null } : {});
+      return { ok: true, json: async () => body };
+    });
+
+  it("finishes on the last set with that set logged, saves the session, and says what to lift next time", async () => {
+    const s = session();
+    s.plan.blocks[0].exercises = [exercise("m1", "Goblet squat")];
+    s.plan.cooldown = [];
+    localStorage.setItem("personalos:workout:session", JSON.stringify(s));
+    const fetch = routes({ "POST /api/workout/history": (init) => ({ saved: (JSON.parse(String(init?.body)) as { records: { id: string; finishedAt: number }[] }).records.map(({ id, finishedAt }) => ({ id, finishedAt })), stored: true }) });
+    vi.stubGlobal("fetch", fetch);
+    await resume();
+    await act(async () => button("Log set").click());
+    await act(async () => button("Log set").click());
+    await flush();
+    expect(container.textContent).toContain("Workout complete");
+    expect(stored().logs).toHaveLength(2);
+    const upload = fetch.mock.calls.find((c) => c[0] === "/api/workout/history" && c[1]?.method === "POST")!;
+    expect(JSON.parse(String(upload[1]?.body)).records[0]).toMatchObject({
+      id: "s1", title: "Legs", focus: "lower", exercises: [{ name: "Goblet squat", equipment: "dumbbell", targetReps: 10, sets }],
+    });
+    expect(history()[0]).toMatchObject({ id: "s1", synced: true });
+    expect(container.textContent).toContain("10, 10 @ 2×25 lb dumbbells");
+    expect(container.textContent).toContain("Next time 2×30 lb dumbbells · +5 lb: every rep at 25 lb");
+  });
+
+  it("sends the log with the plan request and starts a repeat exercise from the advised weight", async () => {
+    localStorage.removeItem("personalos:workout:session");
+    localStorage.setItem("personalos:workout:history", JSON.stringify([{ ...past, setsLogged: 2, loggedToPersonal: false, synced: true }]));
+    localStorage.setItem("personalos:workout:equipment", JSON.stringify([{ name: "Dumbbells", detail: "10–50 lb" }]));
+    const plan = {
+      equipment: [{ name: "Dumbbells" }],
+      plan: { title: "Lower", summary: "", focus: "lower", estimatedMinutes: 30, warmup: [], cooldown: [],
+        blocks: [{ name: "A", type: "straight", exercises: [exercise("p1", "Goblet squat", { load: "2×20 lb dumbbells" }), exercise("p2", "Reverse lunge")] }] },
+    };
+    const fetch = routes({ "POST /api/workout/plan": () => plan });
+    vi.stubGlobal("fetch", fetch);
+    await act(async () => root.render(<WorkoutStudio />));
+    await act(async () => button("Build my workout").click());
+    await flush();
+    const call = fetch.mock.calls.find((c) => c[0] === "/api/workout/plan")!;
+    expect(JSON.parse(String((call[1]?.body as FormData).get("history")))).toEqual([past]);
+    expect(container.textContent).toContain("2 × 10 · 2×30 lb dumbbells");
+    expect(container.textContent).toContain("Last · ");
+    expect(container.textContent).toContain(": 10, 10 @ 2×25 lb dumbbells");
+    expect(container.textContent).toContain("↑ +5 lb: every rep at 25 lb");
+    expect(container.textContent).toContain("2 × 10 · 2×25 lb dumbbells"); // the lunge keeps the plan's load
+  });
+
+  it("brings in sessions logged on another device and opens a past session to its sets", async () => {
+    localStorage.removeItem("personalos:workout:session");
+    vi.stubGlobal("fetch", routes({ "GET /api/workout/history": () => ({ records: [past], stored: true }) }));
+    await act(async () => root.render(<WorkoutStudio />));
+    await flush();
+    expect(container.textContent).toContain("Leg day");
+    expect(container.textContent).not.toContain("Goblet squat");
+    await act(async () => button("Leg day").click());
+    expect(container.textContent).toContain("Goblet squat10, 10 @ 2×25 lb dumbbells");
+    expect(history()[0]).toMatchObject({ id: "w-past", synced: true });
   });
 });

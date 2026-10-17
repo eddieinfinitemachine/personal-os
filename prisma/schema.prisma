@@ -417,6 +417,29 @@ model FitnessSession {
   @@index([userId])
 }
 
+// One finished guided workout, set by set (src/lib/workout-history.ts), so the
+// next plan can move weights and skip recent exercises on any device.
+model WorkoutLog {
+  id          String   @id @default(cuid())
+  // The session id from the device; finishing again after "+10 min" replaces the row.
+  clientId    String
+  title       String
+  focus       String
+  startedAt   DateTime
+  finishedAt  DateTime
+  durationMin Int
+  exercises   Json // [{ name, equipment, targetReps, sets: [{ reps, durationSec, load }] }]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientId])
+  @@index([userId, finishedAt])
+}
+
 // Shared lookup of exercise demo videos, keyed by exercise name. No personal
 // data: the same "goblet squat" demo serves every user, found once.
 model ExerciseVideo {
@@ -964,6 +987,7 @@ model User {
   medicalVisits       MedicalVisit[]
   humanVaccinations   HumanVaccination[]
   fitnessSessions     FitnessSession[]
+  workoutLogs         WorkoutLog[]
   dnaResults          DnaResult[]
   pets                Pet[]
   petWeights          PetWeight[]

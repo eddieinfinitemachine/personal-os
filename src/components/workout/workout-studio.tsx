@@ -44,15 +44,30 @@ import {
   type WorkoutPlan,
   type WorkoutSession,
 } from "@/lib/workout";
+import {
+  HISTORY_MAX,
+  PROMPT_RECORDS,
+  adviseLoad,
+  formatSets,
+  mergeHistory,
+  recordFromSession,
+  toRecord,
+  withHistory,
+  type ExerciseLast,
+  type HistoryEntry,
+  type LoadAdvice,
+  type WorkoutRecord,
+} from "@/lib/workout-history";
 import { ExerciseFigure, propForEquipment } from "./exercise-figure";
 import { ExerciseVideoEmbed, ExerciseVideoToggle, useExerciseVideos, withVideo } from "./exercise-video";
 import { MuscleMap } from "./muscle-map";
 import { beep, unlockAudio, useCountdownCues, useNow, useWakeLock } from "./workout-timer";
 
 // ---- localStorage ----------------------------------------------------------
-// Everything lives client-side: the in-progress session (survives iOS killing
-// the PWA mid-set), the equipment profile (so day 2 needs no photos), prefs
-// and a short history for variety hints + the summary list.
+// Client-side: the in-progress session (survives iOS killing the PWA mid-set),
+// the equipment profile (so day 2 needs no photos), prefs, and the workout log
+// (every finished session set by set), which also syncs to /api/workout/history
+// and drives load advice and "don't repeat" for the next plan.
 
 const KEYS = {
   session: "personalos:workout:session",
@@ -62,16 +77,6 @@ const KEYS = {
 } as const;
 
 type Prefs = { minutes: number; focus: Focus; intensity: Intensity };
-type HistoryEntry = {
-  id: string;
-  title: string;
-  focus: Focus;
-  startedAt: number;
-  finishedAt: number;
-  durationMin: number;
-  setsLogged: number;
-  loggedToPersonal: boolean;
-};
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -116,7 +121,8 @@ export function WorkoutStudio() {
   useEffect(() => {
     setSession(read<WorkoutSession | null>(KEYS.session, null));
     setEquipment(read<EquipmentItem[]>(KEYS.equipment, []));
-    setHistory(read<HistoryEntry[]>(KEYS.history, []));
+    // Entries from before the log kept sets have no exercises.
+    setHistory(read<HistoryEntry[]>(KEYS.history, []).map((h) => ({ ...h, exercises: h.exercises ?? [] })));
     setPrefs((p) => ({ ...p, ...read<Partial<Prefs>>(KEYS.prefs, {}) }));
     setHydrated(true);
   }, []);
@@ -133,6 +139,47 @@ export function WorkoutStudio() {
   useEffect(() => {
     if (hydrated) write(KEYS.prefs, prefs);
   }, [prefs, hydrated]);
+
+  // Sessions logged on another device (or before the PWA was reinstalled).
+  useEffect(() => {
+    if (!hydrated) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/workout/history");
+        const data = (await res.json()) as { records?: WorkoutRecord[] };
+        if (!cancelled && res.ok && data.records?.length) setHistory((h) => mergeHistory(h, data.records!));
+      } catch {
+        /* offline: the local log stands */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated]);
+
+  // Upload each finished session once per visit until the server has it.
+  const uploading = useRef(new Set<string>());
+  useEffect(() => {
+    if (!hydrated) return;
+    const pending = history.filter((h) => !h.synced && !uploading.current.has(`${h.id}:${h.finishedAt}`));
+    if (!pending.length) return;
+    for (const h of pending) uploading.current.add(`${h.id}:${h.finishedAt}`);
+    void (async () => {
+      try {
+        const res = await fetch("/api/workout/history", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ records: pending.map(toRecord) }),
+        });
+        const data = (await res.json()) as { saved?: { id: string; finishedAt: number }[] };
+        const saved = new Set((data.saved ?? []).map((r) => `${r.id}:${r.finishedAt}`));
+        if (saved.size) setHistory((h) => h.map((e) => (saved.has(`${e.id}:${e.finishedAt}`) ? { ...e, synced: true } : e)));
+      } catch {
+        /* tried again next visit */
+      }
+    })();
+  }, [history, hydrated]);
 
   // Demo videos arrive after the plan does; whichever plan is live gets them.
   const livePlan = session && !session.finishedAt ? session.plan : (proposal?.plan ?? null);
@@ -168,21 +215,8 @@ export function WorkoutStudio() {
       const finishedAt = Date.now();
       const done = { ...s, finishedAt, timerEndsAt: null, timerKind: null, timerPausedRemainingMs: null };
       setSession(done);
-      setHistory((h) =>
-        [
-          {
-            id: s.id,
-            title: s.plan.title,
-            focus: s.plan.focus,
-            startedAt: s.startedAt,
-            finishedAt,
-            durationMin: Math.max(1, Math.round((finishedAt - s.startedAt) / 60000)),
-            setsLogged: s.logs.length,
-            loggedToPersonal: false,
-          },
-          ...h.filter((e) => e.id !== s.id),
-        ].slice(0, 30),
-      );
+      const entry: HistoryEntry = { ...recordFromSession(s, finishedAt), setsLogged: s.logs.length, loggedToPersonal: false };
+      setHistory((h) => [entry, ...h.filter((e) => e.id !== s.id)].slice(0, HISTORY_MAX));
       haptic("success");
       beep("done");
       setPhase("done");
@@ -212,20 +246,22 @@ export function WorkoutStudio() {
           intensity: prefs.intensity,
           equipment: s.equipment,
           exercises: planExercises(s.plan).map((e) => e.name),
+          history: history.slice(0, PROMPT_RECORDS).map(toRecord),
         }),
       });
       const data = (await res.json()) as { blocks?: Block[]; error?: string };
       if (!res.ok || !data.blocks?.length) throw new Error(data.error ?? `Request failed (${res.status})`);
-      const plan = appendBlocks(s.plan, data.blocks);
+      const blocks = withHistory(data.blocks, history);
+      const plan = appendBlocks(s.plan, blocks);
       const steps = flattenPlan(plan);
-      const firstNew = steps.findIndex((step) => step.exercise.id === data.blocks![0].exercises[0].id);
+      const firstNew = steps.findIndex((step) => step.exercise.id === blocks[0].exercises[0].id);
       const current = flattenPlan(s.plan)[Math.min(s.stepIndex, Math.max(0, flattenPlan(s.plan).length - 1))];
       const stepIndex = s.finishedAt || !current || current.section === "cooldown" ? firstNew : s.stepIndex;
       setSession({ ...s, plan, stepIndex, finishedAt: null, timerEndsAt: null, timerKind: null, timerPausedRemainingMs: null });
       haptic("success");
       setPhase("play");
     },
-    [session, prefs.intensity],
+    [session, prefs.intensity, history],
   );
 
   if (!hydrated) {
@@ -242,7 +278,7 @@ export function WorkoutStudio() {
       <Player
         session={session}
         onChange={setSession}
-        onFinish={() => finishSession(session)}
+        onFinish={(final) => finishSession(final ?? session)}
         onExit={() => setPhase("setup")}
         onExtend={extendSession}
       />
@@ -289,7 +325,8 @@ export function WorkoutStudio() {
       }}
       onDiscardResumable={() => setSession(null)}
       onPlan={(p) => {
-        setProposal(p);
+        // Exercises done before start from the advised weight.
+        setProposal({ ...p, plan: { ...p.plan, blocks: withHistory(p.plan.blocks, history) } });
         setPhase("plan");
       }}
     />
@@ -408,13 +445,7 @@ function Setup({
     form.set("intensity", prefs.intensity);
     form.set("notes", notes);
     form.set("knownEquipment", JSON.stringify(selected));
-    form.set(
-      "recentTitles",
-      history
-        .slice(0, 6)
-        .map((h) => `${new Date(h.finishedAt).toISOString().slice(0, 10)} · ${h.title} (${FOCUS_LABEL[h.focus]}, ${h.durationMin} min)`)
-        .join("\n"),
-    );
+    form.set("history", JSON.stringify(history.slice(0, PROMPT_RECORDS).map(toRecord)));
     const slow = window.setTimeout(() => setBusy("Writing sets, reps and cues…"), 9000);
     try {
       const res = await fetch("/api/workout/plan", { method: "POST", body: form });
@@ -615,22 +646,50 @@ function Setup({
       {history.length > 0 && (
         <section className="mt-8">
           <SectionLabel>Recent</SectionLabel>
-          <ul className="divide-y divide-[var(--color-separator)] rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]">
+          <ul className="divide-y divide-[var(--color-separator)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]">
             {history.slice(0, 6).map((h) => (
-              <li key={h.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                <div className="min-w-0">
-                  <div className="truncate font-medium">{h.title}</div>
-                  <div className="text-xs text-[var(--color-muted-foreground)]">
-                    {new Date(h.finishedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {FOCUS_LABEL[h.focus]} · {h.setsLogged} sets
-                  </div>
-                </div>
-                <div className="shrink-0 tabular-nums text-[var(--color-muted-foreground)]">{h.durationMin} min</div>
-              </li>
+              <RecentRow key={h.id} entry={h} />
             ))}
           </ul>
         </section>
       )}
     </div>
+  );
+}
+
+/** A past session; tap to see each exercise's sets and weights. */
+function RecentRow({ entry: h }: { entry: HistoryEntry }) {
+  const [open, setOpen] = useState(false);
+  const canOpen = h.exercises.length > 0;
+  return (
+    <li>
+      <button
+        onClick={() => canOpen && setOpen((o) => !o)}
+        aria-expanded={canOpen ? open : undefined}
+        className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm ${canOpen ? "active:bg-[var(--color-fill)]" : "cursor-default"}`}
+      >
+        <div className="min-w-0">
+          <div className="truncate font-medium">{h.title}</div>
+          <div className="text-xs text-[var(--color-muted-foreground)]">
+            {shortDate(h.finishedAt)} · {FOCUS_LABEL[h.focus]} · {h.setsLogged} sets
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1 tabular-nums text-[var(--color-muted-foreground)]">
+          {h.durationMin} min
+          {canOpen && <ChevronRight className={`size-4 text-[var(--color-label-tertiary)] transition-transform ${open ? "rotate-90" : ""}`} />}
+        </div>
+      </button>
+      {open && (
+        <ul className="space-y-1 border-t border-[var(--color-separator)] bg-[var(--color-fill-secondary)]/60 px-3 py-2 text-xs animate-fade-in-up">
+          {h.exercises.map((e, i) => (
+            <li key={`${e.name}-${i}`} className="flex justify-between gap-3">
+              <span className="min-w-0 flex-1 truncate">{e.name}</span>
+              <span className="max-w-[60%] text-right tabular-nums text-[var(--color-label-secondary)]">{formatSets(e.sets)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }
 
@@ -735,6 +794,7 @@ function ExerciseRow({ exercise: e }: { exercise: Exercise }) {
           <div className="text-sm text-[var(--color-muted-foreground)]">
             {prescription(e)} · {e.load}
           </div>
+          {e.last && <LastTime last={e.last} className="mt-0.5" />}
         </div>
         <ChevronRight className={`size-4 shrink-0 text-[var(--color-label-tertiary)] transition-transform ${open ? "rotate-90" : ""}`} />
       </button>
@@ -793,7 +853,8 @@ function Player({
 }: {
   session: WorkoutSession;
   onChange: (s: WorkoutSession) => void;
-  onFinish: () => void;
+  /** With the final session when the last set's log is part of the same update. */
+  onFinish: (final?: WorkoutSession) => void;
   onExit: () => void;
   onExtend: (minutes: ExtendMinutes) => Promise<void>;
 }) {
@@ -867,8 +928,7 @@ function Player({
     const logs = [...session.logs.filter((l) => l.stepKey !== step.key), log];
     const isLast = idx >= steps.length - 1;
     if (isLast) {
-      onChange({ ...session, logs, timerEndsAt: null, timerKind: null, timerPausedRemainingMs: null });
-      onFinish();
+      onFinish({ ...session, logs, timerEndsAt: null, timerKind: null, timerPausedRemainingMs: null });
       return;
     }
     const advanced: WorkoutSession = { ...session, logs, stepIndex: idx + 1, timerEndsAt: null, timerKind: null, timerPausedRemainingMs: null };
@@ -955,6 +1015,7 @@ function Player({
                   {e.perSide && <span className="text-sm font-normal text-[var(--color-muted-foreground)]"> each side</span>}
                 </div>
                 <div className="text-sm text-[var(--color-muted-foreground)]">{e.load}</div>
+                {e.last && <LastTime last={e.last} className="mt-1" />}
                 <MuscleMap muscles={e.muscles} className="mt-2 h-20 justify-start" />
               </div>
             </div>
@@ -1059,7 +1120,7 @@ function Player({
         {confirmEnd ? (
           <div className="flex items-center gap-2 text-sm">
             <span className="text-[var(--color-muted-foreground)]">End the workout?</span>
-            <button onClick={onFinish} className={btnDanger}>
+            <button onClick={() => onFinish()} className={btnDanger}>
               End
             </button>
             <button onClick={() => setConfirmEnd(false)} className={btnGhost}>
@@ -1186,12 +1247,19 @@ function Summary({
     for (const l of session.logs) m.set(l.exerciseName, [...(m.get(l.exerciseName) ?? []), l]);
     return Array.from(m.entries());
   }, [session.logs]);
+  // What to lift next time, from what was just done.
+  const nextLoads = useMemo(() => {
+    const m = new Map<string, LoadAdvice>();
+    for (const e of recordFromSession(session, session.finishedAt ?? Date.now()).exercises) {
+      const advice = adviseLoad(e, null);
+      if (advice) m.set(e.name, advice);
+    }
+    return m;
+  }, [session]);
 
   async function logToPersonal() {
     setLogState("busy");
-    const notes = byExercise
-      .map(([name, logs]) => `${name}: ${logs.map((l) => (l.reps !== null ? `${l.reps}` : `${l.durationSec}s`)).join(", ")}${logs[0]?.load ? ` @ ${logs[0].load}` : ""}`)
-      .join("\n");
+    const notes = byExercise.map(([name, logs]) => `${name}: ${formatSets(logs)}`).join("\n");
     try {
       const res = await fetch("/api/workout/log", {
         method: "POST",
@@ -1224,17 +1292,20 @@ function Summary({
       </div>
       {byExercise.length > 0 && (
         <ul className="mb-6 divide-y divide-[var(--color-separator)] rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]">
-          {byExercise.map(([name, logs]) => (
-            <li key={name} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-              <div className="min-w-0">
+          {byExercise.map(([name, logs]) => {
+            const next = nextLoads.get(name);
+            return (
+              <li key={name} className="px-3 py-2 text-sm">
                 <div className="truncate font-medium">{name}</div>
-                <div className="text-xs text-[var(--color-muted-foreground)]">{logs[0]?.load}</div>
-              </div>
-              <div className="shrink-0 tabular-nums text-[var(--color-label-secondary)]">
-                {logs.map((l) => (l.reps !== null ? l.reps : `${l.durationSec}s`)).join(" · ")}
-              </div>
-            </li>
-          ))}
+                <div className="text-xs tabular-nums text-[var(--color-label-secondary)]">{formatSets(logs)}</div>
+                {next && (
+                  <div className="text-xs text-[var(--color-muted-foreground)]">
+                    <span className="font-semibold text-[var(--color-tint)]">{ARROW[next.direction]}</span> Next time {next.load} · {next.reason}
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       <ExtendRow onExtend={onExtend} className="mb-5" label="Not done yet?" />
@@ -1247,6 +1318,24 @@ function Summary({
           <Dumbbell className="size-4" /> New workout
         </button>
       </div>
+    </div>
+  );
+}
+
+const ARROW: Record<LoadAdvice["direction"], string> = { up: "↑", same: "→", down: "↓" };
+
+/** "Last · Oct 12: 10, 10, 9 @ 2×25 lb", and why today's weight moved. */
+function LastTime({ last, className = "" }: { last: ExerciseLast; className?: string }) {
+  return (
+    <div className={`text-xs text-[var(--color-muted-foreground)] ${className}`}>
+      <div>
+        Last · {shortDate(last.at)}: {formatSets(last.sets)}
+      </div>
+      {last.advice && (
+        <div>
+          <span className="font-semibold text-[var(--color-tint)]">{ARROW[last.advice.direction]}</span> {last.advice.reason}
+        </div>
+      )}
     </div>
   );
 }
@@ -1348,13 +1437,17 @@ function Segmented({ options, value, onChange }: { options: { value: string; lab
   );
 }
 
+function shortDate(ts: number): string {
+  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 function relTime(ts: number): string {
   const min = Math.round((Date.now() - ts) / 60000);
   if (min < 1) return "just now";
   if (min < 60) return `${min} min ago`;
   const h = Math.round(min / 60);
   if (h < 24) return `${h} h ago`;
-  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return shortDate(ts);
 }
 
 const chip = (on: boolean) =>

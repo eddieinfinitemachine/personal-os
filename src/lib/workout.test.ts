@@ -171,13 +171,14 @@ describe("changing and extending a plan", () => {
       equipment: [{ name: "Dumbbells", detail: "10–50 lb" }, { name: "Bench" }],
       exercises: ["DB bench press", "Plank"],
       notes: "shoulder is sore",
+      history: "Training log, newest first:\n- 2026-10-15 (yesterday) · Legs · lower · 30 min: Goblet squat",
     });
     expect(prompt).toContain("wants 20 more minutes of work at hard intensity");
     expect(prompt).toContain("Dumbbells (10–50 lb); Bench.");
     expect(prompt).toContain("- DB bench press\n- Plank");
-    expect(prompt).toContain("shoulder is sore");
+    expect(prompt).toContain("shoulder is sore\nTraining log, newest first:\n- 2026-10-15 (yesterday)");
     expect(prompt).toContain("No warm-up or cool-down");
     expect(prompt).toContain('{"blocks": [<Block object>, ...]}');
-    expect(buildExtendPrompt({ minutes: 10, focus: "core", intensity: "easy", equipment: [], exercises: [], notes: "" })).toContain("bodyweight only");
+    expect(buildExtendPrompt({ minutes: 10, focus: "core", intensity: "easy", equipment: [], exercises: [], notes: "", history: "" })).toContain("bodyweight only");
   });
 });
