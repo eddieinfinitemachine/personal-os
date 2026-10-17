@@ -56,6 +56,16 @@ describe("adviseLoad", () => {
     expect(adviseLoad(ex("Goblet squat", [[10, "25 lb"]]), 6)).toEqual({ load: "30 lb", direction: "up", reason: "Matched to 6 reps from 10 at 25 lb" });
     expect(adviseLoad(ex("Goblet squat", [[6, "40 lb"]], 6), 15)).toMatchObject({ load: "30 lb", direction: "down" });
   });
+  it("holds the weight on a low-recovery day instead of going up", () => {
+    const allHit = ex("Goblet squat", [[10, "2×25 lb dumbbells"], [10, "2×25 lb dumbbells"]]);
+    expect(adviseLoad(allHit, null, "low")).toEqual({ load: "2×25 lb dumbbells", direction: "same", reason: "Recovery is low today: holding 25 lb" });
+    expect(adviseLoad(allHit, null, "normal")).toMatchObject({ load: "2×30 lb dumbbells", direction: "up" });
+    expect(adviseLoad(ex("Goblet squat", [[10, "25 lb"]]), 6, "low")).toMatchObject({ load: "25 lb", direction: "same" });
+    expect(adviseLoad(ex("Goblet squat", [[7, "25 lb"], [6, "25 lb"]]), 10, "low")).toMatchObject({ load: "20 lb", direction: "down" });
+    expect(historyPrompt([record("a", 2, [allHit])], NOW, "low")).toContain("[target 10] → next 2×25 lb dumbbells");
+    const [b] = withHistory([{ name: "A", type: "straight", exercises: [exercise("e1", "Goblet squat")] }], [record("a", 2, [allHit])], "low");
+    expect(b.exercises[0]).toMatchObject({ load: "2×25 lb dumbbells", last: { advice: { direction: "same" } } });
+  });
   it("has nothing to move for bodyweight, timed work or a missing target", () => {
     expect(adviseLoad(ex("Push-up", [[12, "bodyweight"]]), null)).toBeNull();
     expect(adviseLoad(ex("Farmer carry", [[null, "2×50 lb"]], null), null)).toBeNull();

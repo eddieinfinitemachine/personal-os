@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  FULL_GYM_EQUIPMENT,
   adjustLoad,
   appendBlocks,
   buildExtendPrompt,
+  buildUserPrompt,
   estimatePlanMinutes,
   flattenPlan,
   loadStep,
@@ -10,6 +12,7 @@ import {
   normalizePlanResponse,
   parseLoad,
   planExercises,
+  upcomingSteps,
   updateExercise,
   type WorkoutPlan,
 } from "./workout";
@@ -172,13 +175,48 @@ describe("changing and extending a plan", () => {
       exercises: ["DB bench press", "Plank"],
       notes: "shoulder is sore",
       history: "Training log, newest first:\n- 2026-10-15 (yesterday) · Legs · lower · 30 min: Goblet squat",
+      health: "Athlete health data, from their health profile:\n- 41-year-old male",
     });
     expect(prompt).toContain("wants 20 more minutes of work at hard intensity");
     expect(prompt).toContain("Dumbbells (10–50 lb); Bench.");
     expect(prompt).toContain("- DB bench press\n- Plank");
-    expect(prompt).toContain("shoulder is sore\nTraining log, newest first:\n- 2026-10-15 (yesterday)");
+    expect(prompt).toContain("shoulder is sore\nAthlete health data, from their health profile:\n- 41-year-old male\nTraining log, newest first:\n- 2026-10-15 (yesterday)");
     expect(prompt).toContain("No warm-up or cool-down");
     expect(prompt).toContain('{"blocks": [<Block object>, ...]}');
-    expect(buildExtendPrompt({ minutes: 10, focus: "core", intensity: "easy", equipment: [], exercises: [], notes: "", history: "" })).toContain("bodyweight only");
+    expect(buildExtendPrompt({ minutes: 10, focus: "core", intensity: "easy", equipment: [], exercises: [], notes: "", history: "", health: "" })).toContain("bodyweight only");
+  });
+});
+
+describe("upcomingSteps", () => {
+  const plan = normalizePlanResponse({
+    plan: {
+      warmup: [{ name: "Arm circles", durationSec: 30 }],
+      blocks: [
+        { name: "A", type: "straight", exercises: [{ name: "Squat", sets: 3, reps: 5 }] },
+        { name: "B", type: "superset", exercises: [{ name: "Row", sets: 2, reps: 10 }, { name: "Press", sets: 2, reps: 10 }] },
+      ],
+      cooldown: [{ name: "Stretch", durationSec: 30 }],
+    },
+  }).plan;
+  const steps = flattenPlan(plan);
+  const view = (i: number) => upcomingSteps(steps, i).map((g) => `${g.name}(${g.blockType}): ${g.items.map((x) => `${x.exercise.name}×${x.setsLeft}`).join(", ")}`);
+  it("lists each exercise still ahead once, with its sets left, grouped by block in order", () => {
+    expect(view(0)).toEqual(["A(straight): Squat×3", "B(superset): Row×2, Press×2", "Cool-down(straight): Stretch×1"]);
+    expect(view(2)).toEqual(["A(straight): Squat×1", "B(superset): Row×2, Press×2", "Cool-down(straight): Stretch×1"]);
+    // Mid-superset: Press comes up before the second Row.
+    expect(view(4)).toEqual(["B(superset): Press×2, Row×1", "Cool-down(straight): Stretch×1"]);
+    expect(view(steps.length - 1)).toEqual([]);
+  });
+});
+
+describe("buildUserPrompt", () => {
+  const base = { minutes: 45, focus: "push" as const, intensity: "hard" as const, notes: "", knownEquipment: [], fullGym: false, hasPhotos: false, history: "", health: "" };
+  it("describes a full gym, then health data, then the training log", () => {
+    const prompt = buildUserPrompt({ ...base, knownEquipment: FULL_GYM_EQUIPMENT, fullGym: true, health: "Athlete health data…", history: "Training log…" });
+    expect(prompt).toContain("They are in a fully equipped commercial gym. All of this is available: Olympic barbells & plates (up to 400+ lb); Power racks & squat racks;");
+    expect(prompt).not.toContain("Confirmed equipment");
+    expect(prompt).not.toContain("bodyweight only");
+    expect(prompt.endsWith("Athlete health data…\nTraining log…")).toBe(true);
+    expect(buildUserPrompt(base)).toContain("assume bodyweight only");
   });
 });

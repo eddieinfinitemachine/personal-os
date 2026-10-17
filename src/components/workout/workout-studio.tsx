@@ -31,6 +31,7 @@ import {
   loadStep,
   parseLoad,
   planExercises,
+  upcomingSteps,
   updateExercise,
   type Block,
   type EquipmentItem,
@@ -41,6 +42,7 @@ import {
   type PlanResponse,
   type SetLog,
   type Step,
+  type UpcomingGroup,
   type WorkoutPlan,
   type WorkoutSession,
 } from "@/lib/workout";
@@ -58,6 +60,7 @@ import {
   type LoadAdvice,
   type WorkoutRecord,
 } from "@/lib/workout-history";
+import type { HealthSummary } from "@/lib/workout-health";
 import { ExerciseFigure, propForEquipment } from "./exercise-figure";
 import { ExerciseVideoEmbed, ExerciseVideoToggle, useExerciseVideos, withVideo } from "./exercise-video";
 import { MuscleMap } from "./muscle-map";
@@ -76,7 +79,7 @@ const KEYS = {
   prefs: "personalos:workout:prefs",
 } as const;
 
-type Prefs = { minutes: number; focus: Focus; intensity: Intensity };
+type Prefs = { minutes: number; focus: Focus; intensity: Intensity; fullGym: boolean };
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -115,7 +118,7 @@ export function WorkoutStudio() {
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [equipment, setEquipment] = useState<EquipmentItem[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [prefs, setPrefs] = useState<Prefs>({ minutes: 30, focus: "full-body", intensity: "moderate" });
+  const [prefs, setPrefs] = useState<Prefs>({ minutes: 30, focus: "full-body", intensity: "moderate", fullGym: false });
   const [proposal, setProposal] = useState<PlanResponse | null>(null);
 
   useEffect(() => {
@@ -203,6 +206,7 @@ export function WorkoutStudio() {
         timerEndsAt: null,
         timerKind: null,
         timerPausedRemainingMs: null,
+        readiness: p.health?.readiness ?? null,
       };
       setSession(s);
       setPhase("play");
@@ -251,7 +255,7 @@ export function WorkoutStudio() {
       });
       const data = (await res.json()) as { blocks?: Block[]; error?: string };
       if (!res.ok || !data.blocks?.length) throw new Error(data.error ?? `Request failed (${res.status})`);
-      const blocks = withHistory(data.blocks, history);
+      const blocks = withHistory(data.blocks, history, s.readiness ?? null);
       const plan = appendBlocks(s.plan, blocks);
       const steps = flattenPlan(plan);
       const firstNew = steps.findIndex((step) => step.exercise.id === blocks[0].exercises[0].id);
@@ -303,8 +307,8 @@ export function WorkoutStudio() {
         proposal={proposal}
         onBack={() => setPhase("setup")}
         onStart={() => {
-          // Merge what Claude saw into the saved equipment profile.
-          setEquipment((prev) => mergeEquipment(prev, proposal.equipment));
+          // Merge what Claude saw into the saved equipment profile (not the full-gym list).
+          if (!proposal.fullGym) setEquipment((prev) => mergeEquipment(prev, proposal.equipment));
           startSession(proposal);
         }}
       />
@@ -325,8 +329,8 @@ export function WorkoutStudio() {
       }}
       onDiscardResumable={() => setSession(null)}
       onPlan={(p) => {
-        // Exercises done before start from the advised weight.
-        setProposal({ ...p, plan: { ...p.plan, blocks: withHistory(p.plan.blocks, history) } });
+        // Exercises done before start from the advised weight, held on a low-recovery day.
+        setProposal({ ...p, plan: { ...p.plan, blocks: withHistory(p.plan.blocks, history, p.health?.readiness ?? null) } });
         setPhase("plan");
       }}
     />
@@ -431,20 +435,24 @@ function Setup({
   }
 
   const selected = equipment.filter((e) => useSaved.has(e.name));
-  const canSubmit = photos.length > 0 || selected.length > 0 || notes.trim().length > 0;
+  const canSubmit = prefs.fullGym || photos.length > 0 || selected.length > 0 || notes.trim().length > 0;
 
   async function submit() {
     if (!canSubmit || busy) return;
     setError(null);
-    setBusy(photos.length ? "Looking at your equipment…" : "Designing the session…");
+    setBusy(!prefs.fullGym && photos.length ? "Looking at your equipment…" : "Designing the session…");
     haptic("press");
     const form = new FormData();
-    photos.forEach((p) => form.append("photos", p.file, p.file.name));
+    if (prefs.fullGym) {
+      form.set("fullGym", "1");
+    } else {
+      photos.forEach((p) => form.append("photos", p.file, p.file.name));
+      form.set("knownEquipment", JSON.stringify(selected));
+    }
     form.set("minutes", String(prefs.minutes));
     form.set("focus", prefs.focus);
     form.set("intensity", prefs.intensity);
     form.set("notes", notes);
-    form.set("knownEquipment", JSON.stringify(selected));
     form.set("history", JSON.stringify(history.slice(0, PROMPT_RECORDS).map(toRecord)));
     const slow = window.setTimeout(() => setBusy("Writing sets, reps and cues…"), 9000);
     try {
@@ -490,100 +498,122 @@ function Setup({
         </section>
       )}
 
-      {/* Photos */}
+      {/* Equipment */}
       <section className="mb-6">
-        <SectionLabel>Equipment photos</SectionLabel>
-        <div className="grid grid-cols-3 gap-2">
-          {photos.map((p, i) => (
-            <div key={p.url} className="relative aspect-square overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-fill)]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={p.url} alt="" className="h-full w-full object-cover" />
-              <button
-                onClick={() => removePhoto(i)}
-                aria-label="Remove photo"
-                className="absolute right-1 top-1 grid size-6 place-items-center rounded-full bg-black/60 text-white"
-              >
-                <X className="size-3.5" />
-              </button>
-            </div>
-          ))}
-          {photos.length < 6 && (
-            <label className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-card)] text-[var(--color-muted-foreground)] active:bg-[var(--color-fill)]">
-              <Camera className="size-6" />
-              <span className="text-xs">{photos.length ? "Add" : "Camera / library"}</span>
-              <input
-                ref={inputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="sr-only"
-                onChange={(e) => void addFiles(e.target.files)}
-              />
-            </label>
-          )}
-        </div>
-        <p className="mt-2 text-xs text-[var(--color-label-tertiary)]">
-          Dumbbell racks, benches, bands, machines, a hotel gym — up to 6 photos. Photos aren&apos;t stored.
-        </p>
-      </section>
-
-      {/* Saved equipment */}
-      <section className="mb-6">
-        <SectionLabel>Saved equipment {equipment.length ? `· ${selected.length} of ${equipment.length} selected` : ""}</SectionLabel>
-        {equipment.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {equipment.map((e) => {
-              const on = useSaved.has(e.name);
-              return (
-                <button
-                  key={e.name}
-                  onClick={() => {
-                    haptic("tick");
-                    setUseSaved((s) => {
-                      const n = new Set(s);
-                      if (n.has(e.name)) n.delete(e.name);
-                      else n.add(e.name);
-                      return n;
-                    });
-                  }}
-                  onContextMenu={(ev) => {
-                    ev.preventDefault();
-                    onEquipment(equipment.filter((x) => x.name !== e.name));
-                  }}
-                  className={chip(on)}
-                  title={e.detail ?? e.name}
-                >
-                  {on && <Check className="size-3" />}
-                  {e.name}
-                  {e.detail && <span className="opacity-60"> · {e.detail}</span>}
-                </button>
-              );
-            })}
-          </div>
-        )}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            addItem();
-          }}
-          className="flex gap-2"
-        >
-          <input
-            value={newItem}
-            onChange={(e) => setNewItem(e.target.value)}
-            placeholder={equipment.length ? "Add an item…" : "Or type it: 2×25 lb dumbbells, pull-up bar, bands"}
-            className={input}
-          />
-          <button type="submit" className={btnSecondary} disabled={!newItem.trim()}>
-            <Plus className="size-4" />
-          </button>
-        </form>
-        {equipment.length > 0 && (
-          <p className="mt-1.5 text-xs text-[var(--color-label-tertiary)]">
-            Equipment Claude spots in your photos is saved here. Long-press a chip to remove it.
+        <SectionLabel>Equipment</SectionLabel>
+        <Segmented
+          options={[
+            { value: "mine", label: "My equipment" },
+            { value: "gym", label: "Full gym" },
+          ]}
+          value={prefs.fullGym ? "gym" : "mine"}
+          onChange={(v) => onPrefs({ ...prefs, fullGym: v === "gym" })}
+        />
+        {prefs.fullGym && (
+          <p className="mt-2 text-xs text-[var(--color-label-tertiary)]">
+            Barbells and racks, dumbbells to 120 lb, cables, machines, kettlebells, sled and cardio. No photos needed.
           </p>
         )}
       </section>
+
+      {!prefs.fullGym && (
+        <>
+          {/* Photos */}
+          <section className="mb-6">
+            <SectionLabel>Equipment photos</SectionLabel>
+            <div className="grid grid-cols-3 gap-2">
+              {photos.map((p, i) => (
+                <div key={p.url} className="relative aspect-square overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-fill)]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.url} alt="" className="h-full w-full object-cover" />
+                  <button
+                    onClick={() => removePhoto(i)}
+                    aria-label="Remove photo"
+                    className="absolute right-1 top-1 grid size-6 place-items-center rounded-full bg-black/60 text-white"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              ))}
+              {photos.length < 6 && (
+                <label className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-card)] text-[var(--color-muted-foreground)] active:bg-[var(--color-fill)]">
+                  <Camera className="size-6" />
+                  <span className="text-xs">{photos.length ? "Add" : "Camera / library"}</span>
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="sr-only"
+                    onChange={(e) => void addFiles(e.target.files)}
+                  />
+                </label>
+              )}
+            </div>
+            <p className="mt-2 text-xs text-[var(--color-label-tertiary)]">
+              Dumbbell racks, benches, bands, machines, a hotel gym — up to 6 photos. Photos aren&apos;t stored.
+            </p>
+          </section>
+
+          {/* Saved equipment */}
+          <section className="mb-6">
+            <SectionLabel>Saved equipment {equipment.length ? `· ${selected.length} of ${equipment.length} selected` : ""}</SectionLabel>
+            {equipment.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {equipment.map((e) => {
+                  const on = useSaved.has(e.name);
+                  return (
+                    <button
+                      key={e.name}
+                      onClick={() => {
+                        haptic("tick");
+                        setUseSaved((s) => {
+                          const n = new Set(s);
+                          if (n.has(e.name)) n.delete(e.name);
+                          else n.add(e.name);
+                          return n;
+                        });
+                      }}
+                      onContextMenu={(ev) => {
+                        ev.preventDefault();
+                        onEquipment(equipment.filter((x) => x.name !== e.name));
+                      }}
+                      className={chip(on)}
+                      title={e.detail ?? e.name}
+                    >
+                      {on && <Check className="size-3" />}
+                      {e.name}
+                      {e.detail && <span className="opacity-60"> · {e.detail}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                addItem();
+              }}
+              className="flex gap-2"
+            >
+              <input
+                value={newItem}
+                onChange={(e) => setNewItem(e.target.value)}
+                placeholder={equipment.length ? "Add an item…" : "Or type it: 2×25 lb dumbbells, pull-up bar, bands"}
+                className={input}
+              />
+              <button type="submit" className={btnSecondary} disabled={!newItem.trim()}>
+                <Plus className="size-4" />
+              </button>
+            </form>
+            {equipment.length > 0 && (
+              <p className="mt-1.5 text-xs text-[var(--color-label-tertiary)]">
+                Equipment Claude spots in your photos is saved here. Long-press a chip to remove it.
+              </p>
+            )}
+          </section>
+        </>
+      )}
 
       {/* Prefs */}
       <section className="mb-6 space-y-4">
@@ -724,7 +754,14 @@ function PlanReview({
         </div>
       </header>
 
-      {equipment.length > 0 && (
+      {proposal.health && <HealthCard health={proposal.health} />}
+
+      {proposal.fullGym ? (
+        <section className="mb-5">
+          <SectionLabel>Equipment</SectionLabel>
+          <span className={chip(false) + " cursor-default"}>Full gym</span>
+        </section>
+      ) : equipment.length > 0 && (
         <section className="mb-5">
           <SectionLabel>Equipment spotted</SectionLabel>
           <div className="flex flex-wrap gap-1.5">
@@ -758,6 +795,31 @@ function PlanReview({
         </button>
       </div>
     </div>
+  );
+}
+
+/** The health data the plan used, and what recovery did to today's weights. */
+function HealthCard({ health }: { health: HealthSummary }) {
+  if (!health.facts.length && !health.note) return null;
+  return (
+    <section className="mb-5">
+      <SectionLabel>From your health data</SectionLabel>
+      {health.facts.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {health.facts.map((f) => (
+            <span key={f} className={chip(false) + " cursor-default"}>
+              {f}
+            </span>
+          ))}
+        </div>
+      )}
+      {health.note && (
+        <p className="mt-2 text-sm text-[var(--color-muted-foreground)]">
+          <span className="font-semibold text-[var(--color-tint)]">{health.readiness === "low" ? "↓" : "✓"}</span>{" "}
+          {health.readiness === "low" ? `Recovery is low. ${health.note} No weight increases today.` : `Recovery is normal. ${health.note}`}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -860,6 +922,7 @@ function Player({
 }) {
   const steps = useMemo(() => flattenPlan(session.plan), [session.plan]);
   const idx = Math.min(session.stepIndex, steps.length - 1);
+  const upcoming = useMemo(() => upcomingSteps(steps, idx), [steps, idx]);
   const step = steps[idx];
   const next = steps[idx + 1] ?? null;
   const e = step.exercise;
@@ -1115,6 +1178,7 @@ function Player({
         </div>
       )}
 
+      <ComingUp groups={upcoming} currentId={step.exercise.id} />
       <ExtendRow onExtend={onExtend} className="mt-6" />
       <div className="mt-4 flex justify-center">
         {confirmEnd ? (
@@ -1189,6 +1253,46 @@ function RestCard({
         </div>
       </div>
     </div>
+  );
+}
+
+/** The rest of the session, one row per exercise in the order it comes up. */
+function ComingUp({ groups, currentId }: { groups: UpcomingGroup[]; currentId: string }) {
+  if (!groups.length) return null;
+  return (
+    <section className="mt-6">
+      <SectionLabel>Coming up</SectionLabel>
+      <div className="space-y-3">
+        {groups.map((g, i) => (
+          <div key={`${g.name}-${i}`}>
+            <div className="mb-1 flex items-center gap-2 text-xs font-medium text-[var(--color-label-secondary)]">
+              {g.name}
+              {g.blockType !== "straight" && (
+                <span className="rounded-full bg-[var(--color-fill)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{g.blockType}</span>
+              )}
+            </div>
+            <ul className="divide-y divide-[var(--color-separator)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]">
+              {g.items.map(({ exercise: x, setsLeft }) => {
+                const amount = `${x.durationSec !== null ? `${x.durationSec}s` : x.reps}${x.perSide ? " each side" : ""}`;
+                return (
+                  <li key={x.id} className="flex items-center gap-3 px-3 py-2">
+                    <div className="size-10 shrink-0 rounded-lg bg-[var(--color-fill-secondary)]">
+                      <ExerciseFigure pattern={x.pattern} playing={false} prop={propForEquipment(x.equipment, x.load)} className="h-full w-full" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">{x.name}</div>
+                      <div className="truncate text-xs text-[var(--color-muted-foreground)]">
+                        {x.id === currentId ? `${setsLeft} more ${setsLeft === 1 ? "set" : "sets"} of ${amount}` : `${setsLeft} × ${amount}`} · {x.load}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

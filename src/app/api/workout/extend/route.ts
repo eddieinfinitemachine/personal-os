@@ -12,12 +12,13 @@ import {
   type ExtendRequest,
 } from "@/lib/workout";
 import { historyPrompt, normalizeRecords, PROMPT_RECORDS } from "@/lib/workout-history";
+import { healthPrompt, loadHealth, readinessOf } from "@/lib/workout-health";
 
 export const maxDuration = 120;
 
 // "10 more minutes" mid-session or after the summary: more main blocks on the
 // same equipment, avoiding the movements already done (today's and the training
-// log's recent ones). Nothing is stored.
+// log's recent ones), within the health profile's limits. Nothing is stored.
 export async function POST(request: Request) {
   const userId = await getCurrentUserId(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -42,6 +43,11 @@ export async function POST(request: Request) {
     })
     .filter((e): e is EquipmentItem => e !== null)
     .slice(0, 40);
+  const now = Date.now();
+  const health = await loadHealth(userId, now).catch((err) => {
+    console.error("workout health load failed", err);
+    return null;
+  });
   const req: ExtendRequest = {
     minutes: minutes as ExtendRequest["minutes"],
     focus: (FOCUS_OPTIONS as readonly string[]).includes(String(body.focus)) ? (body.focus as ExtendRequest["focus"]) : "full-body",
@@ -54,7 +60,8 @@ export async function POST(request: Request) {
       .map((n) => n.trim().slice(0, 80))
       .slice(0, 40),
     notes: typeof body.notes === "string" ? body.notes.slice(0, 500) : "",
-    history: historyPrompt(normalizeRecords(body.history, PROMPT_RECORDS), Date.now()),
+    history: historyPrompt(normalizeRecords(body.history, PROMPT_RECORDS), now, health ? readinessOf(health).readiness : null),
+    health: health ? healthPrompt(health, now) : "",
   };
   try {
     const raw = await callClaudeJSON<unknown>({

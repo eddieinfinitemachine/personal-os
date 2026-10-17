@@ -199,3 +199,64 @@ describe("the workout log", () => {
     expect(history()[0]).toMatchObject({ id: "w-past", synced: true });
   });
 });
+
+describe("full gym, health data and what's coming up", () => {
+  const routes = (handlers: Record<string, (init?: RequestInit) => unknown>) =>
+    vi.fn(async (url: string, init?: RequestInit): Promise<Reply> => {
+      const body = handlers[`${init?.method ?? "GET"} ${url.split("?")[0]}`]?.(init) ?? (url.startsWith("/api/workout/video") ? { video: null } : {});
+      return { ok: true, json: async () => body };
+    });
+
+  it("plans for a full gym, shows the health data used, and holds weights on a low-recovery day", async () => {
+    localStorage.removeItem("personalos:workout:session");
+    localStorage.setItem("personalos:workout:equipment", JSON.stringify([{ name: "Kettlebell", detail: "35 lb" }]));
+    localStorage.setItem("personalos:workout:history", JSON.stringify([{
+      id: "w-past", title: "Leg day", focus: "lower", startedAt: Date.now() - 86_400_000 * 2, finishedAt: Date.now() - 86_400_000 * 2 + 1_800_000, durationMin: 30,
+      setsLogged: 2, loggedToPersonal: false, synced: true,
+      exercises: [{ name: "Back squat", equipment: "barbell", targetReps: 5, sets: [{ reps: 5, durationSec: null, load: "185 lb" }, { reps: 5, durationSec: null, load: "185 lb" }] }],
+    }]));
+    const reply = {
+      equipment: [{ name: "Olympic barbells & plates" }, { name: "Smith machine" }],
+      fullGym: true,
+      health: { facts: ["182 lb", "HRV 40 ms · avg 55"], readiness: "low", note: "HRV 40 ms is 27% under your 30-day average (55)." },
+      plan: { title: "Gym legs", summary: "", focus: "lower", estimatedMinutes: 45, warmup: [], cooldown: [],
+        blocks: [{ name: "A", type: "straight", exercises: [exercise("g1", "Back squat", { equipment: "barbell", reps: 5, load: "195 lb" }), exercise("g2", "Leg press", { equipment: "machine", load: "270 lb" })] }] },
+    };
+    const fetch = routes({ "POST /api/workout/plan": () => reply });
+    vi.stubGlobal("fetch", fetch);
+    await act(async () => root.render(<WorkoutStudio />));
+    expect(container.textContent).toContain("Equipment photos");
+    await act(async () => button("Full gym").click());
+    expect(container.textContent).not.toContain("Equipment photos");
+    expect(container.textContent).toContain("No photos needed.");
+    expect(JSON.parse(localStorage.getItem("personalos:workout:prefs")!).fullGym).toBe(true);
+    await act(async () => button("Build my workout").click());
+    await flush();
+    const form = fetch.mock.calls.find((c) => c[0] === "/api/workout/plan")![1]?.body as FormData;
+    expect(form.get("fullGym")).toBe("1");
+    expect(form.get("knownEquipment")).toBeNull();
+    expect(form.getAll("photos")).toEqual([]);
+    expect(container.textContent).toContain("From your health data");
+    expect(container.textContent).toContain("HRV 40 ms · avg 55");
+    expect(container.textContent).toContain("Recovery is low. HRV 40 ms is 27% under your 30-day average (55). No weight increases today.");
+    expect(container.textContent).not.toContain("Smith machine");
+    expect(container.textContent).toContain("2 × 5 · 185 lb");
+    expect(container.textContent).toContain("Recovery is low today: holding 185 lb");
+    await act(async () => button("Start workout").click());
+    expect(stored().readiness).toBe("low");
+    expect(JSON.parse(localStorage.getItem("personalos:workout:equipment")!)).toEqual([{ name: "Kettlebell", detail: "35 lb" }]);
+  });
+
+  it("shows the rest of the session mid-set, and moves on as sets are logged", async () => {
+    vi.stubGlobal("fetch", mockFetch(video));
+    await resume();
+    const comingUp = () => container.querySelector("section.mt-6")?.textContent ?? "";
+    expect(comingUp()).toContain("Coming up");
+    expect(comingUp()).toContain("Goblet squat1 more set of 10 · 2×25 lb dumbbells");
+    expect(comingUp()).toContain("Farmer carry2 × 40s · 2×50 lb");
+    expect(comingUp()).toContain("Cool-downHamstring stretch1 × 30s · bodyweight");
+    await act(async () => button("Log set").click());
+    expect(comingUp()).not.toContain("Goblet squat");
+    expect(comingUp()).toContain("Farmer carry2 × 40s");
+  });
+});

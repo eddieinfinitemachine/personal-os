@@ -5,12 +5,14 @@ import {
   buildSystemPrompt,
   buildUserPrompt,
   FOCUS_OPTIONS,
+  FULL_GYM_EQUIPMENT,
   INTENSITY_OPTIONS,
   normalizePlanResponse,
   type EquipmentItem,
   type PlanRequest,
 } from "@/lib/workout";
 import { historyPrompt, normalizeRecords, PROMPT_RECORDS } from "@/lib/workout-history";
+import { healthPrompt, healthSummary, loadHealth, readinessOf } from "@/lib/workout-health";
 
 export const maxDuration = 120;
 
@@ -18,7 +20,8 @@ const MAX_PHOTOS = 6;
 const MAX_PHOTO_BYTES = 6 * 1024 * 1024; // client compresses to ~300KB; hard cap anyway
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
-// Photos of the equipment + a few preferences → Claude (vision) → a structured
+// Photos of the equipment (or "full gym") + a few preferences + the device's
+// training log + the user's health profile → Claude (vision) → a structured
 // workout plan. Nothing is written: the photos live only in this request and
 // the client keeps the plan/session in localStorage.
 export async function POST(request: Request) {
@@ -44,9 +47,10 @@ export async function POST(request: Request) {
     });
   }
 
-  let knownEquipment: EquipmentItem[] = [];
+  const fullGym = form.get("fullGym") === "1";
+  let knownEquipment: EquipmentItem[] = fullGym ? [...FULL_GYM_EQUIPMENT] : [];
   const knownRaw = form.get("knownEquipment");
-  if (typeof knownRaw === "string" && knownRaw) {
+  if (!fullGym && typeof knownRaw === "string" && knownRaw) {
     try {
       const parsed = JSON.parse(knownRaw) as unknown;
       if (Array.isArray(parsed)) {
@@ -79,6 +83,12 @@ export async function POST(request: Request) {
     }
   }
 
+  const now = Date.now();
+  const health = await loadHealth(userId, now).catch((err) => {
+    console.error("workout health load failed", err);
+    return null;
+  });
+  const readiness = health ? readinessOf(health).readiness : null;
   const req: PlanRequest = {
     minutes: Number.isFinite(minutesRaw) ? Math.min(120, Math.max(10, Math.round(minutesRaw))) : 30,
     focus: (FOCUS_OPTIONS as readonly string[]).includes(String(focusRaw))
@@ -89,8 +99,10 @@ export async function POST(request: Request) {
       : "moderate",
     notes: typeof form.get("notes") === "string" ? String(form.get("notes")).slice(0, 1000) : "",
     knownEquipment,
+    fullGym,
     hasPhotos: images.length > 0,
-    history: historyPrompt(normalizeRecords(history, PROMPT_RECORDS), Date.now()),
+    history: historyPrompt(normalizeRecords(history, PROMPT_RECORDS), now, readiness),
+    health: health ? healthPrompt(health, now) : "",
   };
 
   if (!req.hasPhotos && knownEquipment.length === 0 && !req.notes) {
@@ -116,7 +128,7 @@ export async function POST(request: Request) {
     for (const e of knownEquipment) {
       if (!seen.has(e.name.toLowerCase())) result.equipment.push(e);
     }
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, fullGym, health: health ? healthSummary(health, now) : null });
   } catch (err) {
     console.error("workout plan failed", err);
     const msg = err instanceof Error ? err.message : "plan failed";

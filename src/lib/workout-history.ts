@@ -14,6 +14,7 @@ import {
   type Focus,
   type WorkoutSession,
 } from "./workout";
+import type { Readiness } from "./workout-health";
 
 export type SetRecord = { reps: number | null; durationSec: number | null; load: string };
 
@@ -106,9 +107,18 @@ export function formatSets(sets: SetRecord[]): string {
 // on): every rep at it → one step up (5 lb / 2.5 kg); a rep or two short a set
 // → same; further off → one step down. A rep target more than 2 away from last
 // time goes through an estimated 1RM (Epley) instead. Timed and bodyweight
-// work has no weight to move.
+// work has no weight to move. On a low-recovery day (workout-health) nothing
+// goes above the weight the athlete ended on.
 
-export function adviseLoad(prev: ExerciseRecord, targetReps: number | null): LoadAdvice | null {
+export function adviseLoad(prev: ExerciseRecord, targetReps: number | null, readiness: Readiness | null = null): LoadAdvice | null {
+  const advice = progress(prev, targetReps);
+  if (!advice || advice.direction !== "up" || readiness !== "low") return advice;
+  const working = prev.sets.filter((s) => s.reps !== null).at(-1)!.load;
+  const w = parseLoad(working)!;
+  return { load: working, direction: "same", reason: `Recovery is low today: holding ${w.amount} ${w.unit}` };
+}
+
+function progress(prev: ExerciseRecord, targetReps: number | null): LoadAdvice | null {
   const repSets = prev.sets.filter((s) => s.reps !== null);
   if (!repSets.length || prev.targetReps === null) return null;
   const working = repSets[repSets.length - 1].load;
@@ -171,14 +181,14 @@ function sameEquipment(a: string, b: string): boolean {
  * Main exercises done before get `last`; when the weight can move on the same
  * equipment and unit, the advised load replaces the planned one.
  */
-export function withHistory(blocks: Block[], records: WorkoutRecord[]): Block[] {
+export function withHistory(blocks: Block[], records: WorkoutRecord[], readiness: Readiness | null = null): Block[] {
   if (!records.length) return blocks;
   return blocks.map((b) => ({
     ...b,
     exercises: b.exercises.map((e) => {
       const prev = lastPerformance(records, e.name);
       if (!prev) return e;
-      const advice = e.durationSec === null ? adviseLoad(prev.exercise, e.reps) : null;
+      const advice = e.durationSec === null ? adviseLoad(prev.exercise, e.reps, readiness) : null;
       const planned = parseLoad(e.load);
       const use =
         advice !== null &&
@@ -225,7 +235,7 @@ function ago(ts: number, now: number): string {
 }
 
 /** The training log for the planner; "" with no history. */
-export function historyPrompt(records: WorkoutRecord[], now: number): string {
+export function historyPrompt(records: WorkoutRecord[], now: number, readiness: Readiness | null = null): string {
   const sorted = [...records].sort((a, b) => b.finishedAt - a.finishedAt).slice(0, PROMPT_RECORDS);
   if (!sorted.length) return "";
   const lines = ["Training log, newest first:"];
@@ -249,7 +259,7 @@ export function historyPrompt(records: WorkoutRecord[], now: number): string {
       const key = videoKey(e.name);
       if (seen.has(key) || guide.length >= 24) continue;
       seen.add(key);
-      const advice = adviseLoad(e, null);
+      const advice = adviseLoad(e, null, readiness);
       guide.push(
         `- ${e.name} · ${day(r.finishedAt)}: ${formatSets(e.sets)}${e.targetReps !== null ? ` [target ${e.targetReps}]` : ""}${advice ? ` → next ${advice.load}` : ""}`,
       );
