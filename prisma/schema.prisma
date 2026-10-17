@@ -417,18 +417,22 @@ model FitnessSession {
   @@index([userId])
 }
 
-// One finished guided workout, set by set (src/lib/workout-history.ts), so the
-// next plan can move weights and skip recent exercises on any device.
+// One workout in the log, set by set (src/lib/workout-history.ts): a finished
+// guided session, a whiteboard photo, or a Strava activity. The next plan uses
+// it to move weights and skip recent exercises on any device.
 model WorkoutLog {
   id          String   @id @default(cuid())
-  // The session id from the device; finishing again after "+10 min" replaces the row.
+  // The session id from the device ("w-…", "b-…") or "strava-<activity id>";
+  // finishing again after "+10 min" replaces the row.
   clientId    String
+  source      String   @default("guided") // "guided" | "board" | "strava"
   title       String
   focus       String
   startedAt   DateTime
   finishedAt  DateTime
   durationMin Int
   exercises   Json // [{ name, equipment, targetReps, sets: [{ reps, durationSec, load }] }]
+  notes       String? // "For time · Score 8:42", "6.2 mi · avg HR 148"
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -438,6 +442,23 @@ model WorkoutLog {
 
   @@unique([userId, clientId])
   @@index([userId, finishedAt])
+}
+
+// The user's Strava account, for pulling activities into the workout log
+// (src/lib/strava.ts). Tokens rotate on refresh, so they live here, not in env.
+model StravaConnection {
+  id           String    @id @default(cuid())
+  userId       String    @unique
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  athleteId    String
+  athleteName  String?
+  scope        String
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  lastSyncAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 }
 
 // Shared lookup of exercise demo videos, keyed by exercise name. No personal
@@ -988,6 +1009,7 @@ model User {
   humanVaccinations   HumanVaccination[]
   fitnessSessions     FitnessSession[]
   workoutLogs         WorkoutLog[]
+  stravaConnection    StravaConnection?
   dnaResults          DnaResult[]
   pets                Pet[]
   petWeights          PetWeight[]

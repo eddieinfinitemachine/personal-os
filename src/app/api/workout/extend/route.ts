@@ -11,7 +11,7 @@ import {
   type EquipmentItem,
   type ExtendRequest,
 } from "@/lib/workout";
-import { historyPrompt, normalizeRecords, PROMPT_RECORDS } from "@/lib/workout-history";
+import { historyPrompt, normalizeRecords, PROMPT_MAX } from "@/lib/workout-history";
 import { healthPrompt, loadHealth, readinessOf } from "@/lib/workout-health";
 
 export const maxDuration = 120;
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
       .map((n) => n.trim().slice(0, 80))
       .slice(0, 40),
     notes: typeof body.notes === "string" ? body.notes.slice(0, 500) : "",
-    history: historyPrompt(normalizeRecords(body.history, PROMPT_RECORDS), now, health ? readinessOf(health).readiness : null),
+    history: historyPrompt(normalizeRecords(body.history, PROMPT_MAX), now, health ? readinessOf(health).readiness : null),
     health: health ? healthPrompt(health, now) : "",
   };
   try {

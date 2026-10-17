@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ user: vi.fn(), findMany: vi.fn(), upsert: vi.fn(), transaction: vi.fn() }));
+const mocks = vi.hoisted(() => ({ user: vi.fn(), findMany: vi.fn(), upsert: vi.fn(), transaction: vi.fn(), strava: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ getCurrentUserId: mocks.user }));
+vi.mock("@/lib/strava", () => ({ syncStrava: mocks.strava }));
 vi.mock("@/lib/prisma", () => ({
   prisma: { workoutLog: { findMany: mocks.findMany, upsert: mocks.upsert }, $transaction: mocks.transaction },
 }));
@@ -10,7 +11,7 @@ const url = "https://example.invalid/api/workout/history";
 const post = (body: unknown) => new Request(url, { method: "POST", body: typeof body === "string" ? body : JSON.stringify(body) });
 const finishedAt = Date.UTC(2026, 9, 16, 18);
 const exercises = [{ name: "Goblet squat", equipment: "dumbbell", targetReps: 10, sets: [{ reps: 10, durationSec: null, load: "2×25 lb" }] }];
-const record = { id: "w-1", title: "Legs", focus: "lower", startedAt: finishedAt - 1800000, finishedAt, durationMin: 30, exercises };
+const record = { id: "w-1", source: "guided", title: "Legs", focus: "lower", startedAt: finishedAt - 1800000, finishedAt, durationMin: 30, exercises };
 const missingTable = Object.assign(new Error("The table `WorkoutLog` does not exist"), { code: "P2021" });
 
 beforeEach(() => {
@@ -18,16 +19,27 @@ beforeEach(() => {
   mocks.user.mockResolvedValue("u1");
   mocks.upsert.mockImplementation((args: unknown) => args);
   mocks.transaction.mockImplementation(async (ops: unknown[]) => ops);
+  mocks.strava.mockResolvedValue(null);
 });
 
 describe("GET /api/workout/history", () => {
-  it("returns the user's latest sessions as records", async () => {
+  it("pulls in Strava first, then returns the user's latest workouts as records", async () => {
+    const run = { clientId: "strava-9", source: "strava", title: "Morning Run", focus: "conditioning", startedAt: new Date(finishedAt - 3600000), finishedAt: new Date(finishedAt - 600000), durationMin: 48, exercises: [], notes: "6.2 mi · Run" };
     mocks.findMany.mockResolvedValue([
-      { clientId: "w-1", title: "Legs", focus: "lower", startedAt: new Date(record.startedAt), finishedAt: new Date(finishedAt), durationMin: 30, exercises },
+      { clientId: "w-1", source: "guided", title: "Legs", focus: "lower", startedAt: new Date(record.startedAt), finishedAt: new Date(finishedAt), durationMin: 30, exercises, notes: null },
+      run,
     ]);
     const res = await GET(new Request(url));
-    expect(await res.json()).toEqual({ records: [record], stored: true });
-    expect(mocks.findMany).toHaveBeenCalledWith({ where: { userId: "u1" }, orderBy: { finishedAt: "desc" }, take: 30 });
+    expect(await res.json()).toEqual({
+      records: [record, { id: "strava-9", source: "strava", title: "Morning Run", focus: "conditioning", startedAt: finishedAt - 3600000, finishedAt: finishedAt - 600000, durationMin: 48, exercises: [], notes: "6.2 mi · Run" }],
+      stored: true,
+    });
+    expect(mocks.strava).toHaveBeenCalledWith("u1");
+    expect(mocks.findMany).toHaveBeenCalledWith({ where: { userId: "u1" }, orderBy: { finishedAt: "desc" }, take: 60 });
+    // A failed Strava pull still returns the log.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.strava.mockRejectedValueOnce(new Error("strava down"));
+    expect((await GET(new Request(url))).status).toBe(200);
   });
   it("reads an absent table as an empty log, 401 signed out, and rethrows anything else", async () => {
     mocks.findMany.mockRejectedValueOnce(missingTable);
@@ -43,7 +55,7 @@ describe("POST /api/workout/history", () => {
   it("upserts each record by the device's session id", async () => {
     const res = await POST(post({ records: [record, { id: "", finishedAt }] }));
     expect(await res.json()).toEqual({ saved: [{ id: "w-1", finishedAt }], stored: true });
-    const data = { title: "Legs", focus: "lower", startedAt: new Date(record.startedAt), finishedAt: new Date(finishedAt), durationMin: 30, exercises };
+    const data = { source: "guided", title: "Legs", focus: "lower", startedAt: new Date(record.startedAt), finishedAt: new Date(finishedAt), durationMin: 30, exercises, notes: null };
     expect(mocks.upsert).toHaveBeenCalledTimes(1);
     expect(mocks.upsert).toHaveBeenCalledWith({
       where: { userId_clientId: { userId: "u1", clientId: "w-1" } },

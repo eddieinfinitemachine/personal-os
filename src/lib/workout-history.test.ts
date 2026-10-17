@@ -97,7 +97,7 @@ describe("recordFromSession", () => {
       timerEndsAt: null, timerKind: null, timerPausedRemainingMs: null,
     };
     expect(recordFromSession(s, NOW)).toEqual({
-      id: "w-1", title: "Legs", focus: "lower", startedAt: NOW - 30 * 60000, finishedAt: NOW, durationMin: 30,
+      id: "w-1", source: "guided", title: "Legs", focus: "lower", startedAt: NOW - 30 * 60000, finishedAt: NOW, durationMin: 30,
       exercises: [{ name: "Goblet squat", equipment: "dumbbell", targetReps: 10, sets: [{ reps: 10, durationSec: null, load: "2×25 lb" }, { reps: 9, durationSec: null, load: "2×30 lb" }] }],
     });
   });
@@ -167,7 +167,8 @@ describe("historyPrompt", () => {
         "- 2026-10-14 (3 days ago) · Mobility · full-body · 40 min",
         "- 2026-10-12 (5 days ago) · Session d · full-body · 40 min: DB row",
         "- 2026-10-08 (9 days ago) · Session old · full-body · 40 min: Romanian deadlift, Goblet squat",
-        "Don't repeat these main exercises from the last 3 sessions; train the same muscles with different movements unless the equipment leaves no alternative: Push-up, Goblet squat.",
+        // Sessions with nothing logged (Mobility) don't count toward the last 3.
+        "Don't repeat these main exercises from the last 3 sessions; train the same muscles with different movements unless the equipment leaves no alternative: Push-up, Goblet squat, DB row.",
         "Last performance per exercise [target reps] and the load to use next if you program it. Keep its exact name:",
         "- Push-up · 2026-10-17: 15, 12 [target 12]",
         "- Goblet squat · 2026-10-16: 10, 9 @ 2×25 lb [target 10] → next 2×25 lb",
@@ -200,8 +201,8 @@ describe("normalizeRecords", () => {
       NOW,
     );
     expect(out).toEqual([
-      { id: "w-2", title: "Workout", focus: "full-body", startedAt: NOW, finishedAt: NOW, durationMin: 1, exercises: [] },
-      { id: "w-1", title: "Legs", focus: "lower", startedAt: NOW - DAY - 1800000, finishedAt: NOW - DAY, durationMin: 30, exercises: [
+      { id: "w-2", source: "guided", title: "Workout", focus: "full-body", startedAt: NOW, finishedAt: NOW, durationMin: 1, exercises: [] },
+      { id: "w-1", source: "guided", title: "Legs", focus: "lower", startedAt: NOW - DAY - 1800000, finishedAt: NOW - DAY, durationMin: 30, exercises: [
         { name: "Goblet squat", equipment: "bodyweight", targetReps: null, sets: [{ reps: 10, durationSec: null, load: "2×25 lb" }, { reps: null, durationSec: 40, load: "bodyweight" }] },
       ] },
     ]);

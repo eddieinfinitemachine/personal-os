@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/components/mobile-chrome", () => ({ PageHeader: () => null }));
 vi.mock("@/lib/haptic", () => ({ haptic: vi.fn() }));
+vi.mock("@/lib/image-compress", () => ({ compressImage: async (f: File) => f }));
 vi.mock("./workout-timer", () => ({
   beep: vi.fn(),
   unlockAudio: vi.fn(),
@@ -179,7 +180,7 @@ describe("the workout log", () => {
     await act(async () => button("Build my workout").click());
     await flush();
     const call = fetch.mock.calls.find((c) => c[0] === "/api/workout/plan")!;
-    expect(JSON.parse(String((call[1]?.body as FormData).get("history")))).toEqual([past]);
+    expect(JSON.parse(String((call[1]?.body as FormData).get("history")))).toEqual([{ ...past, source: "guided" }]);
     expect(container.textContent).toContain("2 × 10 · 2×30 lb dumbbells");
     expect(container.textContent).toContain("Last · ");
     expect(container.textContent).toContain(": 10, 10 @ 2×25 lb dumbbells");
@@ -258,5 +259,112 @@ describe("full gym, health data and what's coming up", () => {
     await act(async () => button("Log set").click());
     expect(comingUp()).not.toContain("Goblet squat");
     expect(comingUp()).toContain("Farmer carry2 × 40s");
+  });
+});
+
+describe("class whiteboards and Strava", () => {
+  const routes = (handlers: Record<string, (init?: RequestInit) => unknown>) =>
+    vi.fn(async (url: string, init?: RequestInit): Promise<Reply> => {
+      const body = handlers[`${init?.method ?? "GET"} ${url.split("?")[0]}`]?.(init) ?? (url.startsWith("/api/workout/video") ? { video: null } : {});
+      return { ok: true, json: async () => body };
+    });
+  const type = async (el: HTMLInputElement, value: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(el, value);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  const field = (label: string) => container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+
+  it("reads a whiteboard photo, lets the athlete fix it up, and saves it to the log", async () => {
+    localStorage.removeItem("personalos:workout:session");
+    localStorage.setItem("personalos:workout:history", JSON.stringify([{
+      id: "w-old", source: "guided", title: "Legs", focus: "lower", startedAt: Date.now() - 3 * 86_400_000, finishedAt: Date.now() - 3 * 86_400_000 + 1_800_000, durationMin: 30,
+      setsLogged: 2, loggedToPersonal: false, synced: true,
+      exercises: [{ name: "Goblet squat", equipment: "dumbbell", targetReps: 15, sets: [{ reps: 15, durationSec: null, load: "1×35 lb dumbbell" }] }],
+    }]));
+    const board = {
+      title: "Cindy-ish", focus: "conditioning", format: "AMRAP 20 min", amrap: true, timeCapMin: 20, notes: "",
+      exercises: [
+        { name: "Pull-up", equipment: "pull-up bar", load: "bodyweight", sets: [{ reps: 5, durationSec: null }] },
+        { name: "Goblet squat", equipment: "dumbbell", load: "1×35 lb dumbbell", sets: [{ reps: 15, durationSec: null }] },
+      ],
+    };
+    const fetch = routes({
+      "POST /api/workout/board": () => ({ board }),
+      "POST /api/workout/history": (init) => ({ saved: (JSON.parse(String(init?.body)) as { records: { id: string; finishedAt: number }[] }).records.map(({ id, finishedAt }) => ({ id, finishedAt })) }),
+    });
+    vi.stubGlobal("fetch", fetch);
+    await act(async () => root.render(<WorkoutStudio />));
+    const photo = field("Whiteboard photo");
+    Object.defineProperty(photo, "files", { value: [new File(["x"], "board.jpg", { type: "image/jpeg" })], configurable: true });
+    await act(async () => photo.dispatchEvent(new Event("change", { bubbles: true })));
+    await flush();
+    expect((fetch.mock.calls.find((c) => c[0] === "/api/workout/board")![1]?.body as FormData).getAll("photos")).toHaveLength(1);
+    expect(container.textContent).toContain("From the whiteboard");
+    expect(field("Title").value).toBe("Cindy-ish");
+    expect(container.textContent).toContain("One round");
+    // The squat has been done before: last time and what to try.
+    expect(container.textContent).toContain(": 15 @ 1×35 lb dumbbell");
+    expect(container.textContent).toContain("↑ Use 1×40 lb dumbbell · +5 lb: every rep at 35 lb");
+    await act(async () => byLabel("More rounds").click());
+    await act(async () => byLabel("More rounds").click());
+    await type(field("Reps for Pull-up"), "6");
+    await act(async () => button("Use 1×40 lb dumbbell").click());
+    await type([...container.querySelectorAll("input")].find((i) => i.placeholder === "7 + 12")!, "3 + 6");
+    await act(async () => button("Save to log").click());
+    await flush();
+    expect(container.textContent).toContain("“Cindy-ish” is in your log.");
+    const [entry] = JSON.parse(localStorage.getItem("personalos:workout:history")!) as { id: string; source: string; notes: string; setsLogged: number; synced?: boolean; exercises: { name: string; sets: { reps: number; load: string }[] }[] }[];
+    expect(entry).toMatchObject({ source: "board", notes: "AMRAP 20 min · Score 3 + 6", setsLogged: 6, synced: true });
+    expect(entry.id).toMatch(/^b-/);
+    expect(entry.exercises.map((e) => [e.name, e.sets.length, e.sets[0].reps, e.sets[0].load])).toEqual([
+      ["Pull-up", 3, 6, "bodyweight"],
+      ["Goblet squat", 3, 15, "1×40 lb dumbbell"],
+    ]);
+    expect(container.textContent).toContain("Conditioning · Whiteboard · 6 sets");
+  });
+
+  it("shows a board that couldn't be read", async () => {
+    localStorage.removeItem("personalos:workout:session");
+    vi.stubGlobal("fetch", vi.fn(async (url: string): Promise<Reply> =>
+      url === "/api/workout/board" ? { ok: false, status: 422, json: async () => ({ error: "No workout found on that board." }) } : { ok: true, json: async () => ({}) },
+    ));
+    await act(async () => root.render(<WorkoutStudio />));
+    const photo = field("Whiteboard photo");
+    Object.defineProperty(photo, "files", { value: [new File(["x"], "menu.jpg", { type: "image/jpeg" })], configurable: true });
+    await act(async () => photo.dispatchEvent(new Event("change", { bubbles: true })));
+    await flush();
+    expect(container.textContent).toContain("No workout found on that board.");
+    expect(container.textContent).not.toContain("From the whiteboard");
+  });
+
+  it("connects Strava from the workout page and can disconnect it", async () => {
+    localStorage.removeItem("personalos:workout:session");
+    window.history.pushState(null, "", "/workout?strava=connected");
+    let connected = true;
+    const fetch = routes({
+      "GET /api/strava": () => ({ configured: true, connected, athleteName: connected ? "Sam Lee" : null, lastSyncAt: connected ? Date.now() - 120_000 : null }),
+      "DELETE /api/strava": () => ({ connected: (connected = false) }),
+    });
+    vi.stubGlobal("fetch", fetch);
+    await act(async () => root.render(<WorkoutStudio />));
+    await flush();
+    expect(container.textContent).toContain("Strava connected. Your last 30 days are in the log.");
+    expect(window.location.search).toBe("");
+    expect(container.textContent).toContain("Connected · Sam Lee");
+    expect(container.textContent).toContain("Synced 2 min ago");
+    await act(async () => button("Disconnect").click());
+    await act(async () => button("Disconnect").click());
+    await flush();
+    expect(fetch.mock.calls.some((c) => c[0] === "/api/strava" && c[1]?.method === "DELETE")).toBe(true);
+    expect(container.querySelector<HTMLAnchorElement>('a[href="/api/strava/connect"]')?.textContent).toBe("Connect");
+  });
+
+  it("stays out of the way until the server has Strava keys", async () => {
+    localStorage.removeItem("personalos:workout:session");
+    vi.stubGlobal("fetch", routes({ "GET /api/strava": () => ({ configured: false, connected: false }) }));
+    await act(async () => root.render(<WorkoutStudio />));
+    await flush();
+    expect(container.textContent).not.toContain("Strava");
   });
 });

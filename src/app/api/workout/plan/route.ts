@@ -11,7 +11,7 @@ import {
   type EquipmentItem,
   type PlanRequest,
 } from "@/lib/workout";
-import { historyPrompt, normalizeRecords, PROMPT_RECORDS } from "@/lib/workout-history";
+import { historyPrompt, normalizeRecords, PROMPT_MAX } from "@/lib/workout-history";
 import { healthPrompt, healthSummary, loadHealth, readinessOf } from "@/lib/workout-health";
 
 export const maxDuration = 120;
@@ -101,7 +101,7 @@ export async function POST(request: Request) {
     knownEquipment,
     fullGym,
     hasPhotos: images.length > 0,
-    history: historyPrompt(normalizeRecords(history, PROMPT_RECORDS), now, readiness),
+    history: historyPrompt(normalizeRecords(history, PROMPT_MAX), now, readiness),
     health: health ? healthPrompt(health, now) : "",
   };
 

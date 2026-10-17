@@ -48,9 +48,10 @@ import {
 } from "@/lib/workout";
 import {
   HISTORY_MAX,
-  PROMPT_RECORDS,
+  promptRecords,
   adviseLoad,
   formatSets,
+  lastPerformance,
   mergeHistory,
   recordFromSession,
   toRecord,
@@ -59,8 +60,10 @@ import {
   type HistoryEntry,
   type LoadAdvice,
   type WorkoutRecord,
+  type WorkoutSource,
 } from "@/lib/workout-history";
 import type { HealthSummary } from "@/lib/workout-health";
+import { boardRecord, parseSetsText, setsText, type BoardDraft } from "@/lib/workout-board";
 import { ExerciseFigure, propForEquipment } from "./exercise-figure";
 import { ExerciseVideoEmbed, ExerciseVideoToggle, useExerciseVideos, withVideo } from "./exercise-video";
 import { MuscleMap } from "./muscle-map";
@@ -110,7 +113,7 @@ const FOCUS_LABEL: Record<Focus, string> = {
   mobility: "Mobility",
 };
 
-type Phase = "setup" | "plan" | "play" | "done";
+type Phase = "setup" | "plan" | "play" | "done" | "board";
 
 export function WorkoutStudio() {
   const [hydrated, setHydrated] = useState(false);
@@ -120,6 +123,8 @@ export function WorkoutStudio() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [prefs, setPrefs] = useState<Prefs>({ minutes: 30, focus: "full-body", intensity: "moderate", fullGym: false });
   const [proposal, setProposal] = useState<PlanResponse | null>(null);
+  const [board, setBoard] = useState<BoardDraft | null>(null);
+  const [savedTitle, setSavedTitle] = useState<string | null>(null);
 
   useEffect(() => {
     setSession(read<WorkoutSession | null>(KEYS.session, null));
@@ -250,7 +255,7 @@ export function WorkoutStudio() {
           intensity: prefs.intensity,
           equipment: s.equipment,
           exercises: planExercises(s.plan).map((e) => e.name),
-          history: history.slice(0, PROMPT_RECORDS).map(toRecord),
+          history: promptRecords(history, Date.now()).map(toRecord),
         }),
       });
       const data = (await res.json()) as { blocks?: Block[]; error?: string };
@@ -301,6 +306,24 @@ export function WorkoutStudio() {
     );
   }
 
+  if (phase === "board" && board) {
+    return (
+      <BoardReview
+        draft={board}
+        history={history}
+        onBack={() => setPhase("setup")}
+        onSave={(record) => {
+          const entry: HistoryEntry = { ...record, setsLogged: record.exercises.reduce((n, e) => n + e.sets.length, 0), loggedToPersonal: false };
+          setHistory((h) => [entry, ...h].sort((a, b) => b.finishedAt - a.finishedAt).slice(0, HISTORY_MAX));
+          haptic("success");
+          setBoard(null);
+          setSavedTitle(record.title);
+          setPhase("setup");
+        }}
+      />
+    );
+  }
+
   if (phase === "plan" && proposal) {
     return (
       <PlanReview
@@ -328,6 +351,12 @@ export function WorkoutStudio() {
         setPhase("play");
       }}
       onDiscardResumable={() => setSession(null)}
+      savedTitle={savedTitle}
+      onBoard={(d) => {
+        setSavedTitle(null);
+        setBoard(d);
+        setPhase("board");
+      }}
       onPlan={(p) => {
         // Exercises done before start from the advised weight, held on a low-recovery day.
         setProposal({ ...p, plan: { ...p.plan, blocks: withHistory(p.plan.blocks, history, p.health?.readiness ?? null) } });
@@ -371,6 +400,8 @@ function Setup({
   resumable,
   onResume,
   onDiscardResumable,
+  savedTitle,
+  onBoard,
   onPlan,
 }: {
   prefs: Prefs;
@@ -381,6 +412,8 @@ function Setup({
   resumable: WorkoutSession | null;
   onResume: () => void;
   onDiscardResumable: () => void;
+  savedTitle: string | null;
+  onBoard: (d: BoardDraft) => void;
   onPlan: (p: PlanResponse) => void;
 }) {
   const [photos, setPhotos] = useState<{ file: File; url: string }[]>([]);
@@ -453,7 +486,7 @@ function Setup({
     form.set("focus", prefs.focus);
     form.set("intensity", prefs.intensity);
     form.set("notes", notes);
-    form.set("history", JSON.stringify(history.slice(0, PROMPT_RECORDS).map(toRecord)));
+    form.set("history", JSON.stringify(promptRecords(history, Date.now()).map(toRecord)));
     const slow = window.setTimeout(() => setBusy("Writing sets, reps and cues…"), 9000);
     try {
       const res = await fetch("/api/workout/plan", { method: "POST", body: form });
@@ -473,6 +506,12 @@ function Setup({
     <div className="px-4 py-4 pb-28 sm:px-6 md:px-8 md:py-6 max-w-2xl">
       <PageHeader title="Workout" />
       <Header />
+
+      {savedTitle && (
+        <p className="mb-4 flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-sm animate-fade-in-up">
+          <Check className="size-4 text-[var(--color-success)]" /> “{savedTitle}” is in your log.
+        </p>
+      )}
 
       {resumable && (
         <section className="mb-6 rounded-2xl border border-[var(--color-tint)]/40 bg-[var(--color-card)] p-4 animate-fade-in-up">
@@ -673,6 +712,9 @@ function Setup({
         )}
       </button>
 
+      <BoardCapture onBoard={onBoard} />
+      <StravaRow />
+
       {history.length > 0 && (
         <section className="mt-8">
           <SectionLabel>Recent</SectionLabel>
@@ -688,9 +730,11 @@ function Setup({
 }
 
 /** A past session; tap to see each exercise's sets and weights. */
+const SOURCE_LABEL: Record<WorkoutSource, string> = { guided: "", board: "Whiteboard", strava: "Strava" };
+
 function RecentRow({ entry: h }: { entry: HistoryEntry }) {
   const [open, setOpen] = useState(false);
-  const canOpen = h.exercises.length > 0;
+  const canOpen = h.exercises.length > 0 || !!h.notes;
   return (
     <li>
       <button
@@ -701,7 +745,9 @@ function RecentRow({ entry: h }: { entry: HistoryEntry }) {
         <div className="min-w-0">
           <div className="truncate font-medium">{h.title}</div>
           <div className="text-xs text-[var(--color-muted-foreground)]">
-            {shortDate(h.finishedAt)} · {FOCUS_LABEL[h.focus]} · {h.setsLogged} sets
+            {[shortDate(h.finishedAt), FOCUS_LABEL[h.focus], SOURCE_LABEL[h.source ?? "guided"], h.exercises.length ? `${h.setsLogged} sets` : ""]
+              .filter(Boolean)
+              .join(" · ")}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1 tabular-nums text-[var(--color-muted-foreground)]">
@@ -711,6 +757,7 @@ function RecentRow({ entry: h }: { entry: HistoryEntry }) {
       </button>
       {open && (
         <ul className="space-y-1 border-t border-[var(--color-separator)] bg-[var(--color-fill-secondary)]/60 px-3 py-2 text-xs animate-fade-in-up">
+          {h.notes && <li className="text-[var(--color-label-secondary)]">{h.notes}</li>}
           {h.exercises.map((e, i) => (
             <li key={`${e.name}-${i}`} className="flex justify-between gap-3">
               <span className="min-w-0 flex-1 truncate">{e.name}</span>
@@ -720,6 +767,294 @@ function RecentRow({ entry: h }: { entry: HistoryEntry }) {
         </ul>
       )}
     </li>
+  );
+}
+
+/** "Log a class workout": a photo of the whiteboard → Claude reads it → BoardReview. */
+function BoardCapture({ onBoard }: { onBoard: (d: BoardDraft) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const ref = useRef<HTMLInputElement>(null);
+
+  async function read(list: FileList | null) {
+    const files = Array.from(list ?? []).slice(0, 3);
+    if (ref.current) ref.current.value = "";
+    if (!files.length) return;
+    setError(null);
+    setBusy(true);
+    haptic("press");
+    try {
+      const form = new FormData();
+      for (const f of files) {
+        // An image the browser can't redraw goes as is; the server takes up to 6 MB.
+        const c = await compressImage(f).catch(() => f);
+        form.append("photos", c, c.name);
+      }
+      const res = await fetch("/api/workout/board", { method: "POST", body: form });
+      const data = (await res.json()) as { board?: BoardDraft; error?: string };
+      if (!res.ok || !data.board) throw new Error(data.error ?? `Request failed (${res.status})`);
+      haptic("success");
+      onBoard(data.board);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="mt-3">
+      <label className={`${btnSecondary} w-full cursor-pointer py-3 ${busy ? "pointer-events-none opacity-60" : ""}`}>
+        {busy ? <Loader2 className="size-4 animate-spin" /> : <Camera className="size-4" />}
+        {busy ? "Reading the whiteboard…" : "Log a whiteboard workout"}
+        <input ref={ref} type="file" accept="image/*" multiple className="sr-only" disabled={busy} aria-label="Whiteboard photo" onChange={(e) => void read(e.target.files)} />
+      </label>
+      {error && <p className="mt-2 text-sm text-[var(--color-destructive)]">{error}</p>}
+    </section>
+  );
+}
+
+type StravaStatus = { configured: boolean; connected: boolean; athleteName?: string | null; lastSyncAt?: number | null };
+
+/** Strava: connect once; runs, rides and workouts then join the log when it loads. Hidden until the server has Strava keys. */
+function StravaRow() {
+  const [status, setStatus] = useState<StravaStatus | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState(false);
+
+  useEffect(() => {
+    const result = new URLSearchParams(window.location.search).get("strava");
+    if (result) {
+      setNotice(
+        result === "connected"
+          ? "Strava connected. Your last 30 days are in the log."
+          : result === "denied"
+            ? "Strava needs permission to read your activities to connect."
+            : "Couldn't connect Strava. Try again.",
+      );
+      const url = new URL(window.location.href);
+      url.searchParams.delete("strava");
+      window.history.replaceState(null, "", url);
+    }
+    let cancelled = false;
+    fetch("/api/strava")
+      .then((r) => (r.ok ? (r.json() as Promise<StravaStatus>) : null))
+      .then((s) => {
+        if (!cancelled && s) setStatus(s);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function disconnect() {
+    setConfirm(false);
+    const res = await fetch("/api/strava", { method: "DELETE" }).catch(() => null);
+    if (res?.ok) setStatus((s) => (s ? { ...s, connected: false, athleteName: null, lastSyncAt: null } : s));
+  }
+
+  if (!status?.configured) return null;
+  return (
+    <section className="mt-8">
+      <SectionLabel>Strava</SectionLabel>
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2.5 text-sm">
+        <div className="min-w-0">
+          <div className="truncate font-medium">
+            {status.connected ? `Connected${status.athleteName ? ` · ${status.athleteName}` : ""}` : "Pull in your runs, rides and workouts"}
+          </div>
+          <div className="text-xs text-[var(--color-muted-foreground)]">
+            {status.connected
+              ? status.lastSyncAt
+                ? `Synced ${relTime(status.lastSyncAt)}`
+                : "Syncing…"
+              : "They join this log, so plans account for them."}
+          </div>
+        </div>
+        {!status.connected ? (
+          <a href="/api/strava/connect" className={btnSecondary + " shrink-0"}>
+            Connect
+          </a>
+        ) : confirm ? (
+          <div className="flex shrink-0 items-center gap-1">
+            <button onClick={() => void disconnect()} className={btnDanger}>
+              Disconnect
+            </button>
+            <button onClick={() => setConfirm(false)} className={btnGhost}>
+              Keep
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => setConfirm(true)} className={btnGhost + " shrink-0 text-[var(--color-muted-foreground)]"}>
+            Disconnect
+          </button>
+        )}
+      </div>
+      {notice && <p className="mt-2 text-xs text-[var(--color-muted-foreground)]">{notice}</p>}
+    </section>
+  );
+}
+
+// ---- Whiteboard review ------------------------------------------------------
+
+/** "2026-10-17T18:05" for a datetime-local input, in local time. */
+function localInput(ts: number): string {
+  const d = new Date(ts - new Date(ts).getTimezoneOffset() * 60000);
+  return d.toISOString().slice(0, 16);
+}
+
+/** Check what Claude read off the board, fill in weights and the score, and save it to the log. */
+function BoardReview({
+  draft,
+  history,
+  onBack,
+  onSave,
+}: {
+  draft: BoardDraft;
+  history: HistoryEntry[];
+  onBack: () => void;
+  onSave: (record: WorkoutRecord) => void;
+}) {
+  const [d, setD] = useState(draft);
+  // Sets are edited as text ("21, 15, 9", "5x5") and parsed on save.
+  const [setTexts, setSetTexts] = useState(() => draft.exercises.map((e) => setsText(e.sets)));
+  const [rounds, setRounds] = useState(1);
+  const [score, setScore] = useState("");
+  const [minutes, setMinutes] = useState(String(draft.timeCapMin ?? 20));
+  const [when, setWhen] = useState(() => localInput(Date.now()));
+
+  const patch = (i: number, p: Partial<BoardDraft["exercises"][number]>) =>
+    setD((x) => ({ ...x, exercises: x.exercises.map((e, j) => (j === i ? { ...e, ...p } : e)) }));
+  const remove = (i: number) => {
+    setD((x) => ({ ...x, exercises: x.exercises.filter((_, j) => j !== i) }));
+    setSetTexts((t) => t.filter((_, j) => j !== i));
+  };
+  const add = () => {
+    setD((x) => ({ ...x, exercises: [...x.exercises, { name: "", equipment: "bodyweight", load: "bodyweight", sets: [] }] }));
+    setSetTexts((t) => [...t, ""]);
+  };
+
+  const exercises = d.exercises.map((e, i) => ({ ...e, sets: parseSetsText(setTexts[i] ?? "") }));
+  const canSave = exercises.some((e) => e.name.trim() && e.sets.length);
+
+  function save() {
+    const at = new Date(when).getTime();
+    onSave(
+      boardRecord(
+        { ...d, exercises },
+        {
+          id: `b-${Date.now().toString(36)}`,
+          finishedAt: Number.isFinite(at) ? at : Date.now(),
+          durationMin: Number(minutes) || 20,
+          rounds,
+          score,
+        },
+      ),
+    );
+  }
+
+  return (
+    <div className="px-4 py-4 pb-28 sm:px-6 md:px-8 md:py-6 max-w-2xl animate-fade-in-up">
+      <PageHeader title="Class workout" />
+      <button onClick={onBack} className="mb-3 inline-flex items-center gap-1 text-sm text-[var(--color-muted-foreground)]">
+        <ChevronLeft className="size-4" /> Back
+      </button>
+      <header className="mb-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-[var(--color-tint)]">From the whiteboard</div>
+        <input
+          value={d.title}
+          onChange={(e) => setD({ ...d, title: e.target.value })}
+          aria-label="Title"
+          data-large-title
+          className="w-full bg-transparent text-large-title font-bold focus:outline-none"
+        />
+        <input
+          value={d.format}
+          onChange={(e) => setD({ ...d, format: e.target.value })}
+          aria-label="Format"
+          placeholder="For time, AMRAP 20 min, 5×5…"
+          className="w-full bg-transparent text-sm text-[var(--color-muted-foreground)] focus:outline-none"
+        />
+      </header>
+
+      <section className="mb-5 grid grid-cols-2 gap-2">
+        <label className="col-span-2 text-xs text-[var(--color-label-secondary)]">
+          When
+          <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className={input + " mt-1"} />
+        </label>
+        <label className="text-xs text-[var(--color-label-secondary)]">
+          Minutes
+          <input type="number" inputMode="numeric" min={1} max={600} value={minutes} onChange={(e) => setMinutes(e.target.value)} className={input + " mt-1"} />
+        </label>
+        {d.amrap && (
+          <div className="col-span-2 flex items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2">
+            <div className="text-sm text-[var(--color-muted-foreground)]">Rounds completed</div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setRounds((r) => Math.max(1, r - 1))} className={stepper} aria-label="Fewer rounds">
+                <Minus className="size-5" />
+              </button>
+              <div className="w-10 text-center text-2xl font-bold tabular-nums">{rounds}</div>
+              <button onClick={() => setRounds((r) => Math.min(60, r + 1))} className={stepper} aria-label="More rounds">
+                <Plus className="size-5" />
+              </button>
+            </div>
+          </div>
+        )}
+        <label className="text-xs text-[var(--color-label-secondary)]">
+          Score
+          <input value={score} onChange={(e) => setScore(e.target.value)} placeholder={d.amrap ? "7 + 12" : "8:42"} className={input + " mt-1"} />
+        </label>
+      </section>
+
+      <SectionLabel>{d.amrap ? "One round" : "Movements"}</SectionLabel>
+      <ul className="mb-3 space-y-2">
+        {d.exercises.map((e, i) => {
+          const prev = e.name.trim() ? lastPerformance(history, e.name) : null;
+          return (
+            <li key={i} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-3">
+              <div className="flex items-center gap-2">
+                <input value={e.name} onChange={(ev) => patch(i, { name: ev.target.value })} aria-label="Movement" placeholder="Movement" className={input + " font-medium"} />
+                <button onClick={() => remove(i)} className="rounded-full p-1.5 text-[var(--color-label-tertiary)] hover:bg-[var(--color-fill)]" aria-label={`Remove ${e.name || "movement"}`}>
+                  <X className="size-4" />
+                </button>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <div className="text-sm text-[var(--color-muted-foreground)]">Reps</div>
+                <input
+                  value={setTexts[i] ?? ""}
+                  onChange={(ev) => setSetTexts((t) => t.map((x, j) => (j === i ? ev.target.value : x)))}
+                  aria-label={`Reps for ${e.name || "movement"}`}
+                  placeholder="21, 15, 9 · 5x5 · 45s"
+                  className={input + " w-48 min-w-0 text-center tabular-nums"}
+                />
+              </div>
+              <div className="mt-2">
+                <LoadRow load={e.load} onChange={(load) => patch(i, { load })} />
+              </div>
+              {prev && (
+                <LastTime
+                  last={{ at: prev.at, sets: prev.exercise.sets, advice: adviseLoad(prev.exercise, exercises[i].sets[0]?.reps ?? null) }}
+                  onUse={(load) => patch(i, { load })}
+                  className="mt-2"
+                />
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <button onClick={add} className={btnGhost + " mb-5 text-[var(--color-muted-foreground)]"}>
+        <Plus className="size-4" /> Add movement
+      </button>
+
+      <label className="mb-6 block text-xs text-[var(--color-label-secondary)]">
+        Notes
+        <textarea value={d.notes} onChange={(e) => setD({ ...d, notes: e.target.value })} rows={2} className={input + " mt-1 resize-none"} />
+      </label>
+
+      <button onClick={save} disabled={!canSave} className={btnPrimary + " w-full py-3 text-base"}>
+        <Check className="size-4" /> Save to log
+      </button>
+    </div>
   );
 }
 
@@ -1428,17 +1763,29 @@ function Summary({
 
 const ARROW: Record<LoadAdvice["direction"], string> = { up: "↑", same: "→", down: "↓" };
 
-/** "Last · Oct 12: 10, 10, 9 @ 2×25 lb", and why today's weight moved. */
-function LastTime({ last, className = "" }: { last: ExerciseLast; className?: string }) {
+/**
+ * "Last · Oct 12: 10, 10, 9 @ 2×25 lb", and why today's weight moved. With
+ * `onUse` (where the advice isn't already the load) the advice is a button.
+ */
+function LastTime({ last, onUse, className = "" }: { last: ExerciseLast; onUse?: (load: string) => void; className?: string }) {
+  const advice = last.advice;
   return (
     <div className={`text-xs text-[var(--color-muted-foreground)] ${className}`}>
       <div>
         Last · {shortDate(last.at)}: {formatSets(last.sets)}
       </div>
-      {last.advice && (
+      {advice && !onUse && (
         <div>
-          <span className="font-semibold text-[var(--color-tint)]">{ARROW[last.advice.direction]}</span> {last.advice.reason}
+          <span className="font-semibold text-[var(--color-tint)]">{ARROW[advice.direction]}</span> {advice.reason}
         </div>
+      )}
+      {advice && onUse && (
+        <button onClick={() => onUse(advice.load)} className="text-left">
+          <span className="font-semibold text-[var(--color-tint)]">
+            {ARROW[advice.direction]} Use {advice.load}
+          </span>{" "}
+          · {advice.reason}
+        </button>
       )}
     </div>
   );

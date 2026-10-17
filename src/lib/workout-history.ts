@@ -1,6 +1,8 @@
-// Workout log: what each finished session actually did (every main set's reps
-// and weight), the load to try next time, and the training-log prompt that lets
-// the planner progress weights and skip what was just done.
+// Workout log: what each workout actually did (every main set's reps and
+// weight), whether a finished guided session, a class whiteboard photo
+// (workout-board.ts) or a Strava activity (strava.ts); the load to try next
+// time; and the training-log prompt that lets the planner progress weights and
+// skip what was just done.
 //
 // Framework-free like workout.ts so the client, the API routes and tests share it.
 
@@ -26,16 +28,23 @@ export type ExerciseRecord = {
   sets: SetRecord[];
 };
 
+export const WORKOUT_SOURCES = ["guided", "board", "strava"] as const;
+export type WorkoutSource = (typeof WORKOUT_SOURCES)[number];
+
 export type WorkoutRecord = {
-  /** The session id from the device ("w-…"); finishing again after "+10 min" replaces it. */
+  /** "w-…" (guided), "b-…" (whiteboard) or "strava-<id>"; finishing again after "+10 min" replaces it. */
   id: string;
+  /** Absent on records from before whiteboards and Strava: guided. */
+  source?: WorkoutSource;
   title: string;
   focus: Focus;
   startedAt: number;
   finishedAt: number;
   durationMin: number;
-  /** Main work only, in plan order; warm-up and cool-down are left out. */
+  /** Main work only, in plan order; warm-up and cool-down are left out. Empty for a run or ride. */
   exercises: ExerciseRecord[];
+  /** "For time · Score 8:42", "6.2 mi · avg HR 148". */
+  notes?: string;
 };
 
 /** A finished session as the device keeps it: the record plus local bookkeeping. */
@@ -56,9 +65,12 @@ export type LoadAdvice = {
 /** The last time an exercise was logged, and the advice that set today's load. */
 export type ExerciseLast = { at: number; sets: SetRecord[]; advice: LoadAdvice | null };
 
-export const HISTORY_MAX = 30;
-/** Sessions sent to the planner. */
+export const HISTORY_MAX = 60;
+/** Workouts with exercises the planner sees; runs, rides and the like come on top (last 7 days). */
 export const PROMPT_RECORDS = 12;
+const PROMPT_OTHER = 8;
+/** The most records a plan or extend request carries. */
+export const PROMPT_MAX = PROMPT_RECORDS + PROMPT_OTHER;
 /** Main exercises from this many latest sessions are off the menu. */
 export const RECENT_SESSIONS = 3;
 
@@ -74,6 +86,7 @@ export function recordFromSession(s: WorkoutSession, finishedAt: number): Workou
     });
   return {
     id: s.id,
+    source: "guided",
     title: s.plan.title,
     focus: s.plan.focus,
     startedAt: s.startedAt,
@@ -84,8 +97,16 @@ export function recordFromSession(s: WorkoutSession, finishedAt: number): Workou
 }
 
 export function toRecord(e: WorkoutRecord): WorkoutRecord {
-  const { id, title, focus, startedAt, finishedAt, durationMin, exercises } = e;
-  return { id, title, focus, startedAt, finishedAt, durationMin, exercises };
+  const { id, source, title, focus, startedAt, finishedAt, durationMin, exercises, notes } = e;
+  return { id, source: source ?? "guided", title, focus, startedAt, finishedAt, durationMin, exercises, ...(notes ? { notes } : {}) };
+}
+
+/** What the planner sees: the last 12 workouts with exercises, plus anything else (runs, rides…) from the last 7 days, newest first. */
+export function promptRecords<T extends WorkoutRecord>(records: T[], now: number): T[] {
+  const sorted = [...records].sort((a, b) => b.finishedAt - a.finishedAt);
+  const lifts = sorted.filter((r) => r.exercises.length > 0).slice(0, PROMPT_RECORDS);
+  const other = sorted.filter((r) => r.exercises.length === 0 && now - r.finishedAt <= 7 * 86_400_000).slice(0, PROMPT_OTHER);
+  return [...lifts, ...other].sort((a, b) => b.finishedAt - a.finishedAt);
 }
 
 /** "10, 10, 9 @ 2×25 lb dumbbells", sets grouped by load in the order done. */
@@ -235,17 +256,19 @@ function ago(ts: number, now: number): string {
 }
 
 /** The training log for the planner; "" with no history. */
+const SOURCE_NOTE: Record<WorkoutSource, string> = { guided: "", board: " · class whiteboard", strava: " · from Strava" };
+
 export function historyPrompt(records: WorkoutRecord[], now: number, readiness: Readiness | null = null): string {
-  const sorted = [...records].sort((a, b) => b.finishedAt - a.finishedAt).slice(0, PROMPT_RECORDS);
+  const sorted = promptRecords(records, now);
   if (!sorted.length) return "";
   const lines = ["Training log, newest first:"];
   for (const r of sorted) {
     const names = r.exercises.map((e) => e.name);
     lines.push(
-      `- ${day(r.finishedAt)} (${ago(r.finishedAt, now)}) · ${r.title} · ${r.focus} · ${r.durationMin} min${names.length ? `: ${names.join(", ")}` : ""}`,
+      `- ${day(r.finishedAt)} (${ago(r.finishedAt, now)}) · ${r.title} · ${r.focus} · ${r.durationMin} min${SOURCE_NOTE[r.source ?? "guided"]}${r.notes ? ` (${r.notes})` : ""}${names.length ? `: ${names.join(", ")}` : ""}`,
     );
   }
-  const recent = sorted.slice(0, RECENT_SESSIONS);
+  const recent = sorted.filter((r) => r.exercises.length > 0).slice(0, RECENT_SESSIONS);
   const avoid = Array.from(new Map(recent.flatMap((r) => r.exercises.map((e) => [videoKey(e.name), e.name] as const))).values());
   if (avoid.length) {
     lines.push(
@@ -316,8 +339,10 @@ export function normalizeRecord(raw: unknown, now = Date.now()): WorkoutRecord |
   const finishedAt = num(o.finishedAt, EARLIEST, now + 86_400_000);
   if (!id || finishedAt === null) return null;
   const startedAt = num(o.startedAt, EARLIEST, finishedAt) ?? finishedAt;
+  const notes = text(o.notes, 300);
   return {
     id,
+    source: (WORKOUT_SOURCES as readonly string[]).includes(String(o.source)) ? (o.source as WorkoutSource) : "guided",
     title: text(o.title, 120) || "Workout",
     focus: (FOCUS_OPTIONS as readonly string[]).includes(String(o.focus)) ? (o.focus as Focus) : "full-body",
     startedAt,
@@ -327,6 +352,7 @@ export function normalizeRecord(raw: unknown, now = Date.now()): WorkoutRecord |
       .map(normalizeExerciseRecord)
       .filter((e): e is ExerciseRecord => e !== null)
       .slice(0, 16),
+    ...(notes ? { notes } : {}),
   };
 }
 
