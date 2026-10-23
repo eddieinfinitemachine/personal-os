@@ -34,7 +34,7 @@ struct StepSnapshot: Codable, Equatable {
 
     /// History plus today, oldest first. Handy for bar charts.
     var week: [Day] {
-        history + [Day(date: Calendar.current.startOfDay(for: updatedAt), steps: today)]
+        history + [Day(date: Calendar.current.startOfDay(for: .now), steps: today)]
     }
 
     /// Shown before the app has ever written a snapshot.

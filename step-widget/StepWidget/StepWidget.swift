@@ -32,9 +32,12 @@ struct StepProvider: TimelineProvider {
 
     private func currentEntry() -> StepEntry {
         guard let stored = StepStore.load() else {
-            return StepEntry(date: .now, snapshot: .empty, isStale: true)
+            var empty = StepSnapshot.empty
+            empty.goal = StepStore.goal
+            return StepEntry(date: .now, snapshot: empty, isStale: true)
         }
-        let snapshot = stored.rolledForward()
+        var snapshot = stored.rolledForward()
+        snapshot.goal = StepStore.goal
         let stale = Date.now.timeIntervalSince(stored.updatedAt) > Self.staleAfter
         return StepEntry(date: .now, snapshot: snapshot, isStale: stale)
     }

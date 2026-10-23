@@ -16,10 +16,10 @@ final class HealthStore: ObservableObject {
 
     @Published private(set) var snapshot: StepSnapshot? = StepStore.load()
     @Published private(set) var isRefreshing = false
+    @Published private(set) var hasRequestedAuthorization = StepStore.healthAuthorizationRequested
     @Published var errorMessage: String?
 
     var isAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
-    var hasRequestedAuthorization: Bool { StepStore.healthAuthorizationRequested }
 
     private let store = HKHealthStore()
     private let stepType = HKQuantityType(.stepCount)
@@ -37,6 +37,7 @@ final class HealthStore: ObservableObject {
         do {
             try await store.requestAuthorization(toShare: [], read: [stepType])
             StepStore.healthAuthorizationRequested = true
+            hasRequestedAuthorization = true
             errorMessage = nil
             await refresh()
             await startBackgroundDelivery()
@@ -76,19 +77,21 @@ final class HealthStore: ObservableObject {
     // MARK: Background delivery
 
     /// Called at every launch (including background launches by HealthKit).
-    /// The observer query must be re-registered each time the process starts.
+    /// The observer query must be re-registered each time the process starts,
+    /// and synchronously during launch so a pending background delivery is
+    /// matched to it.
     func startBackgroundDeliveryIfAuthorized() {
         guard isAvailable, hasRequestedAuthorization else { return }
-        Task { await startBackgroundDelivery() }
+        startObserving()
+        Task { await enableBackgroundDelivery() }
     }
 
     private func startBackgroundDelivery() async {
-        do {
-            try await store.enableBackgroundDelivery(for: stepType, frequency: .hourly)
-        } catch {
-            // Non-fatal (and expected on the simulator): the foreground and
-            // BGAppRefresh paths still work, so don't alarm the user.
-        }
+        startObserving()
+        await enableBackgroundDelivery()
+    }
+
+    private func startObserving() {
         guard observerQuery == nil else { return }
         let query = HKObserverQuery(sampleType: stepType, predicate: nil) { _, completionHandler, _ in
             Task { @MainActor in
@@ -100,16 +103,27 @@ final class HealthStore: ObservableObject {
         observerQuery = query
     }
 
+    private func enableBackgroundDelivery() async {
+        do {
+            try await store.enableBackgroundDelivery(for: stepType, frequency: .hourly)
+        } catch {
+            // Non-fatal (and expected on the simulator): the foreground and
+            // BGAppRefresh paths still work, so don't alarm the user.
+        }
+    }
+
     // MARK: BGAppRefresh safety net
 
     nonisolated static func registerBackgroundTask() {
         _ = BGTaskScheduler.shared.register(forTaskWithIdentifier: refreshTaskIdentifier, using: nil) { task in
-            Task { @MainActor in
+            let work = Task { @MainActor in
                 await HealthStore.shared.refresh()
                 HealthStore.scheduleBackgroundRefresh()
+                guard !Task.isCancelled else { return }
                 task.setTaskCompleted(success: true)
             }
             task.expirationHandler = {
+                work.cancel()
                 task.setTaskCompleted(success: false)
             }
         }
