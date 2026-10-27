@@ -38,6 +38,9 @@ export async function PATCH(
       ...(body.archived !== undefined && { archived: body.archived }),
       ...(body.position !== undefined && { position: body.position }),
       ...(body.visibility !== undefined && { visibility: body.visibility as string }),
+      // Pinning or hiding isn't activity: keep updatedAt, which /projects
+      // reads as "last worked on".
+      ...(Object.keys(body).every((k) => k === "visibility") && { updatedAt: existing.updatedAt }),
     },
   });
   return NextResponse.json({ project });

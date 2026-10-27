@@ -19,8 +19,38 @@ by hand, grouped by company. Plan: `~/.claude/plans/reactive-growing-thimble.md`
 - [x] Nav: sidebar, mobile drawer (exact-match active), command palette (appended)
 - [x] Env docs: `GITHUB_TOKEN`, `GITHUB_IDENTITIES`
 - [x] Tests: todo-plan, company, github, meetings, routes, board
-- [ ] Live: GitHub sync + meetings sync on scratch DB, privacy dump
-- [ ] Browser: desktop/mobile, light/dark, Pin/Hide/Unhide/Accept/Dismiss, drawer highlight
+- [x] Live: GitHub sync + meetings sync on scratch DB, privacy dump
+- [x] Browser: desktop/mobile, light/dark, Pin/Hide/Unhide/Accept/Dismiss, drawer highlight
+- [ ] Eddie: review suggested topics + privacy dump; then PR, merge, prod schema push from main, `GITHUB_TOKEN`
+
+## Review
+`pnpm typecheck` clean; `pnpm test` 114 files passed / 19 skipped, 1125 tests
+passed (new: todo-plan, company, github, meetings, board, 2 crons, sync,
+sources PATCH, accept, project visibility).
+
+Live on a scratch Postgres (`personal_os_projects_scratch`, localhost only),
+`next dev --webpack`, `GITHUB_TOKEN=$(gh auth token)`:
+- GitHub: 100 repos pushed in 90 days scanned (matches an independent count),
+  72 with my commits, 14 active, ~20 s. `Infinite-Machine/service-and-troubleshooting`
+  (teammate-only) has no row. rushmore (8 of 25 open items) and personal-os
+  (8 of 73) show plans. nolan-bot / ec-pad have no GitHub remote, so they can't
+  appear (local-only signals are out of scope).
+- Asking for branches inside the repo listing timed out GitHub's 10 s limit
+  (502 at 40 repos/page, 7 s at 20), so the sync lists repos first, then asks
+  for branch history 8 repos per query, 3 at a time.
+- Meetings: calendar only — `GRANOLA_API_KEY` is not in the local `.env`.
+  54 calendar meetings, 55 stored over two runs (40 cap, then the rest):
+  20 linked, 35 unlinked (no title), 0 excluded by the privacy gate.
+  Two topics reached Suggested. Privacy dump reviewed in the session scratchpad.
+- Browser (agent-browser, founder session cookie): Pin (repo + project), Hide,
+  Unhide, Dismiss, Accept (Project created last, 3 meetings re-pointed),
+  Refresh; 1440 and 390 wide, light and dark, no horizontal scroll. The mobile
+  drawer lights Projects on `/projects` only, and the project row on
+  `/projects/<id>`. A non-founder sees only their own Projects, no Refresh, and
+  `/api/projects/sync` 404s.
+- Fixed while verifying: a pin or hide no longer bumps `Project.updatedAt`
+  (it read as "worked on now"); wrapped todo.md items are joined; long branch
+  chips no longer squeeze the commit text.
 
 # Send todo to tracker (Media etc.) — in progress 2026-09-29
 

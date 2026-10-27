@@ -253,13 +253,13 @@ function ActivityRow({ line }: { line: ActivityLine }) {
     line.kind === "meeting" ? `Met: ${line.text}` : line.kind === "todo" ? `Done: ${line.text}` : line.text;
   const body = (
     <>
-      <span className="truncate">{text}</span>
+      <span className="min-w-0 flex-1 truncate">{text}</span>
       {line.kind === "commit" && line.branch ? (
-        <span className="shrink-0 rounded bg-[var(--color-fill)] px-1.5 py-px font-mono text-[11px] text-[var(--color-muted-foreground)]">
+        <span className="max-w-[35%] truncate rounded bg-[var(--color-fill)] px-1.5 py-px font-mono text-[11px] text-[var(--color-muted-foreground)]" title={line.branch}>
           {line.branch}
         </span>
       ) : null}
-      <span className="ml-auto shrink-0 pl-2 text-xs text-[var(--color-muted-foreground)] tabular-nums" suppressHydrationWarning>
+      <span className="shrink-0 pl-1 text-xs text-[var(--color-muted-foreground)] tabular-nums" suppressHydrationWarning>
         {timeAgo(line.at)}
       </span>
     </>

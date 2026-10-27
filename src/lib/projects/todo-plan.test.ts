@@ -34,6 +34,14 @@ describe("parseTodoPlan", () => {
     expect(total).toBe(6);
   });
 
+  it("joins an item's wrapped continuation lines, but not nested items", () => {
+    const md = "- [ ] Verify the import (7-day\n  window) on prod\n  - [ ] Nested\n    more of nested\n\n  not continued after a blank";
+    expect(parseTodoPlan(md).items).toEqual([
+      { text: "Verify the import (7-day window) on prod", section: null },
+      { text: "Nested more of nested", section: null },
+    ]);
+  });
+
   it("caps items at 8 but counts them all", () => {
     const md = Array.from({ length: 12 }, (_, i) => `- [ ] item ${i}`).join("\n");
     const { items, total } = parseTodoPlan(md);

@@ -11,7 +11,16 @@ export function parseTodoPlan(markdown: string, cap = PLAN_CAP): { items: PlanIt
   let total = 0;
   let section: string | null = null;
   let inFence = false;
+  // The last open item, while its wrapped continuation lines may follow.
+  let wrapping: PlanItem | null = null;
+  const clip = (t: string) => (t.length > MAX_TEXT ? `${t.slice(0, MAX_TEXT - 1)}…` : t);
   for (const line of markdown.split(/\r?\n/)) {
+    const continued = /^\s+(?![-*+]\s|\d+[.)]\s)(\S.*)$/.exec(line);
+    if (wrapping && !inFence && continued) {
+      wrapping.text = clip(`${wrapping.text} ${continued[1].trim()}`);
+      continue;
+    }
+    wrapping = null;
     if (/^\s*(```|~~~)/.test(line)) {
       inFence = !inFence;
       continue;
@@ -26,8 +35,8 @@ export function parseTodoPlan(markdown: string, cap = PLAN_CAP): { items: PlanIt
     if (!open) continue;
     total++;
     if (items.length < cap) {
-      const text = open[1].length > MAX_TEXT ? `${open[1].slice(0, MAX_TEXT - 1)}…` : open[1];
-      items.push({ text, section });
+      wrapping = { text: clip(open[1]), section };
+      items.push(wrapping);
     }
   }
   return { items, total };
