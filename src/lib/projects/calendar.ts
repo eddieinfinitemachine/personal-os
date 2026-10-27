@@ -40,7 +40,9 @@ export async function listPrimaryEvents(timeMin: Date, timeMax: Date): Promise<C
     if (pageToken) url.searchParams.set("pageToken", pageToken);
 
     const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!response.ok) throw new Error(`Google Calendar list events failed (${response.status})`);
+    if (!response.ok) {
+      throw Object.assign(new Error(`Google Calendar list events failed (${response.status})`), { status: response.status });
+    }
     const data = (await response.json()) as { items?: CalendarEvent[]; nextPageToken?: string };
     events.push(...(data.items ?? []));
     pageToken = data.nextPageToken;

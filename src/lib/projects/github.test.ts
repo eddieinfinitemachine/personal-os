@@ -3,9 +3,13 @@ const mocks = vi.hoisted(() => ({
   findMany: vi.fn(),
   upsert: vi.fn(),
   updateMany: vi.fn(),
+  transaction: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => ({
-  prisma: { projectSource: { findMany: mocks.findMany, upsert: mocks.upsert, updateMany: mocks.updateMany } },
+  prisma: {
+    projectSource: { findMany: mocks.findMany, upsert: mocks.upsert, updateMany: mocks.updateMany },
+    $transaction: mocks.transaction,
+  },
 }));
 import { myCommits, parseIdentities, syncGithubProjects } from "./github";
 
@@ -50,20 +54,32 @@ const repoNode = (r: Repo) => {
 };
 
 /** A fake GraphQL endpoint over `repos`, paging the listing `pageSize` at a time. */
-function fakeGithub(repos: Repo[], pageSize = 100) {
+function fakeGithub(repos: Repo[], pageSize = 100, opts: { failHistory?: (query: string) => boolean } = {}) {
   const calls: { query: string; variables: Record<string, unknown> }[] = [];
   const fetch = vi.fn(async (_url: string, init?: RequestInit) => {
     const { query, variables } = JSON.parse(String(init?.body)) as { query: string; variables: Record<string, unknown> };
     calls.push({ query, variables });
     const aliases = [...query.matchAll(/(r\d+): repository\(owner: "([^"]+)", name: "([^"]+)"\)/g)];
     let data: unknown;
-    if (query.includes("viewer")) {
+    if (query.includes("refs(") && opts.failHistory?.(query)) {
+      return new Response("<html>502</html>", { status: 502 });
+    }
+    if (query.includes("user(login:")) {
+      data = Object.fromEntries(
+        [...query.matchAll(/(u\d+): user\(login: "([^"]+)"\)/g)].map(([, alias, login]) => [
+          alias,
+          login === "edcohen" ? { login, databaseId: 855164 } : null,
+        ]),
+      );
+    } else if (query.includes("viewer")) {
       const start = variables.after ? Number(variables.after) : 0;
       const nodes = repos.slice(start, start + pageSize).map(repoNode);
       const next = start + pageSize < repos.length;
       data = {
         viewer: {
+          id: "U_viewer",
           login: "eddieinfinitemachine",
+          databaseId: 254552901,
           repositories: { pageInfo: { hasNextPage: next, endCursor: next ? String(start + pageSize) : null }, nodes },
         },
       };
@@ -104,6 +120,7 @@ const TEAMMATE_ONLY: Repo = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.transaction.mockImplementation((ops: Promise<unknown>[]) => Promise.all(ops));
   mocks.findMany.mockResolvedValue([]);
   mocks.upsert.mockResolvedValue({});
   mocks.updateMany.mockResolvedValue({ count: 1 });
@@ -216,6 +233,77 @@ describe("syncGithubProjects", () => {
     ]);
     await syncGithubProjects("u1", { token: "t", fetch, identities: IDS, now: NOW });
     expect(upserted().map((u) => u.create.company)).toEqual(["Olto", "Infinite Machine"]);
+  });
+
+  it("asks GitHub for my commits only: emails plus each login's noreply addresses", async () => {
+    const { fetch, calls } = fakeGithub([
+      { nameWithOwner: "edcohen/a", pushedAt: daysAgo(1), refs: [ref("main", [commit("a", daysAgo(1), "edcohen", "")])] },
+    ]);
+    await syncGithubProjects("u1", { token: "t", fetch, identities: IDS, now: NOW });
+    const history = calls.find((c) => c.query.includes("refs("))!;
+    expect(history.query).toContain("author: $author");
+    expect(history.variables.author).toEqual({
+      emails: [
+        "eddie@infinitemachine.com",
+        "eddiemc27@mac.com",
+        "eddieinfinitemachine@users.noreply.github.com",
+        "254552901+eddieinfinitemachine@users.noreply.github.com",
+        "edcohen@users.noreply.github.com",
+        "855164+edcohen@users.noreply.github.com",
+      ],
+    });
+  });
+
+  it("filters by the viewer's id when the only identity is the viewer's login", async () => {
+    const { fetch, calls } = fakeGithub([
+      { nameWithOwner: "edcohen/a", pushedAt: daysAgo(1), refs: [ref("main", [commit("a", daysAgo(1), "eddieinfinitemachine", "")])] },
+    ]);
+    await syncGithubProjects("u1", { token: "t", fetch, identities: "EddieInfiniteMachine", now: NOW });
+    expect(calls.some((c) => c.query.includes("user(login:"))).toBe(false);
+    expect(calls.find((c) => c.query.includes("refs("))!.variables.author).toEqual({ id: "U_viewer" });
+  });
+
+  it("retries a failed history batch once, then skips just those repos and reports them", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const repos: Repo[] = Array.from({ length: 10 }, (_, i) => ({
+      nameWithOwner: `edcohen/r${i}`,
+      pushedAt: daysAgo(1),
+      refs: [ref("main", [commit(`c${i}`, daysAgo(1), "edcohen", "")])],
+    }));
+    // The second batch (r8, r9) always fails; the first works.
+    const { fetch, calls } = fakeGithub(repos, 100, { failHistory: (q) => q.includes('name: "r8"') });
+    const res = await syncGithubProjects("u1", { token: "t", fetch, identities: IDS, now: NOW, retryDelayMs: 0 });
+    expect(calls.filter((c) => c.query.includes('name: "r8"') && c.query.includes("refs("))).toHaveLength(2);
+    expect(res).toMatchObject({ repos: 8, failed: 2 });
+    const keys = upserted().map((u) => u.create.key);
+    expect(keys).toHaveLength(8);
+    expect(keys).not.toContain("edcohen/r8");
+    expect(keys).not.toContain("edcohen/r9");
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+    vi.mocked(console.error).mockRestore();
+  });
+
+  it("recovers when the retry succeeds", async () => {
+    let failures = 1;
+    const { fetch } = fakeGithub(
+      [{ nameWithOwner: "edcohen/a", pushedAt: daysAgo(1), refs: [ref("main", [commit("a", daysAgo(1), "edcohen", "")])] }],
+      100,
+      { failHistory: () => failures-- > 0 },
+    );
+    const res = await syncGithubProjects("u1", { token: "t", fetch, identities: IDS, now: NOW, retryDelayMs: 0 });
+    expect(res).toMatchObject({ repos: 1, failed: 0 });
+  });
+
+  it("writes rows in transactions of at most 25", async () => {
+    const repos: Repo[] = Array.from({ length: 60 }, (_, i) => ({
+      nameWithOwner: `edcohen/r${i}`,
+      pushedAt: daysAgo(20),
+      refs: [ref("main", [commit(`c${i}`, daysAgo(20), "edcohen", "")])],
+    }));
+    const { fetch } = fakeGithub(repos);
+    await syncGithubProjects("u1", { token: "t", fetch, identities: IDS, now: NOW });
+    expect(mocks.transaction.mock.calls.map((c) => c[0].length)).toEqual([25, 25, 10]);
+    expect(mocks.upsert).toHaveBeenCalledTimes(60);
   });
 
   it("throws a status-bearing error when GitHub rejects the token", async () => {

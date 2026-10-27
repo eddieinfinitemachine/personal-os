@@ -52,6 +52,27 @@ Live on a scratch Postgres (`personal_os_projects_scratch`, localhost only),
   (it read as "worked on now"); wrapped todo.md items are joined; long branch
   chips no longer squeeze the commit text.
 
+### Code review fixes (PR #63)
+- An accepted topic's Project keeps the topic's company on the board.
+- "Synced …" no longer moves on pin / hide / dismiss / accept, or when the
+  meetings sync touches a repo row (syncedAt passed through explicitly). It
+  reads "Synced Oct 17", not "Synced Oct 17 ago", and "now" instead of "0m ago".
+- GitHub: history is filtered server-side by author (email identities plus
+  each login's noreply addresses; the viewer's id when only the viewer's login
+  is configured). A live A/B over all 93 repos: same 72 repos, no commit lost,
+  579 of my commits found vs 469 unfiltered. Batches of 8: median ~1.4 s, max
+  2.4 s. A batch that fails twice is skipped (rows left as they were) and
+  counted in `failed`; writes go in transactions of 25.
+- Meetings: calendar and Granola fail independently (the run fails only if
+  every configured source does); a replaced calendar row is deleted only in the
+  transaction that writes its Granola note.
+- Board: pin / hide / accept / dismiss roll back and show an inline error on
+  any failure. `isLifeProject` is shared from `board.ts` (not `board-model.ts`:
+  `INBOX_PROJECT_NAME` lives in a module that imports Prisma).
+- Live after the fixes: GitHub `{"scanned":100,"repos":72,"active":13,"failed":0,"ms":15202}`;
+  meetings re-run twice processed 0 and left every row and link identical.
+  `pnpm test` 115 files / 1139 tests passed.
+
 # Send todo to tracker (Media etc.) — in progress 2026-09-29
 
 Goal: the todo row's project picker (and a "Send to tracker…" context-menu

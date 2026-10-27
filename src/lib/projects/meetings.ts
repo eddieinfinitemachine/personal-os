@@ -13,8 +13,8 @@ import { callClaudeJSON } from "@/lib/claude";
 import { loadKnownPeople } from "@/lib/dating-filer";
 import { isGoogleConfigured } from "@/lib/google";
 import { granolaFromEnv, namesToMatch, selectMeeting, type GranolaNote, type GranolaNoteSummary } from "@/lib/granola";
-import { INBOX_PROJECT_NAME } from "@/lib/lists";
 import { prisma } from "@/lib/prisma";
+import { isLifeProject } from "./board";
 import { listPrimaryEvents, type CalendarEvent } from "./calendar";
 import { companyFor, isCompany, type Company } from "./company";
 
@@ -219,17 +219,43 @@ export async function syncMeetingProjects(userId: string, opts: { now?: Date } =
     errors: [],
   };
 
-  // 1. Collect.
-  const events = isGoogleConfigured()
-    ? (await listPrimaryEvents(since, now)).filter((ev) => isMeetingEvent(ev, mine))
-    : [];
+  // 1. Collect. Each source fails on its own; the run fails only when every
+  // configured source did.
+  const failure = (e: unknown) => {
+    const status = (e as { status?: number }).status;
+    return status ? `HTTP ${status}` : (e as Error)?.name || "error";
+  };
+  let configured = 0;
+  let failedSources = 0;
+  let events: CalendarEvent[] = [];
+  if (isGoogleConfigured()) {
+    configured++;
+    try {
+      events = (await listPrimaryEvents(since, now)).filter((ev) => isMeetingEvent(ev, mine));
+    } catch (e) {
+      failedSources++;
+      result.errors.push(`calendar: ${failure(e)}`);
+      console.error("projects meetings: calendar listing failed:", failure(e));
+    }
+  }
   const granola = granolaFromEnv();
   const owner = process.env.GRANOLA_OWNER_EMAIL?.trim().toLowerCase();
-  const notes = granola
-    ? (await granola.listNotes({ createdAfter: since })).filter(
+  let notes: GranolaNoteSummary[] = [];
+  if (granola) {
+    configured++;
+    try {
+      notes = (await granola.listNotes({ createdAfter: since })).filter(
         (n) => !owner || n.owner?.email?.toLowerCase() === owner,
-      )
-    : [];
+      );
+    } catch (e) {
+      failedSources++;
+      result.errors.push(`granola: ${failure(e)}`);
+      console.error("projects meetings: granola listing failed:", failure(e));
+    }
+  }
+  if (configured && failedSources === configured) {
+    throw new Error(`every meeting source failed (${result.errors.join(", ")})`);
+  }
   result.calendarEvents = events.length;
   result.granolaNotes = notes.length;
 
@@ -270,9 +296,13 @@ export async function syncMeetingProjects(userId: string, opts: { now?: Date } =
     }
   }
   const fullRefs = fetched.flatMap((f) => noteRefs(f.summary, f.note));
-  const replacedKeys = events
-    .filter((ev) => done.has(eventKey(ev)) && sameMeeting(ev, fullRefs))
-    .map(eventKey);
+  // Stored calendar rows that a newly fetched note replaces: event key → note key.
+  const replacing = new Map<string, string>();
+  for (const ev of events) {
+    if (!done.has(eventKey(ev))) continue;
+    const f = fetched.find((x) => sameMeeting(ev, noteRefs(x.summary, x.note)));
+    if (f) replacing.set(eventKey(ev), noteKey(f.note));
+  }
 
   const meetings: Meeting[] = [];
   for (const item of batch) {
@@ -317,16 +347,14 @@ export async function syncMeetingProjects(userId: string, opts: { now?: Date } =
     prisma.project.findMany({ where: { userId, archived: false }, select: { id: true, name: true } }),
     prisma.projectSource.findMany({
       where: { userId, kind: "repo", lastActivityAt: { gte: new Date(now.getTime() - REPO_WINDOW_DAYS * DAY) } },
-      select: { id: true, key: true, name: true, company: true, description: true },
+      select: { id: true, key: true, name: true, company: true, description: true, syncedAt: true },
     }),
     prisma.projectSource.findMany({
       where: { userId, kind: "topic" },
       select: { id: true, key: true, name: true, company: true, state: true, projectId: true },
     }),
   ]);
-  const lifeProjects = projects.filter(
-    (p) => p.name.trim().toLowerCase() !== INBOX_PROJECT_NAME.toLowerCase() && p.name.trim() !== "Journal",
-  );
+  const lifeProjects = projects.filter((p) => isLifeProject(p.name));
   const cards: Card[] = [
     ...lifeProjects.map((p) => ({ key: `project:${p.id}`, name: p.name, company: companyFor({ name: p.name }) })),
     ...repos.map((r) => ({ key: `repo:${r.key}`, name: r.name, company: r.company, note: r.description })),
@@ -360,7 +388,10 @@ export async function syncMeetingProjects(userId: string, opts: { now?: Date } =
   const repoByKey = new Map(repos.map((r) => [r.key, r]));
   const topicByKey = new Map(topics.map((t) => [t.key, t]));
   const writes = [...excluded, ...(classified ? toClassify : [])];
-  if (!writes.length && !replacedKeys.length) return result;
+  if (!writes.length) return result;
+  // A calendar row goes only in the transaction that writes the note replacing it.
+  const written = new Set(writes.map((m) => m.externalKey));
+  const replacedKeys = [...replacing].filter(([, note]) => written.has(note)).map(([event]) => event);
 
   await prisma.$transaction(
     async (tx) => {
@@ -433,10 +464,12 @@ export async function syncMeetingProjects(userId: string, opts: { now?: Date } =
         }
       }
 
+      const repoSyncedAt = new Map(repos.map((r) => [r.id, r.syncedAt]));
       for (const [id, at] of touched) {
         await tx.projectSource.updateMany({
           where: { id, OR: [{ lastActivityAt: null }, { lastActivityAt: { lt: at } }] },
-          data: { lastActivityAt: at },
+          // A repo's syncedAt is its last GitHub sync ("Synced …" on /projects); keep it.
+          data: { lastActivityAt: at, ...(repoSyncedAt.has(id) ? { syncedAt: repoSyncedAt.get(id) } : {}) },
         });
       }
       for (const [id, topic] of touchedTopics) {

@@ -18,7 +18,7 @@ vi.mock("@/lib/prisma", () => ({
     projectSource: { findMany: mocks.sourceFindMany },
   },
 }));
-import { bucketCards, getProjectsBoard, readPlan, type BoardCard } from "./board";
+import { bucketCards, getProjectsBoard, isLifeProject, readPlan, type BoardCard } from "./board";
 
 const NOW = new Date("2026-10-27T18:00:00Z");
 const ago = (d: number) => new Date(NOW.getTime() - d * 86400_000);
@@ -79,6 +79,15 @@ describe("bucketCards", () => {
   });
 });
 
+describe("isLifeProject", () => {
+  it("skips the Inbox (any case) and Journal system projects only", () => {
+    expect(isLifeProject(" inbox ")).toBe(false);
+    expect(isLifeProject("Journal")).toBe(false);
+    expect(isLifeProject("Journal club")).toBe(true);
+    expect(isLifeProject("Inbox zero")).toBe(true);
+  });
+});
+
 describe("readPlan", () => {
   it("accepts the stored shape and the column default", () => {
     expect(readPlan([])).toEqual({ items: [], total: 0 });
@@ -90,13 +99,17 @@ describe("readPlan", () => {
 describe("getProjectsBoard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.projectFindMany.mockResolvedValue([
+    mocks.projectFindMany.mockResolvedValue(
+      [
       { id: "inbox", name: "Inbox", visibility: "auto", updatedAt: ago(0) },
       { id: "journal", name: "Journal", visibility: "auto", updatedAt: ago(0) },
       { id: "car", name: "Car", visibility: "auto", updatedAt: ago(60) },
       { id: "c2", name: "C2 launch", visibility: "auto", updatedAt: ago(50) },
       { id: "dog", name: "Dog", visibility: "hidden", updatedAt: ago(1) },
-    ]);
+      // Accepted from a meeting topic filed under Olto; its name alone says Personal.
+      { id: "acc", name: "Lite pilot", visibility: "auto", updatedAt: ago(1), projectSources: [{ company: "Olto" }] },
+      ].map((p) => ({ projectSources: [], ...p })),
+    );
     mocks.todoGroupBy.mockResolvedValue([{ projectId: "car", _max: { updatedAt: ago(30), completedAt: ago(3) } }]);
     mocks.noteGroupBy.mockResolvedValue([]);
     mocks.meetingGroupBy.mockResolvedValue([{ projectId: "c2", _max: { occurredAt: ago(2) } }]);
@@ -143,7 +156,13 @@ describe("getProjectsBoard", () => {
   it("builds life-project cards without Inbox and Journal, from aggregates", async () => {
     const board = await getProjectsBoard("u1", false, NOW);
     const all = [...board.groups.flatMap((g) => g.cards), ...board.dormant, ...board.hidden];
-    expect(all.map((c) => c.name).sort()).toEqual(["C2 launch", "Car", "Dog"]);
+    expect(all.map((c) => c.name).sort()).toEqual(["C2 launch", "Car", "Dog", "Lite pilot"]);
+    expect(all.find((c) => c.name === "Lite pilot")!.company).toBe("Olto");
+    expect(mocks.projectFindMany.mock.calls[0][0].select.projectSources).toEqual({
+      where: { kind: "topic", state: "accepted" },
+      select: { company: true },
+      take: 1,
+    });
     const car = all.find((c) => c.name === "Car")!;
     expect(car.lastActivityAt).toBe(ago(3).toISOString());
     expect(car.plan).toHaveLength(5);
@@ -179,7 +198,9 @@ describe("getProjectsBoard", () => {
     expect(board.suggested).toEqual([
       { id: "t1", name: "Series A", company: "Infinite Machine", meetings: 2, lastMeetingAt: ago(1).toISOString() },
     ]);
+    // "Synced" reads repo rows only (topics' syncedAt moves on accept / dismiss).
     expect(board.syncedAt).toBe(ago(0.01).toISOString());
+    expect(mocks.sourceFindMany.mock.calls.find((c) => c[0].where.kind === "repo")![0].where).toEqual({ userId: "u1", kind: "repo" });
     // Pinned comes first within Personal.
     expect(board.groups.find((g) => g.company === "Personal")!.cards[0].name).toBe("rushmore");
   });

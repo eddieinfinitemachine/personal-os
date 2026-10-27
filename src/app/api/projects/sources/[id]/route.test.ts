@@ -25,6 +25,13 @@ describe("PATCH /api/projects/sources/[id]", () => {
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
+  it("keeps syncedAt (the last GitHub sync) when the state changes", async () => {
+    const syncedAt = new Date("2026-10-27T10:00:00Z");
+    mocks.findUnique.mockResolvedValue({ id: "s1", userId: "u1", kind: "repo", state: "auto", syncedAt });
+    await PATCH(patch({ state: "pinned" }), ctx);
+    expect(mocks.update.mock.calls[0][0].data).toEqual({ state: "pinned", syncedAt });
+  });
+
   it("lets a repo be pinned, hidden or put back on auto, nothing else", async () => {
     mocks.findUnique.mockResolvedValue({ id: "s1", userId: "u1", kind: "repo", state: "auto" });
     for (const state of ["pinned", "hidden", "auto"]) {

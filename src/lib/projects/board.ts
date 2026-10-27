@@ -33,7 +33,12 @@ function firstLine(s: string | null | undefined): string {
   return (s ?? "").split("\n").map((l) => l.replace(/^#+\s*/, "").trim()).find(Boolean) ?? "";
 }
 
-const isLifeProject = (name: string) =>
+/**
+ * /projects and meeting filing skip the Inbox and Journal system projects.
+ * (Here rather than in board-model.ts: INBOX_PROJECT_NAME's module imports
+ * Prisma, which must stay out of the client bundle.)
+ */
+export const isLifeProject = (name: string) =>
   name.trim().toLowerCase() !== INBOX_PROJECT_NAME.toLowerCase() && name.trim() !== "Journal";
 
 export async function getProjectsBoard(userId: string, isFounder: boolean, now = new Date()): Promise<ProjectsBoard> {
@@ -41,7 +46,14 @@ export async function getProjectsBoard(userId: string, isFounder: boolean, now =
   const projects = (
     await prisma.project.findMany({
       where: { userId, archived: false },
-      select: { id: true, name: true, visibility: true, updatedAt: true },
+      select: {
+        id: true,
+        name: true,
+        visibility: true,
+        updatedAt: true,
+        // An accepted meeting topic keeps the company it was suggested under.
+        projectSources: { where: { kind: "topic", state: "accepted" }, select: { company: true }, take: 1 },
+      },
     })
   ).filter((p) => isLifeProject(p.name));
   const ids = projects.map((p) => p.id);
@@ -135,7 +147,7 @@ export async function getProjectsBoard(userId: string, isFounder: boolean, now =
       id: `project:${p.id}`,
       kind: "project",
       name: p.name,
-      company: companyFor({ name: p.name }),
+      company: isCompany(p.projectSources[0]?.company) ? p.projectSources[0].company : companyFor({ name: p.name }),
       visibility: (VISIBILITIES as readonly string[]).includes(p.visibility) ? (p.visibility as Visibility) : "auto",
       lastActivityAt: last?.toISOString() ?? null,
       activity,

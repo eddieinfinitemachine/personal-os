@@ -31,6 +31,7 @@ vi.mock("@/lib/granola", async (orig) => ({ ...(await orig<typeof import("@/lib/
 import { syncMeetingProjects, validateDecisions } from "./meetings";
 
 const NOW = new Date("2026-10-27T18:00:00Z");
+const REPO_SYNCED = new Date("2026-10-27T17:00:00Z");
 const at = (daysAgo: number, hour = 15) => {
   const d = new Date(NOW.getTime() - daysAgo * 86400_000);
   d.setUTCHours(hour, 0, 0, 0);
@@ -101,7 +102,7 @@ beforeEach(() => {
   ]);
   mocks.sourceFindMany.mockImplementation(async ({ where }: { where: { kind: string } }) =>
     where.kind === "repo"
-      ? [{ id: "s_rush", key: "edcohen/rushmore", name: "rushmore", company: "Personal", description: "Booking app" }]
+      ? [{ id: "s_rush", key: "edcohen/rushmore", name: "rushmore", company: "Personal", description: "Booking app", syncedAt: REPO_SYNCED }]
       : topics,
   );
   mocks.claude.mockResolvedValue({ meetings: [] });
@@ -226,7 +227,8 @@ describe("syncMeetingProjects", () => {
     expect(prompt()).not.toContain("project:p_journal");
     expect(mocks.tx.projectSource.updateMany).toHaveBeenCalledWith({
       where: { id: "s_rush", OR: [{ lastActivityAt: null }, { lastActivityAt: { lt: new Date(at(3)) } }] },
-      data: { lastActivityAt: new Date(at(3)) },
+      // The repo's syncedAt ("Synced …" on /projects) is the GitHub sync's, not ours.
+      data: { lastActivityAt: new Date(at(3)), syncedAt: REPO_SYNCED },
     });
   });
 
@@ -322,6 +324,48 @@ describe("syncMeetingProjects", () => {
     expect(mocks.getNote).toHaveBeenCalledTimes(1);
     expect(mocks.listEvents).not.toHaveBeenCalled();
     expect(prompt()).not.toContain("Shared with me");
+  });
+});
+
+describe("syncMeetingProjects source failures", () => {
+  it("carries on with Granola when the calendar listing fails, logging no titles", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.listEvents.mockRejectedValue(Object.assign(new Error("Google Calendar list events failed (403)"), { status: 403 }));
+    notes = [noteSummary("n1", "Acme intro", at(1))];
+    fullNotes = { n1: fullNote("n1", "Acme intro", at(1), "Pilot") };
+    const res = await syncMeetingProjects("u1", { now: NOW });
+    expect(res.errors).toEqual(["calendar: HTTP 403"]);
+    expect(prompt()).toContain("granola:n1");
+    expect(spy.mock.calls.flat().join(" ")).not.toContain("Acme");
+    spy.mockRestore();
+  });
+
+  it("carries on with the calendar when Granola fails, and fails the run only when every source does", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.listNotes.mockRejectedValue(Object.assign(new Error("Granola 500"), { status: 500 }));
+    mocks.listEvents.mockResolvedValue([event("e1", "Acme intro", at(2))]);
+    const res = await syncMeetingProjects("u1", { now: NOW });
+    expect(res.errors).toEqual(["granola: HTTP 500"]);
+    expect(prompt()).toContain("gcal:e1");
+
+    mocks.listEvents.mockRejectedValue(Object.assign(new Error("x"), { status: 503 }));
+    await expect(syncMeetingProjects("u1", { now: NOW })).rejects.toThrow(/every meeting source failed/);
+    spy.mockRestore();
+  });
+
+  it("keeps a stored calendar row when the note replacing it isn't written (classification failed)", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    stored.push({ externalKey: "gcal:e1", sourceId: null, projectId: null, title: null, occurredAt: new Date(at(2)) });
+    mocks.listEvents.mockResolvedValue([event("e1", "Quarterly review", at(2)), event("e2", "Therapy", at(3))]);
+    notes = [noteSummary("n1", "Quarterly review", at(2, 15))];
+    fullNotes = { n1: fullNote("n1", "Quarterly review", at(2, 15), "Numbers") };
+    mocks.claude.mockRejectedValue(Object.assign(new Error("overloaded"), { status: 529 }));
+    const res = await syncMeetingProjects("u1", { now: NOW });
+    // The excluded therapy event is still written, but the gcal row survives.
+    expect(stored.map((s) => s.externalKey)).toEqual(["gcal:e1", "gcal:e2"]);
+    expect(mocks.tx.projectMeeting.deleteMany).not.toHaveBeenCalled();
+    expect(res.replaced).toBe(0);
+    spy.mockRestore();
   });
 });
 

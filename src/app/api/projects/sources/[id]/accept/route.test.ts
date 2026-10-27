@@ -17,11 +17,12 @@ import { POST } from "./route";
 
 const req = () => new Request("https://example.invalid/api/projects/sources/t1/accept", { method: "POST" });
 const ctx = { params: Promise.resolve({ id: "t1" }) };
+const SYNCED = new Date("2026-10-27T10:00:00Z");
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.user.mockResolvedValue("u1");
-  mocks.findUnique.mockResolvedValue({ id: "t1", userId: "u1", kind: "topic", state: "suggested", name: "Series A" });
+  mocks.findUnique.mockResolvedValue({ id: "t1", userId: "u1", kind: "topic", state: "suggested", name: "Series A", syncedAt: SYNCED });
   mocks.transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.tx));
   mocks.tx.projectSource.updateMany.mockResolvedValue({ count: 1 });
   mocks.tx.project.aggregate.mockResolvedValue({ _max: { position: 6 } });
@@ -37,12 +38,15 @@ describe("POST /api/projects/sources/[id]/accept", () => {
     expect(mocks.transaction).toHaveBeenCalledOnce();
     expect(mocks.tx.projectSource.updateMany).toHaveBeenCalledWith({
       where: { id: "t1", state: "suggested" },
-      data: { state: "accepted" },
+      data: { state: "accepted", syncedAt: SYNCED },
     });
     expect(mocks.tx.project.create.mock.calls[0][0].data).toEqual({
       userId: "u1", name: "Series A", icon: "Folder", color: "neutral", position: 7,
     });
-    expect(mocks.tx.projectSource.update).toHaveBeenCalledWith({ where: { id: "t1" }, data: { projectId: "p_new" } });
+    expect(mocks.tx.projectSource.update).toHaveBeenCalledWith({
+      where: { id: "t1" },
+      data: { projectId: "p_new", syncedAt: SYNCED },
+    });
     expect(mocks.tx.projectMeeting.updateMany).toHaveBeenCalledWith({
       where: { userId: "u1", sourceId: "t1" },
       data: { projectId: "p_new" },

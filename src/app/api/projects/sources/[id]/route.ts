@@ -29,7 +29,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const updated = await prisma.projectSource.update({
     where: { id },
-    data: { state },
+    // syncedAt is the last GitHub sync ("Synced …" on /projects), not this edit.
+    data: { state, syncedAt: source.syncedAt },
     select: { id: true, kind: true, state: true },
   });
   return NextResponse.json({ source: updated });

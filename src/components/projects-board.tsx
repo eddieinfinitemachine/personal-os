@@ -35,6 +35,15 @@ const SECTION_LABEL =
 const CHIP_BUTTON =
   "pressable inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-accent)] disabled:opacity-50";
 
+/** "Synced now" / "Synced 12m ago" / "Synced Oct 17" (timeAgo gives a date after a week). */
+export function syncedLabel(syncedAt: string | null): string {
+  if (!syncedAt) return "Never synced";
+  const ago = timeAgo(syncedAt);
+  // timeAgo says "0m" for 45–59 s.
+  if (ago === "now" || ago === "0m") return "Synced now";
+  return /^\d+[mhd]$/.test(ago) ? `Synced ${ago} ago` : `Synced ${ago}`;
+}
+
 /** "Synced 12m ago" + Refresh (founder only): runs the GitHub sync now. */
 export function ProjectsSyncStatus({ syncedAt }: { syncedAt: string | null }) {
   const router = useRouter();
@@ -52,6 +61,8 @@ export function ProjectsSyncStatus({ syncedAt }: { syncedAt: string | null }) {
         return;
       }
       router.refresh();
+    } catch {
+      setError("Sync failed: network error");
     } finally {
       setBusy(false);
     }
@@ -61,7 +72,7 @@ export function ProjectsSyncStatus({ syncedAt }: { syncedAt: string | null }) {
     <div className="flex shrink-0 flex-col items-end gap-1">
       <div className="flex items-center gap-2">
         <span className="text-xs text-[var(--color-muted-foreground)]" suppressHydrationWarning>
-          {syncedAt ? `Synced ${timeAgo(syncedAt)}${timeAgo(syncedAt) === "now" ? "" : " ago"}` : "Never synced"}
+          {syncedLabel(syncedAt)}
         </span>
         <button type="button" onClick={refresh} disabled={busy} className={CHIP_BUTTON}>
           {busy ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
@@ -80,6 +91,7 @@ export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
   const [overrides, setOverrides] = useState<Map<string, Visibility>>(new Map());
   const [handled, setHandled] = useState<Set<string>>(new Set());
   const [busyTopic, setBusyTopic] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   // A refreshed model already carries the change.
   useEffect(() => {
     setOverrides(new Map());
@@ -102,26 +114,34 @@ export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
 
   async function setVisibility(card: BoardCard, visibility: Visibility) {
     const previous = overrides.get(card.id);
+    setError(null);
     setOverrides((m) => new Map(m).set(card.id, visibility));
-    const res =
-      card.kind === "project"
-        ? await fetch(`/api/projects/${card.projectId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ visibility }),
-          })
-        : await fetch(`/api/projects/sources/${card.sourceId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ state: visibility }),
-          });
-    if (!res.ok) {
+    let ok = false;
+    try {
+      const res =
+        card.kind === "project"
+          ? await fetch(`/api/projects/${card.projectId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ visibility }),
+            })
+          : await fetch(`/api/projects/sources/${card.sourceId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ state: visibility }),
+            });
+      ok = res.ok;
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
       setOverrides((m) => {
         const next = new Map(m);
         if (previous) next.set(card.id, previous);
         else next.delete(card.id);
         return next;
       });
+      setError(`Couldn't update ${card.name}. Try again.`);
       return;
     }
     router.refresh();
@@ -129,6 +149,7 @@ export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
 
   async function actOnTopic(topic: SuggestedTopic, action: "accept" | "dismiss") {
     setBusyTopic(topic.id);
+    setError(null);
     try {
       const res =
         action === "accept"
@@ -138,9 +159,11 @@ export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ state: "dismissed" }),
             });
-      if (!res.ok) return;
+      if (!res.ok) throw new Error(String(res.status));
       setHandled((s) => new Set(s).add(topic.id));
       router.refresh();
+    } catch {
+      setError(`Couldn't ${action} ${topic.name}. Try again.`);
     } finally {
       setBusyTopic(null);
     }
@@ -150,6 +173,11 @@ export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
 
   return (
     <div className="space-y-8">
+      {error ? (
+        <p role="alert" className="text-sm text-[var(--color-destructive)]">
+          {error}
+        </p>
+      ) : null}
       {suggested.length ? (
         <section aria-label="Suggested">
           <h2 className={cn(SECTION_LABEL, "mb-2")}>Suggested from meetings</h2>
