@@ -191,3 +191,8 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 **Context**: /projects GitHub sync listed `viewer.repositories` with each repo's branches + `history` in one query.
 **Mistake / surprise**: GitHub's 10 s GraphQL timeout returned 502 at 100 and 40 repos/page (20 took ~7 s) — node-count limits were nowhere near; it's server time.
 **Rule**: List repos alone (100/page is ~1.7 s), then fetch per-repo branch history in small aliased batches (~8 repos/query, a few in parallel). Teammates and bots push to org repos, so "my activity" must filter commit authors against known identities, never `pushedAt`.
+
+## 2026-10-27 — the schema-before-merge rule failed again; the build now pushes it
+**Context**: PR #63 (/projects) added `Project.visibility` and two tables. It merged and deployed with prod still on the old schema; every logged-in page 500'd (P2022 "column does not exist", Vercel digest 1466201642) for ~4 h until the runtime logs were read.
+**Mistake / surprise**: The 2026-10-08 rule ("add the column to prod before opening the PR") depends on someone remembering it under time pressure. A rule that has to be remembered at merge time is not a fix.
+**Rule**: `pnpm build` runs `scripts/vercel-db-push.mjs`, which does `prisma db push` only when `VERCEL_ENV=production` (never from previews) and without `--accept-data-loss`, so a destructive diff fails the build instead of dropping columns. Schema PRs no longer need a manual push; they do still need the diff to be additive. Keep writing the applied SQL to `prisma/changes/` for the record. When a page 500s in prod, go straight to `vercel logs <deployment>`: the digest in the browser maps to the Prisma error there.
