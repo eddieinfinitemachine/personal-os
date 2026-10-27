@@ -27,6 +27,14 @@
     {
       "path": "/api/cron/granola-todos",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/projects-github",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/projects-meetings",
+      "schedule": "20 */2 * * *"
     }
   ]
 }

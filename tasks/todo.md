@@ -1,3 +1,27 @@
+# Projects page — auto-discovered, auto-updating `/projects` — in progress 2026-10-27
+
+Goal: one page listing everything Eddie is actively working on, kept current
+without manual upkeep. Sources: GitHub repos with commits he authored (hourly
+Vercel cron, GraphQL API), existing personal-os Projects, and recurring
+meeting topics from Granola + Google Calendar (2-hourly cron, privacy-gated
+before Claude). Active = activity in 14 days, Dormant = 14–90 days, pin/hide
+by hand, grouped by company. Plan: `~/.claude/plans/reactive-growing-thimble.md`.
+
+- [x] Schema: `ProjectSource`, `ProjectMeeting`, `Project.visibility` (additive; scratch DB only)
+- [x] `src/lib/projects/company.ts` + `todo-plan.ts`
+- [x] `src/lib/projects/github.ts` — repo + branch history query, mine filter, todo.md plan, upsert
+- [x] `src/lib/projects/calendar.ts` — `listPrimaryEvents`
+- [x] `src/lib/projects/meetings.ts` — collect, dedupe, privacy gate, classify, write
+- [x] `src/lib/projects/board.ts` — page model (buckets, company groups)
+- [x] Crons `projects-github` (hourly) + `projects-meetings` (2-hourly) in `vercel.json`
+- [x] `POST /api/projects/sync`, `PATCH /api/projects/sources/[id]`, `POST …/accept`, `visibility` on `PATCH /api/projects/[id]`
+- [x] `/projects` page + loading skeleton + `projects-board.tsx`
+- [x] Nav: sidebar, mobile drawer (exact-match active), command palette (appended)
+- [x] Env docs: `GITHUB_TOKEN`, `GITHUB_IDENTITIES`
+- [x] Tests: todo-plan, company, github, meetings, routes, board
+- [ ] Live: GitHub sync + meetings sync on scratch DB, privacy dump
+- [ ] Browser: desktop/mobile, light/dark, Pin/Hide/Unhide/Accept/Dismiss, drawer highlight
+
 # Send todo to tracker (Media etc.) — in progress 2026-09-29
 
 Goal: the todo row's project picker (and a "Send to tracker…" context-menu
