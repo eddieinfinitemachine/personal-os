@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ChevronUp,
   Folder,
+  FolderKanban,
   Home,
   Inbox as InboxIcon,
   LayoutGrid,
@@ -171,6 +172,7 @@ const DRAWER_LISTS_SHOWN = 3;
 const DRAWER_PRIMARY = [
   { href: "/", label: "Home", Icon: Home },
   { href: "/calendar", label: "Calendar", Icon: Calendar },
+  { href: "/projects", label: "Projects", Icon: FolderKanban },
   { href: "/board", label: "Board", Icon: LayoutGrid },
   { href: "/call-sheet", label: "Call Sheet", Icon: Phone },
 ];
@@ -409,7 +411,9 @@ function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: Mobil
             <DrawerLink
               key={d.href}
               href={d.href}
-              active={d.href === "/" ? pathname === "/" : pathname.startsWith(d.href)}
+              // "/" and "/projects" match exactly: /projects/<id> lights up its
+              // project row below, not the Projects index.
+              active={d.href === "/" || d.href === "/projects" ? pathname === d.href : pathname.startsWith(d.href)}
               icon={<d.Icon className="size-4" />}
               label={d.label}
             />

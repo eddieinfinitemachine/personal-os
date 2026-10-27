@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   FileText,
   Folder,
+  FolderKanban,
   Home,
   Dumbbell,
   LayoutGrid,
@@ -84,6 +85,8 @@ const NAV_COMMANDS: NavCommand[] = [
   { id: "call-sheet", label: "Call Sheet", hint: "People to check in with today", href: "/call-sheet", icon: <Phone className="size-4" /> },
   { id: "workout", label: "Workout", hint: "Photo of your gear → guided session", href: "/workout", icon: <Dumbbell className="size-4" /> },
   { id: "settings", label: "Settings", href: "/settings", icon: <Settings className="size-4" /> },
+  // Appended so the ⌘1–9 shortcuts above keep their numbers.
+  { id: "projects", label: "Projects", hint: "Everything you're working on", href: "/projects", icon: <FolderKanban className="size-4" /> },
 ];
 
 function fuzzyMatch(needle: string, haystack: string): boolean {

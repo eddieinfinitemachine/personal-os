@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Calendar, ChevronDown, ChevronRight, LayoutGrid, Eye, EyeOff, Folder, Home, Inbox as InboxIcon, PanelLeftClose, PanelLeftOpen, Phone, Pencil, Plus, Loader2, MoreHorizontal, Settings, Trash2 } from "lucide-react";
+import { Calendar, ChevronDown, FolderKanban, ChevronRight, LayoutGrid, Eye, EyeOff, Folder, Home, Inbox as InboxIcon, PanelLeftClose, PanelLeftOpen, Phone, Pencil, Plus, Loader2, MoreHorizontal, Settings, Trash2 } from "lucide-react";
 import { AddTemplateButton, useEnabledTemplates } from "./sidebar-template-picker";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
@@ -228,6 +228,12 @@ export function Sidebar({
           icon={<Calendar className="size-4" />}
           label="Calendar"
           active={pathname === "/calendar"}
+        />
+        <SidebarLink
+          href="/projects"
+          icon={<FolderKanban className="size-4" />}
+          label="Projects"
+          active={pathname === "/projects"}
         />
         <SidebarLink
           href="/board"

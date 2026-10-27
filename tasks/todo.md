@@ -1,3 +1,78 @@
+# Projects page — auto-discovered, auto-updating `/projects` — in progress 2026-10-27
+
+Goal: one page listing everything Eddie is actively working on, kept current
+without manual upkeep. Sources: GitHub repos with commits he authored (hourly
+Vercel cron, GraphQL API), existing personal-os Projects, and recurring
+meeting topics from Granola + Google Calendar (2-hourly cron, privacy-gated
+before Claude). Active = activity in 14 days, Dormant = 14–90 days, pin/hide
+by hand, grouped by company. Plan: `~/.claude/plans/reactive-growing-thimble.md`.
+
+- [x] Schema: `ProjectSource`, `ProjectMeeting`, `Project.visibility` (additive; scratch DB only)
+- [x] `src/lib/projects/company.ts` + `todo-plan.ts`
+- [x] `src/lib/projects/github.ts` — repo + branch history query, mine filter, todo.md plan, upsert
+- [x] `src/lib/projects/calendar.ts` — `listPrimaryEvents`
+- [x] `src/lib/projects/meetings.ts` — collect, dedupe, privacy gate, classify, write
+- [x] `src/lib/projects/board.ts` — page model (buckets, company groups)
+- [x] Crons `projects-github` (hourly) + `projects-meetings` (2-hourly) in `vercel.json`
+- [x] `POST /api/projects/sync`, `PATCH /api/projects/sources/[id]`, `POST …/accept`, `visibility` on `PATCH /api/projects/[id]`
+- [x] `/projects` page + loading skeleton + `projects-board.tsx`
+- [x] Nav: sidebar, mobile drawer (exact-match active), command palette (appended)
+- [x] Env docs: `GITHUB_TOKEN`, `GITHUB_IDENTITIES`
+- [x] Tests: todo-plan, company, github, meetings, routes, board
+- [x] Live: GitHub sync + meetings sync on scratch DB, privacy dump
+- [x] Browser: desktop/mobile, light/dark, Pin/Hide/Unhide/Accept/Dismiss, drawer highlight
+- [ ] Eddie: review suggested topics + privacy dump; then PR, merge, prod schema push from main, `GITHUB_TOKEN`
+
+## Review
+`pnpm typecheck` clean; `pnpm test` 114 files passed / 19 skipped, 1125 tests
+passed (new: todo-plan, company, github, meetings, board, 2 crons, sync,
+sources PATCH, accept, project visibility).
+
+Live on a scratch Postgres (`personal_os_projects_scratch`, localhost only),
+`next dev --webpack`, `GITHUB_TOKEN=$(gh auth token)`:
+- GitHub: 100 repos pushed in 90 days scanned (matches an independent count),
+  72 with my commits, 14 active, ~20 s. `Infinite-Machine/service-and-troubleshooting`
+  (teammate-only) has no row. rushmore (8 of 25 open items) and personal-os
+  (8 of 73) show plans. nolan-bot / ec-pad have no GitHub remote, so they can't
+  appear (local-only signals are out of scope).
+- Asking for branches inside the repo listing timed out GitHub's 10 s limit
+  (502 at 40 repos/page, 7 s at 20), so the sync lists repos first, then asks
+  for branch history 8 repos per query, 3 at a time.
+- Meetings: calendar only — `GRANOLA_API_KEY` is not in the local `.env`.
+  54 calendar meetings, 55 stored over two runs (40 cap, then the rest):
+  20 linked, 35 unlinked (no title), 0 excluded by the privacy gate.
+  Two topics reached Suggested. Privacy dump reviewed in the session scratchpad.
+- Browser (agent-browser, founder session cookie): Pin (repo + project), Hide,
+  Unhide, Dismiss, Accept (Project created last, 3 meetings re-pointed),
+  Refresh; 1440 and 390 wide, light and dark, no horizontal scroll. The mobile
+  drawer lights Projects on `/projects` only, and the project row on
+  `/projects/<id>`. A non-founder sees only their own Projects, no Refresh, and
+  `/api/projects/sync` 404s.
+- Fixed while verifying: a pin or hide no longer bumps `Project.updatedAt`
+  (it read as "worked on now"); wrapped todo.md items are joined; long branch
+  chips no longer squeeze the commit text.
+
+### Code review fixes (PR #63)
+- An accepted topic's Project keeps the topic's company on the board.
+- "Synced …" no longer moves on pin / hide / dismiss / accept, or when the
+  meetings sync touches a repo row (syncedAt passed through explicitly). It
+  reads "Synced Oct 17", not "Synced Oct 17 ago", and "now" instead of "0m ago".
+- GitHub: history is filtered server-side by author (email identities plus
+  each login's noreply addresses; the viewer's id when only the viewer's login
+  is configured). A live A/B over all 93 repos: same 72 repos, no commit lost,
+  579 of my commits found vs 469 unfiltered. Batches of 8: median ~1.4 s, max
+  2.4 s. A batch that fails twice is skipped (rows left as they were) and
+  counted in `failed`; writes go in transactions of 25.
+- Meetings: calendar and Granola fail independently (the run fails only if
+  every configured source does); a replaced calendar row is deleted only in the
+  transaction that writes its Granola note.
+- Board: pin / hide / accept / dismiss roll back and show an inline error on
+  any failure. `isLifeProject` is shared from `board.ts` (not `board-model.ts`:
+  `INBOX_PROJECT_NAME` lives in a module that imports Prisma).
+- Live after the fixes: GitHub `{"scanned":100,"repos":72,"active":13,"failed":0,"ms":15202}`;
+  meetings re-run twice processed 0 and left every row and link identical.
+  `pnpm test` 115 files / 1139 tests passed.
+
 # Send todo to tracker (Media etc.) — in progress 2026-09-29
 
 Goal: the todo row's project picker (and a "Send to tracker…" context-menu

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
+import { VISIBILITIES } from "@/lib/projects/board-model";
 
 export async function PATCH(
   request: Request,
@@ -16,7 +17,12 @@ export async function PATCH(
     color?: string;
     archived?: boolean;
     position?: number;
+    visibility?: unknown;
   };
+  // /projects pin / hide.
+  if (body.visibility !== undefined && !(VISIBILITIES as readonly unknown[]).includes(body.visibility)) {
+    return NextResponse.json({ error: "visibility must be auto, pinned or hidden" }, { status: 400 });
+  }
 
   const existing = await prisma.project.findUnique({ where: { id } });
   if (!existing || existing.userId !== userId) {
@@ -31,6 +37,10 @@ export async function PATCH(
       ...(body.color !== undefined && { color: body.color }),
       ...(body.archived !== undefined && { archived: body.archived }),
       ...(body.position !== undefined && { position: body.position }),
+      ...(body.visibility !== undefined && { visibility: body.visibility as string }),
+      // Pinning or hiding isn't activity: keep updatedAt, which /projects
+      // reads as "last worked on".
+      ...(Object.keys(body).every((k) => k === "visibility") && { updatedAt: existing.updatedAt }),
     },
   });
   return NextResponse.json({ project });
