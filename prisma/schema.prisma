@@ -127,24 +127,28 @@ model ListMember {
 }
 
 model Project {
-  id        String   @id @default(cuid())
-  name      String
-  icon      String   @default("Folder")
-  color     String   @default("neutral")
-  position  Int      @default(0)
-  archived  Boolean  @default(false)
-  kind      String   @default("generic") // "generic" | "vehicle"
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  name       String
+  icon       String   @default("Folder")
+  color      String   @default("neutral")
+  position   Int      @default(0)
+  archived   Boolean  @default(false)
+  kind       String   @default("generic") // "generic" | "vehicle"
+  // /projects only: "auto" | "pinned" | "hidden". `archived` keeps its meaning.
+  visibility String   @default("auto")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  todos        Todo[]
-  notes        Note[]
-  attachments  Attachment[]
-  vehicle      Vehicle?
-  pet          Pet?
-  human        Human?
-  assets       Asset[]
-  interactions Interaction[]
+  todos           Todo[]
+  notes           Note[]
+  attachments     Attachment[]
+  vehicle         Vehicle?
+  pet             Pet?
+  human           Human?
+  assets          Asset[]
+  interactions    Interaction[]
+  projectSources  ProjectSource[]
+  projectMeetings ProjectMeeting[]
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -995,6 +999,8 @@ model User {
   datingSourceRecords DatingSourceRecord[]
   datingCandidates    DatingCandidate[]
   granolaImports      GranolaImport[]
+  projectSources      ProjectSource[]
+  projectMeetings     ProjectMeeting[]
 
   @@index([email])
 }
@@ -1454,4 +1460,57 @@ model CallSheetDay {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, localDate])
+}
+
+// ─── /projects ─────────────────────────────────────────────────────
+
+// A project discovered outside the app: a GitHub repo or a recurring meeting topic.
+// Written only by founder crons; read by /projects.
+model ProjectSource {
+  id             String           @id @default(cuid())
+  kind           String // "repo" | "topic"
+  key            String // repo: "owner/name"; topic: slug
+  name           String
+  description    String?
+  url            String? // repo GitHub URL
+  homepageUrl    String?
+  company        String // "Infinite Machine" | "Olto" | "Silo" | "Walden" | "Personal"
+  lastActivityAt DateTime?
+  commits        Json             @default("[]") // my commits, newest first, ≤5: {oid, message, at, branch, url}
+  plan           Json             @default("[]") // open tasks/todo.md items, ≤8: {text, section}
+  // repo: "auto" | "pinned" | "hidden"
+  // topic: "candidate" | "suggested" | "dismissed" | "accepted"
+  state          String
+  syncedAt       DateTime         @updatedAt
+  createdAt      DateTime         @default(now())
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId      String? // set when an accepted topic becomes a personal-os Project
+  project        Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  meetings       ProjectMeeting[]
+
+  @@unique([userId, kind, key])
+  @@index([userId, lastActivityAt])
+}
+
+// One processed meeting (a Granola note or a calendar event). Stored even when it
+// matches nothing, so it is never classified twice. title is null unless the
+// meeting is linked to a card, so private or unrelated meetings keep no text.
+model ProjectMeeting {
+  id          String         @id @default(cuid())
+  externalKey String // "granola:<id>" | "gcal:<eventId>"
+  title       String?
+  occurredAt  DateTime
+  url         String?
+  createdAt   DateTime       @default(now())
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceId    String?
+  source      ProjectSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  projectId   String?
+  project     Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, externalKey])
+  @@index([userId, occurredAt])
+  @@index([projectId])
 }
