@@ -361,8 +361,16 @@ export async function captureCallSheet(
       // EC Pad reports only the people its notes mention, and its evidence never
       // proves silence, so a ready report does not require a scan of everyone.
       if (input.status === "ready" && input.source !== "ecpad") {
+        // The worker lists people once, when the scan starts (capturedAt), so
+        // a person created during the scan is not missing evidence; the next
+        // scan covers them. Without this, a CRM sync landing mid-scan kept both
+        // sources in "error" and the sheet went stale (2026-10-27).
         const people = await tx.person.findMany({
-          where: { userId, archived: false },
+          where: {
+            userId,
+            archived: false,
+            createdAt: { lte: new Date(input.capturedAt) },
+          },
         });
         const contacts = await tx.callSheetContact.findMany({
           where: { userId },

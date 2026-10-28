@@ -45,6 +45,7 @@ async function seed() {
           lastName: `Person${i}`,
           phone: `+15555550${String(i).padStart(3, "0")}`,
           circles: i < 4 ? ["friends"] : i < 6 ? ["family"] : ["work"],
+          createdAt: new Date("2026-01-01T00:00:00Z"),
         },
       }),
     ),
@@ -528,6 +529,58 @@ describe.skipIf(!enabled)("call sheet real PostgreSQL", () => {
       where: { userId_personId: { userId, personId: input.personId } },
     });
     expect(readSourceData(contact.sourceData).imessage).toBeUndefined();
+  });
+  it("lets a source go ready when a person was created after the scan started", async () => {
+    await updateCallSheetSettings(
+      userId,
+      { source: "imessage", enabled: true },
+      now,
+    );
+    const input = await payload();
+    const config = await getCaptureConfig(userId);
+    for (const person of config.people)
+      await captureCallSheet(
+        userId,
+        {
+          ...input,
+          personId: person.id,
+          identityKey: person.identityKey,
+          handles: [],
+          messageCount: 0,
+          lastContactAt: null,
+          messages: [],
+          extract: false,
+        },
+        now,
+      );
+    const health = {
+      type: "health",
+      source: "imessage",
+      sourceEpoch: input.sourceEpoch,
+      status: "ready",
+      capturedAt: now.toISOString(),
+    };
+    // A CRM sync lands mid-scan: the worker never listed this person.
+    const late = await prisma.person.create({
+      data: {
+        userId,
+        firstName: "Synthetic",
+        lastName: "Latecomer",
+        phone: "+15555550900",
+        createdAt: new Date(now.getTime() + 60_000),
+      },
+    });
+    expect(await captureCallSheet(userId, health, now)).toMatchObject({
+      ok: true,
+    });
+    // A person who existed when the scan started still has to be covered.
+    await prisma.person.update({
+      where: { id: late.id },
+      data: { createdAt: new Date(now.getTime() - 60_000) },
+    });
+    await expect(captureCallSheet(userId, health, now)).rejects.toThrow(
+      "incomplete",
+    );
   });
   it("requires complete per-person metadata for global ready and cleans all daily/undo excerpts on disable", async () => {
     await updateCallSheetSettings(
