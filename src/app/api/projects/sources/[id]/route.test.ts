@@ -18,35 +18,28 @@ describe("PATCH /api/projects/sources/[id]", () => {
   it("401s without a session and 404s on someone else's source", async () => {
     mocks.user.mockResolvedValueOnce(null);
     expect((await PATCH(patch({ state: "pinned" }), ctx)).status).toBe(401);
-    mocks.findUnique.mockResolvedValue({ id: "s1", userId: "other", kind: "repo", state: "auto" });
+    mocks.findUnique.mockResolvedValue({ id: "s1", userId: "other", kind: "inferred", state: "auto" });
     expect((await PATCH(patch({ state: "pinned" }), ctx)).status).toBe(404);
     mocks.findUnique.mockResolvedValue(null);
     expect((await PATCH(patch({ state: "pinned" }), ctx)).status).toBe(404);
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
-  it("keeps syncedAt (the last GitHub sync) when the state changes", async () => {
-    const syncedAt = new Date("2026-10-27T10:00:00Z");
-    mocks.findUnique.mockResolvedValue({ id: "s1", userId: "u1", kind: "repo", state: "auto", syncedAt });
-    await PATCH(patch({ state: "pinned" }), ctx);
-    expect(mocks.update.mock.calls[0][0].data).toEqual({ state: "pinned", syncedAt });
-  });
-
-  it("lets a repo be pinned, hidden or put back on auto, nothing else", async () => {
-    mocks.findUnique.mockResolvedValue({ id: "s1", userId: "u1", kind: "repo", state: "auto" });
+  it("lets an inferred project be pinned, hidden or put back on auto, nothing else", async () => {
+    mocks.findUnique.mockResolvedValue({ id: "s1", userId: "u1", kind: "inferred", state: "auto" });
     for (const state of ["pinned", "hidden", "auto"]) {
       expect((await PATCH(patch({ state }), ctx)).status).toBe(200);
     }
-    expect(mocks.update.mock.calls.map((c) => c[0].data.state)).toEqual(["pinned", "hidden", "auto"]);
+    expect(mocks.update.mock.calls.map((c) => c[0].data)).toEqual([{ state: "pinned" }, { state: "hidden" }, { state: "auto" }]);
     for (const state of ["dismissed", "accepted", "suggested", "", 3]) {
       expect((await PATCH(patch({ state }), ctx)).status).toBe(400);
     }
     expect(mocks.update).toHaveBeenCalledTimes(3);
   });
 
-  it("404s on non-repo rows (old meeting topics)", async () => {
-    for (const state of ["candidate", "suggested", "accepted"]) {
-      mocks.findUnique.mockResolvedValue({ id: "s1", userId: "u1", kind: "topic", state });
+  it("404s on other rows: old repos and topics, and the run row", async () => {
+    for (const [kind, state] of [["repo", "auto"], ["topic", "suggested"], ["inferred-run", "idle"]]) {
+      mocks.findUnique.mockResolvedValue({ id: "s1", userId: "u1", kind, state });
       for (const to of ["dismissed", "pinned", "hidden", "auto"]) {
         expect((await PATCH(patch({ state: to }), ctx)).status).toBe(404);
       }

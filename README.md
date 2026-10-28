@@ -70,8 +70,6 @@ Optional:
 
 - `MAX_SIGNUPS_PER_DAY` — cap new signups per 24h (omit for unlimited)
 - `INVITE_TOKEN` — if set, only `/signup?invite=<this>` can create accounts
-- `GITHUB_TOKEN` — classic PAT (`repo`, `read:org`) for the `/projects` repo cards (founder-only, hourly cron). Locally: `export GITHUB_TOKEN=$(gh auth token)`
-- `GITHUB_IDENTITIES` — logins and commit emails that count as your commits, comma separated (default: the token's login)
 
 ## Auth flow
 

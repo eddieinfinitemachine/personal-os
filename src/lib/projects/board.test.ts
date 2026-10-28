@@ -1,149 +1,131 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ sourceFindMany: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({ prisma: { projectSource: { findMany: mocks.sourceFindMany } } }));
-import { ACTIVITY_SHOWN, PLAN_SHOWN, bucketCards, getProjectsBoard, readPlan, type BoardCard } from "./board";
+import { bucketCards, evidenceCounts, getProjectsBoard, orderEvidence, type BoardCard } from "./board";
 
 const NOW = new Date("2026-10-27T18:00:00Z");
 const ago = (d: number) => new Date(NOW.getTime() - d * 86400_000);
 
 const card = (name: string, daysAgo: number | null, over: Partial<BoardCard> = {}): BoardCard => ({
-  id: `repo:${name}`,
+  id: `inferred:${name}`,
   name,
   company: "Personal",
   visibility: "auto",
   lastActivityAt: daysAgo === null ? null : ago(daysAgo).toISOString(),
-  activity: [],
-  plan: [],
-  planTotal: 0,
-  githubUrl: null,
-  homepageUrl: null,
+  status: null,
+  next: null,
+  evidence: [],
+  stale: false,
   sourceId: name,
   ...over,
 });
 
 describe("bucketCards", () => {
-  it("shows the last 14 days and pinned repos, collapses hidden ones, drops the rest", () => {
-    const { cards, hidden } = bucketCards(
-      [
-        card("fresh", 1),
-        card("edge", 13.9),
-        card("stale", 14.1),
-        card("ancient", 120),
-        card("never", null),
-        card("pinned-old", 300, { visibility: "pinned" }),
-        card("hidden-new", 0, { visibility: "hidden" }),
-        card("hidden-old", 400, { visibility: "hidden" }),
-      ],
-      NOW,
-    );
-    expect(cards.map((c) => c.name)).toEqual(["pinned-old", "fresh", "edge"]);
-    expect(hidden.map((c) => c.name)).toEqual(["hidden-new", "hidden-old"]);
-  });
-
-  it("orders pinned first, then newest first, then by name; ignores company", () => {
-    const { cards } = bucketCards(
-      [
-        card("old", 9, { company: "Infinite Machine" }),
-        card("b-new", 1, { company: "Walden" }),
-        card("a-new", 1),
-        card("pin-old", 12, { visibility: "pinned" }),
-        card("pin-new", 2, { visibility: "pinned", company: "Olto" }),
-        card("newest", 0.1, { company: "Silo" }),
-      ],
-      NOW,
-    );
-    expect(cards.map((c) => c.name)).toEqual(["pin-new", "pin-old", "newest", "a-new", "b-new", "old"]);
+  it("shows every non-hidden card, pinned first then newest; hidden apart", () => {
+    const { cards, hidden } = bucketCards([
+      card("old", 9, { company: "Infinite Machine" }),
+      card("b-new", 1),
+      card("a-new", 1),
+      card("never", null),
+      card("pin-old", 30, { visibility: "pinned" }),
+      card("pin-new", 2, { visibility: "pinned" }),
+      card("hid-old", 40, { visibility: "hidden" }),
+      card("hid-new", 0, { visibility: "hidden" }),
+    ]);
+    expect(cards.map((c) => c.name)).toEqual(["pin-new", "pin-old", "a-new", "b-new", "old", "never"]);
+    expect(hidden.map((c) => c.name)).toEqual(["hid-new", "hid-old"]);
   });
 });
 
-describe("readPlan", () => {
-  it("accepts the stored shape and the column default", () => {
-    expect(readPlan([])).toEqual({ items: [], total: 0 });
-    expect(readPlan({ items: [{ text: "a", section: null }], total: 9 })).toEqual({ items: [{ text: "a", section: null }], total: 9 });
-    expect(readPlan(null)).toEqual({ items: [], total: 0 });
+describe("evidence helpers", () => {
+  const ev = (ref: string, kind: "meeting" | "email" | "todo" | "note", at: Date) => ({ ref, kind, title: ref, at: at.toISOString(), url: null });
+
+  it("counts by kind", () => {
+    expect(evidenceCounts([ev("a", "meeting", NOW), ev("b", "email", NOW), ev("c", "email", NOW)])).toEqual({
+      meeting: 1,
+      email: 2,
+      todo: 0,
+      note: 0,
+    });
+  });
+
+  it("puts upcoming first (soonest first), then newest first", () => {
+    const ordered = orderEvidence(
+      [ev("past-old", "email", ago(5)), ev("soon", "meeting", ago(-1)), ev("past-new", "todo", ago(1)), ev("later", "meeting", ago(-3))],
+      NOW,
+    );
+    expect(ordered.map((e) => e.ref)).toEqual(["soon", "later", "past-new", "past-old"]);
   });
 });
 
 describe("getProjectsBoard", () => {
-  const repo = (id: string, daysAgo: number, over: Record<string, unknown> = {}) => ({
-    id,
-    key: `edcohen/${id}`,
-    name: id,
-    company: "Personal",
+  const row = (key: string, over: Record<string, unknown> = {}) => ({
+    id: `id-${key}`,
+    kind: "inferred",
+    key,
+    name: key,
+    company: "Olto",
+    description: `${key} status`,
+    plan: [{ text: `${key} next` }],
+    commits: [
+      { ref: `gmail:${key}`, kind: "email", title: "Thread", at: ago(1).toISOString(), url: "https://mail.google.com/x" },
+      { ref: `gcal:${key}`, kind: "meeting", title: "Review", at: ago(-2).toISOString(), url: null },
+      { ref: "junk", kind: "commit", title: "x", at: ago(1).toISOString() },
+    ],
+    lastActivityAt: ago(1),
     state: "auto",
-    url: `https://github.com/edcohen/${id}`,
-    homepageUrl: null,
-    lastActivityAt: ago(daysAgo),
-    syncedAt: ago(0.01),
-    commits: [],
-    plan: [],
     ...over,
   });
+  const run = (meta: Record<string, unknown>) => ({ ...row("latest"), kind: "inferred-run", state: "idle", plan: meta });
 
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.sourceFindMany.mockResolvedValue([
-      repo("rushmore", 1, {
-        company: "Olto",
-        homepageUrl: "https://rushmore.example",
-        commits: [
-          { oid: "a", message: "Oldest", at: ago(5).toISOString(), branch: null, url: "u-a" },
-          { oid: "b", message: "Fix booking", at: ago(1).toISOString(), branch: "feat/x", url: "u-b" },
-          { oid: "c", message: "Middle", at: ago(3).toISOString(), branch: null, url: "u-c" },
-          { oid: "d", message: "Second", at: ago(2).toISOString(), branch: null, url: "u-d" },
-        ],
-        plan: { items: Array.from({ length: 8 }, (_, i) => ({ text: `Step ${i}`, section: "Now" })), total: 12 },
-      }),
-      repo("personal-os", 0.5, { syncedAt: ago(0.001) }),
-      repo("old-pinned", 60, { state: "pinned", company: "Nope" }),
-      repo("hid", 0.2, { state: "hidden" }),
-      repo("stale", 30),
-      repo("weird", 2, { state: "dismissed" }),
+      row("erp-migration"),
+      row("old-pinned", { state: "pinned", lastActivityAt: ago(20), company: "Nope" }),
+      row("hid", { state: "hidden" }),
+      row("weird", { state: "dismissed", plan: [] }),
+      run({ lastCheckedAt: ago(0.1).toISOString(), lastSuccessAt: ago(0.5).toISOString(), keys: ["erp-migration", "hid", "weird"] }),
     ]);
   });
 
   it("gives a non-founder an empty board without querying", async () => {
-    expect(await getProjectsBoard("u1", false, NOW)).toEqual({ cards: [], hidden: [], syncedAt: null });
+    expect(await getProjectsBoard("u1", false, NOW)).toEqual({ cards: [], hidden: [], syncedAt: null, refreshFailed: false });
     expect(mocks.sourceFindMany).not.toHaveBeenCalled();
   });
 
-  it("builds one card per repo row: pinned first, then newest; hidden apart; stale dropped", async () => {
+  it("maps inferred rows to cards; the run row gives Synced and the stale flag", async () => {
     const board = await getProjectsBoard("u1", true, NOW);
-    expect(mocks.sourceFindMany).toHaveBeenCalledWith({ where: { userId: "u1", kind: "repo" } });
-    expect(board.cards.map((c) => c.name)).toEqual(["old-pinned", "personal-os", "rushmore", "weird"]);
+    expect(mocks.sourceFindMany).toHaveBeenCalledWith({ where: { userId: "u1", kind: { in: ["inferred", "inferred-run"] } } });
+    expect(board.cards.map((c) => c.name)).toEqual(["old-pinned", "erp-migration", "weird"]);
     expect(board.hidden.map((c) => c.name)).toEqual(["hid"]);
-    // Unknown company / state fall back to Personal / auto.
-    expect(board.cards[0]).toMatchObject({ company: "Personal", visibility: "pinned" });
-    expect(board.cards.find((c) => c.name === "weird")!.visibility).toBe("auto");
-    // The newest repo sync.
-    expect(board.syncedAt).toBe(ago(0.001).toISOString());
-  });
+    expect(board.syncedAt).toBe(ago(0.1).toISOString());
+    expect(board.refreshFailed).toBe(false);
 
-  it("shows the newest commits and the first plan items", async () => {
-    const board = await getProjectsBoard("u1", true, NOW);
-    const r = board.cards.find((c) => c.name === "rushmore")!;
-    expect(r).toMatchObject({
-      id: "repo:rushmore",
-      sourceId: "rushmore",
+    const c = board.cards.find((x) => x.name === "erp-migration")!;
+    expect(c).toMatchObject({
+      id: "inferred:id-erp-migration",
+      sourceId: "id-erp-migration",
       company: "Olto",
-      visibility: "auto",
+      status: "erp-migration status",
+      next: "erp-migration next",
+      stale: false,
       lastActivityAt: ago(1).toISOString(),
-      githubUrl: "https://github.com/edcohen/rushmore",
-      homepageUrl: "https://rushmore.example",
-      planTotal: 12,
     });
-    expect(r.activity).toHaveLength(ACTIVITY_SHOWN);
-    expect(r.activity.map((a) => `${a.kind}:${a.text}:${a.branch ?? ""}:${a.url}`)).toEqual([
-      "commit:Fix booking:feat/x:u-b",
-      "commit:Second::u-d",
-      "commit:Middle::u-c",
-    ]);
-    expect(r.plan).toHaveLength(PLAN_SHOWN);
-    expect(r.plan[0]).toEqual({ text: "Step 0", section: "Now" });
+    // Unknown evidence kinds are dropped; upcoming first.
+    expect(c.evidence.map((e) => e.ref)).toEqual(["gcal:erp-migration", "gmail:erp-migration"]);
+
+    // Pinned and not returned by the latest run: stale. Unknown company / state fall back.
+    expect(board.cards[0]).toMatchObject({ visibility: "pinned", stale: true, company: "Personal" });
+    expect(board.cards.find((x) => x.name === "weird")).toMatchObject({ visibility: "auto", next: null });
   });
 
-  it("returns null syncedAt with no repos", async () => {
-    mocks.sourceFindMany.mockResolvedValueOnce([]);
-    expect(await getProjectsBoard("u1", true, NOW)).toEqual({ cards: [], hidden: [], syncedAt: null });
+  it("flags a failed last run and survives a missing run row", async () => {
+    mocks.sourceFindMany.mockResolvedValueOnce([row("a"), run({ lastCheckedAt: ago(1).toISOString(), error: "gmail: HTTP 429" })]);
+    expect(await getProjectsBoard("u1", true, NOW)).toMatchObject({ refreshFailed: true, syncedAt: ago(1).toISOString() });
+    mocks.sourceFindMany.mockResolvedValueOnce([row("a", { state: "pinned" })]);
+    const board = await getProjectsBoard("u1", true, NOW);
+    expect(board).toMatchObject({ refreshFailed: false, syncedAt: null });
+    expect(board.cards[0].stale).toBe(false);
   });
 });
