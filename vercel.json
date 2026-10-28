@@ -29,8 +29,8 @@
       "schedule": "*/30 * * * *"
     },
     {
-      "path": "/api/cron/projects-github",
-      "schedule": "0 * * * *"
+      "path": "/api/cron/projects-infer",
+      "schedule": "15 */3 * * *"
     }
   ]
 }

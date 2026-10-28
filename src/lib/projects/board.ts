@@ -1,43 +1,40 @@
-// The /projects page model: GitHub repos with my commits (founder only; the
-// projects-github cron keeps ProjectSource rows current). Repos with commits
-// in the last 14 days show, newest first; pinned ones always show, first;
-// hidden ones collapse into Hidden. Other tenants get an empty board.
+// The /projects page model: the projects Claude inferred from Eddie's
+// meetings, email, todos and notes (founder only; the projects-infer cron
+// keeps them current). Pinned first, then newest; hidden ones ("Not a
+// project") collapse into Hidden. Other tenants get an empty board.
 
-import { prisma } from "@/lib/prisma";
-import { VISIBILITIES, bucketCards, readPlan, type BoardCard, type ProjectsBoard, type Visibility } from "./board-model";
-import { isCompany } from "./company";
-import type { RepoCommit } from "./github";
+import { bucketCards, type BoardCard, type ProjectsBoard } from "./board-model";
+import { loadInferred } from "./inferred-store";
+import type { StoredEvidence } from "./signals/types";
 
 export * from "./board-model";
 
-export const PLAN_SHOWN = 5;
-export const ACTIVITY_SHOWN = 3;
+/** Upcoming first (soonest first), then newest first. */
+export function orderEvidence(evidence: StoredEvidence[], now: Date): StoredEvidence[] {
+  const t = (e: StoredEvidence) => Date.parse(e.at);
+  const upcoming = (e: StoredEvidence) => t(e) > now.getTime();
+  return [...evidence].sort((a, b) =>
+    Number(upcoming(b)) - Number(upcoming(a)) || (upcoming(a) ? t(a) - t(b) : t(b) - t(a)),
+  );
+}
 
 export async function getProjectsBoard(userId: string, isFounder: boolean, now = new Date()): Promise<ProjectsBoard> {
-  if (!isFounder) return { cards: [], hidden: [], syncedAt: null };
+  if (!isFounder) return { cards: [], hidden: [], syncedAt: null, refreshFailed: false };
 
-  const repos = await prisma.projectSource.findMany({ where: { userId, kind: "repo" } });
-  const cards: BoardCard[] = repos.map((r) => {
-    const commits = (Array.isArray(r.commits) ? r.commits : []) as unknown as RepoCommit[];
-    const plan = readPlan(r.plan);
-    return {
-      id: `repo:${r.id}`,
-      name: r.name,
-      company: isCompany(r.company) ? r.company : "Personal",
-      visibility: (VISIBILITIES as readonly string[]).includes(r.state) ? (r.state as Visibility) : "auto",
-      lastActivityAt: r.lastActivityAt?.toISOString() ?? null,
-      activity: commits
-        .map((c) => ({ kind: "commit" as const, text: c.message, at: c.at, branch: c.branch, url: c.url }))
-        .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
-        .slice(0, ACTIVITY_SHOWN),
-      plan: plan.items.slice(0, PLAN_SHOWN),
-      planTotal: plan.total,
-      githubUrl: r.url,
-      homepageUrl: r.homepageUrl,
-      sourceId: r.id,
-    };
-  });
-  const syncedAt = repos.reduce<Date | null>((m, r) => (r.syncedAt && (!m || r.syncedAt > m) ? r.syncedAt : m), null);
+  const { projects, run } = await loadInferred(userId);
+  const returned = new Set(run?.keys ?? []);
+  const cards: BoardCard[] = projects.map((p) => ({
+    id: `inferred:${p.id}`,
+    name: p.name,
+    company: p.company,
+    visibility: p.state,
+    lastActivityAt: p.lastActivityAt,
+    status: p.status,
+    next: p.next,
+    evidence: orderEvidence(p.evidence, now),
+    stale: p.state === "pinned" && !!run?.lastSuccessAt && !returned.has(p.key),
+    sourceId: p.id,
+  }));
 
-  return { ...bucketCards(cards, now), syncedAt: syncedAt?.toISOString() ?? null };
+  return { ...bucketCards(cards), syncedAt: run?.lastCheckedAt ?? null, refreshFailed: !!run?.error };
 }

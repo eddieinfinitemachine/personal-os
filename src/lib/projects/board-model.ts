@@ -3,60 +3,48 @@
 // or hide. Pure: no Prisma here.
 
 import type { Company } from "./company";
-import type { RepoPlan } from "./github";
-
-const DAY = 24 * 60 * 60 * 1000;
-export const BOARD_ACTIVE_DAYS = 14;
+import { EVIDENCE_KINDS, type EvidenceKind, type StoredEvidence } from "./signals/types";
 
 export type Visibility = "auto" | "pinned" | "hidden";
 export const VISIBILITIES: readonly Visibility[] = ["auto", "pinned", "hidden"];
 
-export type ActivityLine = {
-  kind: "commit";
-  text: string;
-  at: string;
-  /** The branch, when it isn't the default one. */
-  branch?: string | null;
-  url?: string | null;
-};
-
-/** One GitHub repo with my recent commits. */
+/** One project Claude inferred. */
 export type BoardCard = {
-  /** "repo:<sourceId>" */
+  /** "inferred:<sourceId>" */
   id: string;
   name: string;
   company: Company;
   visibility: Visibility;
   lastActivityAt: string | null;
-  activity: ActivityLine[];
-  plan: { text: string; section: string | null }[];
-  planTotal: number;
-  githubUrl: string | null;
-  homepageUrl: string | null;
+  status: string | null;
+  next: string | null;
+  /** Upcoming first (soonest first), then newest first. */
+  evidence: StoredEvidence[];
+  /** Pinned, but the latest run found nothing for it: it shows its saved data. */
+  stale: boolean;
   sourceId: string;
 };
 
 export type ProjectsBoard = {
   cards: BoardCard[];
   hidden: BoardCard[];
-  /** Last GitHub sync (founder only). */
+  /** Last run that ended well (founder only). */
   syncedAt: string | null;
+  /** The latest run failed; the board shows the result from `syncedAt`. */
+  refreshFailed: boolean;
 };
 
-/** Normalises ProjectSource.plan (a RepoPlan, or the column default `[]`). */
-export function readPlan(value: unknown): RepoPlan {
-  if (Array.isArray(value)) return { items: value as RepoPlan["items"], total: value.length };
-  const v = value as Partial<RepoPlan> | null;
-  const items = Array.isArray(v?.items) ? v!.items : [];
-  return { items, total: typeof v?.total === "number" ? v.total : items.length };
+export function evidenceCounts(evidence: StoredEvidence[]): Record<EvidenceKind, number> {
+  const counts = Object.fromEntries(EVIDENCE_KINDS.map((k) => [k, 0])) as Record<EvidenceKind, number>;
+  for (const e of evidence) counts[e.kind]++;
+  return counts;
 }
 
 /**
- * Shown cards (pinned, or active in the last 14 days; pinned first, then
- * newest) and Hidden (newest first). Anything older and unpinned drops off.
+ * Shown cards (pinned first, then newest) and Hidden (newest first). Every
+ * row is from the latest run or pinned, so nothing ages out here.
  */
-export function bucketCards(cards: BoardCard[], now: Date): Pick<ProjectsBoard, "cards" | "hidden"> {
-  const activeCutoff = now.getTime() - BOARD_ACTIVE_DAYS * DAY;
+export function bucketCards(cards: BoardCard[]): Pick<ProjectsBoard, "cards" | "hidden"> {
   const at = (c: BoardCard) => (c.lastActivityAt ? Date.parse(c.lastActivityAt) : 0);
   const byRecent = (a: BoardCard, b: BoardCard) => at(b) - at(a) || a.name.localeCompare(b.name);
   const pinnedFirst = (a: BoardCard, b: BoardCard) =>
@@ -64,9 +52,6 @@ export function bucketCards(cards: BoardCard[], now: Date): Pick<ProjectsBoard, 
 
   const shown: BoardCard[] = [];
   const hidden: BoardCard[] = [];
-  for (const c of cards) {
-    if (c.visibility === "hidden") hidden.push(c);
-    else if (c.visibility === "pinned" || at(c) >= activeCutoff) shown.push(c);
-  }
+  for (const c of cards) (c.visibility === "hidden" ? hidden : shown).push(c);
   return { cards: shown.sort(pinnedFirst), hidden: hidden.sort(byRecent) };
 }

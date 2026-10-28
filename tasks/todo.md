@@ -1,3 +1,53 @@
+# /projects v3 = initiatives Claude infers — in progress 2026-10-28
+
+Eddie: "i dont want it to pull my github repos, i wanted to deduce what it
+thinks my current projects that i'm working on are." Cards are initiatives
+inferred from meetings (Granola + Calendar), Gmail threads
+(eddie@infinitemachine.com), and personal-os todos and notes. No GitHub. No
+schema change (ProjectSource kind "inferred" + one "inferred-run" row). Plan:
+`~/.claude/plans/reactive-growing-thimble.md`.
+
+- [x] Signals (`src/lib/projects/signals/`): `gate.ts`, `meetings.ts`, `gmail.ts`, `personal.ts`, `index.ts` (collect all, any failure throws)
+- [x] `google.ts`: `listThreads`, `getThreadMeta` (metadata only), `getGmailAddresses`
+- [x] `infer.ts` (pure): hash skip, prompt budget, `validateProjects`
+- [x] `inferred-store.ts`: run row + lock, one `$transaction`, nothing written on failure
+- [x] `sync.ts`: `syncInferredProjects`
+- [x] Board model/loader, `projects-board.tsx` card redesign, page subtitle
+- [x] Routes: cron `projects-infer` (`15 */3 * * *`), sync, sources PATCH (`inferred`)
+- [x] Remove GitHub: `github.ts`, `todo-plan.ts`, `projects-github` cron, `vercel.json`, `.env.example`, README
+- [x] Tests; `pnpm typecheck`, `pnpm test`
+- [x] `scripts/projects-dry-run.ts --twice` against prod (read-only)
+- [x] Browser on scratch DB: 1440/390, light/dark, Pin, Not a project, Unhide, evidence, failed refresh
+- [ ] Eddie: approve the dry-run list; then PR, Eddie merges; delete `GITHUB_TOKEN` / `GITHUB_IDENTITIES` from Vercel, revoke the PAT
+
+## Review
+`pnpm typecheck` clean; `pnpm test` 115 files passed / 19 skipped, 1138 tests
+passed. New tests: gate (each exclusion rule), Gmail (metadata-only URLs, RSVP
+and self-only drops, 429 backoff), `validateProjects` (unknown ids, evidence
+minimums, recurring-only, sensitive + gate output, key carry-over, slug
+collisions, the cap of 12), store (one transaction, pinned/hidden kept,
+failure writes only the run row, the lock), end-to-end sync (dating, therapy,
+family, health and private items never in the Claude prompt; nothing written
+when Gmail or Claude fails; busy; unchanged-hash skip), board, card UI, sync
+and PATCH routes, cron 401.
+
+Dry run against prod (read-only Prisma client, `--twice`): Calendar 83
+meetings, Gmail 67 sent threads (47 kept), 147 todos (138 kept), 0 notes,
+Granola not configured locally. Per-rule gate counts printed locally only (this
+repo is public). 11 projects on run 1, 12 on run 2; all 11 run-1 keys kept,
+1 added, none removed or renamed. Eddie approved the list.
+
+Browser on a local scratch DB (`personal_os_projects_infer`, seeded through
+the store from the dry-run output), `next dev --webpack`: 1440 and 390, light
+and dark, no horizontal overflow, no console errors. Pin (persists across
+reload), Not a project → Hidden, Unhide, evidence expand with links, stale
+pinned card ("No activity since …"), and a real failed refresh (no Google env
+on the dev server) → "Last refresh failed · showing 1m ago", cards kept.
+
+Open: Claude returned one whole-company card despite the rule, and status
+lines name work contacts by first name. Old `repo` / `topic` ProjectSource rows
+stay in prod, unused.
+
 # /projects = repos only — in progress 2026-10-27
 
 Eddie, after seeing the shipped page: "i dont like what u did with projects.

@@ -2,21 +2,71 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronRight, Eye, EyeOff, Github, Globe, Loader2, MoreHorizontal, Pin, PinOff, RefreshCw } from "lucide-react";
+import {
+  CalendarDays,
+  CheckSquare,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  FileText,
+  Loader2,
+  Mail,
+  MoreHorizontal,
+  Pin,
+  PinOff,
+  RefreshCw,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/time";
 import {
   bucketCards,
-  type ActivityLine,
+  evidenceCounts,
   type BoardCard,
   type ProjectsBoard,
   type Visibility,
 } from "@/lib/projects/board-model";
+import { EVIDENCE_KINDS, type EvidenceKind, type StoredEvidence } from "@/lib/projects/signals/types";
 
 const SECTION_LABEL =
   "text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]";
 const CHIP_BUTTON =
   "pressable inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-accent)] disabled:opacity-50";
+
+const KIND_ICON: Record<EvidenceKind, typeof Mail> = {
+  meeting: CalendarDays,
+  email: Mail,
+  todo: CheckSquare,
+  note: FileText,
+};
+const KIND_NOUN: Record<EvidenceKind, [string, string]> = {
+  meeting: ["meeting", "meetings"],
+  email: ["email", "emails"],
+  todo: ["todo", "todos"],
+  note: ["note", "notes"],
+};
+
+/** "now" / "5m" / "2d" / "Oct 3" for past times; "in 3h" / "in 2d" for upcoming ones (timeAgo says "now"). */
+export function whenLabel(at: string, now = Date.now()): string {
+  const ms = Date.parse(at) - now;
+  if (Number.isNaN(ms)) return "";
+  if (ms <= 0) return timeAgo(at);
+  const min = Math.max(1, Math.round(ms / 60_000));
+  if (min < 60) return `in ${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `in ${hr}h`;
+  return `in ${Math.floor(hr / 24)}d`;
+}
+
+/** "3 meetings · 9 emails · 2 todos" */
+export function countsLabel(evidence: StoredEvidence[]): string {
+  const counts = evidenceCounts(evidence);
+  return EVIDENCE_KINDS.filter((k) => counts[k])
+    .map((k) => `${counts[k]} ${KIND_NOUN[k][counts[k] === 1 ? 0 : 1]}`)
+    .join(" · ");
+}
+
+const shortDate = (at: string) => new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 /** "Synced now" / "Synced 12m ago" / "Synced Oct 17" (timeAgo gives a date after a week). */
 export function syncedLabel(syncedAt: string | null): string {
@@ -27,8 +77,16 @@ export function syncedLabel(syncedAt: string | null): string {
   return /^\d+[mhd]$/.test(ago) ? `Synced ${ago} ago` : `Synced ${ago}`;
 }
 
-/** "Synced 12m ago" + Refresh (founder only): runs the GitHub sync now. */
-export function ProjectsSyncStatus({ syncedAt }: { syncedAt: string | null }) {
+/** "Last refresh failed · showing 3h ago" */
+export function failedLabel(syncedAt: string | null): string {
+  if (!syncedAt) return "Last refresh failed";
+  const ago = timeAgo(syncedAt);
+  const when = ago === "now" || ago === "0m" ? "just now" : /^\d+[mhd]$/.test(ago) ? `${ago} ago` : ago;
+  return `Last refresh failed · showing ${when}`;
+}
+
+/** "Synced 12m ago" + Refresh (founder only): runs the inference now. */
+export function ProjectsSyncStatus({ syncedAt, refreshFailed }: { syncedAt: string | null; refreshFailed: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,12 +98,12 @@ export function ProjectsSyncStatus({ syncedAt }: { syncedAt: string | null }) {
       const res = await fetch("/api/projects/sync", { method: "POST" });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(body.error ?? `Sync failed (${res.status})`);
-        return;
+        setError(body.error ?? `Refresh failed (${res.status})`);
       }
+      // A failed run is recorded on the board too, so refresh either way.
       router.refresh();
     } catch {
-      setError("Sync failed: network error");
+      setError("Refresh failed: network error");
     } finally {
       setBusy(false);
     }
@@ -54,12 +112,15 @@ export function ProjectsSyncStatus({ syncedAt }: { syncedAt: string | null }) {
   return (
     <div className="flex shrink-0 flex-col items-end gap-1">
       <div className="flex items-center gap-2">
-        <span className="text-xs text-[var(--color-muted-foreground)]" suppressHydrationWarning>
-          {syncedLabel(syncedAt)}
+        <span
+          className={cn("text-right text-xs", refreshFailed ? "text-[var(--color-destructive)]" : "text-[var(--color-muted-foreground)]")}
+          suppressHydrationWarning
+        >
+          {refreshFailed ? failedLabel(syncedAt) : syncedLabel(syncedAt)}
         </span>
         <button type="button" onClick={refresh} disabled={busy} className={CHIP_BUTTON}>
           {busy ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-          Refresh
+          {busy ? "Refreshing… about a minute" : "Refresh"}
         </button>
       </div>
       {error ? <span className="text-xs text-[var(--color-destructive)]">{error}</span> : null}
@@ -82,11 +143,7 @@ export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
 
   const allCards = useMemo(() => [...board.cards, ...board.hidden], [board]);
   const { cards, hidden } = useMemo(
-    () =>
-      bucketCards(
-        allCards.map((c) => (overrides.has(c.id) ? { ...c, visibility: overrides.get(c.id)! } : c)),
-        new Date(),
-      ),
+    () => bucketCards(allCards.map((c) => (overrides.has(c.id) ? { ...c, visibility: overrides.get(c.id)! } : c))),
     [allCards, overrides],
   );
 
@@ -130,7 +187,7 @@ export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
         <CardGrid cards={cards} onVisibility={setVisibility} />
       ) : (
         <p className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-6 text-sm text-[var(--color-muted-foreground)]">
-          No repos with your commits in the last 14 days.
+          No projects inferred yet.
         </p>
       )}
 
@@ -157,7 +214,7 @@ function Collapsible({ label, children }: { label: string; children: React.React
 
 function CardGrid({ cards, onVisibility }: { cards: BoardCard[]; onVisibility: (card: BoardCard, v: Visibility) => void }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {cards.map((c) => (
         <ProjectCard key={c.id} card={c} onVisibility={onVisibility} />
       ))}
@@ -165,24 +222,26 @@ function CardGrid({ cards, onVisibility }: { cards: BoardCard[]; onVisibility: (
   );
 }
 
-function ActivityRow({ line }: { line: ActivityLine }) {
+function EvidenceRow({ item }: { item: StoredEvidence }) {
+  const Icon = KIND_ICON[item.kind];
+  const external = !!item.url && /^https?:/.test(item.url);
   const body = (
     <>
-      <span className="min-w-0 flex-1 truncate">{line.text}</span>
-      {line.branch ? (
-        <span className="max-w-[35%] truncate rounded bg-[var(--color-fill)] px-1.5 py-px font-mono text-[11px] text-[var(--color-muted-foreground)]" title={line.branch}>
-          {line.branch}
-        </span>
-      ) : null}
+      <Icon className="size-3.5 shrink-0 text-[var(--color-muted-foreground)]" aria-label={item.kind} />
+      <span className="min-w-0 flex-1 truncate">{item.title}</span>
       <span className="shrink-0 pl-1 text-xs text-[var(--color-muted-foreground)] tabular-nums" suppressHydrationWarning>
-        {timeAgo(line.at)}
+        {whenLabel(item.at)}
       </span>
     </>
   );
   return (
     <li className="min-w-0">
-      {line.url ? (
-        <a href={line.url} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 hover:underline">
+      {item.url ? (
+        <a
+          href={item.url}
+          {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
+          className="flex min-w-0 items-center gap-1.5 hover:underline"
+        >
           {body}
         </a>
       ) : (
@@ -194,9 +253,9 @@ function ActivityRow({ line }: { line: ActivityLine }) {
 
 function ProjectCard({ card, onVisibility }: { card: BoardCard; onVisibility: (card: BoardCard, v: Visibility) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [open, setOpen] = useState(false);
   const pinned = card.visibility === "pinned";
   const hiddenCard = card.visibility === "hidden";
-  const more = card.planTotal - card.plan.length;
 
   const choose = (v: Visibility) => {
     setMenuOpen(false);
@@ -206,10 +265,9 @@ function ProjectCard({ card, onVisibility }: { card: BoardCard; onVisibility: (c
   return (
     <article
       data-card-id={card.id}
-      className="flex min-w-0 flex-col gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4"
+      className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4"
     >
       <header className="flex items-start gap-2">
-        <Github className="mt-0.5 size-4 shrink-0 text-[var(--color-muted-foreground)]" />
         <div className="min-w-0 flex-1">
           <h3 className="truncate font-semibold">{card.name}</h3>
           <div className="text-xs text-[var(--color-muted-foreground)]">{card.company}</div>
@@ -237,7 +295,7 @@ function ProjectCard({ card, onVisibility }: { card: BoardCard; onVisibility: (c
                 className="fixed inset-0 z-40 cursor-default"
                 aria-label="Close menu"
               />
-              <div className="absolute right-0 top-full z-50 mt-1 w-36 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg">
+              <div className="absolute right-0 top-full z-50 mt-1 w-40 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg">
                 {hiddenCard ? (
                   <MenuItem onClick={() => choose("auto")} icon={<Eye className="size-3.5" />} label="Unhide" />
                 ) : (
@@ -247,7 +305,7 @@ function ProjectCard({ card, onVisibility }: { card: BoardCard; onVisibility: (c
                     ) : (
                       <MenuItem onClick={() => choose("pinned")} icon={<Pin className="size-3.5" />} label="Pin" />
                     )}
-                    <MenuItem onClick={() => choose("hidden")} icon={<EyeOff className="size-3.5" />} label="Hide" />
+                    <MenuItem onClick={() => choose("hidden")} icon={<EyeOff className="size-3.5" />} label="Not a project" />
                   </>
                 )}
               </div>
@@ -256,42 +314,37 @@ function ProjectCard({ card, onVisibility }: { card: BoardCard; onVisibility: (c
         </div>
       </header>
 
-      {card.activity.length ? (
-        <ul className="space-y-1 text-sm">
-          {card.activity.map((line, i) => (
-            <ActivityRow key={i} line={line} />
-          ))}
-        </ul>
+      {card.status ? <p className="text-sm">{card.status}</p> : null}
+      {card.next ? (
+        <p className="text-sm text-[var(--color-label-secondary)]">
+          <span className="font-medium text-[var(--color-foreground)]">Next:</span> {card.next}
+        </p>
+      ) : null}
+      {card.stale && card.lastActivityAt ? (
+        <p className="text-xs text-[var(--color-muted-foreground)]" suppressHydrationWarning>
+          No activity since {shortDate(card.lastActivityAt)}
+        </p>
       ) : null}
 
-      {card.plan.length ? (
+      {card.evidence.length ? (
         <div>
-          <div className={cn(SECTION_LABEL, "mb-1")}>Plan</div>
-          <ul className="space-y-0.5 text-sm text-[var(--color-label-secondary)]">
-            {card.plan.map((p, i) => (
-              <li key={i} className="flex min-w-0 items-start gap-1.5" title={p.section ?? undefined}>
-                <span className="mt-[7px] size-1.5 shrink-0 rounded-full border border-[var(--color-muted-foreground)]" />
-                <span className="line-clamp-2">{p.text}</span>
-              </li>
-            ))}
-          </ul>
-          {more > 0 ? <div className="mt-1 text-xs text-[var(--color-muted-foreground)]">+{more} more</div> : null}
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            className="pressable -mx-1 inline-flex items-center gap-1 rounded px-1 text-xs text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
+          >
+            {countsLabel(card.evidence)}
+            <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
+          </button>
+          {open ? (
+            <ul className="mt-1.5 space-y-1 text-sm">
+              {card.evidence.map((item) => (
+                <EvidenceRow key={item.ref} item={item} />
+              ))}
+            </ul>
+          ) : null}
         </div>
-      ) : null}
-
-      {card.githubUrl || card.homepageUrl ? (
-        <footer className="mt-auto flex flex-wrap gap-3 text-xs text-[var(--color-muted-foreground)]">
-          {card.githubUrl ? (
-            <a href={card.githubUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-[var(--color-foreground)]">
-              <Github className="size-3.5" /> GitHub
-            </a>
-          ) : null}
-          {card.homepageUrl ? (
-            <a href={card.homepageUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-[var(--color-foreground)]">
-              <Globe className="size-3.5" /> Site
-            </a>
-          ) : null}
-        </footer>
       ) : null}
     </article>
   );
