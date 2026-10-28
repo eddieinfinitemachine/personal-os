@@ -365,6 +365,10 @@ export function AssetGrid({
               0
             )
           : 0;
+        const hasCost = g.rows.some((a) => a.costBasis != null);
+        const groupCost = hasCost
+          ? g.rows.reduce((s, a) => s + (a.costBasis ?? 0), 0)
+          : 0;
         return (
           <div key={g.key} className="mb-4">
             {g.label != null ? (
@@ -379,9 +383,20 @@ export function AssetGrid({
                 )}
                 <span>{g.label}</span>
                 <span className="opacity-70 tabular-nums">{g.rows.length}</span>
-                {hasMoney && open ? (
-                  <span className="ml-2 opacity-70 tabular-nums">
-                    ${groupTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                {/* Cost basis, then value — always visible so a collapsed
+                    category still reads as a line of the ledger. */}
+                {hasCost || hasMoney ? (
+                  <span className="ml-2 flex items-baseline gap-2 tabular-nums normal-case tracking-normal">
+                    {hasCost ? (
+                      <span className="opacity-50">
+                        ${groupCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </span>
+                    ) : null}
+                    {hasMoney ? (
+                      <span className="opacity-80">
+                        ${groupTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </span>
+                    ) : null}
                   </span>
                 ) : null}
               </button>
