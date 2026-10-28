@@ -2,29 +2,28 @@
 // (board.ts) and the client board, which re-buckets after an optimistic pin
 // or hide. Pure: no Prisma here.
 
-import { COMPANY_ORDER, type Company } from "./company";
+import type { Company } from "./company";
 import type { RepoPlan } from "./github";
 
 const DAY = 24 * 60 * 60 * 1000;
 export const BOARD_ACTIVE_DAYS = 14;
-export const DORMANT_DAYS = 90;
 
 export type Visibility = "auto" | "pinned" | "hidden";
 export const VISIBILITIES: readonly Visibility[] = ["auto", "pinned", "hidden"];
 
 export type ActivityLine = {
-  kind: "commit" | "meeting" | "todo" | "note";
+  kind: "commit";
   text: string;
   at: string;
-  /** Commits: the branch, when it isn't the default one. */
+  /** The branch, when it isn't the default one. */
   branch?: string | null;
   url?: string | null;
 };
 
+/** One GitHub repo with my recent commits. */
 export type BoardCard = {
-  /** "project:<id>" | "repo:<sourceId>" */
+  /** "repo:<sourceId>" */
   id: string;
-  kind: "project" | "repo";
   name: string;
   company: Company;
   visibility: Visibility;
@@ -32,26 +31,13 @@ export type BoardCard = {
   activity: ActivityLine[];
   plan: { text: string; section: string | null }[];
   planTotal: number;
-  /** /projects/<id> for personal-os Projects. */
-  href: string | null;
   githubUrl: string | null;
   homepageUrl: string | null;
-  projectId: string | null;
-  sourceId: string | null;
-};
-
-export type SuggestedTopic = {
-  id: string;
-  name: string;
-  company: string;
-  meetings: number;
-  lastMeetingAt: string | null;
+  sourceId: string;
 };
 
 export type ProjectsBoard = {
-  suggested: SuggestedTopic[];
-  groups: { company: Company; cards: BoardCard[] }[];
-  dormant: BoardCard[];
+  cards: BoardCard[];
   hidden: BoardCard[];
   /** Last GitHub sync (founder only). */
   syncedAt: string | null;
@@ -65,26 +51,22 @@ export function readPlan(value: unknown): RepoPlan {
   return { items, total: typeof v?.total === "number" ? v.total : items.length };
 }
 
-/** Splits cards into company groups, Dormant and Hidden. */
-export function bucketCards(cards: BoardCard[], now: Date): Pick<ProjectsBoard, "groups" | "dormant" | "hidden"> {
+/**
+ * Shown cards (pinned, or active in the last 14 days; pinned first, then
+ * newest) and Hidden (newest first). Anything older and unpinned drops off.
+ */
+export function bucketCards(cards: BoardCard[], now: Date): Pick<ProjectsBoard, "cards" | "hidden"> {
   const activeCutoff = now.getTime() - BOARD_ACTIVE_DAYS * DAY;
-  const dormantCutoff = now.getTime() - DORMANT_DAYS * DAY;
   const at = (c: BoardCard) => (c.lastActivityAt ? Date.parse(c.lastActivityAt) : 0);
   const byRecent = (a: BoardCard, b: BoardCard) => at(b) - at(a) || a.name.localeCompare(b.name);
+  const pinnedFirst = (a: BoardCard, b: BoardCard) =>
+    Number(b.visibility === "pinned") - Number(a.visibility === "pinned") || byRecent(a, b);
 
-  const active: BoardCard[] = [];
-  const dormant: BoardCard[] = [];
+  const shown: BoardCard[] = [];
   const hidden: BoardCard[] = [];
   for (const c of cards) {
     if (c.visibility === "hidden") hidden.push(c);
-    else if (c.visibility === "pinned" || at(c) >= activeCutoff) active.push(c);
-    else if (at(c) >= dormantCutoff) dormant.push(c);
+    else if (c.visibility === "pinned" || at(c) >= activeCutoff) shown.push(c);
   }
-  const groups = COMPANY_ORDER.map((company) => ({
-    company,
-    cards: active
-      .filter((c) => c.company === company)
-      .sort((a, b) => Number(b.visibility === "pinned") - Number(a.visibility === "pinned") || byRecent(a, b)),
-  })).filter((g) => g.cards.length);
-  return { groups, dormant: dormant.sort(byRecent), hidden: hidden.sort(byRecent) };
+  return { cards: shown.sort(pinnedFirst), hidden: hidden.sort(byRecent) };
 }

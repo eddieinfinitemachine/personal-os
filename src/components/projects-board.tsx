@@ -1,24 +1,8 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  CalendarDays,
-  Check,
-  ChevronRight,
-  Eye,
-  EyeOff,
-  Folder,
-  Github,
-  Globe,
-  Loader2,
-  MoreHorizontal,
-  Pin,
-  PinOff,
-  RefreshCw,
-  X,
-} from "lucide-react";
+import { ChevronRight, Eye, EyeOff, Github, Globe, Loader2, MoreHorizontal, Pin, PinOff, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/time";
 import {
@@ -26,7 +10,6 @@ import {
   type ActivityLine,
   type BoardCard,
   type ProjectsBoard,
-  type SuggestedTopic,
   type Visibility,
 } from "@/lib/projects/board-model";
 
@@ -86,23 +69,19 @@ export function ProjectsSyncStatus({ syncedAt }: { syncedAt: string | null }) {
 
 export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
   const router = useRouter();
-  // Optimistic pin / hide, and suggestions already acted on, until the
-  // refreshed server model lands.
+  // Optimistic pin / hide until the refreshed server model lands.
   const [overrides, setOverrides] = useState<Map<string, Visibility>>(new Map());
-  const [handled, setHandled] = useState<Set<string>>(new Set());
-  const [busyTopic, setBusyTopic] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // A refreshed model already carries the change.
-  useEffect(() => {
+  // A refreshed model already carries the change: drop the overrides when it
+  // lands (reset during render, not in an effect).
+  const [overridesFor, setOverridesFor] = useState(board);
+  if (overridesFor !== board) {
+    setOverridesFor(board);
     setOverrides(new Map());
-    setHandled(new Set());
-  }, [board]);
+  }
 
-  const allCards = useMemo(
-    () => [...board.groups.flatMap((g) => g.cards), ...board.dormant, ...board.hidden],
-    [board],
-  );
-  const { groups, dormant, hidden } = useMemo(
+  const allCards = useMemo(() => [...board.cards, ...board.hidden], [board]);
+  const { cards, hidden } = useMemo(
     () =>
       bucketCards(
         allCards.map((c) => (overrides.has(c.id) ? { ...c, visibility: overrides.get(c.id)! } : c)),
@@ -110,7 +89,6 @@ export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
       ),
     [allCards, overrides],
   );
-  const suggested = board.suggested.filter((s) => !handled.has(s.id));
 
   async function setVisibility(card: BoardCard, visibility: Visibility) {
     const previous = overrides.get(card.id);
@@ -118,18 +96,11 @@ export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
     setOverrides((m) => new Map(m).set(card.id, visibility));
     let ok = false;
     try {
-      const res =
-        card.kind === "project"
-          ? await fetch(`/api/projects/${card.projectId}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ visibility }),
-            })
-          : await fetch(`/api/projects/sources/${card.sourceId}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ state: visibility }),
-            });
+      const res = await fetch(`/api/projects/sources/${card.sourceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state: visibility }),
+      });
       ok = res.ok;
     } catch {
       ok = false;
@@ -147,30 +118,6 @@ export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
     router.refresh();
   }
 
-  async function actOnTopic(topic: SuggestedTopic, action: "accept" | "dismiss") {
-    setBusyTopic(topic.id);
-    setError(null);
-    try {
-      const res =
-        action === "accept"
-          ? await fetch(`/api/projects/sources/${topic.id}/accept`, { method: "POST" })
-          : await fetch(`/api/projects/sources/${topic.id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ state: "dismissed" }),
-            });
-      if (!res.ok) throw new Error(String(res.status));
-      setHandled((s) => new Set(s).add(topic.id));
-      router.refresh();
-    } catch {
-      setError(`Couldn't ${action} ${topic.name}. Try again.`);
-    } finally {
-      setBusyTopic(null);
-    }
-  }
-
-  const empty = !groups.length && !suggested.length;
-
   return (
     <div className="space-y-8">
       {error ? (
@@ -178,68 +125,18 @@ export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
           {error}
         </p>
       ) : null}
-      {suggested.length ? (
-        <section aria-label="Suggested">
-          <h2 className={cn(SECTION_LABEL, "mb-2")}>Suggested from meetings</h2>
-          <div className="flex flex-wrap gap-2">
-            {suggested.map((t) => (
-              <div
-                key={t.id}
-                className="flex min-w-0 max-w-full items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2"
-              >
-                <CalendarDays className="size-4 shrink-0 text-[var(--color-muted-foreground)]" />
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">{t.name}</div>
-                  <div className="text-xs text-[var(--color-muted-foreground)]" suppressHydrationWarning>
-                    {t.meetings} meeting{t.meetings === 1 ? "" : "s"}
-                    {t.lastMeetingAt ? ` · last ${timeAgo(t.lastMeetingAt)}` : ""} · {t.company}
-                  </div>
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <button
-                    type="button"
-                    className={CHIP_BUTTON}
-                    disabled={busyTopic === t.id}
-                    onClick={() => actOnTopic(t, "accept")}
-                  >
-                    <Check className="size-3.5" /> Accept
-                  </button>
-                  <button
-                    type="button"
-                    className={CHIP_BUTTON}
-                    disabled={busyTopic === t.id}
-                    onClick={() => actOnTopic(t, "dismiss")}
-                  >
-                    <X className="size-3.5" /> Dismiss
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
 
-      {groups.map((g) => (
-        <section key={g.company} aria-label={g.company}>
-          <h2 className={cn(SECTION_LABEL, "mb-2")}>{g.company}</h2>
-          <CardGrid cards={g.cards} onVisibility={setVisibility} />
-        </section>
-      ))}
-
-      {empty ? (
+      {cards.length ? (
+        <CardGrid cards={cards} onVisibility={setVisibility} />
+      ) : (
         <p className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-6 text-sm text-[var(--color-muted-foreground)]">
-          Nothing active in the last 14 days.
+          No repos with your commits in the last 14 days.
         </p>
-      ) : null}
+      )}
 
-      {dormant.length ? (
-        <Collapsible label={`Dormant · ${dormant.length}`}>
-          <CardGrid cards={dormant} onVisibility={setVisibility} showCompany />
-        </Collapsible>
-      ) : null}
       {hidden.length ? (
         <Collapsible label={`Hidden · ${hidden.length}`}>
-          <CardGrid cards={hidden} onVisibility={setVisibility} showCompany />
+          <CardGrid cards={hidden} onVisibility={setVisibility} />
         </Collapsible>
       ) : null}
     </div>
@@ -258,31 +155,21 @@ function Collapsible({ label, children }: { label: string; children: React.React
   );
 }
 
-function CardGrid({
-  cards,
-  onVisibility,
-  showCompany,
-}: {
-  cards: BoardCard[];
-  onVisibility: (card: BoardCard, v: Visibility) => void;
-  showCompany?: boolean;
-}) {
+function CardGrid({ cards, onVisibility }: { cards: BoardCard[]; onVisibility: (card: BoardCard, v: Visibility) => void }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {cards.map((c) => (
-        <ProjectCard key={c.id} card={c} onVisibility={onVisibility} showCompany={showCompany} />
+        <ProjectCard key={c.id} card={c} onVisibility={onVisibility} />
       ))}
     </div>
   );
 }
 
 function ActivityRow({ line }: { line: ActivityLine }) {
-  const text =
-    line.kind === "meeting" ? `Met: ${line.text}` : line.kind === "todo" ? `Done: ${line.text}` : line.text;
   const body = (
     <>
-      <span className="min-w-0 flex-1 truncate">{text}</span>
-      {line.kind === "commit" && line.branch ? (
+      <span className="min-w-0 flex-1 truncate">{line.text}</span>
+      {line.branch ? (
         <span className="max-w-[35%] truncate rounded bg-[var(--color-fill)] px-1.5 py-px font-mono text-[11px] text-[var(--color-muted-foreground)]" title={line.branch}>
           {line.branch}
         </span>
@@ -305,17 +192,8 @@ function ActivityRow({ line }: { line: ActivityLine }) {
   );
 }
 
-function ProjectCard({
-  card,
-  onVisibility,
-  showCompany,
-}: {
-  card: BoardCard;
-  onVisibility: (card: BoardCard, v: Visibility) => void;
-  showCompany?: boolean;
-}) {
+function ProjectCard({ card, onVisibility }: { card: BoardCard; onVisibility: (card: BoardCard, v: Visibility) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const Icon = card.kind === "repo" ? Github : Folder;
   const pinned = card.visibility === "pinned";
   const hiddenCard = card.visibility === "hidden";
   const more = card.planTotal - card.plan.length;
@@ -331,18 +209,10 @@ function ProjectCard({
       className="flex min-w-0 flex-col gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4"
     >
       <header className="flex items-start gap-2">
-        <Icon className="mt-0.5 size-4 shrink-0 text-[var(--color-muted-foreground)]" />
+        <Github className="mt-0.5 size-4 shrink-0 text-[var(--color-muted-foreground)]" />
         <div className="min-w-0 flex-1">
-          {card.href ? (
-            <Link href={card.href} className="block truncate font-semibold hover:underline">
-              {card.name}
-            </Link>
-          ) : (
-            <h3 className="truncate font-semibold">{card.name}</h3>
-          )}
-          {showCompany ? (
-            <div className="text-xs text-[var(--color-muted-foreground)]">{card.company}</div>
-          ) : null}
+          <h3 className="truncate font-semibold">{card.name}</h3>
+          <div className="text-xs text-[var(--color-muted-foreground)]">{card.company}</div>
         </div>
         {pinned ? <Pin className="mt-0.5 size-3.5 shrink-0 text-[var(--color-muted-foreground)]" aria-label="Pinned" /> : null}
         {card.lastActivityAt ? (
@@ -409,7 +279,7 @@ function ProjectCard({
         </div>
       ) : null}
 
-      {card.githubUrl || card.homepageUrl || card.href ? (
+      {card.githubUrl || card.homepageUrl ? (
         <footer className="mt-auto flex flex-wrap gap-3 text-xs text-[var(--color-muted-foreground)]">
           {card.githubUrl ? (
             <a href={card.githubUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-[var(--color-foreground)]">
@@ -420,11 +290,6 @@ function ProjectCard({
             <a href={card.homepageUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-[var(--color-foreground)]">
               <Globe className="size-3.5" /> Site
             </a>
-          ) : null}
-          {card.href ? (
-            <Link href={card.href} className="inline-flex items-center gap-1 hover:text-[var(--color-foreground)]">
-              <Folder className="size-3.5" /> Open
-            </Link>
           ) : null}
         </footer>
       ) : null}
