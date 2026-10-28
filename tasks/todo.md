@@ -1,3 +1,19 @@
+# /projects = repos only — in progress 2026-10-27
+
+Eddie, after seeing the shipped page: "i dont like what u did with projects.
+i wnt it to be projects that im working on now repos". The board mixed GitHub
+repos, personal-os Projects and meeting-topic suggestions. Cut it to one thing:
+GitHub repos with my commits in the last 14 days, newest first.
+
+- [x] `board-model.ts`: `ProjectsBoard = { cards, hidden, syncedAt }`; drop groups / dormant / suggested; `bucketCards` → active (pinned or ≤14 d, newest first) + hidden
+- [x] `board.ts`: repo `ProjectSource` rows only (founder); no Project cards, no meeting activity; non-founder gets an empty board
+- [x] `projects-board.tsx`: one grid, no company sections, no Suggested / Accept / Dismiss, no Dormant; company as a small label on the card; commits only in activity
+- [x] `page.tsx` subtitle: "Repos you've committed to in the last two weeks."
+- [x] Delete the meetings pipeline: `lib/projects/meetings.ts`, `calendar.ts`, their tests, `api/cron/projects-meetings`, `api/projects/sources/[id]/accept`, the cron entry in `vercel.json`
+- [x] Tests: `board.test.ts`, `projects-board.test.tsx`; `pnpm typecheck`, `pnpm test`
+- [ ] Schema left as is (`ProjectMeeting`, `ProjectSource.projectId`, `Project.visibility` now unused) — dropping needs a flagged migration, separate PR
+- [ ] PR, merge, verify on prod
+
 # Projects page — auto-discovered, auto-updating `/projects` — in progress 2026-10-27
 
 Goal: one page listing everything Eddie is actively working on, kept current

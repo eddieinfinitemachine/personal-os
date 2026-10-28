@@ -44,17 +44,13 @@ describe("PATCH /api/projects/sources/[id]", () => {
     expect(mocks.update).toHaveBeenCalledTimes(3);
   });
 
-  it("lets a candidate or suggested topic be dismissed, nothing else", async () => {
-    for (const from of ["candidate", "suggested"]) {
-      mocks.findUnique.mockResolvedValue({ id: "s1", userId: "u1", kind: "topic", state: from });
-      expect((await PATCH(patch({ state: "dismissed" }), ctx)).status).toBe(200);
+  it("404s on non-repo rows (old meeting topics)", async () => {
+    for (const state of ["candidate", "suggested", "accepted"]) {
+      mocks.findUnique.mockResolvedValue({ id: "s1", userId: "u1", kind: "topic", state });
+      for (const to of ["dismissed", "pinned", "hidden", "auto"]) {
+        expect((await PATCH(patch({ state: to }), ctx)).status).toBe(404);
+      }
     }
-    mocks.findUnique.mockResolvedValue({ id: "s1", userId: "u1", kind: "topic", state: "suggested" });
-    for (const state of ["pinned", "accepted", "candidate", "auto"]) {
-      expect((await PATCH(patch({ state }), ctx)).status).toBe(400);
-    }
-    mocks.findUnique.mockResolvedValue({ id: "s1", userId: "u1", kind: "topic", state: "accepted" });
-    expect((await PATCH(patch({ state: "dismissed" }), ctx)).status).toBe(400);
-    expect(mocks.update).toHaveBeenCalledTimes(2);
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 });

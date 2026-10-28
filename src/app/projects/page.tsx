@@ -7,8 +7,8 @@ import { ProjectsBoardView, ProjectsSyncStatus } from "@/components/projects-boa
 
 export const dynamic = "force-dynamic";
 
-// Everything Eddie is working on, kept current by the projects-github and
-// projects-meetings crons. Other tenants see only their own Projects.
+// GitHub repos Eddie has committed to recently, kept current by the
+// projects-github cron. Other tenants see an empty board.
 export default async function ProjectsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
@@ -22,7 +22,7 @@ export default async function ProjectsPage() {
         <div>
           <h1 className="text-large-title font-bold">Projects</h1>
           <p className="text-sm text-[var(--color-muted-foreground)] mt-1">
-            What you&apos;ve worked on in the last two weeks.
+            Repos you&apos;ve committed to in the last two weeks.
           </p>
         </div>
         {isFounder ? <ProjectsSyncStatus syncedAt={board.syncedAt} /> : null}
