@@ -1001,6 +1001,7 @@ model User {
   granolaImports      GranolaImport[]
   projectSources      ProjectSource[]
   projectMeetings     ProjectMeeting[]
+  researchReports     ResearchReport[]
 
   @@index([email])
 }
@@ -1513,4 +1514,27 @@ model ProjectMeeting {
   @@unique([userId, externalKey])
   @@index([userId, occurredAt])
   @@index([projectId])
+}
+
+// An illustrated research report (PDF) made by the Mac research worker
+// (scripts/research-worker.ts) from a topic queued on /research.
+model ResearchReport {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  topic       String // the prompt as typed
+  status      String // "queued" | "running" | "ready" | "failed"
+  summary     String?
+  pdfUrl      String? // Vercel Blob, users/<userId>/research/<id>/...
+  pageCount   Int?
+  sourcesJson Json? // [{ title, url }]
+  error       String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status])
 }

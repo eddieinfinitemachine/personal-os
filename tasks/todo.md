@@ -1644,3 +1644,17 @@ Ask (via Fork Calendar): let the native app check people off today's call sheet 
 - [x] Idempotent against the feed's `done` (`contacted` counts as done and is never undone); one re-read-and-retry on a service 409
 - Verified: route tests 30 pass; `tsc --noEmit` clean; call-sheet integration on a scratch Postgres on :55442 40/40 (one new test); a throwaway end-to-end run of the real route on that DB (done → repeat no-op → undo → replace → undo-after-replace 409 → replace until exhausted 409) passed and was deleted
 - No schema change
+
+## Research tab (proposed 2026-10-27, awaiting Eddie's approval)
+Goal: a `/research` page that lists the illustrated research reports Claude has produced (PDFs), and a "New report" box that generates another one from the same screen.
+
+Context: `~/Downloads/shiro-kuramata.pdf` (16 pp, ReportLab) was produced by the deep-research skill in a Claude Code session. Nothing in Personal OS holds it today. `Olto-Lite-REPORT.pdf` is a Figma export, not a research report — leave it out.
+
+- [ ] **Schema (needs approval)**: new `ResearchReport` model — id, userId, title, topic/prompt, status (`queued | running | ready | failed`), summary, pdfUrl (Vercel Blob), pageCount, sourcesJson, error, createdAt, completedAt. Index on (userId, createdAt).
+- [ ] `/research` page + sidebar entry: grid of report cards (title, date, page count, one-line summary), click opens the PDF; "New report" textarea → POST `/api/research` creates a `queued` row.
+- [ ] Generation worker — **decision needed**:
+  - **Option B (recommended)**: a Mac LaunchAgent in the personal-os-sync worktree polls for `queued` rows, runs `claude -p` with the deep-research skill, uploads the PDF to Blob, marks `ready`. Reuses the exact pipeline that made the Kuramata report, including images. Only runs while the Mac is awake.
+  - **Option A**: Vercel-native — API route calls the Anthropic API with web search, renders PDF with @react-pdf/renderer. Works anywhere, but the illustrated-report quality has to be rebuilt from scratch and hits Vercel's function time limits.
+- [ ] Seed: upload `shiro-kuramata.pdf` as the first report.
+- [ ] Auth: route + page behind `getSession` like every other tracker.
+- [ ] Verify: generate one report end to end from the screen; confirm card renders and PDF opens.
