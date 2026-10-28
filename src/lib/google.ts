@@ -126,6 +126,61 @@ export async function fetchEmail(id: string, charCap: number): Promise<GmailEmai
   }
 }
 
+// ---------------------------------------------------------------------------
+// Thread metadata (for /projects). Headers and snippets only: these never ask
+// Gmail for a message body.
+
+export type GmailThreadMessage = {
+  id: string;
+  internalDate?: string; // epoch ms, as a string
+  snippet?: string;
+  payload?: { headers?: { name: string; value: string }[] };
+};
+
+export type GmailThreadMeta = { id: string; messages: GmailThreadMessage[] };
+
+/** A non-2xx Gmail reply, with the status for retry / failure classing. */
+function gmailError(what: string, status: number): Error {
+  return Object.assign(new Error(`Gmail ${what} failed (${status})`), { status });
+}
+
+async function gmailGet<T>(path: string, what: string): Promise<T> {
+  const token = await getGoogleAccessToken();
+  const res = await fetch(`${GMAIL_API}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw gmailError(what, res.status);
+  return (await res.json()) as T;
+}
+
+/** One page of thread ids + snippets matching a Gmail search. */
+export async function listThreads(q: string, maxResults: number): Promise<{ id: string; snippet?: string }[]> {
+  const params = new URLSearchParams({ q, maxResults: String(maxResults) });
+  const json = await gmailGet<{ threads?: { id: string; snippet?: string }[] }>(`/threads?${params}`, "threads.list");
+  return json.threads ?? [];
+}
+
+/** Subject / From / To / Cc headers, dates and snippets of every message in a thread. */
+export async function getThreadMeta(id: string): Promise<GmailThreadMeta> {
+  const params = new URLSearchParams({ format: "metadata", fields: "id,messages(id,internalDate,snippet,payload/headers)" });
+  for (const h of ["Subject", "From", "To", "Cc"]) params.append("metadataHeaders", h);
+  const json = await gmailGet<{ id?: string; messages?: GmailThreadMessage[] }>(
+    `/threads/${encodeURIComponent(id)}?${params}`,
+    "threads.get",
+  );
+  return { id: json.id ?? id, messages: json.messages ?? [] };
+}
+
+/** The account's own address plus its send-as aliases, lowercased. */
+export async function getGmailAddresses(): Promise<{ account: string; addresses: string[] }> {
+  const [profile, sendAs] = await Promise.all([
+    gmailGet<{ emailAddress?: string }>("/profile", "getProfile"),
+    gmailGet<{ sendAs?: { sendAsEmail?: string }[] }>("/settings/sendAs", "sendAs.list"),
+  ]);
+  const account = profile.emailAddress?.trim().toLowerCase() ?? "";
+  const addresses = new Set([account, ...(sendAs.sendAs ?? []).map((s) => s.sendAsEmail?.trim().toLowerCase() ?? "")]);
+  addresses.delete("");
+  return { account, addresses: [...addresses] };
+}
+
 export function extractTextFromPayload(payload: GmailPart): string {
   const plain: string[] = [];
   const html: string[] = [];
