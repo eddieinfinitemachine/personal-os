@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Calendar, ChevronDown, FolderKanban, ChevronRight, LayoutGrid, Eye, EyeOff, Folder, Home, Inbox as InboxIcon, PanelLeftClose, PanelLeftOpen, Phone, Pencil, Plus, Loader2, MoreHorizontal, Settings, Trash2 } from "lucide-react";
+import { Calendar, ChevronDown, FolderKanban, ChevronRight, LayoutGrid, Eye, EyeOff, FlaskConical, Folder, Home, Inbox as InboxIcon, PanelLeftClose, PanelLeftOpen, Phone, Pencil, Plus, Loader2, MoreHorizontal, Settings, Trash2 } from "lucide-react";
 import { AddTemplateButton, useEnabledTemplates } from "./sidebar-template-picker";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
@@ -246,6 +246,12 @@ export function Sidebar({
           icon={<Phone className="size-4" />}
           label="Call Sheet"
           active={pathname === "/call-sheet" || pathname.startsWith("/call-sheet/")}
+        />
+        <SidebarLink
+          href="/research"
+          icon={<FlaskConical className="size-4" />}
+          label="Research"
+          active={pathname === "/research" || pathname.startsWith("/research/")}
         />
       </nav>
 

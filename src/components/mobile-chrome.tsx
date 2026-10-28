@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  FlaskConical,
   Folder,
   FolderKanban,
   Home,
@@ -175,6 +176,7 @@ const DRAWER_PRIMARY = [
   { href: "/projects", label: "Projects", Icon: FolderKanban },
   { href: "/board", label: "Board", Icon: LayoutGrid },
   { href: "/call-sheet", label: "Call Sheet", Icon: Phone },
+  { href: "/research", label: "Research", Icon: FlaskConical },
 ];
 
 function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: MobileProject[]; lists: MobileList[]; appName: string; isPrivate: boolean }) {

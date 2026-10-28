@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>Label</key><string>com.personal-os.research-worker</string>
+<key>ProgramArguments</key><array><string>/opt/homebrew/Cellar/node/25.9.0_2/bin/node</string><string>/Users/eddie/Code/active/personal-os-sync/node_modules/.pnpm/tsx@4.23.13/node_modules/tsx/dist/cli.mjs</string><string>/Users/eddie/Code/active/personal-os-sync/scripts/research-worker.ts</string></array>
+<key>WorkingDirectory</key><string>/Users/eddie/Code/active/personal-os-sync</string>
+<key>EnvironmentVariables</key><dict><key>PATH</key><string>/Users/eddie/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>60</integer><key>ExitTimeOut</key><integer>30</integer>
+<key>StandardOutPath</key><string>/Users/eddie/Library/Logs/personal-os/research-worker.log</string><key>StandardErrorPath</key><string>/Users/eddie/Library/Logs/personal-os/research-worker.log</string>
+</dict></plist>

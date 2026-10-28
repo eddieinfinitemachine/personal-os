@@ -10,6 +10,7 @@ import {
   Car,
   CheckCircle2,
   FileText,
+  FlaskConical,
   Folder,
   FolderKanban,
   Home,
@@ -87,6 +88,7 @@ const NAV_COMMANDS: NavCommand[] = [
   { id: "settings", label: "Settings", href: "/settings", icon: <Settings className="size-4" /> },
   // Appended so the ⌘1–9 shortcuts above keep their numbers.
   { id: "projects", label: "Projects", hint: "Everything you're working on", href: "/projects", icon: <FolderKanban className="size-4" /> },
+  { id: "research", label: "Research", hint: "Illustrated research reports", href: "/research", icon: <FlaskConical className="size-4" /> },
 ];
 
 function fuzzyMatch(needle: string, haystack: string): boolean {
