@@ -4,6 +4,7 @@ import { ensureDefaultLists, ensureInboxProject, CAPTURE_LIST_NAME } from "@/lib
 import { parseAliasToken } from "@/lib/alias";
 import { resolveCaptureUser } from "@/lib/capture-auth";
 import { syncRecentTodos } from "@/lib/gcal";
+import { triageTodo } from "@/lib/agent/triage";
 
 export const dynamic = "force-dynamic";
 
@@ -150,5 +151,7 @@ async function handle(userId: string, input: {
     },
   });
   after(() => syncRecentTodos());
+  // Post-response: decide whether the todo agent should pick this up (founder only, AGENT_ENABLED).
+  after(() => triageTodo(todo.id));
   return NextResponse.json({ ok: true, todo });
 }

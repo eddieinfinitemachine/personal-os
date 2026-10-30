@@ -1,3 +1,28 @@
+# Todo agent — first slice, in progress 2026-10-30
+
+Eddie's idea: an agent that reads each new todo, works on it, and asks
+clarifying questions on Slack. Answer: yes, built on the research worker's
+pattern (Postgres queue, launchd worker on the Mac mini, headless Claude Code).
+First slice = code and research only, Slack notifications, no question loop,
+no email or filing jobs. Branch `claude/todo-agent`, no PR yet.
+
+- [x] Schema: `AgentJob` (one per todo; kind/status/plan/repo/branch/resultUrl/summary/costUsd). SQL in `prisma/changes/20261030_agent_jobs.sql`, NOT applied to prod
+- [x] `src/lib/agent/triage.ts`: `after()` hook on web POST /api/todos (top-level only) and /api/capture/todo; founder-only; `AGENT_ENABLED` kill switch; health/family/dating/therapy words skipped before Claude; Haiku 5.5 call → `{kind, repo, confidence, plan}`; needs ≥ 0.75 and a repo from `AGENT_REPOS`; research → queued `ResearchReport`
+- [x] `scripts/agent-worker.ts` (+ plist): claims code jobs, own clone under `~/Library/Application Support/personal-os/agent/repos`, reset + fresh `agent/<id>-<slug>` branch, `claude -p … bypassPermissions`, Claude commits only; worker pushes, `gh pr create`, comments on the todo, Slack. Daily budget, timeout, stale-job sweep, SIGTERM requeue, repo allowlist re-checked on the Mac
+- [x] `src/lib/slack.ts` (chat.postMessage, no-op without token); research worker posts ready/failed too
+- [x] `GET/POST /api/todos/[id]/agent` (status; queue by hand with a repo)
+- [x] Tests: triage (gate, prompt, validation, every branch of `triageTodo`), claim, worker against a real local git origin with fake `claude` and `gh`, route. `pnpm typecheck` clean, `pnpm test` all passing
+- [ ] Eddie: apply the SQL to prod from main; set `AGENT_ENABLED=1` and `AGENT_REPOS` on Vercel; create the Slack app (bot token, `chat:write`, invite to the channel) and put `SLACK_BOT_TOKEN` / `SLACK_AGENT_CHANNEL` / `AGENT_REPOS` in the Mac `.env`; `gh auth status` on the Mac; install the LaunchAgent; try one todo by hand via POST /api/todos/<id>/agent
+- [ ] Next slices: Slack question loop (interaction webhook on Vercel, answers stored on the job, worker reruns with the Q&A); draft-only email jobs; a status chip on the todo row; kill switch in /settings instead of env
+
+## Review
+`pnpm typecheck` clean. New tests: 45 across triage, claim, worker and route
+(worker tests clone a bare repo made in a temp dir, so push and branch checks
+are real git). Full suite: 1193 passed, 11 failed, all in the dating and
+call-sheet sync tests that spawn `/usr/bin/sqlite3`, which the cloud container
+lacks (same on main). Not verified: a real `claude`/`gh` run on the Mac; the
+Slack app. `pnpm lint` is already broken on main (`next lint` is gone in Next 16).
+
 # /projects v3 = initiatives Claude infers — in progress 2026-10-28
 
 Eddie: "i dont want it to pull my github repos, i wanted to deduce what it

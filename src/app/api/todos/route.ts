@@ -4,6 +4,7 @@ import { getCurrentUserId } from "@/lib/auth";
 import { syncRecentTodos } from "@/lib/gcal";
 import { listAccessWhere } from "@/lib/list-access";
 import { notifySharedListAdd } from "@/lib/notify";
+import { triageTodo } from "@/lib/agent/triage";
 
 export async function GET(request: Request) {
   const userId = await getCurrentUserId(request);
@@ -149,5 +150,7 @@ export async function POST(request: Request) {
     notifySharedListAdd({ todoId: todo.id, listId: todo.listId, creatorId: userId }),
   );
   after(() => syncRecentTodos());
+  // Post-response: decide whether the todo agent should pick this up (founder only, AGENT_ENABLED).
+  after(() => triageTodo(todo.id));
   return NextResponse.json({ todo });
 }

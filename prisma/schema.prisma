@@ -901,6 +901,7 @@ model Todo {
   attachments  Attachment[]
   comments     Comment[]
   commentReads CommentRead[]
+  agentJob     AgentJob?
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1002,6 +1003,7 @@ model User {
   projectSources      ProjectSource[]
   projectMeetings     ProjectMeeting[]
   researchReports     ResearchReport[]
+  agentJobs           AgentJob[]
 
   @@index([email])
 }
@@ -1530,6 +1532,36 @@ model ResearchReport {
   pageCount   Int?
   sourcesJson Json? // [{ title, url }]
   error       String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+// One row per todo the agent looked at (src/lib/agent). Triage runs on Vercel
+// when a todo is created and records its decision here; code jobs are then
+// claimed by scripts/agent-worker.ts on the Mac, which runs Claude Code in its
+// own clone of the repo and opens a PR. Research jobs hand off to ResearchReport.
+model AgentJob {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  todoId      String    @unique
+  todo        Todo      @relation(fields: [todoId], references: [id], onDelete: Cascade)
+  kind        String // "code" | "research" | "none"
+  status      String // "queued" | "running" | "done" | "failed" | "skipped"
+  confidence  Float?
+  plan        String? // triage's one- or two-sentence plan, or why it skipped
+  repo        String? // "owner/name" for code jobs
+  branch      String?
+  resultUrl   String? // the PR, or /research for a handed-off report
+  summary     String? // what the run did (also posted to Slack and the todo)
+  resultJson  Json?
+  error       String?
+  costUsd     Float?
   startedAt   DateTime?
   completedAt DateTime?
   createdAt   DateTime  @default(now())

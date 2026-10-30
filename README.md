@@ -127,6 +127,28 @@ tail -f ~/Library/Logs/personal-os/research-worker.log
 
 It stays running (`KeepAlive`) and only works while the Mac is awake.
 
+## Todo agent
+
+When the founder adds a todo (web, or the Quick Todo capture endpoint), a cheap Claude call decides whether an unattended agent should pick it up. The decision and the result live in one `AgentJob` row per todo (`GET /api/todos/<id>/agent`). Nothing runs unless `AGENT_ENABLED=1` is set on Vercel.
+
+- **code**: a change to a repository in `AGENT_REPOS`. Queued for the Mac worker, which opens a PR.
+- **research**: a topic a written report would satisfy. Handed off as a queued `/research` report.
+- **none**: everything else (emails, calls, purchases, filings, decisions). Recorded as skipped. Health, family, dating and therapy items are skipped before anything is sent to Claude (same word lists as the `/projects` gate). Subtasks, autopilot todos and other users' todos are never triaged.
+
+Triage must be at least 75% sure, and `code` must name a repo from the allowlist, or the job is skipped. To run a todo by hand (skipping triage): `POST /api/todos/<id>/agent {"repo": "owner/name"}`.
+
+The worker (`scripts/agent-worker.ts`, LaunchAgent `com.personal-os.agent-worker.plist`, same install steps as the research worker) claims the oldest queued code job and, in its own clone under `~/Library/Application Support/personal-os/agent/repos/`, fetches, resets to the default branch, creates `agent/<id>-<slug>`, and runs:
+
+```sh
+claude -p "<prompt>" --permission-mode bypassPermissions --output-format json
+```
+
+Claude is told to implement the item, run the repo's checks, commit on the branch and write `summary.txt`; it is told never to push, switch branches or run destructive git commands. The worker then pushes the branch, opens the PR with `gh pr create`, marks the job done with the PR URL, cost and summary, comments on the todo, and posts to Slack (`SLACK_BOT_TOKEN` with `chat:write`, `SLACK_AGENT_CHANNEL`). No commits plus a summary is "done, no change"; no summary is "failed". The research worker posts to the same channel when a report is ready.
+
+Guardrails: `AGENT_REPOS` is enforced again on the Mac; `AGENT_ALLOWED_EMAILS` (default `FOUNDER_EMAIL`); `AGENT_DAILY_BUDGET_USD` (default 25) stops claiming once the last 24 hours of jobs cost that much; `AGENT_TIMEOUT_MIN` (default 60) kills a run; a job still running after the timeout plus 5 minutes is marked failed; SIGTERM requeues the current job. `DATABASE_URL` and the Slack token are never passed to the Claude process. The clones under `agent/repos` are the worker's own and are reset before every job; it never touches any other checkout.
+
+Not yet built: clarifying questions over Slack (the agent runs to completion or stops), and email or filing jobs (those stay `none`).
+
 ## Status
 
 Multi-tenant since 2026-05-19. Public signup open via magic link; rate-limited + optional kill-switch (`INVITE_TOKEN`).

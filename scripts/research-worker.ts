@@ -27,6 +27,7 @@ import { OUTPUT_FILES, buildResearchPrompt, claudeArgs } from "../src/lib/resear
 import {
   cleanSummary, cleanTitle, parseClaudeResult, parsePdfPageCount, parseSources, researchBlobKey, tailText,
 } from "../src/lib/research/outputs";
+import { postSlackMessage } from "../src/lib/slack";
 
 export const POLL_MS = 30_000;
 export const DEFAULT_TIMEOUT_MIN = 45;
@@ -176,6 +177,8 @@ export type Context = {
   root: string;
   registerStop: (stop: (() => void) | null) => void;
   log: (line: string) => void;
+  /** Slack, when configured (title and outcome only). */
+  notify?: (text: string) => Promise<unknown>;
 };
 
 async function markFailed(ctx: Context, id: string, error: string) {
@@ -213,6 +216,7 @@ export async function processReport(ctx: Context, report: ResearchReport): Promi
       ? `Timed out after ${Math.round(ctx.timeoutMs / 60_000)} minutes.`
       : `Claude finished without ${OUTPUT_FILES.pdf} (exit ${run.code ?? run.signal}).`;
     await markFailed(ctx, report.id, `${reason} ${tailText(output, 400)}`);
+    await ctx.notify?.(`Research failed: *${report.title}*\n${reason}`);
     ctx.log(`Research ${report.id}: failed (${run.timedOut ? "timeout" : "no pdf"})`);
     return "failed";
   }
@@ -246,6 +250,8 @@ export async function processReport(ctx: Context, report: ResearchReport): Promi
     ctx.log(`Research ${report.id}: row gone before completion; upload removed`);
     return "failed";
   }
+  const title = cleanTitle(titleRaw) ?? report.title;
+  await ctx.notify?.(`Research ready: *${title}*${pageCount ? ` (${pageCount} pages)` : ""}\n${blob.url}`);
   ctx.log(`Research ${report.id}: ready (${pageCount ?? "?"} pages)`);
   return "ready";
 }
@@ -261,6 +267,7 @@ export async function runResearchWorker(argv: string[]): Promise<number> {
   const root = researchRoot();
   await mkdir(root, { recursive: true, mode: 0o700 });
   await sweepOldWorkDirs(root);
+  const slackEnv = { SLACK_BOT_TOKEN: process.env.SLACK_BOT_TOKEN, SLACK_AGENT_CHANNEL: process.env.SLACK_AGENT_CHANNEL };
 
   const prisma = new PrismaClient();
   let stopping = false;
@@ -279,6 +286,7 @@ export async function runResearchWorker(argv: string[]): Promise<number> {
     skillPath: await findDeepResearchSkill(),
     registerStop: (stop) => { stopCurrent = stop; if (stop && stopping) stop(); },
     log: (line) => console.log(`${new Date().toISOString()} ${line}`),
+    notify: (text) => postSlackMessage(text, { env: slackEnv, log: (line) => console.log(`${new Date().toISOString()} ${line}`) }),
   };
   if (!ctx.skillPath) ctx.log("Research worker: deep-research SKILL.md not found under ~/.claude/skills; relying on the Skill tool");
   ctx.log(`Research worker: started${flags.once ? " (--once)" : ""}, timeout ${Math.round(limit / 60_000)} min`);
