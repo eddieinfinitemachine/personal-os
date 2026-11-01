@@ -229,3 +229,6 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 ## 2026-11-01 — a local workout fix did not change the app Eddie was using
 **Context**: After reporting a tested local fix for missing workout videos, Eddie still could not see them in the live app.
 **Rule**: A reported problem with the live app needs the release and live verification completed. State deployment status clearly and follow through to the page the user is using before reporting the problem resolved.
+## 2026-11-01 — circuit rest needs round semantics
+**Context**: Eddie found workout rests too frequent and long. The AI prescribed rest on each exercise, and the player applied it after every set even when a block alternated movements as a circuit or superset.
+**Rule**: Derive effective recovery from the block structure in the same step builder used by the player and estimates. A circuit gets one recovery per round using only the movements still participating; straight sets keep their prescribed recovery. When changing pacing, reconcile already-running saved timers and test paused, extended and expired timer cases as well as new sessions.

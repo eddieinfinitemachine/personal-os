@@ -58,6 +58,121 @@ async function resume() {
   await act(async () => button("Resume").click());
 }
 
+describe("rest pacing", () => {
+  function circuitSession() {
+    const s = session();
+    s.plan.blocks = [{ name: "Circuit", type: "circuit", exercises: [exercise("m1", "Goblet squat", { restSec: 90 }), exercise("m2", "Row", { restSec: 30 })] }];
+    return s;
+  }
+
+  it("advances between movements and starts one recovery after the round", async () => {
+    vi.stubGlobal("fetch", mockFetch(video));
+    localStorage.setItem("personalos:workout:session", JSON.stringify(circuitSession()));
+    await resume();
+    await act(async () => button("Log set").click());
+    expect(stored().stepIndex).toBe(1);
+    expect(stored().timerKind).toBeNull();
+    expect(container.querySelector("h2")!.textContent).toBe("Row");
+    await act(async () => button("Log set").click());
+    expect(stored().stepIndex).toBe(2);
+    expect(stored().timerKind).toBe("rest");
+    expect((stored().timerEndsAt! - Date.now()) / 1000).toBeGreaterThan(88);
+    expect(container.textContent).toContain("Round complete");
+  });
+
+  it.each([false, true])("clears an obsolete saved mid-circuit rest on resume (paused: %s)", async (paused) => {
+    vi.stubGlobal("fetch", mockFetch(video));
+    const s = circuitSession();
+    s.stepIndex = 1;
+    s.timerKind = "rest";
+    s.timerEndsAt = Date.now() + 90_000;
+    s.timerPausedRemainingMs = paused ? 80_000 : null;
+    localStorage.setItem("personalos:workout:session", JSON.stringify(s));
+    await resume();
+    expect(stored().timerKind).toBeNull();
+    expect(stored().timerEndsAt).toBeNull();
+    expect(stored().timerPausedRemainingMs).toBeNull();
+    expect(container.querySelector("h2")!.textContent).toBe("Row");
+  });
+
+  it("preserves a valid paused round recovery and its user-added time", async () => {
+    vi.stubGlobal("fetch", mockFetch(video));
+    const s = circuitSession();
+    s.stepIndex = 2;
+    s.timerKind = "rest";
+    s.timerEndsAt = Date.now() + 105_000;
+    s.timerPausedRemainingMs = 105_000;
+    localStorage.setItem("personalos:workout:session", JSON.stringify(s));
+    await resume();
+    expect(stored().timerPausedRemainingMs).toBe(105_000);
+    expect(container.textContent).toContain("Round complete");
+    await act(async () => button("15s").click());
+    expect(stored().timerPausedRemainingMs).toBe(120_000);
+  });
+
+  it("clears a saved recovery before cooldown", async () => {
+    vi.stubGlobal("fetch", mockFetch(video));
+    const s = circuitSession();
+    s.stepIndex = 4;
+    s.timerKind = "rest";
+    s.timerEndsAt = Date.now() + 90_000;
+    localStorage.setItem("personalos:workout:session", JSON.stringify(s));
+    await resume();
+    expect(stored().timerKind).toBeNull();
+    expect(container.querySelector("h2")!.textContent).toBe("Hamstring stretch");
+  });
+
+  it("preserves the deadline of a valid straight-set recovery", async () => {
+    vi.stubGlobal("fetch", mockFetch(video));
+    const s = session();
+    s.plan.blocks[0].exercises[0].restSec = 120;
+    s.stepIndex = 1;
+    s.timerKind = "rest";
+    s.timerEndsAt = Date.now() + 135_000;
+    localStorage.setItem("personalos:workout:session", JSON.stringify(s));
+    await resume();
+    expect(stored().timerEndsAt).toBe(s.timerEndsAt);
+    expect(stored().timerKind).toBe("rest");
+    expect(container.textContent).not.toContain("Round complete");
+  });
+
+  it("keeps an active timed exercise and finishes it through Done early without mid-round rest", async () => {
+    vi.stubGlobal("fetch", mockFetch(video));
+    const s = circuitSession();
+    s.plan.blocks[0].exercises[0].durationSec = 30;
+    s.plan.blocks[0].exercises[0].reps = null;
+    s.timerKind = "work";
+    s.timerEndsAt = Date.now() + 30_000;
+    localStorage.setItem("personalos:workout:session", JSON.stringify(s));
+    await resume();
+    expect(stored().timerKind).toBe("work");
+    expect(stored().timerEndsAt).toBe(s.timerEndsAt);
+    // Finish the timed movement through its normal player control.
+    await act(async () => button("Done early").click());
+    expect(stored().logs).toHaveLength(1);
+    expect(stored().stepIndex).toBe(1);
+    expect(stored().timerKind).toBeNull();
+    expect(container.querySelector("h2")!.textContent).toBe("Row");
+  });
+
+  it("automatically logs an expired work timer once and advances without mid-round rest", async () => {
+    vi.stubGlobal("fetch", mockFetch(video));
+    const s = circuitSession();
+    s.plan.blocks[0].exercises[0].durationSec = 30;
+    s.plan.blocks[0].exercises[0].reps = null;
+    s.timerKind = "work";
+    s.timerEndsAt = Date.now() - 1_000;
+    localStorage.setItem("personalos:workout:session", JSON.stringify(s));
+    await resume();
+    await flush();
+    expect(stored().logs).toHaveLength(1);
+    expect(stored().logs[0]).toMatchObject({ exerciseId: "m1", durationSec: 30 });
+    expect(stored().stepIndex).toBe(1);
+    expect(stored().timerKind).toBeNull();
+    expect(container.querySelector("h2")!.textContent).toBe("Row");
+  });
+});
+
 describe("weight mid-set", () => {
   it("steps the load by 5 lb, carries it to the next set and the log, and leaves logged sets alone", async () => {
     vi.stubGlobal("fetch", mockFetch(video));
