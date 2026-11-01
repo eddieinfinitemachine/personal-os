@@ -55,10 +55,16 @@ async function lookup(name: string, equipment: string, signal: AbortSignal): Pro
 export function useExerciseVideos(plan: WorkoutPlan | null, onVideo: (exerciseId: string, video: ExerciseVideo | null) => void) {
   const attempted = useRef(new Set<string>());
   const latest = useRef(onVideo);
+  const latestPlan = useRef(plan);
   latest.current = onVideo;
+  latestPlan.current = plan;
+  // Saving a result or changing the load must not cancel other lookups.
+  // Restart only when the list of exercises or their lookup inputs changes.
+  const exercisesKey = JSON.stringify(plan && planExercises(plan).map((e) => [e.id, e.name, e.equipment]));
   useEffect(() => {
-    if (!plan) return;
-    const pending = planExercises(plan).filter((e) => e.video === undefined && !attempted.current.has(e.id));
+    const currentPlan = latestPlan.current;
+    if (!currentPlan) return;
+    const pending = planExercises(currentPlan).filter((e) => e.video === undefined && !attempted.current.has(e.id));
     if (!pending.length) return;
     const controller = new AbortController();
     const cache = readCache();
@@ -69,7 +75,7 @@ export function useExerciseVideos(plan: WorkoutPlan | null, onVideo: (exerciseId
       const key = videoKey(e.name);
       const hit = cache[key];
       if (hit) {
-        onVideo(e.id, hit);
+        latest.current(e.id, hit);
         continue;
       }
       groups.set(key, [...(groups.get(key) ?? []), e]);
@@ -90,10 +96,13 @@ export function useExerciseVideos(plan: WorkoutPlan | null, onVideo: (exerciseId
       }
     };
     void Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
-    return () => controller.abort();
-    // onVideo is read through a ref so a new callback never restarts lookups.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plan]);
+    return () => {
+      controller.abort();
+      // Aborted and queued work must be eligible when the effect restarts,
+      // including React Strict Mode's setup → cleanup → setup cycle.
+      for (const e of pending) attempted.current.delete(e.id);
+    };
+  }, [exercisesKey]);
 }
 
 /** Tap-to-play YouTube demo: a thumbnail until tapped, then the player. */

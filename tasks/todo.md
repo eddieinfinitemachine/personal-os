@@ -1658,3 +1658,13 @@ Context: `~/Downloads/shiro-kuramata.pdf` (16 pp, ReportLab) was produced by the
 - [ ] Seed: upload `shiro-kuramata.pdf` as the first report.
 - [ ] Auth: route + page behind `getSession` like every other tracker.
 - [ ] Verify: generate one report end to end from the screen; confirm card renders and PDF opens.
+
+## 2026-11-01 — Workout videos missing
+
+- [x] Confirm the October 11 video feature exists and reached production.
+- [x] Reproduce video lookups stopping when another lookup updates the plan.
+- [x] Fix lookup cancellation and verify asynchronous results, cached results, and cleanup.
+- [x] Run workout regression tests and typecheck; record the result.
+- [ ] Release the fix from current main and verify videos on the live workout page.
+
+Review: the `[plan]` effect aborted remaining lookups whenever an earlier result changed the plan; attempted IDs then prevented restart. Use exercise IDs/names/equipment as the dependency and release attempts on cleanup. Three new tests failed before the fix and pass after it (staggered/queued results, cached results, Strict Mode cleanup). Workout suites: 36 tests passed; `pnpm typecheck` passed. A live lookup found the NASM kettlebell goblet squat demo, and YouTube oEmbed returned 200 with the matching title. ESLint could not run because the repository has no ESLint 9 config. Fix is local, not deployed.

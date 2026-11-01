@@ -221,3 +221,11 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 **Context**: /projects v1 mixed repos, personal-os Projects and meeting topics. Eddie's correction, "i wnt it to be projects that im working on now repos", was read as "repos only" (v2). His next message: "i dont want it to pull my github repos, i wanted to deduce what it thinks my current projects that i'm working on are."
 **Mistake / surprise**: A terse one-line correction was taken literally ("now" read as "no", or "repos" read as the answer) and the page was rebuilt twice from that reading. Neither rebuild showed him real output before shipping, so the misunderstanding cost a full build cycle each time.
 **Rule**: "Projects I'm working on" means the initiatives he is driving (deals, launches, migrations, searches), inferred from what he does, not a data source. Before rebuilding a page from a one-line ask or correction, show a sample of the real output (a dry run against prod data, read-only) and get a yes. When a correction is ambiguous, restate it in one line ("so: repos only, nothing else?") instead of building on a guess.
+
+## 2026-11-01 — workout video results canceled the remaining lookups
+**Context**: Eddie expected exercise videos that had shipped on October 11. The lookup effect depended on the whole plan, and saving a result changed the plan and aborted the remaining requests. A cached hit could cancel every uncached lookup. The existing hook tests never updated the plan from the callback and returned their responses together.
+**Rule**: When an effect writes results into the object it watches, key its lifetime to the actual request inputs. Test with a stateful consumer and staggered responses, including a synchronous cache hit and Strict Mode cleanup. Confirm a live lookup as well as mocked API tests before calling this integration verified.
+
+## 2026-11-01 — a local workout fix did not change the app Eddie was using
+**Context**: After reporting a tested local fix for missing workout videos, Eddie still could not see them in the live app.
+**Rule**: A reported problem with the live app needs the release and live verification completed. State deployment status clearly and follow through to the page the user is using before reporting the problem resolved.
