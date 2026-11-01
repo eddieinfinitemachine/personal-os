@@ -659,7 +659,7 @@ function PlanReview({
         <h1 className="text-large-title font-bold">{plan.title}</h1>
         {plan.summary && <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">{plan.summary}</p>}
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[var(--color-label-secondary)]">
-          <span>~{Math.max(est, plan.estimatedMinutes)} min</span>
+          <span>~{est} min</span>
           <span>{steps.length} sets</span>
           <span>{plan.warmup.length + plan.blocks.reduce((n, b) => n + b.exercises.length, 0) + plan.cooldown.length} exercises</span>
         </div>
@@ -713,16 +713,17 @@ function ExerciseSection({ title, badge, exercises }: { title: string; badge?: s
           </span>
         )}
       </div>
+      {badge && <p className="mb-2 text-xs text-[var(--color-muted-foreground)]">Complete the exercises in order, then rest between rounds.</p>}
       <ul className="divide-y divide-[var(--color-separator)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]">
         {exercises.map((e) => (
-          <ExerciseRow key={e.id} exercise={e} />
+          <ExerciseRow key={e.id} exercise={e} showRest={!badge} />
         ))}
       </ul>
     </section>
   );
 }
 
-function ExerciseRow({ exercise: e }: { exercise: Exercise }) {
+function ExerciseRow({ exercise: e, showRest }: { exercise: Exercise; showRest: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <li>
@@ -757,7 +758,7 @@ function ExerciseRow({ exercise: e }: { exercise: Exercise }) {
                   {m.replace("-", " ")}
                 </span>
               ))}
-              {e.restSec > 0 && (
+              {showRest && e.restSec > 0 && (
                 <span className="rounded-full bg-[var(--color-fill)] px-2 py-0.5 text-[11px] text-[var(--color-label-secondary)]">
                   rest {e.restSec}s
                 </span>
@@ -800,6 +801,7 @@ function Player({
   const steps = useMemo(() => flattenPlan(session.plan), [session.plan]);
   const idx = Math.min(session.stepIndex, steps.length - 1);
   const step = steps[idx];
+  const previous = steps[idx - 1] ?? null;
   const next = steps[idx + 1] ?? null;
   const e = step.exercise;
   const timerRunning = session.timerEndsAt !== null && session.timerPausedRemainingMs === null;
@@ -822,6 +824,14 @@ function Player({
   // The weight lives on the exercise: changing it mid-set carries to the
   // remaining sets, the card and "Up next". Sets already logged keep theirs.
   const setLoad = (load: string) => onChange({ ...session, plan: updateExercise(session.plan, e.id, { load }) });
+
+  // Saved sessions can contain an old between-exercise recovery timer.
+  // Remove only obsolete rests; keep work timers and valid recovery intact.
+  useEffect(() => {
+    if (session.timerKind === "rest" && previous?.restSec === 0) {
+      onChange({ ...session, timerEndsAt: null, timerKind: null, timerPausedRemainingMs: null });
+    }
+  }, [session, onChange, previous?.restSec]);
 
   const onCue = useCallback((s: number) => {
     if (s === 0) return; // handled by the completion effect
@@ -926,7 +936,8 @@ function Player({
       {resting ? (
         <RestCard
           remainingSec={remainingSec!}
-          totalSec={Math.max(1, steps[idx - 1]?.restSec ?? step.restSec)}
+          totalSec={Math.max(1, previous?.restSec ?? step.restSec)}
+          roundComplete={previous?.blockType === "circuit" || previous?.blockType === "superset"}
           paused={session.timerPausedRemainingMs !== null}
           nextStep={step}
           onSkip={() => {
@@ -1079,6 +1090,7 @@ function Player({
 function RestCard({
   remainingSec,
   totalSec,
+  roundComplete,
   paused,
   nextStep,
   onSkip,
@@ -1087,6 +1099,7 @@ function RestCard({
 }: {
   remainingSec: number;
   totalSec: number;
+  roundComplete: boolean;
   paused: boolean;
   nextStep: Step;
   onSkip: () => void;
@@ -1096,7 +1109,7 @@ function RestCard({
   const e = nextStep.exercise;
   return (
     <div className="flex flex-1 flex-col items-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5 animate-scale-in">
-      <div className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted-foreground)]">Rest</div>
+      <div className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted-foreground)]">{roundComplete ? "Round complete · Rest" : "Rest"}</div>
       <Ring value={1 - remainingSec / totalSec} label={formatClock(Math.ceil(remainingSec))} sub={paused ? "paused" : "seconds"} big />
       <div className="mt-3 flex gap-2">
         <button onClick={onExtend} className={btnSecondary}>

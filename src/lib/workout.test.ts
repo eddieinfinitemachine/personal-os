@@ -108,8 +108,58 @@ describe("flattenPlan", () => {
       "Child's pose#0",
     ]);
     expect(steps[steps.length - 1].restSec).toBe(0);
-    expect(steps[1].restSec).toBe(90);
+    expect(steps[1].restSec).toBe(0);
     expect(estimatePlanMinutes(plan)).toBeGreaterThan(5);
+  });
+});
+
+describe("rest pacing", () => {
+  const pacedPlan = (type: "straight" | "superset" | "circuit", movements: Array<{ sets: number; restSec: number }>) =>
+    normalizePlanResponse({ plan: { blocks: [{ name: "A", type, exercises: movements.map((e, i) => ({ name: `Move ${i + 1}`, reps: 10, ...e })) }] } }).plan;
+
+  it("flows through a circuit and recovers once per round using the longest prescribed rest", () => {
+    const p = pacedPlan("circuit", [90, 60, 30, 45].map((restSec) => ({ sets: 3, restSec })));
+    expect(flattenPlan(p).map((s) => s.restSec)).toEqual([0, 0, 0, 90, 0, 0, 0, 90, 0, 0, 0, 0]);
+    // Twelve 30-second sets plus two 90-second recoveries.
+    expect(estimatePlanMinutes(p)).toBe(9);
+  });
+
+  it("rests between superset rounds even when later rounds have fewer movements", () => {
+    const p = pacedPlan("superset", [{ sets: 3, restSec: 90 }, { sets: 1, restSec: 30 }]);
+    const steps = flattenPlan(p);
+    expect(steps.map((s) => `${s.exercise.name}:${s.setIndex}`)).toEqual(["Move 1:0", "Move 2:0", "Move 1:1", "Move 1:2"]);
+    expect(steps.map((s) => s.restSec)).toEqual([0, 90, 90, 0]);
+  });
+
+  it("does not carry a finished movement's longer recovery into later rounds", () => {
+    const p = pacedPlan("superset", [{ sets: 3, restSec: 60 }, { sets: 1, restSec: 120 }]);
+    expect(flattenPlan(p).map((s) => s.restSec)).toEqual([0, 120, 60, 0]);
+  });
+
+  it("keeps prescribed straight-set recovery, including before another strength exercise", () => {
+    const p = pacedPlan("straight", [{ sets: 2, restSec: 150 }, { sets: 2, restSec: 90 }]);
+    expect(flattenPlan(p).map((s) => s.restSec)).toEqual([150, 150, 90, 0]);
+  });
+
+  it("keeps recovery when moving into another main block", () => {
+    const p = pacedPlan("circuit", [{ sets: 1, restSec: 90 }, { sets: 1, restSec: 30 }]);
+    p.blocks.push(...pacedPlan("straight", [{ sets: 2, restSec: 120 }]).blocks);
+    expect(flattenPlan(p).map((s) => s.restSec)).toEqual([0, 90, 120, 0]);
+  });
+
+  it("moves straight into cooldown and never inserts rests in warm-up or cooldown", () => {
+    const p = pacedPlan("straight", [{ sets: 2, restSec: 120 }]);
+    p.warmup = [{ ...p.blocks[0].exercises[0], id: "warmup", sets: 1, restSec: 45 }];
+    p.cooldown = ["cooldown-1", "cooldown-2"].map((id) => ({ ...p.warmup[0], id }));
+    expect(flattenPlan(p).map((s) => s.restSec)).toEqual([0, 120, 0, 0, 0]);
+  });
+
+  it("estimates added circuit time with recovery once per round", () => {
+    const p = pacedPlan("straight", [{ sets: 1, restSec: 0 }]);
+    p.estimatedMinutes = 1;
+    const extra = pacedPlan("circuit", [90, 60, 30, 45].map((restSec) => ({ sets: 3, restSec })));
+    // 30 seconds of existing work + 360 seconds added work + 180 seconds recovery.
+    expect(appendBlocks(p, extra.blocks).estimatedMinutes).toBe(10);
   });
 });
 
@@ -159,7 +209,7 @@ describe("changing and extending a plan", () => {
     const next = appendBlocks(plan, extra);
     expect(next.blocks.map((b) => b.name)).toEqual(["A", "B", "C"]);
     expect(next.cooldown).toBe(plan.cooldown);
-    expect(next.estimatedMinutes).toBe(plan.estimatedMinutes + 5);
+    expect(next.estimatedMinutes).toBe(18);
     const steps = flattenPlan(next);
     expect(steps.map((s) => s.section).lastIndexOf("main")).toBeLessThan(steps.findIndex((s) => s.section === "cooldown"));
   });

@@ -1665,6 +1665,24 @@ Context: `~/Downloads/shiro-kuramata.pdf` (16 pp, ReportLab) was produced by the
 - [x] Reproduce video lookups stopping when another lookup updates the plan.
 - [x] Fix lookup cancellation and verify asynchronous results, cached results, and cleanup.
 - [x] Run workout regression tests and typecheck; record the result.
-- [ ] Release the fix from current main and verify videos on the live workout page.
+- [x] Release the fix from current main and verify videos on the live workout page.
 
-Review: the `[plan]` effect aborted remaining lookups whenever an earlier result changed the plan; attempted IDs then prevented restart. Use exercise IDs/names/equipment as the dependency and release attempts on cleanup. Three new tests failed before the fix and pass after it (staggered/queued results, cached results, Strict Mode cleanup). Workout suites: 36 tests passed; `pnpm typecheck` passed. A live lookup found the NASM kettlebell goblet squat demo, and YouTube oEmbed returned 200 with the matching title. ESLint could not run because the repository has no ESLint 9 config. Fix is local, not deployed.
+Review: the `[plan]` effect aborted remaining lookups whenever an earlier result changed the plan; attempted IDs then prevented restart. Use exercise IDs/names/equipment as the dependency and release attempts on cleanup. Three new tests failed before the fix and pass after it (staggered/queued results, cached results, Strict Mode cleanup). Workout suites: 36 tests passed; `pnpm typecheck` and production build passed. A live lookup found the NASM kettlebell goblet squat demo, and YouTube oEmbed returned 200 with the matching title. ESLint could not run because the repository has no ESLint 9 config.
+
+Released November 1 via PR #71, main `cde9c3c`, production `dpl_5hnb8S6oRTkZvmd5VQDWpLheRq4t` (v0.367). Verified the live domain points to that Ready deployment; reloaded and resumed a workout, found video controls on both warm-up and main exercises, and saw the MrKettlebell swing demo play at 0:09 / 4:08. Left the verified workout tab open. The production build now sees DATABASE_URL and ran the existing schema-sync step; this fix has no schema diff.
+
+## 2026-11-01 — Workout pacing: recover between rounds
+
+Eddie approved smarter pacing after the explanation that the player was resting after every circuit exercise. Design: circuits/supersets advance directly between movements and use the longest prescribed rest among that round's participating exercises once the round ends. Straight sets keep prescribed recovery. Warm-up/cooldown and the transition from the final working set to cooldown have no automatic rest. Keep step order and keys stable so existing saved sessions receive the new rules without losing progress. Update the coaching prompt to prescribe recovery for the block structure, load, reps, intensity and time budget. Existing Skip / Pause / add 15s controls stay available.
+
+Alternatives considered: reducing all rest durations would also shorten legitimate strength recovery; changing only the AI prompt would leave existing sessions and the every-set player behavior unchanged. Deriving pacing in `flattenPlan` fixes the player and time estimates together. No database/schema or new plan fields.
+
+Reference: [ACE circuit programming](https://www.acefitness.org/continuing-education/certified/august-2024/8682/the-ace-workout-builder-for-circuit-training/) distinguishes muscular recovery from exercise transitions; preserve deliberate strength rests.
+
+- [x] Inspect prompt, step builder, timers, saved sessions, estimates and tests.
+- [x] Add failing tests for round recovery, straight sets, unequal rounds, cooldown, estimates and the resumed player.
+- [x] Implement the pacing rule and clarify round recovery in the prompt and player.
+- [x] Run workout tests, typecheck and production build; review the diff.
+- [ ] Release to production and verify consecutive circuit movements and end-of-round recovery in the live app.
+
+Review: 51 workout tests passed; typecheck and production build passed (existing Next middleware / jose Edge warnings). Read-only design and code review found no blockers. Tests cover circuit/superset rounds, unequal set counts, straight recovery, cooldown, estimates/extensions, obsolete running/paused rests, preserved round/straight recovery and added time, and timed work completed manually or after its saved deadline. No schema diff. Release verification pending.

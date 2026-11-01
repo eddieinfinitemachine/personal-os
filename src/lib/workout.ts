@@ -86,6 +86,7 @@ export type Exercise = {
   reps: number | null;
   /** Seconds of work per set for holds/cardio; null when rep-based. */
   durationSec: number | null;
+  /** Straight-set recovery; circuits/supersets use the round's longest value. */
   restSec: number;
   /** Suggested load in plain words ("2×25 lb dumbbells", "bodyweight"). */
   load: string;
@@ -183,7 +184,8 @@ export function buildSystemPrompt(): string {
     "- pattern must be one of the listed values; pick the closest movement shape (e.g. bench press → push-horizontal, overhead press → push-vertical, row → pull-horizontal, pull-up/lat pulldown → pull-vertical, deadlift/RDL/kettlebell swing → hinge, burpee/jump rope → jump, farmer walk → carry, treadmill/bike/rower → cardio, yoga/mobility → stretch, sit-up → crunch, side plank/dead bug/hollow hold → plank, tricep pushdown/skull crusher/leg extension → extension).",
     "- muscles must be from: " + MUSCLES.join(", ") + ".",
     "- Either reps (integer) or durationSec (integer seconds) per set, never both; holds, carries and cardio use durationSec.",
-    "- restSec is the rest after each set (0–180). Warm-up and cool-down items are single sets with restSec 0.",
+    "- restSec is recovery time (0–180 seconds). Straight blocks rest after each set. Supersets and circuits move directly between exercises and rest once after each full round, using the longest restSec among that round's exercises. Never budget a full rest after every exercise in a circuit.",
+    "- Choose recovery for the actual load, reps, effort and session goal. Keep heavy work that needs individual recovery in straight blocks; pair complementary movements in supersets/circuits. Do not shorten heavy strength recovery just to make a session feel harder. Warm-up and cool-down items are single sets with restSec 0; no recovery timer before cool-down.",
     "- 2–5 short cues per exercise. Loads should reference the weights you actually saw.",
     "- Always include 2–4 warm-up movements (timed, 20–45 s) and 2–3 cool-down stretches (timed, 20–40 s).",
     "- Keep total time (work + rest + warm-up + cool-down) inside the requested minutes.",
@@ -429,11 +431,10 @@ export function updateExercise(plan: WorkoutPlan, exerciseId: string, patch: Par
 
 /** More main blocks go after the existing ones, before the cool-down. */
 export function appendBlocks(plan: WorkoutPlan, blocks: Block[]): WorkoutPlan {
-  const extra = blocks.reduce((sec, b) => sec + b.exercises.reduce((s, e) => s + e.sets * ((e.durationSec ?? 40) + e.restSec), 0), 0);
+  const next = { ...plan, blocks: [...plan.blocks, ...blocks] };
   return {
-    ...plan,
-    blocks: [...plan.blocks, ...blocks],
-    estimatedMinutes: Math.min(300, plan.estimatedMinutes + Math.round(extra / 60)),
+    ...next,
+    estimatedMinutes: Math.min(300, estimatePlanMinutes(next)),
   };
 }
 
@@ -481,7 +482,7 @@ export type Step = {
   exercise: Exercise;
   setIndex: number; // 0-based
   setCount: number;
-  /** Rest after this set; 0 for the final step of the workout. */
+  /** Effective recovery; 0 within a round and when entering cooldown. */
   restSec: number;
 };
 
@@ -502,7 +503,7 @@ export function flattenPlan(plan: WorkoutPlan): Step[] {
       exercise: ex,
       setIndex,
       setCount: ex.sets,
-      restSec: ex.restSec,
+      restSec: section === "main" ? ex.restSec : 0,
     });
 
   for (const ex of plan.warmup) push("warmup", "Warm-up", "straight", ex, 0);
@@ -513,12 +514,18 @@ export function flattenPlan(plan: WorkoutPlan): Step[] {
       // Supersets/circuits: round-robin through exercises for max(sets) rounds.
       const rounds = Math.max(...b.exercises.map((e) => e.sets));
       for (let s = 0; s < rounds; s++) {
-        for (const ex of b.exercises) if (s < ex.sets) push("main", b.name, b.type, ex, s);
+        const round = b.exercises.filter((e) => s < e.sets);
+        for (const ex of round) {
+          push("main", b.name, b.type, ex, s);
+          steps[steps.length - 1].restSec = 0;
+        }
+        if (round.length) steps[steps.length - 1].restSec = Math.max(...round.map((e) => e.restSec));
       }
     }
   }
-  for (const ex of plan.cooldown) push("cooldown", "Cool-down", "straight", ex, 0);
+  // Recovery is for more working sets; the final one leads into cooldown.
   if (steps.length) steps[steps.length - 1].restSec = 0;
+  for (const ex of plan.cooldown) push("cooldown", "Cool-down", "straight", ex, 0);
   return steps;
 }
 
