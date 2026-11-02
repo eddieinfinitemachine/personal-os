@@ -7,9 +7,9 @@
 - [x] Independent review of proposed design approved after addressing retry, concurrency, correction-scope, derived-date and external-effect constraints.
 - [x] User approved the CaptureReview table, index and User foreign key, and requested implementation (2026-11-01).
 - [x] Implement atomic capture/review tracking, Home UI, dismissal/Undo and safe corrections across capture sources.
-- [ ] Verify with tests and isolated Postgres, typecheck/build, then apply only approved SQL and deploy.
+- [x] Verify with tests and isolated Postgres, typecheck/build, then apply only approved SQL and deploy.
 
-Validation before rollout: 141 test files / 1,364 tests pass, including guarded real-Postgres correction/retry/race tests; 19 files / 150 unrelated integration tests remain opt-in. Prisma generated; TypeScript and direct production build pass. Responsive light/dark browser checks exercised correction, cross-type movement, Dismiss and Undo. Independent safety review passed after fixing revoked-list replay and derived-contact-date races. Existing middleware/jose Edge warnings remain. Production schema/deployment pending.
+Validation before rollout: 141 test files / 1,364 tests pass, including guarded real-Postgres correction/retry/race tests; 19 files / 150 unrelated integration tests remain opt-in. Prisma generated; TypeScript and direct production build pass. Responsive light/dark browser checks exercised correction, cross-type movement, Dismiss and Undo. Independent safety review passed after fixing revoked-list replay and derived-contact-date races. Existing middleware/jose Edge warnings remain. Applied only the two approved SQL statements and verified 12 columns, PK/FK and two indexes. Deployed `23b8a7e` to the EC Vercel project; all live hosts point to `personal-6bl2ql3n1-ec-efed32ac.vercel.app`. Live tests covered web capture, actual ec/Mac/Chrome endpoint retries, review reads, correction/move, cross-type replacement, stale/foreign guards, Dismiss/restore and preserved saved items. Synthetic captures in the founder account were removed. Quick Todo compiled and signed into a temporary bundle; Mac app installation and Chrome reload were not changed (existing clients already feed the shared Inbox).
 
 # iOS mobile capture connection — 2026-11-01
 

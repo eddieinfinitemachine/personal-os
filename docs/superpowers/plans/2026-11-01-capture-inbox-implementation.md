@@ -40,8 +40,8 @@ Files: `src/components/capture-review-inbox.tsx`, `capture-review-editor.tsx`, t
 - [x] Real scratch Postgres integration covers transaction rollback, keyed replay, dismissal, correction/ordinary-edit races, file ownership and merges/derived fields.
 - [x] Run focused/full Vitest, Prisma generate/validate, tsc and direct `next build --webpack` (never generic production db push).
 - [x] Inspect responsive light/dark UI in a scratch environment; independently review source and actual diff.
-- [ ] Confirm current production base; apply exact approved SQL only after read-only catalog preflight; deploy checked source.
-- [ ] Exercise live synthetic capture→review→correct→dismiss→undo/replay; remove only synthetic records/uploads. Preserve existing workspaces and user data.
+- [x] Confirm current production base; apply exact approved SQL only after read-only catalog preflight; deploy checked source.
+- [x] Exercise live synthetic capture→review→correct→dismiss→undo/replay; remove only synthetic records/uploads. Preserve existing workspaces and user data.
 - [ ] Commit/PR/merge after checks; verify current live Home/API; document results and limitations truthfully.
 
 ## Frozen UI API contract
