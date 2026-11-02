@@ -13,8 +13,7 @@
  * FOUNDER_EMAIL), because Claude runs here with every permission.
  * Logs report ids, statuses and costs only, never topics.
  */
-import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { execFile } from "node:child_process";
 import { mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -23,6 +22,7 @@ import { promisify } from "node:util";
 import { PrismaClient, type ResearchReport } from "@prisma/client";
 import { put, del } from "@vercel/blob";
 import { claimNextReport, failStaleReports, requeueReport } from "../src/lib/research/claim";
+import { childEnv, claudeBin, describeError, parseWorkerFlags, runClaude, untilSaved, type Env } from "./lib/headless-claude";
 import { OUTPUT_FILES, buildResearchPrompt, claudeArgs } from "../src/lib/research/prompt";
 import {
   cleanSummary, cleanTitle, parseClaudeResult, parsePdfPageCount, parseSources, researchBlobKey, tailText,
@@ -30,23 +30,12 @@ import {
 
 export const POLL_MS = 30_000;
 export const DEFAULT_TIMEOUT_MIN = 45;
-const KILL_GRACE_MS = 10_000;
-const MAX_CAPTURE_CHARS = 1_000_000;
 const WORK_DIR_RETENTION_MS = 30 * 86_400_000;
 const FINISH_ATTEMPTS = 30;
 export const FINISH_RETRY_MS = 60_000;
 
-export type WorkerFlags = { once: boolean };
-type Env = Record<string, string | undefined>;
-
-export function parseWorkerFlags(argv: string[]): WorkerFlags {
-  const flags: WorkerFlags = { once: false };
-  for (const arg of argv) {
-    if (arg === "--once") flags.once = true;
-    else throw new Error(`Unknown option ${arg}`);
-  }
-  return flags;
-}
+export { describeError, parseWorkerFlags };
+export type { WorkerFlags } from "./lib/headless-claude";
 
 export function allowedEmails(env: Env): string[] {
   const raw = env.RESEARCH_ALLOWED_EMAILS ?? env.FOUNDER_EMAIL ?? "emcohen@me.com";
@@ -60,12 +49,6 @@ export function timeoutMs(env: Env): number {
 
 const researchRoot = () => join(homedir(), "Library/Application Support/personal-os/research");
 
-function claudeBin(env: Env): string {
-  if (env.RESEARCH_CLAUDE_BIN) return env.RESEARCH_CLAUDE_BIN;
-  const local = join(homedir(), ".local/bin/claude");
-  return existsSync(local) ? local : "claude";
-}
-
 /** The deep-research SKILL.md under ~/.claude/skills (synced skills live in a UUID folder). */
 async function findDeepResearchSkill(): Promise<string | null> {
   const root = join(homedir(), ".claude/skills");
@@ -76,54 +59,6 @@ async function findDeepResearchSkill(): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-/**
- * Environment for the Claude child: launchd's minimal env plus the usual tool
- * paths. Built before .env is loaded, so the production DATABASE_URL and the
- * Blob token never reach a process running with every permission.
- */
-function childEnv(base: Env): Env {
-  const extra = [join(homedir(), ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
-  const path = [...new Set([...extra, ...(base.PATH ?? "").split(":").filter(Boolean)])].join(":");
-  return { ...base, PATH: path };
-}
-
-type RunResult = { code: number | null; signal: NodeJS.Signals | null; timedOut: boolean; stopped: boolean; stdout: string; stderr: string };
-
-const capture = (text: string, chunk: Buffer) => (text + chunk.toString("utf8")).slice(-MAX_CAPTURE_CHARS);
-
-function killGroup(child: ChildProcess, signal: NodeJS.Signals) {
-  try {
-    // detached: the child leads its own process group, so subagents die with it.
-    if (child.pid) process.kill(-child.pid, signal);
-  } catch {
-    // Already gone.
-  }
-}
-
-function runClaude(options: { bin: string; args: string[]; cwd: string; env: Env; timeoutMs: number; registerStop: (stop: () => void) => void }): Promise<RunResult> {
-  return new Promise((resolvePromise) => {
-    const child = spawn(options.bin, options.args, { cwd: options.cwd, env: options.env as NodeJS.ProcessEnv, detached: true, stdio: ["ignore", "pipe", "pipe"] });
-    const result: RunResult = { code: null, signal: null, timedOut: false, stopped: false, stdout: "", stderr: "" };
-    child.stdout.on("data", (chunk: Buffer) => { result.stdout = capture(result.stdout, chunk); });
-    child.stderr.on("data", (chunk: Buffer) => { result.stderr = capture(result.stderr, chunk); });
-    let graceTimer: NodeJS.Timeout | null = null;
-    const terminate = () => {
-      killGroup(child, "SIGTERM");
-      graceTimer ??= setTimeout(() => killGroup(child, "SIGKILL"), KILL_GRACE_MS);
-    };
-    const timer = setTimeout(() => { result.timedOut = true; terminate(); }, options.timeoutMs);
-    options.registerStop(() => { result.stopped = true; terminate(); });
-    child.on("error", (error) => { result.stderr += `\n${error.message}`; });
-    child.on("close", (code, signal) => {
-      clearTimeout(timer);
-      if (graceTimer) clearTimeout(graceTimer);
-      result.code = code;
-      result.signal = signal;
-      resolvePromise(result);
-    });
-  });
 }
 
 async function readOptional(path: string): Promise<string | null> {
@@ -152,13 +87,6 @@ async function isCompletePdf(path: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/** Error class plus Prisma/Node error code (P1001, ECONNRESET…); never messages, which can carry data. */
-export function describeError(error: unknown): string {
-  if (!(error instanceof Error)) return "error";
-  const code = (error as { code?: unknown }).code;
-  return typeof code === "string" ? `${error.name} ${code}` : error.name;
 }
 
 /** Removes report working directories untouched for 30 days (images add up). */
@@ -197,22 +125,13 @@ async function markFailed(ctx: Context, id: string, error: string) {
   });
 }
 
-/**
- * Retries a step that records a finished run. Claude often exits while the Mac
- * is asleep or in a brief maintenance wake with no network, and one failed
- * write used to leave the row "running" until the stale sweep failed it.
- * Timers pause during sleep, so this waits up to ~30 awake minutes.
- */
-async function untilSaved<T>(ctx: Context, id: string, step: string, fn: () => Promise<T>): Promise<T> {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      if (attempt >= FINISH_ATTEMPTS) throw error;
-      ctx.log(`Research ${id}: ${step} failed (${describeError(error)}); retrying`);
-      await new Promise((done) => setTimeout(done, ctx.retryMs));
-    }
-  }
+/** Retries a step that records a finished run for up to ~30 awake minutes (see untilSaved). */
+function saveWithRetry<T>(ctx: Context, id: string, step: string, fn: () => Promise<T>): Promise<T> {
+  return untilSaved(fn, {
+    attempts: FINISH_ATTEMPTS,
+    retryMs: ctx.retryMs,
+    onRetry: (error) => ctx.log(`Research ${id}: ${step} failed (${describeError(error)}); retrying`),
+  });
 }
 
 export async function processReport(ctx: Context, report: ResearchReport): Promise<"ready" | "failed" | "requeued"> {
@@ -244,7 +163,7 @@ export async function processReport(ctx: Context, report: ResearchReport): Promi
     const reason = run.timedOut
       ? `Timed out after ${Math.round(ctx.timeoutMs / 60_000)} minutes.`
       : `Claude finished without a complete ${OUTPUT_FILES.pdf} (exit ${run.code ?? run.signal}).`;
-    await untilSaved(ctx, report.id, "saving the failure", () => markFailed(ctx, report.id, `${reason} ${tailText(output, 400)}`));
+    await saveWithRetry(ctx, report.id, "saving the failure", () => markFailed(ctx, report.id, `${reason} ${tailText(output, 400)}`));
     ctx.log(`Research ${report.id}: failed (${run.timedOut ? "timeout" : "no pdf"})`);
     return "failed";
   }
@@ -258,12 +177,12 @@ export async function processReport(ctx: Context, report: ResearchReport): Promi
     readFile(pdfPath),
   ]);
   const blobKey = researchBlobKey(report.userId, report.id);
-  const blob = await untilSaved(ctx, report.id, "upload", () => put(blobKey, pdf, {
+  const blob = await saveWithRetry(ctx, report.id, "upload", () => put(blobKey, pdf, {
     // allowOverwrite: a retry after a lost response finds its own earlier upload at this key.
     access: "public", addRandomSuffix: false, allowOverwrite: true, contentType: "application/pdf", token: ctx.blobToken,
   }));
   const sources = parseSources(sourcesRaw);
-  const { count } = await untilSaved(ctx, report.id, "saving the report", () => ctx.prisma.researchReport.updateMany({
+  const { count } = await saveWithRetry(ctx, report.id, "saving the report", () => ctx.prisma.researchReport.updateMany({
     where: { id: report.id, status: "running" },
     data: {
       status: "ready",
@@ -311,7 +230,7 @@ export async function runResearchWorker(argv: string[]): Promise<number> {
   process.on("SIGINT", onSignal);
 
   const ctx: Context = {
-    prisma, blobToken, bin: claudeBin(process.env), env, timeoutMs: limit, root,
+    prisma, blobToken, bin: claudeBin(process.env.RESEARCH_CLAUDE_BIN), env, timeoutMs: limit, root,
     skillPath: await findDeepResearchSkill(),
     registerStop: (stop) => { stopCurrent = stop; if (stop && stopping) stop(); },
     log: (line) => console.log(`${new Date().toISOString()} ${line}`),

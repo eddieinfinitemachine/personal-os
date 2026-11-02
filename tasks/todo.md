@@ -1809,10 +1809,11 @@ off for that day (it is added to the day's `skipped`).
 ## 2026-11-02 — Improve button (ask for a change; the Mac agent ships it)
 Inspired by Patrick Collison's "improvements" box (x.com/patrickc/status/2116636967517798672). Approved plan: auto-ship when checks pass, stop at a PR for risky changes (schema, auth, deps, deletes, >800 lines); runs on the Mac under Eddie's Claude plan. Stacked on PR #77 (research worker fix).
 
-- [x] Schema: `Improvement` model + `prisma/changes/20261102_improvements.sql` (additive; Eddie pushes to prod before merge).
+- [x] Schema: `Improvement` model + `prisma/changes/20261102_improvements.sql`. Applied to production Nov 2 with `prisma db execute` (SQL file only, at Eddie's request); verified 16 columns, 2 indexes, FK, and no drift for the table.
 - [x] `src/lib/improvements/request.ts`: statuses, view, input/context validation.
 - [ ] API: `GET/POST /api/improvements` (founder-only POST), `DELETE` (queued only) and `PATCH approve` (needs_review only) on `[id]`.
 - [ ] UI: sidebar "Improve" button (founder only) + mobile drawer entry → `ImproveDialog` (mounted in layout-overlays, opened by `personalos:improve:open`) with Recent list, polling, Ship it, Cancel.
 - [ ] Worker: shared `scripts/lib/headless-claude.ts` (from research-worker), `claim`, `gate`, `prompt`, `scripts/improve-worker.ts`, LaunchAgent plist, README.
 - [ ] Verify: unit + worker tests (fake claude/gh, bare origin), full `pnpm test`, typecheck, build, browser pass.
-- [ ] Ship: Eddie merges #77 and this PR, pushes schema to prod; pull personal-os-sync, install improve-worker LaunchAgent, restart research worker; live end-to-end (one safe, one risky request).
+- [x] PR #77 merged by Eddie (424582b).
+- [ ] Ship: Eddie merges this PR; pull personal-os-sync, install improve-worker LaunchAgent, restart research worker; live end-to-end (one safe, one risky request).

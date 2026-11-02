@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 
 // Layout-level overlays that don't render visible UI until interaction
-// (⌘K, capture drawer, first-run onboarding modal). Splitting them out of
+// (⌘K, capture drawer, first-run onboarding modal, Improve dialog). Splitting them out of
 // the critical chunk lets the landing page + first paint skip ~1.7k lines
 // of client JS — the editor inside CaptureDrawer is deferred further inside
 // capture-drawer.tsx itself.
@@ -20,13 +20,19 @@ const Onboarding = dynamic(
   () => import("./onboarding").then((m) => ({ default: m.Onboarding })),
   { ssr: false },
 );
+const ImproveDialog = dynamic(
+  () => import("./improve/improve-dialog").then((m) => ({ default: m.ImproveDialog })),
+  { ssr: false },
+);
 
-export function LayoutOverlays() {
+// canImprove (founder only) also keeps the Improve chunk off everyone else's page.
+export function LayoutOverlays({ canImprove = false }: { canImprove?: boolean }) {
   return (
     <>
       <CommandPalette />
       <CaptureDrawer />
       <Onboarding />
+      {canImprove ? <ImproveDialog /> : null}
     </>
   );
 }

@@ -19,6 +19,7 @@ import {
   Plus,
   Search,
   Settings as SettingsIcon,
+  WandSparkles,
   X,
 } from "lucide-react";
 import { AddTemplateButton, useEnabledTemplates } from "./sidebar-template-picker";
@@ -36,6 +37,7 @@ import {
 import { cn } from "@/lib/utils";
 import { palette, LIST_PALETTE, type ListColor } from "@/lib/lists";
 import { partitionProjects } from "@/lib/project-groups";
+import { OPEN_IMPROVE_EVENT } from "@/lib/improvements/request";
 import { ThemeToggle } from "./theme-toggle";
 import { MobileFab } from "./mobile-fab";
 
@@ -64,12 +66,15 @@ export function MobileChromeProvider({
   lists = [],
   appName = "EC",
   isPrivate = false,
+  canImprove = false,
 }: {
   children: ReactNode;
   projects: MobileProject[];
   lists?: MobileList[];
   appName?: string;
   isPrivate?: boolean;
+  /** Founder only: adds "Improve" to the drawer, which opens the Improve dialog. */
+  canImprove?: boolean;
 }) {
   const [title, setTitle] = useState(appName);
   const [right, setRight] = useState<ReactNode | null>(null);
@@ -91,7 +96,7 @@ export function MobileChromeProvider({
     <Ctx.Provider value={api}>
       {children}
       <MobileTopBar />
-      <MobileDrawer projects={projects} lists={lists} appName={appName} isPrivate={isPrivate} />
+      <MobileDrawer projects={projects} lists={lists} appName={appName} isPrivate={isPrivate} canImprove={canImprove} />
       <MobileFab />
     </Ctx.Provider>
   );
@@ -179,7 +184,19 @@ const DRAWER_PRIMARY = [
   { href: "/research", label: "Research", Icon: FlaskConical },
 ];
 
-function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: MobileProject[]; lists: MobileList[]; appName: string; isPrivate: boolean }) {
+function MobileDrawer({
+  projects,
+  lists,
+  appName,
+  isPrivate,
+  canImprove,
+}: {
+  projects: MobileProject[];
+  lists: MobileList[];
+  appName: string;
+  isPrivate: boolean;
+  canImprove: boolean;
+}) {
   const { enabled, available, add, reorder } = useEnabledTemplates(isPrivate);
   const { drawerOpen, closeDrawer } = useMobileChrome();
   const pathname = usePathname();
@@ -420,6 +437,19 @@ function MobileDrawer({ projects, lists, appName, isPrivate }: { projects: Mobil
               label={d.label}
             />
           ))}
+          {canImprove ? (
+            <button
+              type="button"
+              onClick={() => {
+                closeDrawer();
+                window.dispatchEvent(new CustomEvent(OPEN_IMPROVE_EVENT));
+              }}
+              className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm text-[var(--color-muted-foreground)] transition-colors hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] active:bg-[var(--color-accent)]"
+            >
+              <WandSparkles className="size-4" />
+              <span className="flex-1 truncate">Improve</span>
+            </button>
+          ) : null}
           {printLists ? (
             <DrawerLink
               href={printLists.href}
