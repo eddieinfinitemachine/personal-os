@@ -1811,9 +1811,11 @@ Inspired by Patrick Collison's "improvements" box (x.com/patrickc/status/2116636
 
 - [x] Schema: `Improvement` model + `prisma/changes/20261102_improvements.sql`. Applied to production Nov 2 with `prisma db execute` (SQL file only, at Eddie's request); verified 16 columns, 2 indexes, FK, and no drift for the table.
 - [x] `src/lib/improvements/request.ts`: statuses, view, input/context validation.
-- [ ] API: `GET/POST /api/improvements` (founder-only POST), `DELETE` (queued only) and `PATCH approve` (needs_review only) on `[id]`.
-- [ ] UI: sidebar "Improve" button (founder only) + mobile drawer entry → `ImproveDialog` (mounted in layout-overlays, opened by `personalos:improve:open`) with Recent list, polling, Ship it, Cancel.
-- [ ] Worker: shared `scripts/lib/headless-claude.ts` (from research-worker), `claim`, `gate`, `prompt`, `scripts/improve-worker.ts`, LaunchAgent plist, README.
-- [ ] Verify: unit + worker tests (fake claude/gh, bare origin), full `pnpm test`, typecheck, build, browser pass.
+- [x] API: `GET/POST /api/improvements` (founder-only POST), `DELETE` (queued only) and `PATCH approve` (needs_review only) on `[id]`.
+- [x] UI: sidebar "Improve" button (founder only) + mobile drawer entry → `ImproveDialog` (mounted in layout-overlays, opened by `personalos:improve:open`) with Recent list, polling, Ship it, Cancel.
+- [x] Worker: shared `scripts/lib/headless-claude.ts` (from research-worker), `claim`, `gate`, `prompt`, `scripts/improve-worker.ts`, LaunchAgent plist, README.
+- [x] Verify: full `pnpm test` 1419 passed / 177 skipped, typecheck clean, prod build OK. Worker tests drive a real bare origin + worktrees with fake claude/gh/pnpm/caffeinate (20 cases incl. safe ship, schema → needs_review → ship applying only the PR's SQL, no-SQL schema refused, failing check, no commit, timeout, rebase conflict, SIGTERM requeue). Browser (local dev on prod DB, agent-browser): founder sees Improve in the sidebar; dialog opens focused; send stored a queued row with path/title/viewport/version/UA; Cancel deleted it (0 rows left); Esc closes; 390 px drawer entry opens a bottom sheet, no horizontal scroll; focus ring matches the research textarea.
 - [x] PR #77 merged by Eddie (424582b).
 - [ ] Ship: Eddie merges this PR; pull personal-os-sync, install improve-worker LaunchAgent, restart research worker; live end-to-end (one safe, one risky request).
+
+Decision during review: shipping an approved schema change applies only the PR's added `prisma/changes/*.sql` with `prisma db execute`, never a whole-schema `db push` (lessons 2026-11-01); a `schema.prisma` change without a SQL file fails for Eddie to finish. The agent is also denied `prisma db execute`. Known limit (same as research): Claude runs with bypassPermissions as Eddie and could read `personal-os-sync/.env` directly; deny rules are guardrails, not a sandbox.
