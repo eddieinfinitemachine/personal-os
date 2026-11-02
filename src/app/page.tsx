@@ -214,8 +214,16 @@ export default async function HomePage() {
         </div>
       </header>
       <KeyboardListNav />
+      <CaptureReviewInbox
+        compact
+        initialData={captures.data}
+        initialError={captures.error}
+        projects={projects.map(({ id, name }) => ({ id, name }))}
+        lists={lists.map(({ id, name }) => ({ id, name }))}
+      />
+      <HomeTiles tiles={tiles} />
       {projectCards.length > 0 ? (
-        <section className="mb-7 hidden md:block">
+        <section className="mt-8 hidden md:block">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)] mb-3">
             By project
           </h2>
@@ -226,13 +234,6 @@ export default async function HomePage() {
           </div>
         </section>
       ) : null}
-      <CaptureReviewInbox
-        initialData={captures.data}
-        initialError={captures.error}
-        projects={projects.map(({ id, name }) => ({ id, name }))}
-        lists={lists.map(({ id, name }) => ({ id, name }))}
-      />
-      <HomeTiles tiles={tiles} />
     </div>
   );
 }
