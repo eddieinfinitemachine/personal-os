@@ -1,5 +1,10 @@
 # Personal OS — Lessons
 
+## 2026-11-01 — Verify native capture against the deployed endpoint
+**Context**: The iPhone app installed successfully, but its connection check failed with the production capture token.
+**Mistake / surprise**: The handed-off mobile endpoint had never been deployed; production returned an HTML 404 with HTTP 200. Installation and token presence did not prove the integration worked.
+**Rule**: Before calling a native capture setup ready, verify authenticated GET returns the exact JSON contract from the deployed host, then verify a save and retry. Check content type and response body, not status alone. Apply only explicitly approved schema changes; never use a broad schema push for a single additive rollout.
+
 Append after every correction or non-obvious gotcha. Format:
 
 ```

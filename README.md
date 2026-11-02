@@ -24,7 +24,7 @@ src/
   app/
     api/auth/          request-link / verify / logout
     api/attachments/   list + upload (Vercel Blob) + delete
-    api/capture/       Mac bearer-token capture
+    api/capture/       Mac + iOS bearer-token capture
     api/cron/          founder-scoped scheduled jobs
     api/(rest)/        per-user CRUD, scoped by middleware-injected x-user-id
     login, signup      magic-link forms
@@ -70,6 +70,32 @@ Optional:
 
 - `MAX_SIGNUPS_PER_DAY` — cap new signups per 24h (omit for unlimited)
 - `INVITE_TOKEN` — if set, only `/signup?invite=<this>` can create accounts
+
+## iOS capture
+
+The native Personal OS app connects to `https://internal.eddiecohen.com` using
+the existing `CAPTURE_TOKEN` (or a user token in `CAPTURE_TOKENS`). Never put
+credentials in the app bundle or this repository.
+
+- `GET /api/capture/mobile` verifies the token and returns `{ ok, email,
+  maxRequestBytes, maxFiles }` as JSON.
+- `POST /api/capture/mobile` accepts JSON or multipart form data with a UUID
+  `requestId`, optional `text` and `url`, and up to ten repeated `file` parts.
+  The complete request must be at most 3,500,000 bytes.
+- Successful saves return `{ ok, id, type, title, destination, path }` (plus
+  `assetKind` for assets). Supported types are todo, asset, person, trip, and
+  interaction. Organizer or upload failures leave the capture on the phone
+  for retry.
+- Saves require the additive `MobileCaptureReceipt` table proposed in the
+  native app handoff. It stores each user's request hash and saved result in
+  the same transaction as the record. Repeating the same UUID and content
+  returns the original result; changing content for that UUID returns 409.
+  Database approval and rollout are tracked in `tasks/todo.md`.
+
+For an explicitly reviewed additive rollout, apply only the approved SQL
+before enabling the endpoint. The normal production build script runs
+`prisma db push`; use `prisma generate && next build --webpack` when deploying
+this change so unrelated schema drift is not applied.
 
 ## Auth flow
 
