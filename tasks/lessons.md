@@ -242,3 +242,8 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 **Context**: Shark Ninja research report marked Failed although report.pdf was complete on disk.
 **Mistake / surprise**: (1) Node `setTimeout` counts only awake time on macOS, so a 45-min timeout fired 53 min wall-clock and a wall-clock stale sweep disagreed with it. (2) After a lid close the job keeps progressing in ~45 s maintenance wakes where network calls fail, and one failed status write left the row `running` for the sweeper to mislabel. (3) Logging only `error.name` (PrismaClientKnownRequestError) made 468 poll failures undiagnosable.
 **Rule**: In a Mac background worker, treat the produced artifact as the success signal (not exit code or timeout), retry every network write that records a job's outcome, and log error codes (P1001, ECONNRESET), never just the class.
+
+## 2026-11-02 — an autonomous shipper runs the full suite cold: give slow tests explicit timeouts
+**Context**: The first live Improve request failed at the worker's own `pnpm test`, on an unrelated test.
+**Mistake / surprise**: `kindle-epub.test.ts > passes epubcheck` spawns epubcheck (Java). Under the parallel full suite on a cold JVM it passed vitest's 5 s default; warm it takes 1.7 s, so every interactive run had passed. The worker's error showed only an ANSI-coloured code frame, not the test name.
+**Rule**: Any test that spawns an external program (JVM, browser, CLI) declares its own generous timeout. A gate that blocks on the suite must surface the FAIL/Error lines, colour-free, not the output's tail. Fix the flaky test; don't add blanket retries to the gate.
