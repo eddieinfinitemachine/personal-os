@@ -1002,6 +1002,7 @@ model User {
   projectSources      ProjectSource[]
   projectMeetings     ProjectMeeting[]
   researchReports     ResearchReport[]
+  improvements        Improvement[]
   mobileCaptureReceipts MobileCaptureReceipt[]
   captureReviews       CaptureReview[]
 
@@ -1567,6 +1568,32 @@ model ResearchReport {
   completedAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+// A change Eddie asked for from the sidebar's Improve button. The Mac improve
+// worker (scripts/improve-worker.ts) implements it with Claude Code in a fresh
+// worktree, checks it, and merges it (or stops at a PR when it is risky).
+model Improvement {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  request      String // as typed
+  context      Json? // { path, title, viewport: { width, height }, version, userAgent }
+  status       String // "queued" | "running" | "needs_review" | "approved" | "shipped" | "failed"
+  summary      String? // the agent's report back
+  reviewReason String? // why it stopped at a PR
+  branch       String?
+  prUrl        String?
+  previewUrl   String?
+  mergedSha    String?
+  error        String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([userId, createdAt])
   @@index([status])
