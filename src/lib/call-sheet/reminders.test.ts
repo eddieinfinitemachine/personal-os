@@ -429,10 +429,66 @@ describe("birthdays on the sheet", () => {
       section: "birthday",
     });
     expect(sheet.entries[2].birthday).toBeUndefined();
+    // Hidden from check-ins, Hid's birthday is still listed.
     expect(sheet.birthdays).toEqual([
+      { personId: "hid", name: "Hid Den", on: "2026-09-30" },
       { personId: "cal", name: "Cal Soon", on: "2026-10-01" },
       { personId: "dee", name: "Dee Far", on: "2026-10-12" },
     ]);
+  });
+
+  it("Don't suggest ends check-ins, not birthdays: a hidden person keeps the row, past the day too", async () => {
+    addPerson("bea", { firstName: "Bea", lastName: "Day", birthday: born("1990-09-28") });
+    await db.tx.callSheetContact.upsert({
+      where: { userId_personId: { userId: "u", personId: "bea" } },
+      create: { personId: "bea", userId: "u", identityKey: "x", excludedAt: now },
+      update: {},
+    });
+    const sunday = await getCallSheet("u", new Date("2026-09-27T16:00:00Z"));
+    expect(sunday.entries).toEqual([]);
+    expect(sunday.birthdays).toEqual([
+      { personId: "bea", name: "Bea Day", on: "2026-09-28" },
+    ]);
+    const monday = await getCallSheet("u", now);
+    expect(monday.entries).toHaveLength(1);
+    expect(monday.entries[0]).toMatchObject({
+      personId: "bea",
+      reason: "It’s their birthday today.",
+      section: "birthday",
+      status: "pending",
+    });
+    expect(monday.hidden.map((item) => item.personId)).toEqual(["bea"]);
+    // Being hidden never drops the row only to add it again on the next read.
+    const again = await getCallSheet("u", new Date("2026-09-28T18:00:00Z"));
+    expect(again.day.version).toBe(monday.day.version);
+    expect(again.entries).toEqual(monday.entries);
+    const tuesday = await getCallSheet("u", new Date("2026-09-29T16:00:00Z"));
+    expect(tuesday.entries).toHaveLength(1);
+    expect(tuesday.entries[0]).toMatchObject({
+      personId: "bea",
+      status: "pending",
+      reason: "Their birthday was yesterday.",
+      carriedFrom: "2026-09-28",
+    });
+    const tuesdayAgain = await getCallSheet("u", new Date("2026-09-29T18:00:00Z"));
+    expect(tuesdayAgain.day.version).toBe(tuesday.day.version);
+    expect(tuesdayAgain.entries).toEqual(tuesday.entries);
+  });
+
+  it("a hidden person's birthday row set aside that day stays off", async () => {
+    addPerson("bea", { birthday: born("1990-09-28") });
+    await db.tx.callSheetContact.upsert({
+      where: { userId_personId: { userId: "u", personId: "bea" } },
+      create: { personId: "bea", userId: "u", identityKey: "x", excludedAt: now },
+      update: {},
+    });
+    expect((await getCallSheet("u", now)).entries.map((e) => e.personId)).toEqual(["bea"]);
+    // "Don't suggest" on the row removes it and sets them aside for the day.
+    db.state.days[0].entries = { entries: [], skipped: ["bea"] };
+    expect((await getCallSheet("u", now)).entries).toEqual([]);
+    expect(
+      (await getCallSheet("u", new Date("2026-09-29T16:00:00Z"))).entries,
+    ).toEqual([]);
   });
 
   it("a reminder on their birthday is one row, in the list, with the birthday", async () => {

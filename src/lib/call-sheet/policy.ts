@@ -426,16 +426,18 @@ export function rankCandidates(
   return people
     .flatMap((person) => {
       const pref = person.preference;
-      if (person.archived || pref?.excludedAt) return [];
+      // A birthday is a date, not a routine nudge. On the day it outranks
+      // "Don't suggest" (which ends check-ins, not birthdays), a snooze ("not
+      // now" for check-ins), the weekly suggestion cooldown and recent contact;
+      // only archiving keeps someone off. Before the day it is only a badge:
+      // cadence alone decides.
+      const birthday = isBirthday(person.birthday, today);
+      if (person.archived || (pref?.excludedAt && !birthday)) return [];
       // A reminder the user set is explicit intent: it fires on its date (or the
       // first later day the sheet is opened) regardless of snooze, cooldown,
-      // recent contact or cadence.
-      const due = !!pref?.dueOn && pref.dueOn <= today;
-      // A birthday is a date, not a routine nudge. On the day it outranks a
-      // snooze ("not now" for check-ins), the weekly suggestion cooldown and
-      // recent contact; only "Don't suggest" and archiving keep someone off.
-      // Before the day it is only a badge: cadence alone decides.
-      const birthday = isBirthday(person.birthday, today);
+      // recent contact or cadence. A hidden person has none ("Don't suggest"
+      // cancels it), so only their birthday can bring them here.
+      const due = !pref?.excludedAt && !!pref?.dueOn && pref.dueOn <= today;
       if (
         !due &&
         !birthday &&

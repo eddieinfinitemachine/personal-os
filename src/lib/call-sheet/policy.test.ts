@@ -969,21 +969,34 @@ describe("birthdays on the call sheet", () => {
     );
     expect(ids(ranked).sort()).toEqual(["cooldown-today", "snoozed-today"]);
   });
-  it("hidden and archived people stay off even on their birthday", () => {
+  it("Don't suggest ends check-ins, not birthdays; archiving keeps someone off", () => {
+    const ranked = rankCandidates(
+      [
+        person("hidden", {
+          birthday: born("1990-09-28"),
+          preference: pref({ excludedAt: now }),
+        }),
+        // Hidden and due: on another day nothing brings them back.
+        person("hidden-due", {
+          birthday: born("1990-10-01"),
+          preference: pref({ excludedAt: now, dueOn: "2026-09-28" }),
+        }),
+        person("hidden-due-birthday", {
+          birthday: born("1990-09-28"),
+          preference: pref({ excludedAt: now, dueOn: "2026-09-28" }),
+        }),
+        person("archived", { birthday: born("1990-09-28"), archived: true }),
+      ],
+      sources,
+      now,
+      "UTC",
+    );
     expect(
-      rankCandidates(
-        [
-          person("hidden", {
-            birthday: born("1990-09-28"),
-            preference: pref({ excludedAt: now }),
-          }),
-          person("archived", { birthday: born("1990-09-28"), archived: true }),
-        ],
-        sources,
-        now,
-        "UTC",
-      ),
-    ).toEqual([]);
+      ranked.map((c) => [c.person.id, c.tier, c.birthdayToday, c.reminder]),
+    ).toEqual([
+      ["hidden", 1, true, undefined],
+      ["hidden-due-birthday", 1, true, undefined],
+    ]);
   });
   it("needs no contact history or fresh scan, and handles yearless birthdays", () => {
     const stale = {

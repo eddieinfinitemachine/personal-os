@@ -1782,3 +1782,26 @@ row actions; desktop actions shrink to text-xs.
 - [ ] Ship: PR, merge, `git pull` in personal-os-sync, `launchctl kickstart -k gui/$UID/com.personal-os.research-worker`.
 
 Review: the run started 08:23 EDT Oct 30 via `--once`. At 09:03 the lid closed on battery (Clamshell Sleep), so the rest of the run crept along in ~45 s maintenance wakes. A Codex subagent finished the 19-page report.pdf at 09:13. The 45-minute timeout counts only awake time, so it fired at 09:16, 53 min wall-clock, while the subagent was still waiting for `codex exec` to exit. The worker then discarded the finished PDF because it treated any timeout as failure. Its one attempt to record "Timed out" hit the database during a maintenance wake with no network (PrismaClientKnownRequestError), so the row stayed `running`. The LaunchAgent's stale sweep failed it at 10:00 with the generic "stopped before this report finished". Six of the new or changed tests fail on main and pass here; the research suites pass (33 tests) and `pnpm typecheck` is clean.
+
+## Call sheet: birthdays show even for hidden people — 2026-11-02
+
+"Don't suggest" had been hiding birthdays too: a hidden person never got a
+"Birthdays today" row and was left out of "Upcoming birthdays" (33 hidden
+people with birthdays, family among them). Eddie: leave birthdays in
+regardless of hidden. Only archiving removes a birthday now.
+
+- [x] `rankCandidates`: a hidden person is a candidate on their birthday only
+      (tier 1, never a reminder or a regular check-in)
+- [x] Day load keeps a hidden person's birthday row (today's or a missed one
+      carried forward) instead of dropping it and re-adding it every read
+- [x] `carryOver`: a missed birthday carries forward for hidden people too
+- [x] Upcoming birthdays list includes hidden people
+- [x] Tests: policy + mock-DB sheet (listed ahead, stable row, carried next
+      day, "Don't suggest" on the row still sets it aside for the day); new
+      tests fail without the change. Unit 105 pass; integration 41 pass on
+      scratch Postgres; tsc clean
+- [x] Read-only check on real data for 2026-11-02: upcoming list gains one
+      hidden person (Nov 5); nothing else changes
+
+**Review**: no schema change. "Don't suggest" on a birthday row still takes it
+off for that day (it is added to the day's `skipped`).
