@@ -109,10 +109,11 @@ final class CapturePopup: NSPanel, NSTextFieldDelegate {
         let title = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         orderOut(nil)
         guard !title.isEmpty else { return }
+        let requestID = UUID().uuidString
         if let save = boardSave(from: title) {
-            postToBoard(url: save.url, note: save.note)
+            postToBoard(url: save.url, note: save.note, requestID: requestID)
         } else {
-            post(title: title)
+            post(title: title, requestID: requestID)
         }
     }
 
@@ -136,7 +137,7 @@ final class CapturePopup: NSPanel, NSTextFieldDelegate {
         }
     }
 
-    private func post(title: String) {
+    private func post(title: String, requestID: String) {
         guard let url = URL(string: API_URL) else { return }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -144,6 +145,8 @@ final class CapturePopup: NSPanel, NSTextFieldDelegate {
         // take a few seconds — give it enough headroom.
         req.timeoutInterval = 30
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("mac", forHTTPHeaderField: "X-Capture-Source")
+        req.setValue(requestID, forHTTPHeaderField: "X-Capture-ID")
         req.setValue("Bearer \(API_TOKEN)", forHTTPHeaderField: "Authorization")
         // New endpoint accepts { text, url? }. If the user pasted a URL into
         // the input, send it as the url field too so Claude can fetch context.
@@ -157,7 +160,7 @@ final class CapturePopup: NSPanel, NSTextFieldDelegate {
         // Sonnet + web search can take 5–12s. Updated by the response handler.
         notify(title: "Capturing…", body: title)
 
-        URLSession.shared.dataTask(with: req) { data, response, error in
+        sendCaptureRequest(req) { data, response, error in
             DispatchQueue.main.async {
                 let http = response as? HTTPURLResponse
                 let ok = http.map { (200...299).contains($0.statusCode) } ?? false
@@ -181,16 +184,18 @@ final class CapturePopup: NSPanel, NSTextFieldDelegate {
                 }
                 notify(title: "Added · \(typeLabel)", body: title)
             }
-        }.resume()
+        }
     }
 
-    private func postToBoard(url link: String, note: String?) {
+    private func postToBoard(url link: String, note: String?, requestID: String) {
         guard let url = URL(string: BOARD_URL) else { return }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         // The server fetches the page for a title and preview image.
         req.timeoutInterval = 30
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("mac", forHTTPHeaderField: "X-Capture-Source")
+        req.setValue(requestID, forHTTPHeaderField: "X-Capture-ID")
         req.setValue("Bearer \(API_TOKEN)", forHTTPHeaderField: "Authorization")
         var body: [String: Any] = ["url": link, "via": "shortcut"]
         if let note { body["note"] = note }
@@ -198,7 +203,7 @@ final class CapturePopup: NSPanel, NSTextFieldDelegate {
 
         notify(title: "Adding to board…", body: link)
 
-        URLSession.shared.dataTask(with: req) { data, response, error in
+        sendCaptureRequest(req) { data, response, error in
             DispatchQueue.main.async {
                 let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
                 let ok = (response as? HTTPURLResponse).map { (200...299).contains($0.statusCode) } ?? false
@@ -209,8 +214,28 @@ final class CapturePopup: NSPanel, NSTextFieldDelegate {
                 }
                 notify(title: json?["message"] as? String ?? "Saved to board", body: link)
             }
-        }.resume()
+        }
     }
+}
+
+// A lost response may follow a successful save. Retry transport failures once
+// with the exact same request body and action ID, never HTTP errors.
+private func sendCaptureRequest(
+    _ request: URLRequest,
+    mayRetry: Bool = true,
+    completion: @escaping (Data?, URLResponse?, Error?) -> Void
+) {
+    URLSession.shared.dataTask(with: request) { data, response, error in
+        let retryable: Set<URLError.Code> = [
+            .timedOut, .networkConnectionLost, .cannotConnectToHost,
+            .notConnectedToInternet, .cannotFindHost, .dnsLookupFailed
+        ]
+        if mayRetry, let transport = error as? URLError, retryable.contains(transport.code) {
+            sendCaptureRequest(request, mayRetry: false, completion: completion)
+            return
+        }
+        completion(data, response, error)
+    }.resume()
 }
 
 // "add to board: <link> [note]" always goes to the board. "add: <link>" and

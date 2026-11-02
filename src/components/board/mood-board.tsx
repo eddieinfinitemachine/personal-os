@@ -158,12 +158,14 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
 
   const send = useCallback(
     async (body: BodyInit, label: string, preview?: string, headers?: HeadersInit) => {
-      const pid = Math.random().toString(36).slice(2);
+      const pid = crypto.randomUUID();
+      const captureHeaders = new Headers(headers);
+      captureHeaders.set("X-Capture-ID", pid);
       // Pasting or dropping while on For you: show it landing on the board.
       switchView("board");
       setPending((p) => [{ id: pid, label, preview }, ...p]);
       try {
-        const res = await fetch("/api/board", { method: "POST", body, headers });
+        const res = await fetch("/api/board", { method: "POST", body, headers: captureHeaders });
         const data = (await res.json().catch(() => ({}))) as {
           ok?: boolean;
           item?: BoardCard;
@@ -173,6 +175,7 @@ export function MoodBoard({ initialItems }: { initialItems: BoardCard[] }) {
         if (!res.ok || !data.item) throw new Error(data.error || `HTTP ${res.status}`);
         const item = data.item;
         setItems((prev) => [item, ...prev.filter((i) => i.id !== item.id)]);
+        window.dispatchEvent(new CustomEvent("personalos:capture-saved"));
         haptic("success");
         if (data.duplicate) say("Already on your board, moved to the top");
         else reloadForTags();

@@ -10,6 +10,22 @@ const $status = document.getElementById("status");
 const $settings = document.getElementById("settings");
 
 let activeTab = null;
+let pendingAction = null;
+let sending = false;
+
+function actionId(kind) {
+  if (!pendingAction || pendingAction.kind !== kind) {
+    pendingAction = { kind, id: crypto.randomUUID() };
+  }
+  return pendingAction.id;
+}
+
+function setBusy(value) {
+  sending = value;
+  for (const button of [$send, $cancel, $readLater, $board]) button.disabled = value;
+}
+
+$note.addEventListener("input", () => { pendingAction = null; });
 
 async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -26,17 +42,18 @@ function setStatus(text, kind) {
 }
 
 async function send() {
+  if (sending) return;
   if (!activeTab) {
     setStatus("No active tab.", "error");
     return;
   }
-  $send.disabled = true;
-  $cancel.disabled = true;
+  setBusy(true);
   setStatus("Sending…");
 
   const payload = {
     text: $note.value.trim() || activeTab.title || "read this",
     url: activeTab.url,
+    requestId: actionId("capture"),
   };
 
   try {
@@ -45,65 +62,63 @@ async function send() {
       payload,
     });
     if (res?.ok) {
+      pendingAction = null;
       const label =
         res.type === "asset" && res.assetKind ? res.assetKind : res.type || "saved";
       setStatus(`Added · ${label}`, "ok");
       setTimeout(() => window.close(), 700);
     } else {
       setStatus(res?.error || "Failed", "error");
-      $send.disabled = false;
-      $cancel.disabled = false;
+      setBusy(false);
     }
   } catch (e) {
     setStatus(e?.message || "Failed", "error");
-    $send.disabled = false;
-    $cancel.disabled = false;
+    setBusy(false);
   }
 }
 
 async function readLater() {
+  if (sending) return;
   if (!activeTab) {
     setStatus("No active tab.", "error");
     return;
   }
 
-  $send.disabled = true;
-  $cancel.disabled = true;
-  $readLater.disabled = true;
+  setBusy(true);
   setStatus("Saving…");
 
   try {
-    const res = await chrome.runtime.sendMessage({ type: "ec.readLater" });
+    const res = await chrome.runtime.sendMessage({ type: "ec.readLater", requestId: actionId("reader") });
     if (res?.ok) {
+      pendingAction = null;
       setStatus(res.message, "ok");
       setTimeout(() => window.close(), 900);
     } else {
       setStatus(res?.error || "Failed", "error");
-      $send.disabled = false;
-      $cancel.disabled = false;
-      $readLater.disabled = false;
+      setBusy(false);
     }
   } catch (e) {
     setStatus(e?.message || "Failed", "error");
-    $send.disabled = false;
-    $cancel.disabled = false;
-    $readLater.disabled = false;
+    setBusy(false);
   }
 }
 
 async function board() {
+  if (sending) return;
   if (!activeTab) {
     setStatus("No active tab.", "error");
     return;
   }
-  for (const b of [$send, $cancel, $readLater, $board]) b.disabled = true;
+  setBusy(true);
   setStatus("Saving…");
   try {
     const res = await chrome.runtime.sendMessage({
       type: "ec.board",
       note: $note.value,
+      requestId: actionId("board"),
     });
     if (res?.ok) {
+      pendingAction = null;
       setStatus(res.message || "Saved to Board", "ok");
       setTimeout(() => window.close(), 900);
       return;
@@ -112,7 +127,7 @@ async function board() {
   } catch (e) {
     setStatus(e?.message || "Failed", "error");
   }
-  for (const b of [$send, $cancel, $readLater, $board]) b.disabled = false;
+  setBusy(false);
 }
 
 $send.addEventListener("click", send);

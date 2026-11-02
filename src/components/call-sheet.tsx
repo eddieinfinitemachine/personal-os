@@ -6,6 +6,7 @@ import { Cake, Check, ChevronDown, History, Loader2, MessageCircle, Phone, Plus,
 import { Sheet } from "@/components/dating/sheet";
 import { CallSheetReview, initials } from "@/components/call-sheet-review";
 import { REACH_OUT_METHODS, type ReachOutMethod } from "@/lib/call-sheet/reach-out";
+import type { CaptureProposal } from "@/lib/smart-capture";
 import type { CallSheetEntry, CallSheetMutation, CallSheetReminderInput, CallSheetResponse, CallSheetSettingsMutation } from "@/lib/call-sheet/types";
 
 const actionClass = "inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-sm hover:bg-[var(--color-accent)] disabled:opacity-50";
@@ -43,6 +44,7 @@ export function CallSheet() {
   const [loading, setLoading] = useState(true);
   const [quickAdd, setQuickAdd] = useState("");
   const [adding, setAdding] = useState(false);
+  const pendingCapture = useRef<{ text: string; id: string; proposal?: CaptureProposal } | null>(null);
   const [addResult, setAddResult] = useState<{ ok: boolean; text: string } | null>(null);
   const alive = useRef(true), mutation = useRef(false), sequence = useRef(0), controller = useRef<AbortController | null>(null);
   const load = useCallback(async (quiet = false) => {
@@ -85,16 +87,23 @@ export function CallSheet() {
     if (!text || mutation.current) return;
     mutation.current = true; ++sequence.current; controller.current?.abort();
     setAdding(true); setBusy(true); setAddResult(null);
+    if (!pendingCapture.current || pendingCapture.current.text !== text) pendingCapture.current = { text, id: crypto.randomUUID() };
+    const capture = pendingCapture.current;
     try {
-      const form = new FormData();
-      form.set("text", text);
-      form.set("forceType", "call_sheet");
-      const parsed = await fetch("/api/capture/smart/parse", { method: "POST", body: form });
-      const parsedBody = await parsed.json().catch(() => ({}));
-      if (!parsed.ok || parsedBody.proposal?.type !== "call_sheet") throw Error(parsed.status === 401 ? "Sign in again to add someone." : parsedBody.error ?? "Couldn't read a person and a day from that.");
-      const saved = await fetch("/api/capture/smart/commit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proposal: parsedBody.proposal }) });
+      if (!capture.proposal) {
+        const form = new FormData();
+        form.set("text", text);
+        form.set("forceType", "call_sheet");
+        const parsed = await fetch("/api/capture/smart/parse", { method: "POST", body: form });
+        const parsedBody = await parsed.json().catch(() => ({}));
+        if (!parsed.ok || parsedBody.proposal?.type !== "call_sheet") throw Error(parsed.status === 401 ? "Sign in again to add someone." : parsedBody.error ?? "Couldn't read a person and a day from that.");
+        capture.proposal = parsedBody.proposal;
+      }
+      const saved = await fetch("/api/capture/smart/commit", { method: "POST", headers: { "Content-Type": "application/json", "X-Capture-ID": capture.id }, body: JSON.stringify({ requestId: capture.id, input: { text: capture.text, url: null }, proposal: capture.proposal }) });
       const savedBody = await saved.json().catch(() => ({}));
       if (!saved.ok) throw Error(savedBody.error ?? "That could not save. Please try again.");
+      pendingCapture.current = null;
+      window.dispatchEvent(new CustomEvent("personalos:capture-saved"));
       if (alive.current) { setAddResult({ ok: true, text: savedBody.message ?? "Added to your call sheet." }); setQuickAdd(""); }
     } catch (err) {
       if (alive.current) setAddResult({ ok: false, text: err instanceof Error ? err.message : "That could not save. Please try again." });

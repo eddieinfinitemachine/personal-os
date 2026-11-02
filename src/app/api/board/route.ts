@@ -5,6 +5,8 @@ import { resolveCaptureUser } from "@/lib/capture-auth";
 import { InputError, parseBoardInput } from "@/lib/board-input";
 import { saveToBoard } from "@/lib/board-save";
 import { MAX_UPLOAD_BYTES } from "@/lib/board";
+import { quickSource } from "@/lib/capture-review/record";
+import { CaptureReviewError } from "@/lib/capture-review/types";
 import { tagInBackground } from "@/lib/board-tags";
 
 export const dynamic = "force-dynamic";
@@ -26,17 +28,20 @@ export async function POST(request: Request) {
   try {
     const input = await parseBoardInput(request, MAX_UPLOAD_BYTES);
     if (!session && input.via === "app") input.via = "shortcut";
-    const { item, duplicate } = await saveToBoard(userId, input);
-    if (!duplicate) after(() => tagInBackground(userId, item.id));
+    const marker = request.headers.get("X-Capture-Source") ?? input.source;
+    const source = marker === "mac" || marker === "chrome" ? quickSource(marker) : session ? "web" : "quick";
+    const { item, duplicate, reviewId, created } = await saveToBoard(userId, input, { request, source });
+    if (created && !duplicate) after(() => tagInBackground(userId, item.id));
     const label = item.title ?? item.siteName ?? item.kind;
     return NextResponse.json({
       ok: true,
       item,
       duplicate,
+      reviewId,
       message: duplicate ? `Already on your board · ${label}` : `Saved to board · ${label}`,
     });
   } catch (e) {
-    if (e instanceof InputError) {
+    if (e instanceof InputError || e instanceof CaptureReviewError) {
       return NextResponse.json({ error: e.message }, { status: e.status });
     }
     console.error("[board] save failed", e);

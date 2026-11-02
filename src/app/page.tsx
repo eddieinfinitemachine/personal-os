@@ -6,6 +6,7 @@ import { ImportGranolaButton } from "@/components/import-granola-button";
 import { ProjectCard, type ProjectCardData } from "@/components/project-card";
 import { EcLanding } from "@/components/ec-landing";
 import { CaptureInboxPill } from "@/components/capture-inbox";
+import { CaptureReviewInbox } from "@/components/capture-review-inbox";
 import { KeyboardListNav } from "@/components/keyboard-nav";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists } from "@/lib/lists";
@@ -13,6 +14,7 @@ import { getSession } from "@/lib/auth";
 import { isFounderUser } from "@/lib/cron";
 import { isPrivateHost } from "@/lib/hosts";
 import { listAccessWhere } from "@/lib/list-access";
+import { listCaptureReviews } from "@/lib/capture-review/read";
 import type { TodoLike } from "@/components/todo-row";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +35,7 @@ export default async function HomePage() {
 
   // Single fetch for all open top-level todos plus their subtasks. Bucket in
   // memory rather than firing N×M queries per (list, project) tile.
-  const [lists, projects, allTodos, comments, commentReads] = await Promise.all([
+  const [lists, projects, allTodos, comments, commentReads, captures] = await Promise.all([
     prisma.list.findMany({
       where: listAccessWhere(userId),
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
@@ -85,6 +87,9 @@ export default async function HomePage() {
       where: { userId },
       select: { todoId: true, lastReadAt: true },
     }),
+    listCaptureReviews(userId, { state: "pending", offset: 0, limit: 10 })
+      .then((data) => ({ data, error: null }))
+      .catch(() => ({ data: null, error: "Could not load captures. Try again." })),
   ]);
 
   // Per-todo comment stats: total count + unread (others' comments newer than
@@ -209,10 +214,8 @@ export default async function HomePage() {
         </div>
       </header>
       <KeyboardListNav />
-      <HomeTiles tiles={tiles} />
-
       {projectCards.length > 0 ? (
-        <section className="mt-8 hidden md:block">
+        <section className="mb-7 hidden md:block">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)] mb-3">
             By project
           </h2>
@@ -223,6 +226,13 @@ export default async function HomePage() {
           </div>
         </section>
       ) : null}
+      <CaptureReviewInbox
+        initialData={captures.data}
+        initialError={captures.error}
+        projects={projects.map(({ id, name }) => ({ id, name }))}
+        lists={lists.map(({ id, name }) => ({ id, name }))}
+      />
+      <HomeTiles tiles={tiles} />
     </div>
   );
 }
