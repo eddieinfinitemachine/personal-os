@@ -98,6 +98,20 @@ export function inBirthdaySection(
 ) {
   return !entry.reminder && isBirthday(birthday ?? null, date);
 }
+const PAST_BIRTHDAY_PREFIX = "Their birthday was ";
+/** A birthday row on `date`'s sheet: today's birthday section, or a missed
+ * birthday kept from an earlier day. "Don't suggest" ends check-ins, not
+ * birthdays, so these rows stay for hidden people too. */
+function birthdayRow(
+  entry: { reminder?: unknown; reason: string },
+  birthday: Date | null | undefined,
+  date: string,
+) {
+  return (
+    inBirthdaySection(entry, birthday, date) ||
+    entry.reason.startsWith(PAST_BIRTHDAY_PREFIX)
+  );
+}
 export const json = (value: unknown) =>
   JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 export function readSources(raw: unknown): SourceState {
@@ -300,11 +314,11 @@ function makeEntry(candidate: Candidate, now: Date): StoredEntry {
     ...(candidate.reminder ? { reminder: candidate.reminder } : {}),
   };
 }
-const PAST_BIRTHDAY_PREFIX = "Their birthday was ";
 /** Pending rows from the latest earlier sheet, kept for a new day: the user
  * has not acted on them and nobody has been in touch since. Done, contacted
- * and set-aside rows stay where they were, and so does anyone since hidden,
- * archived, re-identified or given a reminder for a later day. */
+ * and set-aside rows stay where they were, and so does anyone since archived,
+ * re-identified or given a reminder for a later day, or since hidden (unless
+ * the row is a missed birthday). */
 function carryOver(
   previous: { localDate: string; data: DayData } | undefined,
   people: Map<string, PolicyPerson>,
@@ -316,10 +330,10 @@ function carryOver(
   return previous.data.entries
     .flatMap((entry) => {
       const person = people.get(entry.personId);
+      if (entry.status !== "pending" || !person) return [];
+      const birthday = birthdayRow(entry, person.birthday, previous.localDate);
       if (
-        entry.status !== "pending" ||
-        !person ||
-        person.preference?.excludedAt ||
+        (person.preference?.excludedAt && !birthday) ||
         entry.identityKey !== identityKey(person) ||
         (person.preference?.dueOn && person.preference.dueOn > date)
       )
@@ -332,15 +346,12 @@ function carryOver(
       )
         return [];
       const carriedFrom = entry.carriedFrom ?? previous.localDate;
-      const birthdayRow =
-        inBirthdaySection(entry, person.birthday, previous.localDate) ||
-        entry.reason.startsWith(PAST_BIRTHDAY_PREFIX);
       return [
         {
           ...entry,
           id: randomUUID(),
           carriedFrom,
-          reason: birthdayRow
+          reason: birthday
             ? pastBirthdayReason(carriedFrom, date)
             : entry.reminder
               ? reminderReason(carriedFrom, date)
@@ -513,7 +524,8 @@ export async function sheetInTransaction(
     const person = people.get(entry.personId);
     if (
       !person ||
-      person.preference?.excludedAt ||
+      (person.preference?.excludedAt &&
+        !birthdayRow(entry, person.birthday, date)) ||
       entry.identityKey !== identityKey(person)
     )
       return [];
@@ -757,10 +769,11 @@ function response(
         (a, b) => a.dueOn.localeCompare(b.dueOn) || a.name.localeCompare(b.name),
       ),
     // Today's birthdays are rows on the sheet; this looks ahead from tomorrow.
+    // "Don't suggest" ends check-ins, not birthdays: hidden people are listed.
     birthdays: people
       .flatMap((person) => {
         const on = upcomingBirthday(person.birthday, today, BIRTHDAY_LIST_DAYS);
-        return on && on > today && !person.preference?.excludedAt
+        return on && on > today
           ? [{ personId: person.id, name: personName(person), on }]
           : [];
       })
