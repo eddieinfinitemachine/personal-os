@@ -513,6 +513,7 @@ export function Sidebar({
             <SidebarButton
               icon={<WandSparkles className="size-4" />}
               label="Improve"
+              title="Ask for a change to this app"
               onClick={() => window.dispatchEvent(new CustomEvent(OPEN_IMPROVE_EVENT))}
             />
           ) : null}
@@ -611,15 +612,18 @@ function SidebarLink({
 function SidebarButton({
   icon,
   label,
+  title,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
+  title?: string;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
+      title={title}
       onClick={onClick}
       className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-[var(--color-muted-foreground)] transition hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
     >
