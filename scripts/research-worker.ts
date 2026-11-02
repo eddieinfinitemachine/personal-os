@@ -33,6 +33,8 @@ export const DEFAULT_TIMEOUT_MIN = 45;
 const KILL_GRACE_MS = 10_000;
 const MAX_CAPTURE_CHARS = 1_000_000;
 const WORK_DIR_RETENTION_MS = 30 * 86_400_000;
+const FINISH_ATTEMPTS = 30;
+export const FINISH_RETRY_MS = 60_000;
 
 export type WorkerFlags = { once: boolean };
 type Env = Record<string, string | undefined>;
@@ -140,15 +142,23 @@ async function pdfPageCount(path: string): Promise<number | null> {
   return null;
 }
 
-async function isPdf(path: string): Promise<boolean> {
+/** A PDF header and an end-of-file marker: rules out a file cut off mid-write by a kill. */
+async function isCompletePdf(path: string): Promise<boolean> {
   try {
     const info = await stat(path);
     if (!info.isFile() || info.size < 1024) return false;
-    const head = (await readFile(path)).subarray(0, 5).toString("latin1");
-    return head === "%PDF-";
+    const bytes = await readFile(path);
+    return bytes.subarray(0, 5).toString("latin1") === "%PDF-" && bytes.subarray(-1024).toString("latin1").includes("%%EOF");
   } catch {
     return false;
   }
+}
+
+/** Error class plus Prisma/Node error code (P1001, ECONNRESET…); never messages, which can carry data. */
+export function describeError(error: unknown): string {
+  if (!(error instanceof Error)) return "error";
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? `${error.name} ${code}` : error.name;
 }
 
 /** Removes report working directories untouched for 30 days (images add up). */
@@ -176,6 +186,8 @@ export type Context = {
   root: string;
   registerStop: (stop: (() => void) | null) => void;
   log: (line: string) => void;
+  /** Wait between attempts to record a finished run (FINISH_RETRY_MS). */
+  retryMs: number;
 };
 
 async function markFailed(ctx: Context, id: string, error: string) {
@@ -183,6 +195,24 @@ async function markFailed(ctx: Context, id: string, error: string) {
     where: { id, status: "running" },
     data: { status: "failed", error: tailText(error) || "Unknown error.", completedAt: new Date() },
   });
+}
+
+/**
+ * Retries a step that records a finished run. Claude often exits while the Mac
+ * is asleep or in a brief maintenance wake with no network, and one failed
+ * write used to leave the row "running" until the stale sweep failed it.
+ * Timers pause during sleep, so this waits up to ~30 awake minutes.
+ */
+async function untilSaved<T>(ctx: Context, id: string, step: string, fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt >= FINISH_ATTEMPTS) throw error;
+      ctx.log(`Research ${id}: ${step} failed (${describeError(error)}); retrying`);
+      await new Promise((done) => setTimeout(done, ctx.retryMs));
+    }
+  }
 }
 
 export async function processReport(ctx: Context, report: ResearchReport): Promise<"ready" | "failed" | "requeued"> {
@@ -206,28 +236,34 @@ export async function processReport(ctx: Context, report: ResearchReport): Promi
     ctx.log(`Research ${report.id}: requeued (worker stopping)`);
     return "requeued";
   }
+  // A complete PDF is the success signal, even if the timeout fired while
+  // Claude was still tidying up after writing it.
   const pdfPath = join(dir, OUTPUT_FILES.pdf);
-  if (run.timedOut || !(await isPdf(pdfPath))) {
+  if (!(await isCompletePdf(pdfPath))) {
     const output = parsed?.result ?? `${run.stdout}\n${run.stderr}`;
     const reason = run.timedOut
       ? `Timed out after ${Math.round(ctx.timeoutMs / 60_000)} minutes.`
-      : `Claude finished without ${OUTPUT_FILES.pdf} (exit ${run.code ?? run.signal}).`;
-    await markFailed(ctx, report.id, `${reason} ${tailText(output, 400)}`);
+      : `Claude finished without a complete ${OUTPUT_FILES.pdf} (exit ${run.code ?? run.signal}).`;
+    await untilSaved(ctx, report.id, "saving the failure", () => markFailed(ctx, report.id, `${reason} ${tailText(output, 400)}`));
     ctx.log(`Research ${report.id}: failed (${run.timedOut ? "timeout" : "no pdf"})`);
     return "failed";
   }
+  if (run.timedOut) ctx.log(`Research ${report.id}: timed out after ${OUTPUT_FILES.pdf} was complete; publishing it`);
 
-  const [titleRaw, summaryRaw, sourcesRaw, pageCount] = await Promise.all([
+  const [titleRaw, summaryRaw, sourcesRaw, pageCount, pdf] = await Promise.all([
     readOptional(join(dir, OUTPUT_FILES.title)),
     readOptional(join(dir, OUTPUT_FILES.summary)),
     readOptional(join(dir, OUTPUT_FILES.sources)),
     pdfPageCount(pdfPath),
+    readFile(pdfPath),
   ]);
-  const blob = await put(researchBlobKey(report.userId, report.id), await readFile(pdfPath), {
-    access: "public", addRandomSuffix: false, contentType: "application/pdf", token: ctx.blobToken,
-  });
+  const blobKey = researchBlobKey(report.userId, report.id);
+  const blob = await untilSaved(ctx, report.id, "upload", () => put(blobKey, pdf, {
+    // allowOverwrite: a retry after a lost response finds its own earlier upload at this key.
+    access: "public", addRandomSuffix: false, allowOverwrite: true, contentType: "application/pdf", token: ctx.blobToken,
+  }));
   const sources = parseSources(sourcesRaw);
-  const { count } = await ctx.prisma.researchReport.updateMany({
+  const { count } = await untilSaved(ctx, report.id, "saving the report", () => ctx.prisma.researchReport.updateMany({
     where: { id: report.id, status: "running" },
     data: {
       status: "ready",
@@ -239,7 +275,7 @@ export async function processReport(ctx: Context, report: ResearchReport): Promi
       error: null,
       completedAt: new Date(),
     },
-  });
+  }));
   if (count === 0) {
     // Deleted (or failed as stale) while it ran: don't leave the PDF behind.
     await del(blob.url, { token: ctx.blobToken }).catch(() => {});
@@ -279,6 +315,7 @@ export async function runResearchWorker(argv: string[]): Promise<number> {
     skillPath: await findDeepResearchSkill(),
     registerStop: (stop) => { stopCurrent = stop; if (stop && stopping) stop(); },
     log: (line) => console.log(`${new Date().toISOString()} ${line}`),
+    retryMs: FINISH_RETRY_MS,
   };
   if (!ctx.skillPath) ctx.log("Research worker: deep-research SKILL.md not found under ~/.claude/skills; relying on the Skill tool");
   ctx.log(`Research worker: started${flags.once ? " (--once)" : ""}, timeout ${Math.round(limit / 60_000)} min`);
@@ -298,11 +335,11 @@ export async function runResearchWorker(argv: string[]): Promise<number> {
           } catch (error) {
             const message = error instanceof Error ? error.message : "unknown error";
             await markFailed(ctx, report.id, message).catch(() => {});
-            ctx.log(`Research ${report.id}: failed (${error instanceof Error ? error.name : "error"})`);
+            ctx.log(`Research ${report.id}: failed (${describeError(error)})`);
           }
         }
       } catch (error) {
-        ctx.log(`Research worker: poll failed (${error instanceof Error ? error.name : "error"})`);
+        ctx.log(`Research worker: poll failed (${describeError(error)})`);
       }
       if (flags.once) break;
       if (processed || stopping) continue;

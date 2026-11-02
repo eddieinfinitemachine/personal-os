@@ -1771,3 +1771,14 @@ in source or the app.
 
 **Review**: two files of UI only, no schema. Phones keep 44px touch targets on
 row actions; desktop actions shrink to text-xs.
+
+## 2026-11-02 — Shark Ninja report shown as Failed though the PDF was finished
+
+- [x] Trace the failure: worker log, run transcript, pmset sleep log, DB row.
+- [x] Keep a complete PDF even when the timeout fires after it was written (header + `%%EOF` check).
+- [x] Retry the Blob upload and the final status write (30 × 60 s awake time) instead of one attempt.
+- [x] Log Prisma/Node error codes, not just the class name.
+- [x] Publish the finished Shark Ninja PDF onto its row (one-off script, run Nov 2 after Eddie ran it himself; row ready, 19 pp, 129 sources, Blob URL serves 200).
+- [ ] Ship: PR, merge, `git pull` in personal-os-sync, `launchctl kickstart -k gui/$UID/com.personal-os.research-worker`.
+
+Review: the run started 08:23 EDT Oct 30 via `--once`. At 09:03 the lid closed on battery (Clamshell Sleep), so the rest of the run crept along in ~45 s maintenance wakes. A Codex subagent finished the 19-page report.pdf at 09:13. The 45-minute timeout counts only awake time, so it fired at 09:16, 53 min wall-clock, while the subagent was still waiting for `codex exec` to exit. The worker then discarded the finished PDF because it treated any timeout as failure. Its one attempt to record "Timed out" hit the database during a maintenance wake with no network (PrismaClientKnownRequestError), so the row stayed `running`. The LaunchAgent's stale sweep failed it at 10:00 with the generic "stopped before this report finished". Six of the new or changed tests fail on main and pass here; the research suites pass (33 tests) and `pnpm typecheck` is clean.

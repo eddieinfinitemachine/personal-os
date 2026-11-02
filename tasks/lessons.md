@@ -237,3 +237,8 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 ## 2026-11-01 — circuit rest needs round semantics
 **Context**: Eddie found workout rests too frequent and long. The AI prescribed rest on each exercise, and the player applied it after every set even when a block alternated movements as a circuit or superset.
 **Rule**: Derive effective recovery from the block structure in the same step builder used by the player and estimates. A circuit gets one recovery per round using only the movements still participating; straight sets keep their prescribed recovery. When changing pacing, reconcile already-running saved timers and test paused, extended and expired timer cases as well as new sessions.
+
+## 2026-11-02 — Mac workers: timers pause in sleep, and dark wakes have no network
+**Context**: Shark Ninja research report marked Failed although report.pdf was complete on disk.
+**Mistake / surprise**: (1) Node `setTimeout` counts only awake time on macOS, so a 45-min timeout fired 53 min wall-clock and a wall-clock stale sweep disagreed with it. (2) After a lid close the job keeps progressing in ~45 s maintenance wakes where network calls fail, and one failed status write left the row `running` for the sweeper to mislabel. (3) Logging only `error.name` (PrismaClientKnownRequestError) made 468 poll failures undiagnosable.
+**Rule**: In a Mac background worker, treat the produced artifact as the success signal (not exit code or timeout), retry every network write that records a job's outcome, and log error codes (P1001, ECONNRESET), never just the class.

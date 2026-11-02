@@ -21,6 +21,7 @@ function fakeClaude(body: string): string {
 
 const WRITE_OUTPUTS = `printf '%%PDF-1.4\\n' > report.pdf
 head -c 4096 /dev/zero >> report.pdf
+printf '\\n%%%%EOF\\n' >> report.pdf
 printf 'Shaker furniture: a primer\\n' > title.txt
 printf 'A short summary.\\n' > summary.txt
 printf '[{"title":"W","url":"https://example.test/w"}]' > sources.json
@@ -37,6 +38,7 @@ function ctx(bin: string, over: Partial<Context> = {}): Context {
     root,
     registerStop: (fn) => { stop = fn; },
     log: () => {},
+    retryMs: 0,
     ...over,
   };
 }
@@ -44,7 +46,7 @@ function ctx(bin: string, over: Partial<Context> = {}): Context {
 const report = { id: "r1", userId: "u1", title: "Shaker furniture", topic: "Shaker furniture", status: "running" } as ResearchReport;
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks(); // also drops unused mock*Once values so they cannot leak into the next test
   root = mkdtempSync(join(tmpdir(), "research-worker-test-"));
   stop = null;
   mocks.put.mockResolvedValue({ url: "https://blob.example.invalid/users/u1/research/r1/1-report.pdf" });
@@ -110,7 +112,7 @@ describe("processReport", () => {
     const update = mocks.updateMany.mock.calls[0][0];
     expect(update.where).toEqual({ id: "r1", status: "running" });
     expect(update.data.status).toBe("failed");
-    expect(update.data.error).toMatch(/without report\.pdf \(exit 3\)/);
+    expect(update.data.error).toMatch(/without a complete report\.pdf \(exit 3\)/);
     expect(update.data.error).toContain("web search quota hit");
     expect(update.data.error.length).toBeLessThanOrEqual(500);
   });
@@ -121,6 +123,43 @@ describe("processReport", () => {
     expect(Date.now() - started).toBeLessThan(10_000);
     expect(result).toBe("failed");
     expect(mocks.updateMany.mock.calls[0][0].data.error).toMatch(/Timed out/);
+  });
+
+  it("publishes a complete PDF even when the timeout fires after it was written", async () => {
+    const result = await processReport(ctx(fakeClaude(`${WRITE_OUTPUTS}\nsleep 30 & wait`), { timeoutMs: 1_500 }), report);
+    expect(result).toBe("ready");
+    expect(mocks.put).toHaveBeenCalledTimes(1);
+    expect(mocks.updateMany.mock.calls[0][0].data).toMatchObject({ status: "ready", title: "Shaker furniture: a primer" });
+  });
+
+  it("fails a PDF that was cut off mid-write", async () => {
+    const result = await processReport(ctx(fakeClaude("printf '%%PDF-1.4\\n' > report.pdf; head -c 4096 /dev/zero >> report.pdf")), report);
+    expect(result).toBe("failed");
+    expect(mocks.put).not.toHaveBeenCalled();
+    expect(mocks.updateMany.mock.calls[0][0].data.error).toMatch(/without a complete report\.pdf \(exit 0\)/);
+  });
+
+  it("retries the upload and the save while the network is down", async () => {
+    const offline = Object.assign(new Error("Can't reach database server"), { name: "PrismaClientKnownRequestError", code: "P1001" });
+    mocks.put.mockRejectedValueOnce(new TypeError("fetch failed"));
+    mocks.updateMany.mockRejectedValueOnce(offline);
+    const lines: string[] = [];
+    const result = await processReport(ctx(fakeClaude(WRITE_OUTPUTS), { log: (line) => lines.push(line) }), report);
+    expect(result).toBe("ready");
+    expect(mocks.put).toHaveBeenCalledTimes(2);
+    expect(mocks.put.mock.calls[1][0]).toBe(mocks.put.mock.calls[0][0]);
+    expect(mocks.put.mock.calls[1][2]).toMatchObject({ allowOverwrite: true });
+    expect(mocks.updateMany).toHaveBeenCalledTimes(2);
+    expect(lines).toContain("Research r1: upload failed (TypeError); retrying");
+    expect(lines).toContain("Research r1: saving the report failed (PrismaClientKnownRequestError P1001); retrying");
+    expect(lines.join("\n")).not.toContain("Can't reach");
+  });
+
+  it("retries saving a failure instead of leaving the row running", async () => {
+    mocks.updateMany.mockRejectedValueOnce(Object.assign(new Error("closed"), { code: "P1017" }));
+    expect(await processReport(ctx(fakeClaude("exit 3")), report)).toBe("failed");
+    expect(mocks.updateMany).toHaveBeenCalledTimes(2);
+    expect(mocks.updateMany.mock.calls[1][0].data.status).toBe("failed");
   });
 
   it("requeues the report when the worker is asked to stop mid-run", async () => {
