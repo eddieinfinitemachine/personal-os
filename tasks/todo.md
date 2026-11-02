@@ -7,8 +7,8 @@
 - [x] Obtain approval for the additive receipt table/index/foreign key before changing Prisma schema or any database structure (user: “ok put it on my iphone”, 2026-11-01).
 - [x] Generate Prisma client, typecheck, run full tests, and build.
 - [x] Apply only the approved receipt SQL and verify columns, index, primary key and User foreign key.
-- [ ] Deploy without the generic schema-push build helper.
-- [ ] Verify the live phone connection contract and report the result.
+- [x] Deploy without the generic schema-push build helper.
+- [x] Verify live connection, native text/file saves and retries; reopen the installed app on EC PRO.
 
 Review before database approval: full Vitest suite 125 files passed, 19 skipped;
 1,227 tests passed, 150 skipped (integration cases need explicit database/test
@@ -1722,3 +1722,24 @@ removed comments before splitting, then applied exactly the two approved DDL
 statements in one transaction. Verified all five columns, primary key, User
 foreign key with cascading deletes/updates, and the user/date index. No
 existing table structure or records were changed.
+
+## iOS capture live result — 2026-11-01
+
+Production deployment `personal-i5zq2ny81-ec-efed32ac.vercel.app` succeeded.
+Both `internal.eddiecohen.com` and `personal-os-two-gold.vercel.app` return
+the exact authenticated JSON connection contract. Missing/wrong tokens and
+unauthorized POST requests return 401 JSON.
+
+A temporary Swift executable using the app's unchanged CaptureCore client
+connected to production, saved JSON text and multipart file captures, and
+repeated each network request with the same UUID. Both retries returned
+the same result; PostgreSQL held one receipt and task per capture. Verified
+the stored file bytes match the native original; changed content for an
+existing UUID returned 409. Removed only the synthetic probe tasks (2),
+receipts (2), attachment row (1), and Blob (1); cleanup counts verified zero.
+
+Personal OS 1.0 (1), `com.zelig.personalos.capture`, is installed on EC PRO
+and was reopened successfully using devicectl after the server rollout. No
+reinstall was needed, preserving the app's existing state. Phone-side setup
+can retry Connect & verify with the same token; the token was never embedded
+in source or the app.
