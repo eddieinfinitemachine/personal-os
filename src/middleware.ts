@@ -1,3 +1,4 @@
+// Auth gate: sets x-user-id from the session cookie, else redirects to /login (static, public and bearer-token routes pass through).
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
