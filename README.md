@@ -154,6 +154,34 @@ tail -f ~/Library/Logs/personal-os/research-worker.log
 
 It stays running (`KeepAlive`) and only works while the Mac is awake.
 
+## Improve worker
+
+The Improve dialog stores a change request as an `Improvement` row (`queued`). A worker on the Mac claims it, adds a fresh git worktree from `origin/main` at `~/Code/.worktrees/personal-os-improve-<id8>` on branch `improve/<id8>-<slug>`, runs `pnpm install` and then Claude Code headless (`claude -p … --permission-mode bypassPermissions --disallowedTools "Bash(git push:*),Bash(gh:*),…"`), which makes and commits the change and writes `result.json` (summary, its own risk call) to `~/Library/Application Support/personal-os/improvements/<id>/`. The worker then checks the result itself: at least one commit and a clean tree, a rebase onto the latest main, and `pnpm typecheck`, `pnpm test`, `pnpm build` with an unreachable dummy `DATABASE_URL`. A failed check fails the row and pushes nothing.
+
+Statuses: `queued` → `running` → `shipped` | `needs_review` | `failed`; `needs_review` → `approved` (Ship it in the app) → `running` → `shipped` | `failed`.
+
+The risk gate (`src/lib/improvements/gate.ts`) stops a change at `needs_review` (PR open, preview link when Vercel has one within ~3 minutes, worktree kept) when it touches `prisma/`, middleware or auth (`src/lib/auth*`, login, `/api/auth`), `package.json` or `pnpm-lock.yaml`, `vercel.json` or `next.config.*`, LaunchAgents, or the improve machinery itself; adds Prisma deletes or `DROP`/`TRUNCATE`/`DELETE FROM` SQL outside tests; changes more than 800 lines; conflicts with main; or when the agent itself calls it risky. Anything else is squash-merged right away (`gh pr merge --squash --delete-branch`), and the row becomes `shipped` once GitHub reports the Vercel production deployment of the merge commit as successful (after 15 minutes it ships with a "Deploy not confirmed" note). Shipping an approved row rebases and re-checks it, applies exactly the `prisma/changes/*.sql` files the PR adds with `prisma db execute` and the real `DATABASE_URL` (never a whole-schema `db push`; a `schema.prisma` change without a SQL file fails and is left for you), force-pushes with lease and merges.
+
+Branches, commits and PRs (including the request text) land in the public GitHub repo. Only the founder's rows are claimed. Claude never sees `DATABASE_URL` or the Blob token, and `gh` always runs outside any checkout with `--repo`, so `--delete-branch` only deletes the remote branch. Failed runs keep their local branch (when it has commits) for a look; logs carry ids, statuses and durations only.
+
+```sh
+pnpm exec tsx scripts/improve-worker.ts           # loop: poll every 30 s
+pnpm exec tsx scripts/improve-worker.ts --once    # at most one job, then exit
+```
+
+Needs `DATABASE_URL` (from `.env` in the working directory), plus `claude`, `gh` (logged in with push and merge rights), `pnpm` and `git`. Optional env: `IMPROVE_ALLOWED_EMAILS` (default `FOUNDER_EMAIL`), `IMPROVE_TIMEOUT_MIN` (Claude's limit, default 40), `IMPROVE_CLAUDE_BIN`. A row still `running` 90 minutes after that limit (the Mac slept or the worker died) is marked failed; SIGTERM puts a job that hasn't pushed yet back where it was.
+
+Install or restart the LaunchAgent (runs from `~/Code/active/personal-os-sync`, whose `origin` must be the GitHub repo; pull and `pnpm install --frozen-lockfile` there first, then restart to pick up worker changes):
+
+```sh
+mkdir -p ~/Library/Logs/personal-os
+cp scripts/launchagents/com.personal-os.improve-worker.plist ~/Library/LaunchAgents/
+launchctl bootout gui/$UID/com.personal-os.improve-worker 2>/dev/null
+launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.personal-os.improve-worker.plist
+launchctl kickstart -k gui/$UID/com.personal-os.improve-worker   # restart after pulling
+tail -f ~/Library/Logs/personal-os/improve-worker.log
+```
+
 ## Status
 
 Multi-tenant since 2026-05-19. Public signup open via magic link; rate-limited + optional kill-switch (`INVITE_TOKEN`).

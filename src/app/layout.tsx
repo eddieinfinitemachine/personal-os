@@ -12,6 +12,7 @@ import { themePreloadScript } from "@/components/theme-toggle";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import { CaptureProvider } from "@/lib/capture-store";
 import { isPrivateHost } from "@/lib/hosts";
+import { isFounderUser } from "@/lib/cron";
 import { prisma } from "@/lib/prisma";
 import { initials } from "@/lib/initials";
 import { listAccessWhere } from "@/lib/list-access";
@@ -114,12 +115,16 @@ export default async function RootLayout({
 
   // The signed-in person's installed copy is branded with their initials; the
   // generic product name "EC" is the fallback. See lib/initials.ts.
-  const me = userId
-    ? await prisma.user.findUnique({
-        where: { id: userId },
-        select: { name: true, email: true },
-      })
-    : null;
+  // canImprove: the founder-only Improve button (sidebar + mobile drawer).
+  const [me, canImprove] = await Promise.all([
+    userId
+      ? prisma.user.findUnique({
+          where: { id: userId },
+          select: { name: true, email: true },
+        })
+      : null,
+    isFounderUser(userId),
+  ]);
   const appName = (me && initials(me.name, me.email)) || "EC";
 
   const mobileProjects = projects.map((p) => ({
@@ -151,11 +156,11 @@ export default async function RootLayout({
         <CaptureProvider>
           <CaptureInbox />
           <UndoHost />
-          <LayoutOverlays />
-          <MobileChromeProvider projects={mobileProjects} lists={mobileLists} appName={appName} isPrivate={isPrivate}>
+          <LayoutOverlays canImprove={canImprove} />
+          <MobileChromeProvider projects={mobileProjects} lists={mobileLists} appName={appName} isPrivate={isPrivate} canImprove={canImprove}>
             <div className="flex min-h-screen">
               <div data-app-sidebar className="hidden md:flex print:hidden">
-                <Sidebar projects={projects} appName={appName} isPrivate={isPrivate} />
+                <Sidebar projects={projects} appName={appName} isPrivate={isPrivate} canImprove={canImprove} />
               </div>
               <main data-app-main className="flex-1 overflow-x-hidden pt-[calc(48px+env(safe-area-inset-top))] pb-[calc(16px+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 print:pt-0 print:pb-0">
                 {children}

@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Calendar, ChevronDown, FolderKanban, ChevronRight, LayoutGrid, Eye, EyeOff, FlaskConical, Folder, Home, Inbox as InboxIcon, PanelLeftClose, PanelLeftOpen, Phone, Pencil, Plus, Loader2, MoreHorizontal, Settings, Trash2 } from "lucide-react";
+import { Calendar, ChevronDown, FolderKanban, ChevronRight, LayoutGrid, Eye, EyeOff, FlaskConical, Folder, Home, Inbox as InboxIcon, PanelLeftClose, PanelLeftOpen, Phone, Pencil, Plus, Loader2, MoreHorizontal, Settings, Trash2, WandSparkles } from "lucide-react";
 import { AddTemplateButton, useEnabledTemplates } from "./sidebar-template-picker";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
 import { partitionProjects } from "@/lib/project-groups";
 import type { TemplateSlug } from "@/lib/templates";
 import { moveSlug, orderedTemplates } from "@/lib/tracker-order";
+import { OPEN_IMPROVE_EVENT } from "@/lib/improvements/request";
 import { ThemeToggle } from "./theme-toggle";
 
 type SidebarProject = {
@@ -22,10 +23,13 @@ export function Sidebar({
   projects: initialProjects,
   appName = "EC",
   isPrivate = false,
+  canImprove = false,
 }: {
   projects: SidebarProject[];
   appName?: string;
   isPrivate?: boolean;
+  /** Founder only: shows "Improve", which opens the Improve dialog. */
+  canImprove?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -505,6 +509,13 @@ export function Sidebar({
               active={pathname === printLists.href}
             />
           ) : null}
+          {canImprove ? (
+            <SidebarButton
+              icon={<WandSparkles className="size-4" />}
+              label="Improve"
+              onClick={() => window.dispatchEvent(new CustomEvent(OPEN_IMPROVE_EVENT))}
+            />
+          ) : null}
           <SidebarLink
             href="/settings"
             icon={<Settings className="size-4" />}
@@ -593,6 +604,28 @@ function SidebarLink({
         </span>
       ) : null}
     </Link>
+  );
+}
+
+// SidebarLink's look for actions that open something instead of navigating.
+function SidebarButton({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-[var(--color-muted-foreground)] transition hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
+    >
+      <span className="text-[var(--color-muted-foreground)]">{icon}</span>
+      <span className="flex-1 truncate">{label}</span>
+    </button>
   );
 }
 
