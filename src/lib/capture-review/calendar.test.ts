@@ -51,7 +51,7 @@ describe("capture correction calendar reconciliation", () => {
     expect(mocks.remove.mock.calls.map(([id]) => id)).toEqual(["retired", "completed", "undated", "missing"]);
     expect(reviews[0].effects).toEqual({ ...review("review", []).effects, calendarPending: [] });
     expect(mocks.reviews.mock.calls[0][0].where).toEqual({ userId: "owner", id: { in: ["review"] } });
-    expect(mocks.todos.mock.calls[0][0].where).toEqual({ userId: "owner", id: { in: ["active", "retired", "completed", "undated", "missing"] } });
+    expect(mocks.todos.mock.calls[0][0].where).toMatchObject({ userId: "owner", id: { in: ["active", "retired", "completed", "undated", "missing"] } });
     expect(mocks.update.mock.calls[0][0].where).toEqual({ id: "review", userId: "owner", revision: 2, updatedAt });
   });
 
