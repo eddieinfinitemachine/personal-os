@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { CaptureReviewEditor } from "./capture-review-editor";
+import { cn } from "@/lib/utils";
+import { timeAgo } from "@/lib/time";
 import type {
   CaptureReviewItem,
   CaptureReviewList,
@@ -17,6 +19,11 @@ export type CaptureReviewChoices = {
 };
 const actionClass =
   "inline-flex min-h-11 items-center justify-center rounded-lg px-3 py-2 text-sm font-medium hover:bg-[var(--color-accent)] disabled:opacity-50";
+// Home's one-line rows: quiet text actions, full touch height only on phones.
+const compactActionClass =
+  "inline-flex min-h-11 md:min-h-0 items-center justify-center rounded-md px-2 py-1 text-xs font-medium text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] disabled:opacity-50";
+// Home shows only the newest few; the rest are a click away on /captures.
+const COMPACT_ROWS = 3;
 const safePath = (value: string) =>
   value.startsWith("/") &&
   !value.startsWith("//") &&
@@ -67,6 +74,7 @@ export function CaptureReviewInbox({
   initialData,
   initialError = null,
   fullPage = false,
+  compact = false,
   initialState = "pending",
   projects = [],
   lists = [],
@@ -74,6 +82,8 @@ export function CaptureReviewInbox({
   initialData: CaptureReviewList | null;
   initialError?: string | null;
   fullPage?: boolean;
+  /** Home: one line per capture, newest few only, no empty-state box. */
+  compact?: boolean;
   initialState?: ReviewState;
 }) {
   const router = useRouter();
@@ -309,7 +319,7 @@ export function CaptureReviewInbox({
     <section
       aria-labelledby={headingId}
       aria-busy={loading}
-      className="mb-7 min-w-0"
+      className={cn("min-w-0", compact ? "mb-5" : "mb-7")}
     >
       <header className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
         <div className="flex flex-wrap items-baseline gap-2">
@@ -321,7 +331,9 @@ export function CaptureReviewInbox({
           </h2>
           {data ? (
             <span className="text-xs tabular-nums text-[var(--color-muted-foreground)]">
-              {data.total} {initialState}
+              {compact && data.total === 0
+                ? "All caught up"
+                : `${data.total} ${initialState}`}
             </span>
           ) : null}
         </div>
@@ -347,10 +359,16 @@ export function CaptureReviewInbox({
           </nav>
         ) : (
           <div className="flex flex-wrap gap-1">
-            <Link href="/captures?state=dismissed" className={actionClass}>
+            <Link
+              href="/captures?state=dismissed"
+              className={compact ? compactActionClass : actionClass}
+            >
               Dismissed
             </Link>
-            <Link href="/captures" className={actionClass}>
+            <Link
+              href="/captures"
+              className={compact ? compactActionClass : actionClass}
+            >
               Show all
             </Link>
           </div>
@@ -398,7 +416,7 @@ export function CaptureReviewInbox({
           Loading captures…
         </p>
       ) : null}
-      {data && data.items.length === 0 && !error ? (
+      {data && data.items.length === 0 && !error && !compact ? (
         <p className="rounded-xl border border-[var(--color-border)] px-4 py-3 text-sm text-[var(--color-muted-foreground)]">
           {initialState === "pending"
             ? "All caught up. New captures will appear here after they save."
@@ -407,64 +425,15 @@ export function CaptureReviewInbox({
       ) : null}
       {data?.items.length ? (
         <ol className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]">
-          {data.items.map((review) => (
-            <li key={review.id} className="min-w-0 px-3 py-3 sm:px-4">
-              <div className="flex flex-col gap-x-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 flex-1">
-                  <h3 className="break-words text-sm font-medium">
-                    {review.placement.title}
-                  </h3>
-                  <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
-                    from {review.sourceLabel} ·{" "}
-                    <time dateTime={review.createdAt}>
-                      {new Date(review.createdAt).toLocaleString("en-US", {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                        timeZone: "UTC",
-                      })}{" "}
-                      UTC
-                    </time>
-                    {review.correctedAt ? " · Corrected" : ""}
-                  </p>
-                  {review.input.text ? (
-                    <p className="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-sm text-[var(--color-muted-foreground)]">
-                      {review.input.text}
-                    </p>
-                  ) : null}
-                  {review.input.url ? (
-                    <p
-                      className="mt-1 truncate text-xs text-[var(--color-muted-foreground)]"
-                      title={review.input.url}
-                    >
-                      {review.input.url}
-                    </p>
-                  ) : null}
-                  {review.input.files.length ? (
-                    <ul
-                      aria-label="Captured files"
-                      className="mt-1 space-y-0.5 text-xs text-[var(--color-muted-foreground)]"
-                    >
-                      {review.input.files.map((file, index) => (
-                        <li
-                          key={`${file.name}:${index}`}
-                          className="break-words"
-                        >
-                          {file.name}
-                          {file.size !== null
-                            ? ` · ${fileSize(file.size)}`
-                            : ""}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  <div className="mt-2">
-                    <Placement placement={review.placement} />
-                  </div>
-                </div>
-                <div className="-ml-3 mt-1 flex shrink-0 flex-wrap gap-0 sm:ml-0 sm:mt-0">
+          {data.items
+            .slice(0, compact ? COMPACT_ROWS : undefined)
+            .map((review) => {
+              const btn = compact ? compactActionClass : actionClass;
+              const actions = (
+                <>
                   {!review.placement.missing &&
                   safePath(review.placement.path) ? (
-                    <Link href={review.placement.path} className={actionClass}>
+                    <Link href={review.placement.path} className={btn}>
                       Open
                     </Link>
                   ) : null}
@@ -473,7 +442,7 @@ export function CaptureReviewInbox({
                       type="button"
                       disabled={!!mutating}
                       aria-expanded={editing?.id === review.id}
-                      className={actionClass}
+                      className={btn}
                       onClick={() =>
                         setEditing((current) =>
                           current?.id === review.id ? null : review,
@@ -486,7 +455,7 @@ export function CaptureReviewInbox({
                   <button
                     type="button"
                     disabled={!!mutating || editing?.id === review.id}
-                    className={actionClass}
+                    className={btn}
                     onClick={() =>
                       void changeState(
                         review,
@@ -500,20 +469,112 @@ export function CaptureReviewInbox({
                         ? "Restore"
                         : "Dismiss"}
                   </button>
-                </div>
-              </div>
-              {editing?.id === review.id ? (
-                <CaptureReviewEditor
-                  key={`${editing.id}:${editing.revision}`}
-                  review={editing}
-                  projects={projects}
-                  lists={lists}
-                  onSaved={corrected}
-                  onCancel={() => setEditing(null)}
-                />
-              ) : null}
-            </li>
-          ))}
+                </>
+              );
+              const editor =
+                editing?.id === review.id ? (
+                  <CaptureReviewEditor
+                    key={`${editing.id}:${editing.revision}`}
+                    review={editing}
+                    projects={projects}
+                    lists={lists}
+                    onSaved={corrected}
+                    onCancel={() => setEditing(null)}
+                  />
+                ) : null;
+              if (compact)
+                return (
+                  <li
+                    key={review.id}
+                    className="min-w-0 py-1 pl-3 pr-1 sm:pl-4"
+                  >
+                    <div className="flex items-center gap-2">
+                      <p className="min-w-0 flex-1 truncate text-sm">
+                        <span className="font-medium">
+                          {review.placement.title}
+                        </span>
+                        <span className="text-[var(--color-muted-foreground)]">
+                          {" · "}
+                          {review.placement.missing
+                            ? "Removed"
+                            : review.placement.destination}
+                        </span>
+                      </p>
+                      <time
+                        dateTime={review.createdAt}
+                        title={`from ${review.sourceLabel}`}
+                        suppressHydrationWarning
+                        className="hidden shrink-0 text-xs tabular-nums text-[var(--color-muted-foreground)] sm:inline"
+                      >
+                        {timeAgo(review.createdAt)}
+                      </time>
+                      <div className="flex shrink-0">{actions}</div>
+                    </div>
+                    {editor}
+                  </li>
+                );
+              return (
+                <li key={review.id} className="min-w-0 px-3 py-3 sm:px-4">
+                  <div className="flex flex-col gap-x-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="break-words text-sm font-medium">
+                        {review.placement.title}
+                      </h3>
+                      <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+                        from {review.sourceLabel} ·{" "}
+                        <time dateTime={review.createdAt}>
+                          {new Date(review.createdAt).toLocaleString("en-US", {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                            timeZone: "UTC",
+                          })}{" "}
+                          UTC
+                        </time>
+                        {review.correctedAt ? " · Corrected" : ""}
+                      </p>
+                      {review.input.text ? (
+                        <p className="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-sm text-[var(--color-muted-foreground)]">
+                          {review.input.text}
+                        </p>
+                      ) : null}
+                      {review.input.url ? (
+                        <p
+                          className="mt-1 truncate text-xs text-[var(--color-muted-foreground)]"
+                          title={review.input.url}
+                        >
+                          {review.input.url}
+                        </p>
+                      ) : null}
+                      {review.input.files.length ? (
+                        <ul
+                          aria-label="Captured files"
+                          className="mt-1 space-y-0.5 text-xs text-[var(--color-muted-foreground)]"
+                        >
+                          {review.input.files.map((file, index) => (
+                            <li
+                              key={`${file.name}:${index}`}
+                              className="break-words"
+                            >
+                              {file.name}
+                              {file.size !== null
+                                ? ` · ${fileSize(file.size)}`
+                                : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      <div className="mt-2">
+                        <Placement placement={review.placement} />
+                      </div>
+                    </div>
+                    <div className="-ml-3 mt-1 flex shrink-0 flex-wrap gap-0 sm:ml-0 sm:mt-0">
+                      {actions}
+                    </div>
+                  </div>
+                  {editor}
+                </li>
+              );
+            })}
         </ol>
       ) : null}
       {fullPage && data && (data.offset > 0 || data.hasMore) ? (

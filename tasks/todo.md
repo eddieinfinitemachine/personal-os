@@ -1758,3 +1758,16 @@ and was reopened successfully using devicectl after the server rollout. No
 reinstall was needed, preserving the app's existing state. Phone-side setup
 can retry Connect & verify with the same token; the token was never embedded
 in source or the app.
+
+## Home layout: Capture Inbox on top, By project below — 2026-11-02
+
+- [x] Home order: Capture Inbox → list tiles → By project (desktop-only)
+- [x] Capture Inbox `compact` mode for Home: one line per capture
+      (title · destination · age), newest 3, no empty-state box ("All caught
+      up" in the header). Full detail stays on /captures.
+- [x] Tests: compact rows/limit/actions + empty header; page order test
+- [x] Browser check (scratch DB, 1440px + 390px): order, Dismiss → next
+      capture fills in, Undo, no console/hydration errors
+
+**Review**: two files of UI only, no schema. Phones keep 44px touch targets on
+row actions; desktop actions shrink to text-xs.

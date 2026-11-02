@@ -73,11 +73,13 @@ vi.mock("@/components/capture-review-inbox", () => ({
   CaptureReviewInbox: ({
     initialData,
     initialError,
+    compact,
   }: {
     initialData: CaptureReviewList | null;
     initialError: string | null;
+    compact?: boolean;
   }) => (
-    <section data-capture-review>
+    <section data-capture-review data-compact={compact || undefined}>
       {initialError ?? `Capture Inbox: ${initialData?.total}`}
     </section>
   ),
@@ -119,17 +121,18 @@ const render = async () => {
   await act(async () => root.render(page));
 };
 describe("Home Capture Inbox placement", () => {
-  it("renders Projects, Inbox, then existing list tiles and preserves desktop-only Projects", async () => {
+  it("renders a compact Inbox, then list tiles, then desktop-only Projects", async () => {
     await render();
     const project = container.querySelector("[data-project-card]")!,
       inbox = container.querySelector("[data-capture-review]")!,
       tiles = container.querySelector("[data-home-tiles]")!;
     expect(inbox).not.toBeNull();
-    expect(
-      project.compareDocumentPosition(inbox) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(inbox.hasAttribute("data-compact")).toBe(true);
     expect(
       inbox.compareDocumentPosition(tiles) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      tiles.compareDocumentPosition(project) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(project.closest("section")?.className).toContain("hidden md:block");
     expect(mocks.review).toHaveBeenCalledWith("user", {

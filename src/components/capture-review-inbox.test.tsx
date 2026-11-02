@@ -336,4 +336,37 @@ describe("Capture Inbox", () => {
     expect(container.textContent).toContain("Restore");
     expect(navigation.refresh).not.toHaveBeenCalled();
   });
+  it("compact (Home) shows one line per capture, the newest three, and keeps actions", async () => {
+    const items = ["a", "b", "c", "d"].map((id) =>
+      review({
+        id,
+        placement: { ...review().placement, id, title: `Title ${id}` },
+      }),
+    );
+    await render(list(items, 12), { compact: true });
+    expect(container.textContent).toContain("12 pending");
+    expect(container.querySelectorAll("ol > li")).toHaveLength(3);
+    expect(container.textContent).toContain("Title a · Media → Books");
+    expect(container.textContent).not.toContain("Title d");
+    // Original input, files and related tasks stay on /captures.
+    expect(container.textContent).not.toContain("Read The Creative Act");
+    expect(container.textContent).not.toContain("cover.jpg");
+    expect(container.textContent).not.toContain("Read the book");
+    expect(container.querySelector("time")?.getAttribute("title")).toBe(
+      "from ec",
+    );
+    expect(container.querySelector('a[href="/captures"]')?.textContent).toBe(
+      "Show all",
+    );
+    await click("Correct");
+    expect(
+      container.querySelector('button[aria-expanded="true"]')?.textContent,
+    ).toBe("Correct");
+  });
+  it("compact (Home) collapses the empty state into the header", async () => {
+    await render(list([]), { compact: true });
+    expect(container.textContent).toContain("All caught up");
+    expect(container.querySelector("ol")).toBeNull();
+    expect(container.querySelector("p")).toBeNull();
+  });
 });
