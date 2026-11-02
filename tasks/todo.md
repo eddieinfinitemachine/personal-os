@@ -1825,4 +1825,6 @@ Decision during review: shipping an approved schema change applies only the PR's
 - First live request (safe: tooltip on the Improve button) failed at the worker's own `pnpm test`: `kindle-epub.test.ts > passes epubcheck` timed out at vitest's 5 s default. It spawns epubcheck (Java); a cold JVM under the parallel suite is slow, warm it takes 1.7 s. Two full runs under the worker's env passed. The app showed only a code frame full of ANSI codes.
 - [x] Fix the root cause: 60 s timeout on that test (no blanket retry of failing checks).
 - [x] Worker: checks run with NO_COLOR/FORCE_COLOR=0, and failure text shows the FAIL/Error/timed out/tsc lines instead of the bare tail (`failureDetail`, tested with the real output shape).
-- [ ] After merge: pull personal-os-sync, restart improve worker, resend the safe request, then the risky one.
+- [x] PR #80 merged (5388b51); personal-os-sync pulled, improve worker restarted.
+- [x] Live safe request (sent from production): agent 1 min ($0.50), checks passed, PR #81 squash-merged and shipped once the production deploy succeeded, 3m44s end to end. Production Improve button now has `title="Ask for a change to this app"`; the agent also added the first sidebar tests.
+- [x] Live risky request (comment at the top of src/middleware.ts): checks passed, PR #82 opened, stopped at needs_review ("changes sign-in or auth") with a Vercel preview link; the dialog shows the summary, reason, PR/Preview links and Ship it. Left for Eddie to review and Ship it (the approve path is the one flow not yet run live) or close.
