@@ -92,10 +92,11 @@ credentials in the app bundle or this repository.
   returns the original result; changing content for that UUID returns 409.
   Database approval and rollout are tracked in `tasks/todo.md`.
 
-For an explicitly reviewed additive rollout, apply only the approved SQL
-before enabling the endpoint. The normal production build script runs
-`prisma db push`; use `prisma generate && next build --webpack` when deploying
-this change so unrelated schema drift is not applied.
+Apply only explicitly approved SQL before enabling the endpoint. Vercel's
+`buildCommand` runs `prisma generate && next build --webpack`, bypassing the
+generic schema-push helper so a deploy cannot apply unrelated database drift.
+The `pnpm build` script still contains that helper for existing manual workflows;
+do not use it with `VERCEL_ENV=production` for a narrowly approved rollout.
 
 ## Auth flow
 
