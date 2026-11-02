@@ -199,5 +199,8 @@ describe("buildEpub", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
-  });
+    // epubcheck is a Java program: a cold JVM start under a parallel full-suite
+    // run can take well over vitest's 5 s default (it failed an improve-worker
+    // check that way on 2026-11-02 while passing in 1.7 s when warm).
+  }, 60_000);
 });
