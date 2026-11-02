@@ -6,30 +6,14 @@ import {
   extractArticleFromHtml,
   type ExtractedArticle,
 } from "@/lib/reader-extract";
+import { resolveCaptureUser } from "@/lib/capture-auth";
+import { findCaptureReplay, quickSource, withCaptureReview } from "@/lib/capture-review/record";
+import { intakeMeta } from "@/lib/capture-review/intake";
+import { CaptureReviewError } from "@/lib/capture-review/types";
 import { sendReaderItemToKindle } from "@/lib/kindle-send";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-// Save a link to Read Later. Two auth paths:
-//  - session cookie (in-app paste)
-//  - Bearer CAPTURE_TOKEN (the iOS share-sheet Shortcut) → founder account
-async function resolveUserId(request: Request): Promise<string | null> {
-  const sessionUser = await getCurrentUserId(request);
-  if (sessionUser) return sessionUser;
-  const secret = process.env.CAPTURE_TOKEN;
-  const auth = request.headers.get("authorization");
-  const url = new URL(request.url);
-  const tokenOk =
-    secret &&
-    (auth === `Bearer ${secret}` || url.searchParams.get("token") === secret);
-  if (!tokenOk && !(secret === undefined && process.env.NODE_ENV !== "production"))
-    return null;
-  const founder = await prisma.user.findUnique({
-    where: { email: process.env.FOUNDER_EMAIL ?? "emcohen@me.com" },
-  });
-  return founder?.id ?? null;
-}
 
 export async function POST(request: Request) {
   return saveFromRequest(request);
@@ -39,7 +23,8 @@ export async function POST(request: Request) {
 // of URL" action is a GET unless someone opens its hidden Method field, and
 // for weeks it was saving nothing while showing "Saved" — so both verbs save.
 async function saveFromRequest(request: Request): Promise<Response> {
-  const userId = await resolveUserId(request);
+  const sessionUser = await getCurrentUserId(request);
+  const userId = sessionUser ?? await resolveCaptureUser(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   // Shortcuts is loose about shape: the link may arrive as JSON {url} or
@@ -91,111 +76,62 @@ async function saveFromRequest(request: Request): Promise<Response> {
   }
   const url = match[0];
 
-  // Re-saving the same URL refreshes the extraction instead of duplicating.
-  const existing = await prisma.readerItem.findFirst({
-    where: { userId, url },
-  });
-
   try {
-    const html =
-      typeof postJson?.html === "string" && postJson.html.length <= 4_000_000
-        ? postJson.html
-        : null;
-    let a: ExtractedArticle | null = null;
+    const html = typeof postJson?.html === "string" && postJson.html.length <= 4_000_000 ? postJson.html : null;
+    const marker = request.headers.get("X-Capture-Source") ?? postJson?.source ?? params.get("source");
+    const source = marker === "mac" || marker === "chrome" ? quickSource(marker) : sessionUser ? "web" : "quick";
+    const input = { text: raw.slice(0, 100_000), url, files: [] };
+    const meta = intakeMeta(request, userId, "reader", input, source, postJson?.requestId ?? params.get("requestId"), { input, html });
+    const ownerId = userId;
+    async function replay(tx: Pick<typeof prisma, "readerItem">, id: string) {
+      const item = await tx.readerItem.findFirst({ where: { id, userId: ownerId } });
+      if (!item) throw new CaptureReviewError(409, "The saved Reader item has been removed.");
+      return { item, degraded: !item.contentHtml };
+    }
+    const previous = await findCaptureReplay(userId, meta.id, meta.requestHash!);
+    if (previous) {
+      const { item, degraded } = await replay(prisma, previous.placement.id);
+      return NextResponse.json({ ok: true, id: item.id, title: item.title, minutes: Math.max(1, Math.round(item.wordCount / 230)), kindle: item.kindleSentAt ? "already-sent" : "off", ...(degraded ? { degraded: true } : {}), message: "Already saved", reviewId: meta.id });
+    }
+    // Extraction and any remote fetch finish before destination/review writes begin.
+    let article: ExtractedArticle | null = null;
+    let extractionError = "extraction failed";
     if (html) {
+      try { article = await extractArticleFromHtml(url, html); }
+      catch (error) { console.warn("[reader] html extraction failed; fetching url", { url, error: error instanceof Error ? error.message : String(error) }); }
+    }
+    if (!article) {
+      try { article = await extractArticle(url); }
+      catch (error) { extractionError = error instanceof Error ? error.message : extractionError; }
+    }
+    const extracted = article;
+    const outcome = await withCaptureReview(meta, {
+      commit: async tx => {
+        const existing = await tx.readerItem.findFirst({ where: { userId, url } });
+        const data = extracted ? { title: extracted.title, byline: extracted.byline, siteName: extracted.siteName, excerpt: extracted.excerpt, imageUrl: extracted.imageUrl, contentHtml: extracted.contentHtml, wordCount: extracted.wordCount, archivedAt: null } : null;
+        const item = data
+          ? existing ? await tx.readerItem.update({ where: { id: existing.id }, data }) : await tx.readerItem.create({ data: { userId, url, ...data } })
+          : existing ?? await tx.readerItem.create({ data: { userId, url, title: url.replace(/^https?:\/\/(www\.)?/, "").slice(0, 120), excerpt: `Saved without reader view (${extractionError})` } });
+        return { value: { item, degraded: !extracted }, placement: { type: "reader", id: item.id, title: item.title ?? "Read Later item", destination: "Read Later", path: `/reader/${item.id}` } };
+      }, replay: (tx, placement) => replay(tx, placement.id),
+    });
+    const { item, degraded } = outcome.value;
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { kindleEmail: true, kindleAutoSend: true } });
+    const shouldAutoSend = Boolean(outcome.created && !degraded && user?.kindleEmail && user.kindleAutoSend && !item.kindleSentAt && item.contentHtml);
+    const kindleState = degraded ? "skipped" : shouldAutoSend ? "sending" : item.kindleSentAt ? "already-sent" : "off";
+    if (shouldAutoSend) after(async () => {
       try {
-        a = await extractArticleFromHtml(url, html);
-      } catch (e) {
-        console.warn("[reader] html extraction failed; fetching url", {
-          url,
-          error: e instanceof Error ? e.message : String(e),
-        });
-      }
-    }
-    if (!a) a = await extractArticle(url);
-
-    const data = {
-      title: a.title,
-      byline: a.byline,
-      siteName: a.siteName,
-      excerpt: a.excerpt,
-      imageUrl: a.imageUrl,
-      contentHtml: a.contentHtml,
-      wordCount: a.wordCount,
-      archivedAt: null,
-    };
-    const item = existing
-      ? await prisma.readerItem.update({ where: { id: existing.id }, data })
-      : await prisma.readerItem.create({ data: { userId, url, ...data } });
-
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { kindleEmail: true, kindleAutoSend: true },
+        const result = await sendReaderItemToKindle(item.id);
+        if (!result.ok) console.warn("[reader] auto-send not sent", { itemId: item.id, status: result.status, error: result.error });
+      } catch (error) { console.error("[reader] auto-send failed", { itemId: item.id, error }); }
     });
-    const shouldAutoSend = Boolean(
-      user?.kindleEmail &&
-        user.kindleAutoSend &&
-        !item.kindleSentAt &&
-        item.contentHtml,
-    );
-    const kindleState = shouldAutoSend
-      ? "sending"
-      : item.kindleSentAt
-        ? "already-sent"
-        : "off";
-
-    if (shouldAutoSend) {
-      after(async () => {
-        try {
-          const r = await sendReaderItemToKindle(item.id);
-          if (!r.ok) {
-            console.warn("[reader] auto-send not sent", {
-              itemId: item.id,
-              status: r.status,
-              error: r.error,
-            });
-          }
-        } catch (e) {
-          console.error("[reader] auto-send failed", { itemId: item.id, error: e });
-        }
-      });
-    }
-
     const minutes = Math.max(1, Math.round(item.wordCount / 230));
-    const messagePreview =
-      kindleState === "sending"
-        ? " · sending to Kindle"
-        : kindleState === "already-sent"
-          ? " · already on Kindle"
-          : "";
-    return NextResponse.json({
-      ok: true,
-      id: item.id,
-      title: item.title,
-      minutes,
-      kindle: kindleState,
-      message: `Saved · ${minutes} min${messagePreview}`,
-    });
-  } catch (e) {
-    // Extraction failed — still save the bare link so nothing shared is lost.
-    const msg = e instanceof Error ? e.message : "extraction failed";
-    const item =
-      existing ??
-      (await prisma.readerItem.create({
-        data: {
-          userId,
-          url,
-          title: url.replace(/^https?:\/\/(www\.)?/, "").slice(0, 120),
-          excerpt: `Saved without reader view (${msg})`,
-        },
-      }));
-    return NextResponse.json({
-      ok: true,
-      id: item.id,
-      degraded: true,
-      kindle: "skipped",
-      message: "Saved link only (no article text)",
-    });
+    const suffix = kindleState === "sending" ? " · sending to Kindle" : kindleState === "already-sent" ? " · already on Kindle" : "";
+    return NextResponse.json({ ok: true, id: item.id, title: item.title, minutes, kindle: kindleState, ...(degraded ? { degraded: true } : {}), message: degraded ? "Saved link only (no article text)" : `Saved · ${minutes} min${suffix}`, reviewId: outcome.reviewId });
+  } catch (error) {
+    if (error instanceof CaptureReviewError) return NextResponse.json({ error: error.message }, { status: error.status });
+    console.error("[reader] save failed", error);
+    return NextResponse.json({ error: "Couldn't save this link. Please try again." }, { status: 500 });
   }
 }
 

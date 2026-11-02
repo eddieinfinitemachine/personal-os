@@ -39,6 +39,8 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
   >(null);
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
   const autoparseTriggered = useRef(false);
+  const requestId = useRef<string | null>(null);
+  const originalInput = useRef<{ text: string; url: string | null; files?: { name: string; mimeType: string; size: number; url: string }[] } | null>(null);
 
   // Rotate the placeholder every 4s while the textarea is empty.
   useEffect(() => {
@@ -148,6 +150,13 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
       // Stash Claude's follow-up todo suggestion in a separate state and
       // strip it from the proposal — the user has to opt in via the UI.
       const incoming = body.proposal;
+      requestId.current = crypto.randomUUID();
+      const photoUrl = "photoUrl" in incoming ? incoming.photoUrl : null;
+      originalInput.current = {
+        text: text.trim(),
+        url: text.match(/https?:\/\/[^\s]+/i)?.[0] ?? null,
+        ...(photo && photoUrl && /^https?:\/\//i.test(photoUrl) ? { files: [{ name: photo.name, mimeType: photo.type, size: photo.size, url: photoUrl }] } : {}),
+      };
       if (incoming.type === "asset" && incoming.followupTodo?.title) {
         setSuggestedFollowupTitle(incoming.followupTodo.title);
         setProposal({ ...incoming, followupTodo: null });
@@ -166,11 +175,12 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
     if (!proposal || committing) return;
     setCommitting(true);
     setError(null);
+    const id = requestId.current ??= crypto.randomUUID();
     try {
       const res = await fetch("/api/capture/smart/commit", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ proposal }),
+        headers: { "Content-Type": "application/json", "X-Capture-ID": id },
+        body: JSON.stringify({ requestId: id, input: originalInput.current, proposal }),
       });
       const body = (await res.json()) as Record<string, unknown> & {
         error?: string;
@@ -180,6 +190,7 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
         setCommitting(false);
         return;
       }
+      window.dispatchEvent(new CustomEvent("personalos:capture-saved"));
       // Route to the most relevant destination.
       // Post-save routing per proposal type.
       const projectHop =
@@ -215,6 +226,8 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
   }
 
   function reset() {
+    requestId.current = null;
+    originalInput.current = null;
     setProposal(null);
     setPhoto(null);
     setText("");

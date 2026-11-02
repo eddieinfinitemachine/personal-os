@@ -1,6 +1,6 @@
 # Capture Inbox on Home — proposed design
 
-Status: behavior clarified with Eddie; database addition requires approval before implementation.
+Status: user approved the CaptureReview table/index/User foreign key and requested implementation (2026-11-01).
 
 ## User intent
 

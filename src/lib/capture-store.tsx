@@ -37,14 +37,16 @@ export type CaptureStore = {
 const Ctx = createContext<CaptureStore | null>(null);
 const STORAGE_KEY = "ec:capture-queue";
 
-// Only persist captures that need user attention. Drop everything in-flight
-// (a refresh restarts the request anyway) and completed.
+// Keep an interrupted Save retryable with its original proposal and action ID.
+// Parsing can be restarted; completed captures do not need local persistence.
 const PERSISTABLE: CaptureStatus[] = ["ready", "error"];
 
 function persist(captures: Capture[]) {
   if (typeof window === "undefined") return;
   try {
-    const subset = captures.filter((c) => PERSISTABLE.includes(c.status));
+    const subset = captures
+      .map((c): Capture => c.status === "saving" ? { ...c, status: "error", error: "Save interrupted. Retry to check whether it saved." } : c)
+      .filter((c) => PERSISTABLE.includes(c.status));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(subset));
   } catch {}
 }
@@ -69,6 +71,7 @@ function makeId(): string {
 export function CaptureProvider({ children }: { children: ReactNode }) {
   const [captures, setCaptures] = useState<Capture[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const saving = useRef(new Set<string>());
   // Track which captures were previously "parsing" so the inbox pill can
   // detect parsing → ready transitions for the pulse animation.
   const prevStatusRef = useRef<Map<string, CaptureStatus>>(new Map());
@@ -136,19 +139,6 @@ export function CaptureProvider({ children }: { children: ReactNode }) {
     [startParse],
   );
 
-  const retry = useCallback(
-    (id: string) => {
-      setCaptures((prev) =>
-        prev.map((c) =>
-          c.id === id ? { ...c, status: "parsing", error: undefined } : c,
-        ),
-      );
-      const entry = captures.find((c) => c.id === id);
-      if (entry) startParse(id, entry.text);
-    },
-    [captures, startParse],
-  );
-
   const patch = useCallback((id: string, proposal: CaptureProposal) => {
     setCaptures((prev) =>
       prev.map((c) => (c.id === id ? { ...c, proposal } : c)),
@@ -162,15 +152,20 @@ export function CaptureProvider({ children }: { children: ReactNode }) {
   const commit = useCallback(
     async (id: string) => {
       const entry = captures.find((c) => c.id === id);
-      if (!entry || !entry.proposal) return;
+      if (!entry || !entry.proposal || entry.status === "saved" || saving.current.has(id)) return;
+      saving.current.add(id);
       setCaptures((prev) =>
         prev.map((c) => (c.id === id ? { ...c, status: "saving" } : c)),
       );
       try {
         const res = await fetch("/api/capture/smart/commit", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ proposal: entry.proposal }),
+          headers: { "Content-Type": "application/json", "X-Capture-ID": entry.id },
+          body: JSON.stringify({
+            requestId: entry.id,
+            input: { text: entry.text, url: entry.text.match(/https?:\/\/[^\s]+/i)?.[0] ?? null },
+            proposal: entry.proposal,
+          }),
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -190,6 +185,7 @@ export function CaptureProvider({ children }: { children: ReactNode }) {
         setCaptures((prev) =>
           prev.map((c) => (c.id === id ? { ...c, status: "saved" } : c)),
         );
+        window.dispatchEvent(new CustomEvent("personalos:capture-saved"));
         // Linger briefly so the user sees the checkmark, then remove.
         setTimeout(() => {
           setCaptures((prev) => prev.filter((c) => c.id !== id));
@@ -206,9 +202,24 @@ export function CaptureProvider({ children }: { children: ReactNode }) {
               : c,
           ),
         );
+      } finally {
+        saving.current.delete(id);
       }
     },
     [captures],
+  );
+
+  const retry = useCallback(
+    (id: string) => {
+      const entry = captures.find((c) => c.id === id);
+      if (!entry || entry.status !== "error") return;
+      // The server may have saved before a response was lost. Replay the same
+      // proposal rather than asking the model to produce a different request.
+      if (entry.proposal) { void commit(id); return; }
+      setCaptures((prev) => prev.map((c) => c.id === id ? { ...c, status: "parsing", error: undefined } : c));
+      void startParse(id, entry.text);
+    },
+    [captures, commit, startParse],
   );
 
   const value = useMemo<CaptureStore>(

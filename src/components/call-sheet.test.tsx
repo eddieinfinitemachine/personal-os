@@ -160,11 +160,38 @@ describe("daily call sheet", () => {
     expect(form.get("text")).toBe("Alex Rivera Tuesday");
     expect(form.get("forceType")).toBe("call_sheet");
     expect(fetch.mock.calls[2][0]).toBe("/api/capture/smart/commit");
-    expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ proposal });
+    expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ proposal, requestId: expect.any(String), input: { text: "Alex Rivera Tuesday", url: null } });
+    expect(fetch.mock.calls[2][1].headers["X-Capture-ID"]).toBe(JSON.parse(fetch.mock.calls[2][1].body).requestId);
     expect(fetch.mock.calls[3][0]).toBe("/api/call-sheet");
     expect(container.querySelector('[role="status"]')?.textContent).toBe("Alex Rivera will be on your call sheet Tue, Oct 6");
     expect(input.value).toBe("");
     expect(container.textContent).toContain("Alex Rivera · Tue, Oct 6");
+  });
+  it("retries an uncertain quick add without reparsing, then gives an intentional repeat a new ID", async () => {
+    const proposal = { type: "call_sheet", firstName: "Alex", lastName: "Rivera", date: "2026-10-06", note: null };
+    let attempts = 0;
+    const fetcher = vi.fn().mockImplementation(async (url: string) => {
+      if (url === "/api/call-sheet") return response(sheet());
+      if (url.endsWith("/parse")) return response({ proposal });
+      if (++attempts === 1) throw Error("Offline");
+      return response({ message: "Added" });
+    });
+    vi.stubGlobal("fetch", fetcher); await render();
+    const saved = vi.fn(); window.addEventListener("personalos:capture-saved", saved);
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Add someone for a day"]')!;
+    async function type() { await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Alex Rivera Tuesday");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }); }
+    await type(); await act(async () => input.form!.requestSubmit());
+    expect(saved).not.toHaveBeenCalled(); await act(async () => input.form!.requestSubmit());
+    expect(fetcher.mock.calls.filter(c => c[0].endsWith("/parse"))).toHaveLength(1);
+    let commits = fetcher.mock.calls.filter(c => c[0].endsWith("/commit"));
+    expect(commits[0][1].body).toBe(commits[1][1].body); expect(saved).toHaveBeenCalledOnce();
+    await type(); await act(async () => input.form!.requestSubmit());
+    commits = fetcher.mock.calls.filter(c => c[0].endsWith("/commit"));
+    expect(JSON.parse(commits[0][1].body).requestId).not.toBe(JSON.parse(commits[2][1].body).requestId);
+    window.removeEventListener("personalos:capture-saved", saved);
   });
   it("shows an ambiguous name without guessing and keeps the text", async () => {
     const fetch = vi.fn()

@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   try {
     const input = await parseBoardInput(request, MAX_UPLOAD_BYTES);
     input.via = "share";
-    const { item, duplicate } = await saveToBoard(session.userId, input);
+    const { item, duplicate } = await saveToBoard(session.userId, input, { request, source: "web" });
     if (!duplicate) after(() => tagInBackground(session.userId, item.id));
     back.searchParams.set("saved", item.id);
   } catch (e) {

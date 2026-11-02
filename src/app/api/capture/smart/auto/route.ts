@@ -1,447 +1,61 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ensureDefaultLists, ensureInboxProject, CAPTURE_LIST_NAME } from "@/lib/lists";
 import { parseCapture, type CaptureProposal } from "@/lib/smart-capture";
 import { parseAliasToken } from "@/lib/alias";
 import { resolveCaptureUser } from "@/lib/capture-auth";
 import { syncRecentTodos } from "@/lib/gcal";
-import {
-  commitCallSheetProposal,
-  userLocalToday,
-} from "@/lib/call-sheet/reminder-capture";
-
+import { userLocalToday } from "@/lib/call-sheet/reminder-capture";
+import { commitCore, validateCoreProposal } from "@/lib/capture-review/commit";
+import { findCaptureReplay, quickSource, withCaptureReview } from "@/lib/capture-review/record";
+import { callSheetResponse, captureResponse, commitCallSheetCapture, intakeMeta, CallSheetIntakeError } from "@/lib/capture-review/intake";
+import { CaptureReviewError } from "@/lib/capture-review/types";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-// Bearer-token smart capture. Auto-classifies via Claude, auto-commits — no
-// preview screen. Designed for the macOS Quick Todo / iOS Shortcut flow that
-// used to hit /api/capture/todo and always create a Todo, regardless of the
-// intent. This one routes to the right table (asset / interaction / person /
-// trip / todo / call sheet) based on the text.
-//
-// Auth: bearer token resolved to a user via lib/capture-auth — CAPTURE_TOKEN
-// maps to the founder, CAPTURE_TOKENS maps extra tokens to teammate emails.
-// No user session needed.
-//
-// Body (JSON):
-//   { text: "...", url?: "https://..." }
-//   Where `url` is an optional context URL (e.g. the page the user was on
-//   when triggering the shortcut). When present, it's appended to the text
-//   so Claude can use it for classification + web search.
-//
-// Also accepts ?text=...&url=... query params on GET so a Shortcut "Get
-// Contents of URL" action can hit it without composing a body.
-
 export async function POST(request: Request) {
   const userId = await resolveCaptureUser(request);
-  if (!userId) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-  const body = (await request.json().catch(() => ({}))) as {
-    text?: string;
-    url?: string;
-  };
-  return handle(userId, body.text, body.url);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  return handle(request, userId, await request.json().catch(() => ({})));
 }
-
 export async function GET(request: Request) {
   const userId = await resolveCaptureUser(request);
-  if (!userId) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-  const u = new URL(request.url);
-  return handle(userId, u.searchParams.get("text"), u.searchParams.get("url"));
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  return handle(request, userId, Object.fromEntries(new URL(request.url).searchParams));
 }
-
-// Pick the right action verb for a media companion-todo based on the format
-// Claude extracted into details. Falls back to a neutral "Read/watch" if
-// the format is unknown.
-function mediaVerb(
-  proposal: Extract<CaptureProposal, { type: "asset" }>,
-): string {
-  if (proposal.assetKind === "place") return "Try";
-  const format = ((proposal.details as Record<string, unknown> | undefined)
-    ?.format as string | undefined)?.toLowerCase();
-  if (!format) return "Read/watch";
-  if (format === "book" || format === "essay" || format === "article") return "Read";
-  if (format === "film" || format === "show" || format === "video") return "Watch";
-  if (format === "podcast" || format === "album") return "Listen";
-  return "Read/watch";
-}
-
-async function handle(
-  userId: string,
-  rawText: string | null | undefined,
-  rawUrl: string | null | undefined,
-) {
-  const text = rawText?.trim();
-  if (!text) {
-    return NextResponse.json({ error: "text required" }, { status: 400 });
-  }
-
-  // Deterministic "@name" routing: skip Claude entirely and file the todo
-  // (verbatim minus the token) straight onto the matching person-list.
-  const aliasHit = parseAliasToken(text);
-  if (aliasHit) {
-    const list = await prisma.list.findFirst({
-      where: {
-        userId,
-        OR: [
-          { name: { equals: `EC/${aliasHit.token}`, mode: "insensitive" } },
-          { name: { equals: aliasHit.token, mode: "insensitive" } },
-        ],
-      },
-    });
-    if (list) {
-      const todo = await prisma.todo.create({
-        data: {
-          userId,
-          listId: list.id,
-          projectId: null,
-          title: aliasHit.rest,
-          notes: rawUrl ?? null,
-        },
-      });
-      after(() => syncRecentTodos());
-      return NextResponse.json({ ok: true, type: "todo", todo, routedByAlias: true });
-    }
-  }
-
-  const projects = await prisma.project.findMany({
-    where: { userId, archived: false },
-    select: { id: true, name: true, kind: true },
-    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-  });
-
-  // Stitch the URL into the text so Claude can read it as part of the capture.
-  const combined = rawUrl ? `${text}\n\n${rawUrl}` : text;
-  const today = await userLocalToday(userId);
-
-  let proposal: CaptureProposal;
+async function handle(request: Request, userId: string, body: Record<string, unknown>) {
   try {
-    proposal = await parseCapture({
-      text: combined,
-      today,
-      activeProjects: projects,
-    });
-  } catch (err) {
-    console.error("smart auto parse failed", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "parse failed" },
-      { status: 502 },
-    );
-  }
-
-  // Validate any returned projectId belongs to this user.
-  if (
-    proposal.type === "asset" ||
-    proposal.type === "interaction" ||
-    proposal.type === "todo"
-  ) {
-    const pid = proposal.projectId;
-    if (pid && !projects.some((p) => p.id === pid)) {
-      proposal = { ...proposal, projectId: null };
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new CaptureReviewError(400, "text required");
+    if (typeof body.text !== "string" || !body.text.trim()) throw new CaptureReviewError(400, "text required");
+    const input = { text: body.text.trim(), url: typeof body.url === "string" ? body.url : null, files: [] };
+    const meta = intakeMeta(request, userId, "auto", input, quickSource(request.headers.get("X-Capture-Source") ?? body.source), body.requestId);
+    const previous = await findCaptureReplay(userId, meta.id, meta.requestHash!);
+    if (previous) return NextResponse.json({ ...await callSheetResponse(prisma, userId, previous.placement, "auto"), reviewId: meta.id });
+    const alias = parseAliasToken(input.text);
+    const aliasList = alias ? await prisma.list.findFirst({ where: { userId, OR: [{ name: { equals: `EC/${alias.token}`, mode: "insensitive" } }, { name: { equals: alias.token, mode: "insensitive" } }] } }) : null;
+    let proposal: CaptureProposal;
+    if (alias && aliasList) proposal = { type: "todo", title: alias.rest, listName: aliasList.name, routedByAlias: true };
+    else {
+      const projects = await prisma.project.findMany({ where: { userId, archived: false }, select: { id: true, name: true, kind: true }, orderBy: [{ position: "asc" }, { createdAt: "asc" }] });
+      try { proposal = await parseCapture({ text: [input.text, input.url].filter(Boolean).join("\n\n"), today: await userLocalToday(userId), activeProjects: projects }); }
+      catch (error) { console.error("smart auto parse failed", error); return NextResponse.json({ error: error instanceof Error ? error.message : "parse failed" }, { status: 502 }); }
+      if (proposal.type === "todo") proposal = { ...proposal, routedByAlias: false };
     }
-  }
-
-  // Commit. Inlined per-type rather than calling /commit because we have a
-  // bearer-token context, not a session cookie.
-  if (proposal.type === "call_sheet") {
-    // No preview here, so an ambiguous name is an error, never a guess.
-    const result = await commitCallSheetProposal(userId, proposal);
-    if (!result.ok) {
-      return NextResponse.json(
-        { error: result.error, candidates: result.candidates },
-        { status: result.status },
-      );
-    }
-    return NextResponse.json({
-      ok: true,
-      type: "call_sheet",
-      id: result.personId,
-      dueOn: result.dueOn,
-      created: result.created,
-      message: result.message,
-    });
-  }
-
-  if (proposal.type === "asset") {
-    const DEFAULT_STATUS: Record<string, string> = {
-      inventory: "owned",
-      investment: "active",
-      media: "wishlist",
-      place: "wishlist",
-      practice: "active",
-    };
-    const status = proposal.status ?? DEFAULT_STATUS[proposal.assetKind] ?? null;
-    const asset = await prisma.asset.create({
-      data: {
-        userId,
-        kind: proposal.assetKind,
-        status,
-        title: proposal.title,
-        subtitle: proposal.subtitle ?? null,
-        category: proposal.category ?? null,
-        costBasis: proposal.costBasis ?? null,
-        currentValue: proposal.currentValue ?? null,
-        amountUsd: proposal.amountUsd ?? null,
-        rating: proposal.rating ?? null,
-        location: proposal.location ?? null,
-        acquiredAt: proposal.acquiredAt ? new Date(proposal.acquiredAt) : null,
-        url: proposal.url ?? rawUrl ?? null,
-        notes: proposal.notes ?? null,
-        projectId: proposal.projectId ?? null,
-        detailsJson: {
-          source: "smart-capture-auto",
-          sourceVendor: proposal.sourceVendor ?? null,
-          ...(proposal.details ?? {}),
-        },
-      },
-    });
-
-    // When you save a media bookmark or a place/wishlist asset, also drop
-    // a matching todo on the "Later" list so it shows up in your reading
-    // queue alongside other reminders.
-    const PENDING_STATUSES = new Set([
-      "to-read",
-      "to-watch",
-      "to-listen",
-      "wishlist",
-      "in-progress",
-    ]);
-    let companionTodoId: string | null = null;
-    if (
-      (proposal.assetKind === "media" || proposal.assetKind === "place") &&
-      status &&
-      PENDING_STATUSES.has(status)
-    ) {
-      await ensureDefaultLists(userId);
-      const list = await prisma.list.findFirst({
-        where: { userId, name: { equals: "Later", mode: "insensitive" } },
-      });
-      if (list) {
-        const verb = mediaVerb(proposal);
-        const todo = await prisma.todo.create({
-          data: {
-            userId,
-            listId: list.id,
-            projectId: proposal.projectId ?? null,
-            title: `${verb}: ${proposal.title}`,
-            notes: [proposal.url ?? rawUrl ?? null, proposal.notes ?? null]
-              .filter(Boolean)
-              .join("\n") || null,
-          },
-        });
-        companionTodoId = todo.id;
-      }
-    }
-
-    if (companionTodoId) after(() => syncRecentTodos());
-    return NextResponse.json({
-      ok: true,
-      type: "asset",
-      assetKind: proposal.assetKind,
-      id: asset.id,
-      companionTodoId,
-    });
-  }
-
-  if (proposal.type === "todo") {
-    await ensureDefaultLists(userId);
-    // Always file captures into the Inbox project (To Do list); the user sorts
-    // them into real projects later.
-    const inboxProjectId = await ensureInboxProject(userId);
-    const list = await prisma.list.findFirst({
-      where: { userId, name: { equals: CAPTURE_LIST_NAME, mode: "insensitive" } },
-    });
-    if (!list) {
-      return NextResponse.json({ error: `list "${CAPTURE_LIST_NAME}" not found` }, { status: 404 });
-    }
-    // If the original input had a URL, append it to notes so the todo row
-    // linkifies it.
-    const notes = rawUrl
-      ? [proposal.notes ?? "", rawUrl].filter(Boolean).join("\n")
-      : proposal.notes ?? null;
-    const todo = await prisma.todo.create({
-      data: {
-        userId,
-        listId: list.id,
-        projectId: inboxProjectId,
-        title: proposal.title,
-        notes: notes || null,
-        dueDate: proposal.dueDate ? new Date(proposal.dueDate) : null,
-      },
-    });
-    after(() => syncRecentTodos());
-    return NextResponse.json({ ok: true, type: "todo", id: todo.id });
-  }
-
-  if (proposal.type === "person") {
-    const person = await prisma.person.create({
-      data: {
-        userId,
-        firstName: proposal.firstName,
-        lastName: proposal.lastName ?? null,
-        role: proposal.role ?? null,
-        company: proposal.company ?? null,
-        city: proposal.city ?? null,
-        country: proposal.country ?? null,
-        howWeMet: proposal.howWeMet ?? null,
-        socialUrls: proposal.socialUrls ?? undefined,
-        interests: proposal.interests ?? [],
-        email: proposal.email ?? null,
-        phone: proposal.phone ?? null,
-        strength: proposal.strength ?? null,
-        circles: proposal.circles ?? [],
-        notes: proposal.notes ?? null,
-        birthday: proposal.birthday ? new Date(proposal.birthday) : null,
-      },
-    });
-    const fullName = [proposal.firstName, proposal.lastName]
-      .filter(Boolean)
-      .join(" ");
-    // Companion todo: filed on the person's card AND surfaced as an
-    // actionable reminder on the To Do list.
-    const companionTodoId = await createCompanionTodo(
-      userId,
-      `Follow up with ${fullName}`,
-      proposal.notes ?? null,
-    );
-    if (companionTodoId) after(() => syncRecentTodos());
-    return NextResponse.json({
-      ok: true,
-      type: "person",
-      id: person.id,
-      companionTodoId,
-    });
-  }
-
-  if (proposal.type === "trip") {
-    const trip = await prisma.trip.create({
-      data: {
-        userId,
-        name: proposal.name,
-        destination: proposal.destination ?? null,
-        startDate: proposal.startDate ? new Date(proposal.startDate) : null,
-        endDate: proposal.endDate ? new Date(proposal.endDate) : null,
-        status: proposal.status ?? "planned",
-        travelers: proposal.travelers ?? [],
-        transport: proposal.transport ?? null,
-        accommodation: proposal.accommodation ?? null,
-        costUsd: proposal.costUsd ?? null,
-        bookingUrl: proposal.bookingUrl ?? rawUrl ?? null,
-        notes: proposal.notes ?? null,
-      },
-    });
-    return NextResponse.json({ ok: true, type: "trip", id: trip.id });
-  }
-
-  // Interaction — needs at least one person hint to be useful; otherwise skip.
-  if (proposal.type === "interaction") {
-    const occurredAt = new Date(proposal.occurredAt);
-    if (isNaN(occurredAt.getTime())) {
-      return NextResponse.json({ error: "invalid occurredAt" }, { status: 400 });
-    }
-    // Resolve all person hints in ONE query instead of a findFirst per hint
-    // (the commit route already uses this batched shape). Misses are created,
-    // and the map is updated so duplicate hints in the same payload reuse them.
-    const hints = proposal.personHints
-      .map((h) => ({
-        firstName: h.firstName?.trim() ?? "",
-        lastName: h.lastName?.trim() || null,
-      }))
-      .filter((h) => h.firstName);
-
-    const personIds: string[] = [];
-    if (hints.length > 0) {
-      const existing = await prisma.person.findMany({
-        where: {
-          userId,
-          OR: hints.map((h) => ({
-            firstName: { equals: h.firstName, mode: "insensitive" as const },
-            lastName: h.lastName
-              ? { equals: h.lastName, mode: "insensitive" as const }
-              : null,
-          })),
-        },
-        select: { id: true, firstName: true, lastName: true },
-      });
-      const key = (f: string, l: string | null) =>
-        `${f.toLowerCase()}::${l?.toLowerCase() ?? ""}`;
-      const existingMap = new Map(
-        existing.map((p) => [key(p.firstName, p.lastName), p]),
-      );
-      for (const h of hints) {
-        const found = existingMap.get(key(h.firstName, h.lastName));
-        if (found) {
-          personIds.push(found.id);
-        } else {
-          const created = await prisma.person.create({
-            data: { userId, firstName: h.firstName, lastName: h.lastName },
-          });
-          personIds.push(created.id);
-          existingMap.set(key(h.firstName, h.lastName), {
-            id: created.id,
-            firstName: created.firstName,
-            lastName: created.lastName,
-          });
+    if (proposal.type !== "call_sheet") validateCoreProposal(proposal);
+    const outcome = await withCaptureReview({ ...meta, proposal }, {
+      commit: async tx => {
+        if (proposal.type === "call_sheet") {
+          const { result, placement } = await commitCallSheetCapture(tx, userId, proposal);
+          return { value: { ok: true, type: "call_sheet", id: result.personId, dueOn: result.dueOn, created: result.created, message: result.message } as Record<string, unknown>, placement };
         }
-      }
-    }
-    const interaction = await prisma.interaction.create({
-      data: {
-        userId,
-        occurredAt,
-        kind: proposal.kind,
-        title: proposal.title,
-        location: proposal.location ?? null,
-        notes: proposal.notes ?? null,
-        personIds,
-        source: "smart-capture-auto",
-        projectId: proposal.projectId ?? null,
+        const placement = await commitCore(tx, userId, input, proposal, [], { mode: "auto" });
+        return { value: await captureResponse(tx, userId, placement, "auto", { routedByAlias: proposal.type === "todo" && proposal.routedByAlias }), placement };
       },
+      replay: (tx, placement) => callSheetResponse(tx, userId, placement, "auto"),
     });
-    if (personIds.length > 0) {
-      await prisma.person.updateMany({
-        where: { id: { in: personIds }, userId },
-        data: { lastInteractionAt: occurredAt },
-      });
-    }
-    // Companion todo: the note lives on the person's card, and a matching
-    // reminder lands on the To Do list so it's actionable.
-    const companionTodoId = await createCompanionTodo(
-      userId,
-      proposal.title,
-      proposal.notes ?? null,
-      proposal.projectId ?? null,
-    );
-    if (companionTodoId) after(() => syncRecentTodos());
-    return NextResponse.json({
-      ok: true,
-      type: "interaction",
-      id: interaction.id,
-      companionTodoId,
-    });
+    if (outcome.created && (outcome.value.type === "todo" || outcome.value.companionTodoId)) after(() => syncRecentTodos());
+    return NextResponse.json({ ...outcome.value, reviewId: outcome.reviewId });
+  } catch (error) {
+    if (error instanceof CaptureReviewError) return NextResponse.json({ error: error.message, ...(error instanceof CallSheetIntakeError ? { candidates: error.candidates } : {}) }, { status: error.status });
+    console.error("smart auto save failed", error);
+    return NextResponse.json({ error: "Couldn't save this capture. Please try again." }, { status: 500 });
   }
-
-  return NextResponse.json({ error: "unknown proposal type" }, { status: 500 });
-}
-
-// Create a reminder on the "To Do" list to accompany a captured person /
-// interaction. Returns the new todo id, or null if the To Do list is missing.
-async function createCompanionTodo(
-  userId: string,
-  title: string,
-  notes: string | null,
-  projectId: string | null = null,
-): Promise<string | null> {
-  await ensureDefaultLists(userId);
-  const list = await prisma.list.findFirst({
-    where: { userId, name: { equals: "To Do", mode: "insensitive" } },
-  });
-  if (!list) return null;
-  const todo = await prisma.todo.create({
-    data: { userId, listId: list.id, projectId, title, notes },
-  });
-  return todo.id;
 }

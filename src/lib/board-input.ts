@@ -16,6 +16,8 @@ export type BoardInput = {
   note?: string;
   title?: string;
   via: string;
+  source?: string;
+  requestId?: string;
 };
 
 const VIAS = new Set(["app", "shortcut", "extension", "share", "rec"]);
@@ -88,7 +90,9 @@ export async function parseBoardInput(request: Request, maxImageBytes: number): 
   const take = (key: string, v: unknown) => {
     const s = str(v);
     if (!s) return;
-    if (key === "note") out.note = s;
+    if (key === "requestId") out.requestId = s;
+    else if (key === "source") out.source = s;
+    else if (key === "note") out.note = s;
     else if (key === "title") out.title = s;
     else if (key === "via") out.via = VIAS.has(s) ? s : out.via;
     else if (key === "imageUrl" || key === "srcUrl" || key === "image") {

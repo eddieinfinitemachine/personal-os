@@ -147,12 +147,16 @@ async function logResponseError(action: string, response: Response): Promise<voi
 }
 
 export async function syncTodoEvent(todo: TodoForCalendar): Promise<void> {
-  if (!isCalendarSyncConfigured()) return;
+  await syncTodoEventChecked(todo);
+}
+
+/** True only when Google confirms the write; callers can retain failed work for retry. */
+export async function syncTodoEventChecked(todo: TodoForCalendar): Promise<boolean> {
+  if (!isCalendarSyncConfigured()) return false;
 
   try {
     if (!todo.dueDate) {
-      await deleteTodoEvent(todo.id);
-      return;
+      return await deleteTodoEventChecked(todo.id);
     }
 
     const token = await getGoogleAccessToken();
@@ -183,19 +187,26 @@ export async function syncTodoEvent(todo: TodoForCalendar): Promise<void> {
       if (!patchResponse.ok) {
         await logResponseError(`patch todo ${todo.id} failed`, patchResponse);
       }
-      return;
+      return patchResponse.ok;
     }
 
     if (!response.ok) {
       await logResponseError(`create todo ${todo.id} failed`, response);
     }
+    return response.ok;
   } catch (err) {
     console.error(`[gcal] sync todo ${todo.id} failed`, err);
+    return false;
   }
 }
 
 export async function deleteTodoEvent(todoId: string): Promise<void> {
-  if (!isCalendarSyncConfigured()) return;
+  await deleteTodoEventChecked(todoId);
+}
+
+/** Already absent events are successful deletes; transport/auth errors remain retryable. */
+export async function deleteTodoEventChecked(todoId: string): Promise<boolean> {
+  if (!isCalendarSyncConfigured()) return false;
 
   try {
     const token = await getGoogleAccessToken();
@@ -209,9 +220,12 @@ export async function deleteTodoEvent(todoId: string): Promise<void> {
     );
     if (!response.ok && response.status !== 404 && response.status !== 410) {
       await logResponseError(`delete todo ${todoId} failed`, response);
+      return false;
     }
+    return true;
   } catch (err) {
     console.error(`[gcal] delete todo ${todoId} failed`, err);
+    return false;
   }
 }
 

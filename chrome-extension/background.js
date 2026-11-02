@@ -9,6 +9,45 @@
 
 const DEFAULT_ENDPOINT = "https://internal.eddiecohen.com";
 const STORAGE_KEYS = ["endpoint", "token"];
+// Keep the extracted page identical when the popup retries a lost response.
+const pendingReaderBodies = new Map();
+const READER_REQUEST_PREFIX = "ec:reader-request:";
+
+async function readerRequestBody(requestId) {
+  if (pendingReaderBodies.has(requestId)) return pendingReaderBodies.get(requestId);
+  try {
+    const key = READER_REQUEST_PREFIX + requestId;
+    return (await chrome.storage.session?.get(key))?.[key]?.body;
+  } catch {
+    return undefined;
+  }
+}
+
+async function rememberReaderBody(requestId, body) {
+  pendingReaderBodies.set(requestId, body);
+  // Recent requests stay available after a worker restart or a lost popup reply.
+  // Bound the cache; it contains page snapshots, never the capture token.
+  while (pendingReaderBodies.size > 8) pendingReaderBodies.delete(pendingReaderBodies.keys().next().value);
+  try {
+    const storage = chrome.storage.session;
+    if (!storage) return;
+    const key = READER_REQUEST_PREFIX + requestId;
+    const previous = await storage.get(null);
+    const entries = Object.entries(previous)
+      .filter(([name]) => name.startsWith(READER_REQUEST_PREFIX) && name !== key)
+      .sort(([, a], [, b]) => b.createdAt - a.createdAt);
+    let size = JSON.stringify(body).length * 2;
+    let count = 1;
+    const remove = entries.filter(([, entry]) => {
+      size += JSON.stringify(entry.body).length * 2;
+      return ++count > 8 || size > 8000000;
+    }).map(([name]) => name);
+    if (remove.length) await storage.remove(remove);
+    await storage.set({ [key]: { body, createdAt: Date.now() } });
+  } catch {
+    // Session storage quota/unavailability must not prevent an ordinary save.
+  }
+}
 
 async function getSettings() {
   const data = await chrome.storage.local.get(STORAGE_KEYS);
@@ -18,7 +57,7 @@ async function getSettings() {
   };
 }
 
-async function sendCapture({ text, url, defaultText }) {
+async function sendCapture({ text, url, defaultText, requestId = crypto.randomUUID() }) {
   const { endpoint, token } = await getSettings();
   if (!token) {
     notify(
@@ -41,6 +80,8 @@ async function sendCapture({ text, url, defaultText }) {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
+        "X-Capture-Source": "chrome",
+        "X-Capture-ID": requestId,
       },
       body: JSON.stringify(body),
     });
@@ -62,7 +103,7 @@ async function sendCapture({ text, url, defaultText }) {
   }
 }
 
-async function saveReadLater({ tab, linkUrl }) {
+async function saveReadLater({ tab, linkUrl, requestId = crypto.randomUUID() }) {
   const { endpoint, token } = await getSettings();
   if (!token) {
     notify(
@@ -85,8 +126,9 @@ async function saveReadLater({ tab, linkUrl }) {
     return { ok: false, error: "Only web pages can be saved." };
   }
 
-  const body = { url };
-  if (!linkUrl && tab?.id) {
+  const cachedBody = await readerRequestBody(requestId);
+  const body = cachedBody || { url };
+  if (!cachedBody && !linkUrl && tab?.id) {
     try {
       const [{ result }] = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
@@ -112,6 +154,7 @@ async function saveReadLater({ tab, linkUrl }) {
     }
   }
 
+  await rememberReaderBody(requestId, body);
   notify("Saving to Read Later...", url);
   try {
     const response = await fetch(`${endpoint}/api/reader`, {
@@ -119,6 +162,8 @@ async function saveReadLater({ tab, linkUrl }) {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
+        "X-Capture-Source": "chrome",
+        "X-Capture-ID": requestId,
       },
       body: JSON.stringify(body),
     });
@@ -140,7 +185,7 @@ async function saveReadLater({ tab, linkUrl }) {
 
 // Mood board: pages, links, and images. Images are sent by URL; the server
 // fetches and re-hosts them.
-async function saveToBoard({ url, imageUrl, note }) {
+async function saveToBoard({ url, imageUrl, note, requestId = crypto.randomUUID() }) {
   const { endpoint, token } = await getSettings();
   if (!token) {
     notify(
@@ -166,6 +211,8 @@ async function saveToBoard({ url, imageUrl, note }) {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
+        "X-Capture-Source": "chrome",
+        "X-Capture-ID": requestId,
       },
       body: JSON.stringify(body),
     });
@@ -294,7 +341,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       .query({ active: true, currentWindow: true })
       .then(([activeTab]) =>
         activeTab
-          ? saveReadLater({ tab: activeTab })
+          ? saveReadLater({ tab: activeTab, requestId: msg.requestId })
           : { ok: false, error: "no-active-tab" },
       )
       .then(sendResponse);
@@ -305,7 +352,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       .query({ active: true, currentWindow: true })
       .then(([activeTab]) =>
         activeTab
-          ? saveToBoard({ url: activeTab.url, note: msg.note })
+          ? saveToBoard({ url: activeTab.url, note: msg.note, requestId: msg.requestId })
           : { ok: false, error: "no-active-tab" },
       )
       .then(sendResponse);

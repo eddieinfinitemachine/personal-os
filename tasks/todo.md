@@ -5,11 +5,11 @@
 - [x] Map save paths, existing local queue, placement data, correction and file/merge constraints.
 - [x] Write concrete behavior/storage/rollback proposal: `docs/plans/2026-11-01-capture-inbox.md`.
 - [x] Independent review of proposed design approved after addressing retry, concurrency, correction-scope, derived-date and external-effect constraints.
-- [ ] Obtain approval for one new CaptureReview table, index, and User foreign key before schema changes.
-- [ ] Implement atomic capture/review tracking, Home UI, dismissal/Undo and safe corrections across capture sources.
+- [x] User approved the CaptureReview table, index and User foreign key, and requested implementation (2026-11-01).
+- [x] Implement atomic capture/review tracking, Home UI, dismissal/Undo and safe corrections across capture sources.
 - [ ] Verify with tests and isolated Postgres, typecheck/build, then apply only approved SQL and deploy.
 
-Baseline validation: 125 test files / 1,227 tests pass; 19 files / 150 integration tests skipped without test database setup. No Prisma schema, migration SQL or production database changes have been made for this feature.
+Validation before rollout: 141 test files / 1,364 tests pass, including guarded real-Postgres correction/retry/race tests; 19 files / 150 unrelated integration tests remain opt-in. Prisma generated; TypeScript and direct production build pass. Responsive light/dark browser checks exercised correction, cross-type movement, Dismiss and Undo. Independent safety review passed after fixing revoked-list replay and derived-contact-date races. Existing middleware/jose Edge warnings remain. Production schema/deployment pending.
 
 # iOS mobile capture connection — 2026-11-01
 

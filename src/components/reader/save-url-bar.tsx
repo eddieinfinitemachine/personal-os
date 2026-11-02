@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus } from "lucide-react";
 
@@ -9,16 +9,21 @@ export function SaveUrlBar() {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const pending = useRef<{ id: string; url: string } | null>(null);
+  const saving = useRef(false);
 
   async function save() {
     const url = value.trim();
-    if (!url) return;
+    if (!url || saving.current) return;
+    saving.current = true;
+    if (!pending.current || pending.current.url !== url) pending.current = { id: crypto.randomUUID(), url };
+    const requestId = pending.current.id;
     setBusy(true);
     setNote(null);
     try {
       const res = await fetch("/api/reader", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Capture-ID": requestId },
         body: JSON.stringify({ url }),
       });
       const data = (await res.json()) as {
@@ -28,12 +33,15 @@ export function SaveUrlBar() {
         error?: string;
       };
       if (!res.ok || !data.ok) throw new Error(data.error);
+      pending.current = null;
+      window.dispatchEvent(new CustomEvent("personalos:capture-saved"));
       setValue("");
       setNote(data.degraded ? "Saved (no reader view for that page)." : null);
       router.refresh();
     } catch (e) {
       setNote(e instanceof Error && e.message ? e.message : "Couldn't save that.");
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   }

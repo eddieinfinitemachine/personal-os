@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
-  receiptFind: vi.fn(), receiptCreate: vi.fn(), transaction: vi.fn(), lock: vi.fn(),
+  review: vi.fn(), record: vi.fn(), receiptFind: vi.fn(), receiptCreate: vi.fn(), transaction: vi.fn(), lock: vi.fn(),
   projectMany: vi.fn(), projectFirst: vi.fn(), projectCreate: vi.fn(),
   listFirst: vi.fn(), listCreate: vi.fn(), aggregate: vi.fn(), attachmentCreate: vi.fn(), attachmentMany: vi.fn(),
   todoCreate: vi.fn(), todoUpdate: vi.fn(), assetCreate: vi.fn(), personFirst: vi.fn(), personCreate: vi.fn(), personUpdate: vi.fn(), personUpdateMany: vi.fn(),
@@ -13,6 +13,9 @@ vi.mock("@/lib/prisma", () => ({ prisma: {
 } }));
 vi.mock("@/lib/smart-capture", () => ({ parseCapture: mocks.parse }));
 vi.mock("@vercel/blob", () => ({ put: mocks.put, del: mocks.del }));
+vi.mock("./capture-review/journal", () => ({ journalClient: (client: unknown) => ({ client, effects: () => ({ version: 1, writes: [] }) }) }));
+vi.mock("./capture-review/record", () => ({ captureLock: vi.fn(), recordCapture: mocks.record }));
+vi.mock("./capture-review/read", () => ({ getCaptureReview: mocks.review }));
 import { captureMobile } from "./mobile-capture";
 import { mobileReceiptId, type MobileCaptureInput } from "./mobile-capture-input";
 const requestId = "12345678-1234-4234-8234-123456789abc";
@@ -23,7 +26,7 @@ let receipts: Map<string, { id: string; userId: string; requestHash: string; res
 let serial: number;
 let events: string[];
 beforeEach(() => {
-  vi.resetAllMocks(); records = []; receipts = new Map(); serial = 0; events = [];
+  vi.resetAllMocks(); mocks.review.mockResolvedValue(null); records = []; receipts = new Map(); serial = 0; events = [];
   const create = (table: string) => async ({ data }: { data: Record<string, unknown> }) => {
     events.push(table); const row = { id: `${table}-${++serial}`, ...data } as Row;
     records.push({ table, row }); return row;
@@ -69,6 +72,18 @@ describe("mobile capture receipts", () => {
     expect(events).toEqual(["lock", "todo", "receipt"]); expect(receipts.size).toBe(1);
     expect(await captureMobile("alice", input())).toEqual(first);
     expect(mocks.parse).toHaveBeenCalledTimes(1); expect(mocks.todoCreate).toHaveBeenCalledTimes(1);
+  });
+  it("replays the current placement after an Inbox correction without recreating the original", async () => {
+    await captureMobile("alice", input());
+    mocks.review.mockResolvedValue({ correctedAt: "2026-11-01T12:00:00Z", placement: { type: "asset", id: "corrected", title: "Milk", assetKind: "inventory", destination: "Inventory", path: "/inventory" } });
+    expect(await captureMobile("alice", input())).toMatchObject({ id: "corrected", type: "asset", path: "/inventory" });
+    expect(mocks.todoCreate).toHaveBeenCalledTimes(1);
+    expect(mocks.parse).toHaveBeenCalledTimes(1);
+  });
+  it("rolls back the destination if creating its review fails", async () => {
+    mocks.record.mockRejectedValue(new Error("review write failed"));
+    await expect(captureMobile("alice", input())).rejects.toThrow("review write failed");
+    expect(records).toHaveLength(0); expect(receipts.size).toBe(0);
   });
   it("rejects changed content for an existing UUID", async () => {
     await captureMobile("alice", input());

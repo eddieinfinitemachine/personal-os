@@ -1003,6 +1003,7 @@ model User {
   projectMeetings     ProjectMeeting[]
   researchReports     ResearchReport[]
   mobileCaptureReceipts MobileCaptureReceipt[]
+  captureReviews       CaptureReview[]
 
   @@index([email])
 }
@@ -1017,6 +1018,25 @@ model MobileCaptureReceipt {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+}
+
+// A persistent review layer; canonical items stay in their actual destinations.
+model CaptureReview {
+  id          String   @id
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source      String
+  requestHash String?
+  input       Json
+  proposal    Json?
+  placement   Json
+  effects     Json
+  dismissedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  revision    Int      @default(1)
+
+  @@index([userId, dismissedAt, createdAt])
 }
 
 // Threaded comments on a task. Visible to everyone who can access the todo's
