@@ -1002,8 +1002,21 @@ model User {
   projectSources      ProjectSource[]
   projectMeetings     ProjectMeeting[]
   researchReports     ResearchReport[]
+  mobileCaptureReceipts MobileCaptureReceipt[]
 
   @@index([email])
+}
+
+// A mobile UUID and its committed result are saved atomically to make retries safe.
+model MobileCaptureReceipt {
+  id          String   @id
+  requestHash String
+  result      Json
+  createdAt   DateTime @default(now())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 // Threaded comments on a task. Visible to everyone who can access the todo's

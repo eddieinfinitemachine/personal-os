@@ -1,3 +1,24 @@
+# iOS mobile capture connection — 2026-11-01
+
+- [x] Reproduce: production mobile endpoint returns an HTML 404 despite a valid token.
+- [x] Isolate work on `codex/ios-mobile-capture` from current production main; preserve existing edits.
+- [x] Baseline capture tests: 53 passed, 9 integration cases skipped without database credentials.
+- [x] Restore the handed-off authenticated mobile endpoint and test supported capture types, uploads, and retry behavior (25 new cases).
+- [x] Obtain approval for the additive receipt table/index/foreign key before changing Prisma schema or any database structure (user: “ok put it on my iphone”, 2026-11-01).
+- [x] Generate Prisma client, typecheck, run full tests, and build.
+- [x] Apply only the approved receipt SQL and verify columns, index, primary key and User foreign key.
+- [x] Deploy without the generic schema-push build helper.
+- [x] Verify live connection, native text/file saves and retries; reopen the installed app on EC PRO.
+
+Review before database approval: full Vitest suite 125 files passed, 19 skipped;
+1,227 tests passed, 150 skipped (integration cases need explicit database/test
+configuration). Typecheck reports only the three receipt-delegate references
+that require the pending Prisma model. No schema or database change applied.
+Confirmed worktree base is the exact current production commit, `6255909`.
+Independent code review found no material or blocking issues. Deployment-specific
+configuration preserves all eight cron entries and overrides only the build
+command to bypass the generic database schema push. User approved the described additive database change on 2026-11-01; applying only that reviewed change.
+
 # /projects v3 = initiatives Claude infers — in progress 2026-10-28
 
 Eddie: "i dont want it to pull my github repos, i wanted to deduce what it
@@ -1686,3 +1707,39 @@ Reference: [ACE circuit programming](https://www.acefitness.org/continuing-educa
 - [ ] Release to production and verify consecutive circuit movements and end-of-round recovery in the live app.
 
 Review: 51 workout tests passed; typecheck and production build passed (existing Next middleware / jose Edge warnings). Read-only design and code review found no blockers. Tests cover circuit/superset rounds, unequal set counts, straight recovery, cooldown, estimates/extensions, obsolete running/paused rests, preserved round/straight recovery and added time, and timed work completed manually or after its saved deadline. No schema diff. Release verification pending.
+
+## iOS capture rollout validation — 2026-11-01
+
+User approved the receipt addition. Prisma generation and typecheck pass.
+Full suite: 125 files / 1,227 tests pass; 19 files / 150 integration tests
+skipped without test database setup. Production build passes; existing
+Next middleware deprecation and jose Edge API warnings remain outside this
+change. Current production/main remains `6255909`.
+
+Production receipt-table preflight found no existing table. First SQL runner
+attempt split a semicolon in a comment and rolled back; confirmed absence,
+removed comments before splitting, then applied exactly the two approved DDL
+statements in one transaction. Verified all five columns, primary key, User
+foreign key with cascading deletes/updates, and the user/date index. No
+existing table structure or records were changed.
+
+## iOS capture live result — 2026-11-01
+
+Production deployment `personal-i5zq2ny81-ec-efed32ac.vercel.app` succeeded.
+Both `internal.eddiecohen.com` and `personal-os-two-gold.vercel.app` return
+the exact authenticated JSON connection contract. Missing/wrong tokens and
+unauthorized POST requests return 401 JSON.
+
+A temporary Swift executable using the app's unchanged CaptureCore client
+connected to production, saved JSON text and multipart file captures, and
+repeated each network request with the same UUID. Both retries returned
+the same result; PostgreSQL held one receipt and task per capture. Verified
+the stored file bytes match the native original; changed content for an
+existing UUID returned 409. Removed only the synthetic probe tasks (2),
+receipts (2), attachment row (1), and Blob (1); cleanup counts verified zero.
+
+Personal OS 1.0 (1), `com.zelig.personalos.capture`, is installed on EC PRO
+and was reopened successfully using devicectl after the server rollout. No
+reinstall was needed, preserving the app's existing state. Phone-side setup
+can retry Connect & verify with the same token; the token was never embedded
+in source or the app.
