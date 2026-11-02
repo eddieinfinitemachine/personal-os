@@ -42,7 +42,7 @@ Files: `src/components/capture-review-inbox.tsx`, `capture-review-editor.tsx`, t
 - [x] Inspect responsive light/dark UI in a scratch environment; independently review source and actual diff.
 - [x] Confirm current production base; apply exact approved SQL only after read-only catalog preflight; deploy checked source.
 - [x] Exercise live synthetic capture→review→correct→dismiss→undo/replay; remove only synthetic records/uploads. Preserve existing workspaces and user data.
-- [ ] Commit/PR/merge after checks; verify current live Home/API; document results and limitations truthfully.
+- [x] Commit/PR/merge after checks; verify current live Home/API; document results and limitations truthfully.
 
 ## Frozen UI API contract
 - GET `/api/capture-reviews?state=pending|dismissed&offset=0&limit=10` → CaptureReviewList.

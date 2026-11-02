@@ -11,6 +11,8 @@
 
 Validation before rollout: 141 test files / 1,364 tests pass, including guarded real-Postgres correction/retry/race tests; 19 files / 150 unrelated integration tests remain opt-in. Prisma generated; TypeScript and direct production build pass. Responsive light/dark browser checks exercised correction, cross-type movement, Dismiss and Undo. Independent safety review passed after fixing revoked-list replay and derived-contact-date races. Existing middleware/jose Edge warnings remain. Applied only the two approved SQL statements and verified 12 columns, PK/FK and two indexes. Deployed `23b8a7e` to the EC Vercel project; all live hosts point to `personal-6bl2ql3n1-ec-efed32ac.vercel.app`. Live tests covered web capture, actual ec/Mac/Chrome endpoint retries, review reads, correction/move, cross-type replacement, stale/foreign guards, Dismiss/restore and preserved saved items. Synthetic captures in the founder account were removed. Quick Todo compiled and signed into a temporary bundle; Mac app installation and Chrome reload were not changed (existing clients already feed the shared Inbox).
 
+Follow-up shared-list safeguard: delayed calendar retries now use the same parent-list access predicate as Inbox reads. A real-Postgres regression reproduced the private-title leak after membership revocation, then passed after the fix. Final suite: 142 files / 1,365 tests passed; 150 unrelated opt-in cases skipped. TypeScript, direct production build and whitespace checks pass. PR #74 is merged as `29692a2`; its main-branch deployment was verified Ready.
+
 # iOS mobile capture connection — 2026-11-01
 
 - [x] Reproduce: production mobile endpoint returns an HTML 404 despite a valid token.

@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { isFounderUser } from "@/lib/cron";
 import { deleteTodoEventChecked, isCalendarSyncConfigured, syncTodoEventChecked } from "@/lib/gcal";
 import { prisma } from "@/lib/prisma";
+import { listAccessWhere } from "@/lib/list-access";
 import { readEffects } from "./journal";
 
 async function requeueCalendarIds(userId: string, reviewId: string, ids: string[]): Promise<void> {
@@ -58,7 +59,7 @@ export async function reconcilePendingReviewCalendars(userId: string, reviewIds:
     } else {
       if (!isCalendarSyncConfigured()) return;
       const todos = await prisma.todo.findMany({
-        where: { userId, id: { in: ids } },
+        where: { userId, id: { in: ids }, list: listAccessWhere(userId) },
         include: { list: { select: { name: true } }, project: { select: { name: true } } },
       });
       const byId = new Map(todos.map(todo => [todo.id, todo]));
