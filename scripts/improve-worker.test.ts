@@ -9,8 +9,7 @@ import { join } from "node:path";
 import type { Improvement } from "@prisma/client";
 import {
   CHECK_DATABASE_URL, allowedEmails, branchName, keepAwake, parseGitHubRepo, parseWorkerFlags, prBody, prTitle,
-  processImprovement, runProcess, slugify, timeoutMs, workerEnv, type Context,
-} from "./improve-worker";
+  processImprovement, runProcess, slugify, timeoutMs, workerEnv, type Context, failureDetail } from "./improve-worker";
 
 // Each test gets: a bare "GitHub" origin seeded with a tiny project, a clone of
 // it as the worker's repo, and fake pnpm / gh / caffeinate / claude on PATH.
@@ -467,5 +466,30 @@ ${DONE}`);
     expect(lastUpdate().data.status).toBe("shipped");
     expect(lines).toContain(`Improve ${ID}: saving the shipped change failed (PrismaClientKnownRequestError P1001); retrying`);
     expect(lines.join("\n")).not.toContain("Can't reach");
+  });
+});
+
+describe("failureDetail", () => {
+  it("names the failing test and its error instead of a bare code frame, without colour codes", () => {
+    // Shape of the 2026-11-02 live failure: vitest output with ANSI colours, ending in a code frame.
+    const vitest = [
+      "\u001b[31m FAIL \u001b[39m src/lib/kindle-epub.test.ts\u001b[2m > \u001b[22mbuildEpub\u001b[2m > \u001b[22mpasses epubcheck",
+      "\u001b[31mError\u001b[39m: Test timed out in 5000ms.",
+      "If this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\".",
+      "\u001b[90m187|\u001b[39m   it.skipIf(!hasEpubcheck)(\"passes epubcheck\", async () => {",
+      "\u001b[90m   |\u001b[39m                           \u001b[31m^\u001b[39m",
+      " Test Files  \u001b[31m1 failed\u001b[39m | 145 passed (169)",
+    ].join("\n");
+    expect(failureDetail(vitest)).toBe(
+      "FAIL  src/lib/kindle-epub.test.ts > buildEpub > passes epubcheck\nError: Test timed out in 5000ms.",
+    );
+  });
+
+  it("keeps tsc errors and falls back to the cleaned tail when nothing names the failure", () => {
+    expect(failureDetail("src/a.ts(1,1): error TS2322: Type 'string' is not assignable to type 'number'.\n")).toBe(
+      "src/a.ts(1,1): error TS2322: Type 'string' is not assignable to type 'number'.",
+    );
+    expect(failureDetail("\u001b[31mbuild exploded\u001b[39m\n")).toBe("build exploded");
+    expect(failureDetail(`FAIL ${"x".repeat(600)}`)).toHaveLength(400);
   });
 });

@@ -198,6 +198,22 @@ export function prBody(options: { request: string; summary: string | null; reaso
 
 const branchRefspec = (branch: string) => `+refs/heads/${branch}:refs/remotes/origin/${branch}`;
 const output = (result: RunResult) => `${result.stdout}\n${result.stderr}`;
+const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
+
+/**
+ * What a failed check shows Eddie: the lines that name the failure (vitest
+ * FAIL/× lines, "…Error:" messages, timeouts, tsc errors), colour codes
+ * stripped; the end of the output when none match. The bare tail of a vitest
+ * run is a code frame that hides which test failed and why.
+ */
+export function failureDetail(text: string, max = 400): string {
+  const clean = text.replace(ANSI, "");
+  const named = clean.split("\n").map((line) => line.trim())
+    .filter((line) => /^(FAIL|×)\s|\b\w*Error\b:|\btimed out\b|\berror TS\d+:/i.test(line));
+  const picked = [...new Set(named)].join("\n");
+  if (!picked) return tailText(clean, max);
+  return picked.length > max ? `${picked.slice(0, max - 1).trimEnd()}…` : picked;
+}
 const succeeded = (result: RunResult) => result.code === 0 && !result.timedOut;
 const minutesSince = (started: number) => Math.round((Date.now() - started) / 60_000);
 
@@ -251,7 +267,7 @@ async function step(
   options: { cwd: string; env?: Env; timeoutMs: number; stoppable?: boolean },
 ): Promise<string> {
   const result = await exec(ctx, job, bin, args, options);
-  if (!succeeded(result)) throw new JobFailure(`${label} ${result.timedOut ? "timed out" : "failed"}: ${tailText(output(result), 400)}`, label);
+  if (!succeeded(result)) throw new JobFailure(`${label} ${result.timedOut ? "timed out" : "failed"}: ${failureDetail(output(result))}`, label);
   return result.stdout;
 }
 
@@ -292,7 +308,8 @@ async function rebaseOntoMain(ctx: Context, job: Job): Promise<boolean> {
 function checkEnv(env: Env, databaseUrl: string): Env {
   const clean = { ...env };
   for (const key of STRIPPED_ENV) delete clean[key];
-  return { ...clean, DATABASE_URL: databaseUrl };
+  // No colour codes in check output: its failure lines are shown in the app.
+  return { ...clean, DATABASE_URL: databaseUrl, NO_COLOR: "1", FORCE_COLOR: "0" };
 }
 
 async function runChecks(ctx: Context, job: Job) {

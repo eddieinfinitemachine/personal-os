@@ -1819,3 +1819,10 @@ Inspired by Patrick Collison's "improvements" box (x.com/patrickc/status/2116636
 - [ ] Ship: Eddie merges this PR; pull personal-os-sync, install improve-worker LaunchAgent, restart research worker; live end-to-end (one safe, one risky request).
 
 Decision during review: shipping an approved schema change applies only the PR's added `prisma/changes/*.sql` with `prisma db execute`, never a whole-schema `db push` (lessons 2026-11-01); a `schema.prisma` change without a SQL file fails for Eddie to finish. The agent is also denied `prisma db execute`. Known limit (same as research): Claude runs with bypassPermissions as Eddie and could read `personal-os-sync/.env` directly; deny rules are guardrails, not a sandbox.
+
+## 2026-11-02 — Improve go-live: first live request failed on a flaky test
+- PR #79 merged (9680265, production deploy success). personal-os-sync pulled 14 commits, `pnpm install` + `prisma generate`; improve-worker LaunchAgent installed; research worker restarted on the #77 fix.
+- First live request (safe: tooltip on the Improve button) failed at the worker's own `pnpm test`: `kindle-epub.test.ts > passes epubcheck` timed out at vitest's 5 s default. It spawns epubcheck (Java); a cold JVM under the parallel suite is slow, warm it takes 1.7 s. Two full runs under the worker's env passed. The app showed only a code frame full of ANSI codes.
+- [x] Fix the root cause: 60 s timeout on that test (no blanket retry of failing checks).
+- [x] Worker: checks run with NO_COLOR/FORCE_COLOR=0, and failure text shows the FAIL/Error/timed out/tsc lines instead of the bare tail (`failureDetail`, tested with the real output shape).
+- [ ] After merge: pull personal-os-sync, restart improve worker, resend the safe request, then the risky one.
