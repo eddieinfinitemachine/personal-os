@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/components/mobile-chrome", () => ({ PageHeader: () => null }));
 vi.mock("@/lib/haptic", () => ({ haptic: vi.fn() }));
+vi.mock("@/lib/image-compress", () => ({ compressImage: async (f: File) => f }));
 vi.mock("./workout-timer", () => ({
   beep: vi.fn(),
   unlockAudio: vi.fn(),
@@ -214,7 +215,7 @@ describe("adding time", () => {
     await flush();
     const call = fetch.mock.calls.find((c) => String(c[0]).startsWith("/api/workout/extend"))!;
     expect(JSON.parse(String(call[1]?.body))).toEqual({
-      minutes: 20, focus: "lower", intensity: "hard", equipment: [{ name: "Dumbbells", detail: "10–50 lb" }], exercises: ["Goblet squat", "Farmer carry", "Hamstring stretch"],
+      minutes: 20, focus: "lower", intensity: "hard", equipment: [{ name: "Dumbbells", detail: "10–50 lb" }], exercises: ["Goblet squat", "Farmer carry", "Hamstring stretch"], history: [],
     });
     const s = stored();
     expect(s.plan.blocks.map((b) => b.name)).toEqual(["A", "B · Extra"]);
@@ -240,5 +241,245 @@ describe("adding time", () => {
     const s = stored();
     expect(s.finishedAt).toBeNull();
     expect(s.stepIndex).toBe(4);
+  });
+});
+
+describe("the workout log", () => {
+  const sets = [{ reps: 10, durationSec: null, load: "2×25 lb dumbbells" }, { reps: 10, durationSec: null, load: "2×25 lb dumbbells" }];
+  const past = {
+    id: "w-past", title: "Leg day", focus: "lower", startedAt: Date.now() - 2 * 86_400_000 - 1_800_000, finishedAt: Date.now() - 2 * 86_400_000, durationMin: 30,
+    exercises: [{ name: "Goblet squat", equipment: "dumbbell", targetReps: 10, sets }],
+  };
+  const history = () => JSON.parse(localStorage.getItem("personalos:workout:history")!) as { id: string; synced?: boolean; exercises: { sets: unknown[] }[] }[];
+  const routes = (handlers: Record<string, (init?: RequestInit) => unknown>) =>
+    vi.fn(async (url: string, init?: RequestInit): Promise<Reply> => {
+      const key = `${init?.method ?? "GET"} ${url.split("?")[0]}`;
+      const body = handlers[key]?.(init) ?? (url.startsWith("/api/workout/video") ? { video: null } : {});
+      return { ok: true, json: async () => body };
+    });
+
+  it("finishes on the last set with that set logged, saves the session, and says what to lift next time", async () => {
+    const s = session();
+    s.plan.blocks[0].exercises = [exercise("m1", "Goblet squat")];
+    s.plan.cooldown = [];
+    localStorage.setItem("personalos:workout:session", JSON.stringify(s));
+    const fetch = routes({ "POST /api/workout/history": (init) => ({ saved: (JSON.parse(String(init?.body)) as { records: { id: string; finishedAt: number }[] }).records.map(({ id, finishedAt }) => ({ id, finishedAt })), stored: true }) });
+    vi.stubGlobal("fetch", fetch);
+    await resume();
+    await act(async () => button("Log set").click());
+    await act(async () => button("Log set").click());
+    await flush();
+    expect(container.textContent).toContain("Workout complete");
+    expect(stored().logs).toHaveLength(2);
+    const upload = fetch.mock.calls.find((c) => c[0] === "/api/workout/history" && c[1]?.method === "POST")!;
+    expect(JSON.parse(String(upload[1]?.body)).records[0]).toMatchObject({
+      id: "s1", title: "Legs", focus: "lower", exercises: [{ name: "Goblet squat", equipment: "dumbbell", targetReps: 10, sets }],
+    });
+    expect(history()[0]).toMatchObject({ id: "s1", synced: true });
+    expect(container.textContent).toContain("10, 10 @ 2×25 lb dumbbells");
+    expect(container.textContent).toContain("Next time 2×30 lb dumbbells · +5 lb: every rep at 25 lb");
+  });
+
+  it("sends the log with the plan request and starts a repeat exercise from the advised weight", async () => {
+    localStorage.removeItem("personalos:workout:session");
+    localStorage.setItem("personalos:workout:history", JSON.stringify([{ ...past, setsLogged: 2, loggedToPersonal: false, synced: true }]));
+    localStorage.setItem("personalos:workout:equipment", JSON.stringify([{ name: "Dumbbells", detail: "10–50 lb" }]));
+    const plan = {
+      equipment: [{ name: "Dumbbells" }],
+      plan: { title: "Lower", summary: "", focus: "lower", estimatedMinutes: 30, warmup: [], cooldown: [],
+        blocks: [{ name: "A", type: "straight", exercises: [exercise("p1", "Goblet squat", { load: "2×20 lb dumbbells" }), exercise("p2", "Reverse lunge")] }] },
+    };
+    const fetch = routes({ "POST /api/workout/plan": () => plan });
+    vi.stubGlobal("fetch", fetch);
+    await act(async () => root.render(<WorkoutStudio />));
+    await act(async () => button("Build my workout").click());
+    await flush();
+    const call = fetch.mock.calls.find((c) => c[0] === "/api/workout/plan")!;
+    expect(JSON.parse(String((call[1]?.body as FormData).get("history")))).toEqual([{ ...past, source: "guided" }]);
+    expect(container.textContent).toContain("2 × 10 · 2×30 lb dumbbells");
+    expect(container.textContent).toContain("Last · ");
+    expect(container.textContent).toContain(": 10, 10 @ 2×25 lb dumbbells");
+    expect(container.textContent).toContain("↑ +5 lb: every rep at 25 lb");
+    expect(container.textContent).toContain("2 × 10 · 2×25 lb dumbbells"); // the lunge keeps the plan's load
+  });
+
+  it("brings in sessions logged on another device and opens a past session to its sets", async () => {
+    localStorage.removeItem("personalos:workout:session");
+    vi.stubGlobal("fetch", routes({ "GET /api/workout/history": () => ({ records: [past], stored: true }) }));
+    await act(async () => root.render(<WorkoutStudio />));
+    await flush();
+    expect(container.textContent).toContain("Leg day");
+    expect(container.textContent).not.toContain("Goblet squat");
+    await act(async () => button("Leg day").click());
+    expect(container.textContent).toContain("Goblet squat10, 10 @ 2×25 lb dumbbells");
+    expect(history()[0]).toMatchObject({ id: "w-past", synced: true });
+  });
+});
+
+describe("full gym, health data and what's coming up", () => {
+  const routes = (handlers: Record<string, (init?: RequestInit) => unknown>) =>
+    vi.fn(async (url: string, init?: RequestInit): Promise<Reply> => {
+      const body = handlers[`${init?.method ?? "GET"} ${url.split("?")[0]}`]?.(init) ?? (url.startsWith("/api/workout/video") ? { video: null } : {});
+      return { ok: true, json: async () => body };
+    });
+
+  it("plans for a full gym, shows the health data used, and holds weights on a low-recovery day", async () => {
+    localStorage.removeItem("personalos:workout:session");
+    localStorage.setItem("personalos:workout:equipment", JSON.stringify([{ name: "Kettlebell", detail: "35 lb" }]));
+    localStorage.setItem("personalos:workout:history", JSON.stringify([{
+      id: "w-past", title: "Leg day", focus: "lower", startedAt: Date.now() - 86_400_000 * 2, finishedAt: Date.now() - 86_400_000 * 2 + 1_800_000, durationMin: 30,
+      setsLogged: 2, loggedToPersonal: false, synced: true,
+      exercises: [{ name: "Back squat", equipment: "barbell", targetReps: 5, sets: [{ reps: 5, durationSec: null, load: "185 lb" }, { reps: 5, durationSec: null, load: "185 lb" }] }],
+    }]));
+    const reply = {
+      equipment: [{ name: "Olympic barbells & plates" }, { name: "Smith machine" }],
+      fullGym: true,
+      health: { facts: ["182 lb", "HRV 40 ms · avg 55"], readiness: "low", note: "HRV 40 ms is 27% under your 30-day average (55)." },
+      plan: { title: "Gym legs", summary: "", focus: "lower", estimatedMinutes: 45, warmup: [], cooldown: [],
+        blocks: [{ name: "A", type: "straight", exercises: [exercise("g1", "Back squat", { equipment: "barbell", reps: 5, load: "195 lb" }), exercise("g2", "Leg press", { equipment: "machine", load: "270 lb" })] }] },
+    };
+    const fetch = routes({ "POST /api/workout/plan": () => reply });
+    vi.stubGlobal("fetch", fetch);
+    await act(async () => root.render(<WorkoutStudio />));
+    expect(container.textContent).toContain("Equipment photos");
+    await act(async () => button("Full gym").click());
+    expect(container.textContent).not.toContain("Equipment photos");
+    expect(container.textContent).toContain("No photos needed.");
+    expect(JSON.parse(localStorage.getItem("personalos:workout:prefs")!).fullGym).toBe(true);
+    await act(async () => button("Build my workout").click());
+    await flush();
+    const form = fetch.mock.calls.find((c) => c[0] === "/api/workout/plan")![1]?.body as FormData;
+    expect(form.get("fullGym")).toBe("1");
+    expect(form.get("knownEquipment")).toBeNull();
+    expect(form.getAll("photos")).toEqual([]);
+    expect(container.textContent).toContain("From your health data");
+    expect(container.textContent).toContain("HRV 40 ms · avg 55");
+    expect(container.textContent).toContain("Recovery is low. HRV 40 ms is 27% under your 30-day average (55). No weight increases today.");
+    expect(container.textContent).not.toContain("Smith machine");
+    expect(container.textContent).toContain("2 × 5 · 185 lb");
+    expect(container.textContent).toContain("Recovery is low today: holding 185 lb");
+    await act(async () => button("Start workout").click());
+    expect(stored().readiness).toBe("low");
+    expect(JSON.parse(localStorage.getItem("personalos:workout:equipment")!)).toEqual([{ name: "Kettlebell", detail: "35 lb" }]);
+  });
+
+  it("shows the rest of the session mid-set, and moves on as sets are logged", async () => {
+    vi.stubGlobal("fetch", mockFetch(video));
+    await resume();
+    const comingUp = () => container.querySelector("section.mt-6")?.textContent ?? "";
+    expect(comingUp()).toContain("Coming up");
+    expect(comingUp()).toContain("Goblet squat1 more set of 10 · 2×25 lb dumbbells");
+    expect(comingUp()).toContain("Farmer carry2 × 40s · 2×50 lb");
+    expect(comingUp()).toContain("Cool-downHamstring stretch1 × 30s · bodyweight");
+    await act(async () => button("Log set").click());
+    expect(comingUp()).not.toContain("Goblet squat");
+    expect(comingUp()).toContain("Farmer carry2 × 40s");
+  });
+});
+
+describe("class whiteboards and Strava", () => {
+  const routes = (handlers: Record<string, (init?: RequestInit) => unknown>) =>
+    vi.fn(async (url: string, init?: RequestInit): Promise<Reply> => {
+      const body = handlers[`${init?.method ?? "GET"} ${url.split("?")[0]}`]?.(init) ?? (url.startsWith("/api/workout/video") ? { video: null } : {});
+      return { ok: true, json: async () => body };
+    });
+  const type = async (el: HTMLInputElement, value: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(el, value);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  const field = (label: string) => container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+
+  it("reads a whiteboard photo, lets the athlete fix it up, and saves it to the log", async () => {
+    localStorage.removeItem("personalos:workout:session");
+    localStorage.setItem("personalos:workout:history", JSON.stringify([{
+      id: "w-old", source: "guided", title: "Legs", focus: "lower", startedAt: Date.now() - 3 * 86_400_000, finishedAt: Date.now() - 3 * 86_400_000 + 1_800_000, durationMin: 30,
+      setsLogged: 2, loggedToPersonal: false, synced: true,
+      exercises: [{ name: "Goblet squat", equipment: "dumbbell", targetReps: 15, sets: [{ reps: 15, durationSec: null, load: "1×35 lb dumbbell" }] }],
+    }]));
+    const board = {
+      title: "Cindy-ish", focus: "conditioning", format: "AMRAP 20 min", amrap: true, timeCapMin: 20, notes: "",
+      exercises: [
+        { name: "Pull-up", equipment: "pull-up bar", load: "bodyweight", sets: [{ reps: 5, durationSec: null }] },
+        { name: "Goblet squat", equipment: "dumbbell", load: "1×35 lb dumbbell", sets: [{ reps: 15, durationSec: null }] },
+      ],
+    };
+    const fetch = routes({
+      "POST /api/workout/board": () => ({ board }),
+      "POST /api/workout/history": (init) => ({ saved: (JSON.parse(String(init?.body)) as { records: { id: string; finishedAt: number }[] }).records.map(({ id, finishedAt }) => ({ id, finishedAt })) }),
+    });
+    vi.stubGlobal("fetch", fetch);
+    await act(async () => root.render(<WorkoutStudio />));
+    const photo = field("Whiteboard photo");
+    Object.defineProperty(photo, "files", { value: [new File(["x"], "board.jpg", { type: "image/jpeg" })], configurable: true });
+    await act(async () => photo.dispatchEvent(new Event("change", { bubbles: true })));
+    await flush();
+    expect((fetch.mock.calls.find((c) => c[0] === "/api/workout/board")![1]?.body as FormData).getAll("photos")).toHaveLength(1);
+    expect(container.textContent).toContain("From the whiteboard");
+    expect(field("Title").value).toBe("Cindy-ish");
+    expect(container.textContent).toContain("One round");
+    // The squat has been done before: last time and what to try.
+    expect(container.textContent).toContain(": 15 @ 1×35 lb dumbbell");
+    expect(container.textContent).toContain("↑ Use 1×40 lb dumbbell · +5 lb: every rep at 35 lb");
+    await act(async () => byLabel("More rounds").click());
+    await act(async () => byLabel("More rounds").click());
+    await type(field("Reps for Pull-up"), "6");
+    await act(async () => button("Use 1×40 lb dumbbell").click());
+    await type([...container.querySelectorAll("input")].find((i) => i.placeholder === "7 + 12")!, "3 + 6");
+    await act(async () => button("Save to log").click());
+    await flush();
+    expect(container.textContent).toContain("“Cindy-ish” is in your log.");
+    const [entry] = JSON.parse(localStorage.getItem("personalos:workout:history")!) as { id: string; source: string; notes: string; setsLogged: number; synced?: boolean; exercises: { name: string; sets: { reps: number; load: string }[] }[] }[];
+    expect(entry).toMatchObject({ source: "board", notes: "AMRAP 20 min · Score 3 + 6", setsLogged: 6, synced: true });
+    expect(entry.id).toMatch(/^b-/);
+    expect(entry.exercises.map((e) => [e.name, e.sets.length, e.sets[0].reps, e.sets[0].load])).toEqual([
+      ["Pull-up", 3, 6, "bodyweight"],
+      ["Goblet squat", 3, 15, "1×40 lb dumbbell"],
+    ]);
+    expect(container.textContent).toContain("Conditioning · Whiteboard · 6 sets");
+  });
+
+  it("shows a board that couldn't be read", async () => {
+    localStorage.removeItem("personalos:workout:session");
+    vi.stubGlobal("fetch", vi.fn(async (url: string): Promise<Reply> =>
+      url === "/api/workout/board" ? { ok: false, status: 422, json: async () => ({ error: "No workout found on that board." }) } : { ok: true, json: async () => ({}) },
+    ));
+    await act(async () => root.render(<WorkoutStudio />));
+    const photo = field("Whiteboard photo");
+    Object.defineProperty(photo, "files", { value: [new File(["x"], "menu.jpg", { type: "image/jpeg" })], configurable: true });
+    await act(async () => photo.dispatchEvent(new Event("change", { bubbles: true })));
+    await flush();
+    expect(container.textContent).toContain("No workout found on that board.");
+    expect(container.textContent).not.toContain("From the whiteboard");
+  });
+
+  it("connects Strava from the workout page and can disconnect it", async () => {
+    localStorage.removeItem("personalos:workout:session");
+    window.history.pushState(null, "", "/workout?strava=connected");
+    let connected = true;
+    const fetch = routes({
+      "GET /api/strava": () => ({ configured: true, connected, athleteName: connected ? "Sam Lee" : null, lastSyncAt: connected ? Date.now() - 120_000 : null }),
+      "DELETE /api/strava": () => ({ connected: (connected = false) }),
+    });
+    vi.stubGlobal("fetch", fetch);
+    await act(async () => root.render(<WorkoutStudio />));
+    await flush();
+    expect(container.textContent).toContain("Strava connected. Your last 30 days are in the log.");
+    expect(window.location.search).toBe("");
+    expect(container.textContent).toContain("Connected · Sam Lee");
+    expect(container.textContent).toContain("Synced 2 min ago");
+    await act(async () => button("Disconnect").click());
+    await act(async () => button("Disconnect").click());
+    await flush();
+    expect(fetch.mock.calls.some((c) => c[0] === "/api/strava" && c[1]?.method === "DELETE")).toBe(true);
+    expect(container.querySelector<HTMLAnchorElement>('a[href="/api/strava/connect"]')?.textContent).toBe("Connect");
+  });
+
+  it("stays out of the way until the server has Strava keys", async () => {
+    localStorage.removeItem("personalos:workout:session");
+    vi.stubGlobal("fetch", routes({ "GET /api/strava": () => ({ configured: false, connected: false }) }));
+    await act(async () => root.render(<WorkoutStudio />));
+    await flush();
+    expect(container.textContent).not.toContain("Strava");
   });
 });

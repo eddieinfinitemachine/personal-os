@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ user: vi.fn(), claude: vi.fn() }));
+const mocks = vi.hoisted(() => ({ user: vi.fn(), claude: vi.fn(), health: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ getCurrentUserId: mocks.user }));
 vi.mock("@/lib/claude", () => ({ callClaudeJSON: mocks.claude }));
+vi.mock("@/lib/workout-health", async (orig) => ({ ...(await orig<typeof import("@/lib/workout-health")>()), loadHealth: mocks.health }));
 import { POST } from "./route";
 
 const req = (body: unknown) =>
@@ -12,13 +13,17 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.user.mockResolvedValue("u1");
   mocks.claude.mockResolvedValue(reply);
+  mocks.health.mockResolvedValue({
+    age: null, sex: null, heightIn: null, weight: null, bodyFat: null, vo2: null, hrv: null, rhr: null, conditions: ["Bad shoulder"], activity: [],
+  });
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
 describe("POST /api/workout/extend", () => {
   it("asks Claude for more blocks on the session's equipment, avoiding what was done", async () => {
     const res = await POST(
-      req({ minutes: 20, focus: "push", intensity: "hard", equipment: [{ name: " Dumbbells ", detail: "10–50 lb" }, { name: "" }, 3], exercises: ["DB bench press", " ", 4], notes: "x" }),
+      req({ minutes: 20, focus: "push", intensity: "hard", equipment: [{ name: " Dumbbells ", detail: "10–50 lb" }, { name: "" }, 3], exercises: ["DB bench press", " ", 4], notes: "x",
+        history: [{ id: "w-1", title: "Push", focus: "push", finishedAt: Date.now() - 2 * 86_400_000, exercises: [{ name: "Arnold press", targetReps: 10, sets: [{ reps: 10, load: "2×25 lb" }] }] }] }),
     );
     expect(res.status).toBe(200);
     const data = (await res.json()) as { blocks: { name: string; exercises: { id: string; name: string }[] }[] };
@@ -29,6 +34,9 @@ describe("POST /api/workout/extend", () => {
     expect(prompt).toContain("Dumbbells (10–50 lb).");
     expect(prompt).toContain("- DB bench press");
     expect(prompt).not.toContain("- 4");
+    expect(prompt).toContain("(2 days ago) · Push · push");
+    expect(prompt).toContain("- Arnold press · ");
+    expect(prompt).toContain("Athlete health data, from their health profile:\n- Conditions to work around: Bad shoulder.");
   });
   it("rejects other lengths, bad JSON and signed-out callers, and reports a failed build", async () => {
     expect((await POST(req({ minutes: 15 }))).status).toBe(400);

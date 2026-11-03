@@ -31,6 +31,7 @@ import {
   loadStep,
   parseLoad,
   planExercises,
+  upcomingSteps,
   updateExercise,
   type Block,
   type EquipmentItem,
@@ -41,18 +42,38 @@ import {
   type PlanResponse,
   type SetLog,
   type Step,
+  type UpcomingGroup,
   type WorkoutPlan,
   type WorkoutSession,
 } from "@/lib/workout";
+import {
+  HISTORY_MAX,
+  promptRecords,
+  adviseLoad,
+  formatSets,
+  lastPerformance,
+  mergeHistory,
+  recordFromSession,
+  toRecord,
+  withHistory,
+  type ExerciseLast,
+  type HistoryEntry,
+  type LoadAdvice,
+  type WorkoutRecord,
+  type WorkoutSource,
+} from "@/lib/workout-history";
+import type { HealthSummary } from "@/lib/workout-health";
+import { boardRecord, parseSetsText, setsText, type BoardDraft } from "@/lib/workout-board";
 import { ExerciseFigure, propForEquipment } from "./exercise-figure";
 import { ExerciseVideoEmbed, ExerciseVideoToggle, useExerciseVideos, withVideo } from "./exercise-video";
 import { MuscleMap } from "./muscle-map";
 import { beep, unlockAudio, useCountdownCues, useNow, useWakeLock } from "./workout-timer";
 
 // ---- localStorage ----------------------------------------------------------
-// Everything lives client-side: the in-progress session (survives iOS killing
-// the PWA mid-set), the equipment profile (so day 2 needs no photos), prefs
-// and a short history for variety hints + the summary list.
+// Client-side: the in-progress session (survives iOS killing the PWA mid-set),
+// the equipment profile (so day 2 needs no photos), prefs, and the workout log
+// (every finished session set by set), which also syncs to /api/workout/history
+// and drives load advice and "don't repeat" for the next plan.
 
 const KEYS = {
   session: "personalos:workout:session",
@@ -61,17 +82,7 @@ const KEYS = {
   prefs: "personalos:workout:prefs",
 } as const;
 
-type Prefs = { minutes: number; focus: Focus; intensity: Intensity };
-type HistoryEntry = {
-  id: string;
-  title: string;
-  focus: Focus;
-  startedAt: number;
-  finishedAt: number;
-  durationMin: number;
-  setsLogged: number;
-  loggedToPersonal: boolean;
-};
+type Prefs = { minutes: number; focus: Focus; intensity: Intensity; fullGym: boolean };
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -102,7 +113,7 @@ const FOCUS_LABEL: Record<Focus, string> = {
   mobility: "Mobility",
 };
 
-type Phase = "setup" | "plan" | "play" | "done";
+type Phase = "setup" | "plan" | "play" | "done" | "board";
 
 export function WorkoutStudio() {
   const [hydrated, setHydrated] = useState(false);
@@ -110,13 +121,16 @@ export function WorkoutStudio() {
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [equipment, setEquipment] = useState<EquipmentItem[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [prefs, setPrefs] = useState<Prefs>({ minutes: 30, focus: "full-body", intensity: "moderate" });
+  const [prefs, setPrefs] = useState<Prefs>({ minutes: 30, focus: "full-body", intensity: "moderate", fullGym: false });
   const [proposal, setProposal] = useState<PlanResponse | null>(null);
+  const [board, setBoard] = useState<BoardDraft | null>(null);
+  const [savedTitle, setSavedTitle] = useState<string | null>(null);
 
   useEffect(() => {
     setSession(read<WorkoutSession | null>(KEYS.session, null));
     setEquipment(read<EquipmentItem[]>(KEYS.equipment, []));
-    setHistory(read<HistoryEntry[]>(KEYS.history, []));
+    // Entries from before the log kept sets have no exercises.
+    setHistory(read<HistoryEntry[]>(KEYS.history, []).map((h) => ({ ...h, exercises: h.exercises ?? [] })));
     setPrefs((p) => ({ ...p, ...read<Partial<Prefs>>(KEYS.prefs, {}) }));
     setHydrated(true);
   }, []);
@@ -133,6 +147,47 @@ export function WorkoutStudio() {
   useEffect(() => {
     if (hydrated) write(KEYS.prefs, prefs);
   }, [prefs, hydrated]);
+
+  // Sessions logged on another device (or before the PWA was reinstalled).
+  useEffect(() => {
+    if (!hydrated) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/workout/history");
+        const data = (await res.json()) as { records?: WorkoutRecord[] };
+        if (!cancelled && res.ok && data.records?.length) setHistory((h) => mergeHistory(h, data.records!));
+      } catch {
+        /* offline: the local log stands */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated]);
+
+  // Upload each finished session once per visit until the server has it.
+  const uploading = useRef(new Set<string>());
+  useEffect(() => {
+    if (!hydrated) return;
+    const pending = history.filter((h) => !h.synced && !uploading.current.has(`${h.id}:${h.finishedAt}`));
+    if (!pending.length) return;
+    for (const h of pending) uploading.current.add(`${h.id}:${h.finishedAt}`);
+    void (async () => {
+      try {
+        const res = await fetch("/api/workout/history", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ records: pending.map(toRecord) }),
+        });
+        const data = (await res.json()) as { saved?: { id: string; finishedAt: number }[] };
+        const saved = new Set((data.saved ?? []).map((r) => `${r.id}:${r.finishedAt}`));
+        if (saved.size) setHistory((h) => h.map((e) => (saved.has(`${e.id}:${e.finishedAt}`) ? { ...e, synced: true } : e)));
+      } catch {
+        /* tried again next visit */
+      }
+    })();
+  }, [history, hydrated]);
 
   // Demo videos arrive after the plan does; whichever plan is live gets them.
   const livePlan = session && !session.finishedAt ? session.plan : (proposal?.plan ?? null);
@@ -156,6 +211,7 @@ export function WorkoutStudio() {
         timerEndsAt: null,
         timerKind: null,
         timerPausedRemainingMs: null,
+        readiness: p.health?.readiness ?? null,
       };
       setSession(s);
       setPhase("play");
@@ -168,21 +224,8 @@ export function WorkoutStudio() {
       const finishedAt = Date.now();
       const done = { ...s, finishedAt, timerEndsAt: null, timerKind: null, timerPausedRemainingMs: null };
       setSession(done);
-      setHistory((h) =>
-        [
-          {
-            id: s.id,
-            title: s.plan.title,
-            focus: s.plan.focus,
-            startedAt: s.startedAt,
-            finishedAt,
-            durationMin: Math.max(1, Math.round((finishedAt - s.startedAt) / 60000)),
-            setsLogged: s.logs.length,
-            loggedToPersonal: false,
-          },
-          ...h.filter((e) => e.id !== s.id),
-        ].slice(0, 30),
-      );
+      const entry: HistoryEntry = { ...recordFromSession(s, finishedAt), setsLogged: s.logs.length, loggedToPersonal: false };
+      setHistory((h) => [entry, ...h.filter((e) => e.id !== s.id)].slice(0, HISTORY_MAX));
       haptic("success");
       beep("done");
       setPhase("done");
@@ -212,20 +255,22 @@ export function WorkoutStudio() {
           intensity: prefs.intensity,
           equipment: s.equipment,
           exercises: planExercises(s.plan).map((e) => e.name),
+          history: promptRecords(history, Date.now()).map(toRecord),
         }),
       });
       const data = (await res.json()) as { blocks?: Block[]; error?: string };
       if (!res.ok || !data.blocks?.length) throw new Error(data.error ?? `Request failed (${res.status})`);
-      const plan = appendBlocks(s.plan, data.blocks);
+      const blocks = withHistory(data.blocks, history, s.readiness ?? null);
+      const plan = appendBlocks(s.plan, blocks);
       const steps = flattenPlan(plan);
-      const firstNew = steps.findIndex((step) => step.exercise.id === data.blocks![0].exercises[0].id);
+      const firstNew = steps.findIndex((step) => step.exercise.id === blocks[0].exercises[0].id);
       const current = flattenPlan(s.plan)[Math.min(s.stepIndex, Math.max(0, flattenPlan(s.plan).length - 1))];
       const stepIndex = s.finishedAt || !current || current.section === "cooldown" ? firstNew : s.stepIndex;
       setSession({ ...s, plan, stepIndex, finishedAt: null, timerEndsAt: null, timerKind: null, timerPausedRemainingMs: null });
       haptic("success");
       setPhase("play");
     },
-    [session, prefs.intensity],
+    [session, prefs.intensity, history],
   );
 
   if (!hydrated) {
@@ -242,7 +287,7 @@ export function WorkoutStudio() {
       <Player
         session={session}
         onChange={setSession}
-        onFinish={() => finishSession(session)}
+        onFinish={(final) => finishSession(final ?? session)}
         onExit={() => setPhase("setup")}
         onExtend={extendSession}
       />
@@ -261,14 +306,32 @@ export function WorkoutStudio() {
     );
   }
 
+  if (phase === "board" && board) {
+    return (
+      <BoardReview
+        draft={board}
+        history={history}
+        onBack={() => setPhase("setup")}
+        onSave={(record) => {
+          const entry: HistoryEntry = { ...record, setsLogged: record.exercises.reduce((n, e) => n + e.sets.length, 0), loggedToPersonal: false };
+          setHistory((h) => [entry, ...h].sort((a, b) => b.finishedAt - a.finishedAt).slice(0, HISTORY_MAX));
+          haptic("success");
+          setBoard(null);
+          setSavedTitle(record.title);
+          setPhase("setup");
+        }}
+      />
+    );
+  }
+
   if (phase === "plan" && proposal) {
     return (
       <PlanReview
         proposal={proposal}
         onBack={() => setPhase("setup")}
         onStart={() => {
-          // Merge what Claude saw into the saved equipment profile.
-          setEquipment((prev) => mergeEquipment(prev, proposal.equipment));
+          // Merge what Claude saw into the saved equipment profile (not the full-gym list).
+          if (!proposal.fullGym) setEquipment((prev) => mergeEquipment(prev, proposal.equipment));
           startSession(proposal);
         }}
       />
@@ -288,8 +351,15 @@ export function WorkoutStudio() {
         setPhase("play");
       }}
       onDiscardResumable={() => setSession(null)}
+      savedTitle={savedTitle}
+      onBoard={(d) => {
+        setSavedTitle(null);
+        setBoard(d);
+        setPhase("board");
+      }}
       onPlan={(p) => {
-        setProposal(p);
+        // Exercises done before start from the advised weight, held on a low-recovery day.
+        setProposal({ ...p, plan: { ...p.plan, blocks: withHistory(p.plan.blocks, history, p.health?.readiness ?? null) } });
         setPhase("plan");
       }}
     />
@@ -330,6 +400,8 @@ function Setup({
   resumable,
   onResume,
   onDiscardResumable,
+  savedTitle,
+  onBoard,
   onPlan,
 }: {
   prefs: Prefs;
@@ -340,6 +412,8 @@ function Setup({
   resumable: WorkoutSession | null;
   onResume: () => void;
   onDiscardResumable: () => void;
+  savedTitle: string | null;
+  onBoard: (d: BoardDraft) => void;
   onPlan: (p: PlanResponse) => void;
 }) {
   const [photos, setPhotos] = useState<{ file: File; url: string }[]>([]);
@@ -394,27 +468,25 @@ function Setup({
   }
 
   const selected = equipment.filter((e) => useSaved.has(e.name));
-  const canSubmit = photos.length > 0 || selected.length > 0 || notes.trim().length > 0;
+  const canSubmit = prefs.fullGym || photos.length > 0 || selected.length > 0 || notes.trim().length > 0;
 
   async function submit() {
     if (!canSubmit || busy) return;
     setError(null);
-    setBusy(photos.length ? "Looking at your equipment…" : "Designing the session…");
+    setBusy(!prefs.fullGym && photos.length ? "Looking at your equipment…" : "Designing the session…");
     haptic("press");
     const form = new FormData();
-    photos.forEach((p) => form.append("photos", p.file, p.file.name));
+    if (prefs.fullGym) {
+      form.set("fullGym", "1");
+    } else {
+      photos.forEach((p) => form.append("photos", p.file, p.file.name));
+      form.set("knownEquipment", JSON.stringify(selected));
+    }
     form.set("minutes", String(prefs.minutes));
     form.set("focus", prefs.focus);
     form.set("intensity", prefs.intensity);
     form.set("notes", notes);
-    form.set("knownEquipment", JSON.stringify(selected));
-    form.set(
-      "recentTitles",
-      history
-        .slice(0, 6)
-        .map((h) => `${new Date(h.finishedAt).toISOString().slice(0, 10)} · ${h.title} (${FOCUS_LABEL[h.focus]}, ${h.durationMin} min)`)
-        .join("\n"),
-    );
+    form.set("history", JSON.stringify(promptRecords(history, Date.now()).map(toRecord)));
     const slow = window.setTimeout(() => setBusy("Writing sets, reps and cues…"), 9000);
     try {
       const res = await fetch("/api/workout/plan", { method: "POST", body: form });
@@ -434,6 +506,12 @@ function Setup({
     <div className="px-4 py-4 pb-28 sm:px-6 md:px-8 md:py-6 max-w-2xl">
       <PageHeader title="Workout" />
       <Header />
+
+      {savedTitle && (
+        <p className="mb-4 flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-sm animate-fade-in-up">
+          <Check className="size-4 text-[var(--color-success)]" /> “{savedTitle}” is in your log.
+        </p>
+      )}
 
       {resumable && (
         <section className="mb-6 rounded-2xl border border-[var(--color-tint)]/40 bg-[var(--color-card)] p-4 animate-fade-in-up">
@@ -459,100 +537,122 @@ function Setup({
         </section>
       )}
 
-      {/* Photos */}
+      {/* Equipment */}
       <section className="mb-6">
-        <SectionLabel>Equipment photos</SectionLabel>
-        <div className="grid grid-cols-3 gap-2">
-          {photos.map((p, i) => (
-            <div key={p.url} className="relative aspect-square overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-fill)]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={p.url} alt="" className="h-full w-full object-cover" />
-              <button
-                onClick={() => removePhoto(i)}
-                aria-label="Remove photo"
-                className="absolute right-1 top-1 grid size-6 place-items-center rounded-full bg-black/60 text-white"
-              >
-                <X className="size-3.5" />
-              </button>
-            </div>
-          ))}
-          {photos.length < 6 && (
-            <label className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-card)] text-[var(--color-muted-foreground)] active:bg-[var(--color-fill)]">
-              <Camera className="size-6" />
-              <span className="text-xs">{photos.length ? "Add" : "Camera / library"}</span>
-              <input
-                ref={inputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="sr-only"
-                onChange={(e) => void addFiles(e.target.files)}
-              />
-            </label>
-          )}
-        </div>
-        <p className="mt-2 text-xs text-[var(--color-label-tertiary)]">
-          Dumbbell racks, benches, bands, machines, a hotel gym — up to 6 photos. Photos aren&apos;t stored.
-        </p>
-      </section>
-
-      {/* Saved equipment */}
-      <section className="mb-6">
-        <SectionLabel>Saved equipment {equipment.length ? `· ${selected.length} of ${equipment.length} selected` : ""}</SectionLabel>
-        {equipment.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {equipment.map((e) => {
-              const on = useSaved.has(e.name);
-              return (
-                <button
-                  key={e.name}
-                  onClick={() => {
-                    haptic("tick");
-                    setUseSaved((s) => {
-                      const n = new Set(s);
-                      if (n.has(e.name)) n.delete(e.name);
-                      else n.add(e.name);
-                      return n;
-                    });
-                  }}
-                  onContextMenu={(ev) => {
-                    ev.preventDefault();
-                    onEquipment(equipment.filter((x) => x.name !== e.name));
-                  }}
-                  className={chip(on)}
-                  title={e.detail ?? e.name}
-                >
-                  {on && <Check className="size-3" />}
-                  {e.name}
-                  {e.detail && <span className="opacity-60"> · {e.detail}</span>}
-                </button>
-              );
-            })}
-          </div>
-        )}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            addItem();
-          }}
-          className="flex gap-2"
-        >
-          <input
-            value={newItem}
-            onChange={(e) => setNewItem(e.target.value)}
-            placeholder={equipment.length ? "Add an item…" : "Or type it: 2×25 lb dumbbells, pull-up bar, bands"}
-            className={input}
-          />
-          <button type="submit" className={btnSecondary} disabled={!newItem.trim()}>
-            <Plus className="size-4" />
-          </button>
-        </form>
-        {equipment.length > 0 && (
-          <p className="mt-1.5 text-xs text-[var(--color-label-tertiary)]">
-            Equipment Claude spots in your photos is saved here. Long-press a chip to remove it.
+        <SectionLabel>Equipment</SectionLabel>
+        <Segmented
+          options={[
+            { value: "mine", label: "My equipment" },
+            { value: "gym", label: "Full gym" },
+          ]}
+          value={prefs.fullGym ? "gym" : "mine"}
+          onChange={(v) => onPrefs({ ...prefs, fullGym: v === "gym" })}
+        />
+        {prefs.fullGym && (
+          <p className="mt-2 text-xs text-[var(--color-label-tertiary)]">
+            Barbells and racks, dumbbells to 120 lb, cables, machines, kettlebells, sled and cardio. No photos needed.
           </p>
         )}
       </section>
+
+      {!prefs.fullGym && (
+        <>
+          {/* Photos */}
+          <section className="mb-6">
+            <SectionLabel>Equipment photos</SectionLabel>
+            <div className="grid grid-cols-3 gap-2">
+              {photos.map((p, i) => (
+                <div key={p.url} className="relative aspect-square overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-fill)]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.url} alt="" className="h-full w-full object-cover" />
+                  <button
+                    onClick={() => removePhoto(i)}
+                    aria-label="Remove photo"
+                    className="absolute right-1 top-1 grid size-6 place-items-center rounded-full bg-black/60 text-white"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              ))}
+              {photos.length < 6 && (
+                <label className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-card)] text-[var(--color-muted-foreground)] active:bg-[var(--color-fill)]">
+                  <Camera className="size-6" />
+                  <span className="text-xs">{photos.length ? "Add" : "Camera / library"}</span>
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="sr-only"
+                    onChange={(e) => void addFiles(e.target.files)}
+                  />
+                </label>
+              )}
+            </div>
+            <p className="mt-2 text-xs text-[var(--color-label-tertiary)]">
+              Dumbbell racks, benches, bands, machines, a hotel gym — up to 6 photos. Photos aren&apos;t stored.
+            </p>
+          </section>
+
+          {/* Saved equipment */}
+          <section className="mb-6">
+            <SectionLabel>Saved equipment {equipment.length ? `· ${selected.length} of ${equipment.length} selected` : ""}</SectionLabel>
+            {equipment.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {equipment.map((e) => {
+                  const on = useSaved.has(e.name);
+                  return (
+                    <button
+                      key={e.name}
+                      onClick={() => {
+                        haptic("tick");
+                        setUseSaved((s) => {
+                          const n = new Set(s);
+                          if (n.has(e.name)) n.delete(e.name);
+                          else n.add(e.name);
+                          return n;
+                        });
+                      }}
+                      onContextMenu={(ev) => {
+                        ev.preventDefault();
+                        onEquipment(equipment.filter((x) => x.name !== e.name));
+                      }}
+                      className={chip(on)}
+                      title={e.detail ?? e.name}
+                    >
+                      {on && <Check className="size-3" />}
+                      {e.name}
+                      {e.detail && <span className="opacity-60"> · {e.detail}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                addItem();
+              }}
+              className="flex gap-2"
+            >
+              <input
+                value={newItem}
+                onChange={(e) => setNewItem(e.target.value)}
+                placeholder={equipment.length ? "Add an item…" : "Or type it: 2×25 lb dumbbells, pull-up bar, bands"}
+                className={input}
+              />
+              <button type="submit" className={btnSecondary} disabled={!newItem.trim()}>
+                <Plus className="size-4" />
+              </button>
+            </form>
+            {equipment.length > 0 && (
+              <p className="mt-1.5 text-xs text-[var(--color-label-tertiary)]">
+                Equipment Claude spots in your photos is saved here. Long-press a chip to remove it.
+              </p>
+            )}
+          </section>
+        </>
+      )}
 
       {/* Prefs */}
       <section className="mb-6 space-y-4">
@@ -612,24 +712,348 @@ function Setup({
         )}
       </button>
 
+      <BoardCapture onBoard={onBoard} />
+      <StravaRow />
+
       {history.length > 0 && (
         <section className="mt-8">
           <SectionLabel>Recent</SectionLabel>
-          <ul className="divide-y divide-[var(--color-separator)] rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]">
+          <ul className="divide-y divide-[var(--color-separator)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]">
             {history.slice(0, 6).map((h) => (
-              <li key={h.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                <div className="min-w-0">
-                  <div className="truncate font-medium">{h.title}</div>
-                  <div className="text-xs text-[var(--color-muted-foreground)]">
-                    {new Date(h.finishedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {FOCUS_LABEL[h.focus]} · {h.setsLogged} sets
-                  </div>
-                </div>
-                <div className="shrink-0 tabular-nums text-[var(--color-muted-foreground)]">{h.durationMin} min</div>
-              </li>
+              <RecentRow key={h.id} entry={h} />
             ))}
           </ul>
         </section>
       )}
+    </div>
+  );
+}
+
+/** A past session; tap to see each exercise's sets and weights. */
+const SOURCE_LABEL: Record<WorkoutSource, string> = { guided: "", board: "Whiteboard", strava: "Strava" };
+
+function RecentRow({ entry: h }: { entry: HistoryEntry }) {
+  const [open, setOpen] = useState(false);
+  const canOpen = h.exercises.length > 0 || !!h.notes;
+  return (
+    <li>
+      <button
+        onClick={() => canOpen && setOpen((o) => !o)}
+        aria-expanded={canOpen ? open : undefined}
+        className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm ${canOpen ? "active:bg-[var(--color-fill)]" : "cursor-default"}`}
+      >
+        <div className="min-w-0">
+          <div className="truncate font-medium">{h.title}</div>
+          <div className="text-xs text-[var(--color-muted-foreground)]">
+            {[shortDate(h.finishedAt), FOCUS_LABEL[h.focus], SOURCE_LABEL[h.source ?? "guided"], h.exercises.length ? `${h.setsLogged} sets` : ""]
+              .filter(Boolean)
+              .join(" · ")}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1 tabular-nums text-[var(--color-muted-foreground)]">
+          {h.durationMin} min
+          {canOpen && <ChevronRight className={`size-4 text-[var(--color-label-tertiary)] transition-transform ${open ? "rotate-90" : ""}`} />}
+        </div>
+      </button>
+      {open && (
+        <ul className="space-y-1 border-t border-[var(--color-separator)] bg-[var(--color-fill-secondary)]/60 px-3 py-2 text-xs animate-fade-in-up">
+          {h.notes && <li className="text-[var(--color-label-secondary)]">{h.notes}</li>}
+          {h.exercises.map((e, i) => (
+            <li key={`${e.name}-${i}`} className="flex justify-between gap-3">
+              <span className="min-w-0 flex-1 truncate">{e.name}</span>
+              <span className="max-w-[60%] text-right tabular-nums text-[var(--color-label-secondary)]">{formatSets(e.sets)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+/** "Log a class workout": a photo of the whiteboard → Claude reads it → BoardReview. */
+function BoardCapture({ onBoard }: { onBoard: (d: BoardDraft) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const ref = useRef<HTMLInputElement>(null);
+
+  async function read(list: FileList | null) {
+    const files = Array.from(list ?? []).slice(0, 3);
+    if (ref.current) ref.current.value = "";
+    if (!files.length) return;
+    setError(null);
+    setBusy(true);
+    haptic("press");
+    try {
+      const form = new FormData();
+      for (const f of files) {
+        // An image the browser can't redraw goes as is; the server takes up to 6 MB.
+        const c = await compressImage(f).catch(() => f);
+        form.append("photos", c, c.name);
+      }
+      const res = await fetch("/api/workout/board", { method: "POST", body: form });
+      const data = (await res.json()) as { board?: BoardDraft; error?: string };
+      if (!res.ok || !data.board) throw new Error(data.error ?? `Request failed (${res.status})`);
+      haptic("success");
+      onBoard(data.board);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="mt-3">
+      <label className={`${btnSecondary} w-full cursor-pointer py-3 ${busy ? "pointer-events-none opacity-60" : ""}`}>
+        {busy ? <Loader2 className="size-4 animate-spin" /> : <Camera className="size-4" />}
+        {busy ? "Reading the whiteboard…" : "Log a whiteboard workout"}
+        <input ref={ref} type="file" accept="image/*" multiple className="sr-only" disabled={busy} aria-label="Whiteboard photo" onChange={(e) => void read(e.target.files)} />
+      </label>
+      {error && <p className="mt-2 text-sm text-[var(--color-destructive)]">{error}</p>}
+    </section>
+  );
+}
+
+type StravaStatus = { configured: boolean; connected: boolean; athleteName?: string | null; lastSyncAt?: number | null };
+
+/** Strava: connect once; runs, rides and workouts then join the log when it loads. Hidden until the server has Strava keys. */
+function StravaRow() {
+  const [status, setStatus] = useState<StravaStatus | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState(false);
+
+  useEffect(() => {
+    const result = new URLSearchParams(window.location.search).get("strava");
+    if (result) {
+      setNotice(
+        result === "connected"
+          ? "Strava connected. Your last 30 days are in the log."
+          : result === "denied"
+            ? "Strava needs permission to read your activities to connect."
+            : "Couldn't connect Strava. Try again.",
+      );
+      const url = new URL(window.location.href);
+      url.searchParams.delete("strava");
+      window.history.replaceState(null, "", url);
+    }
+    let cancelled = false;
+    fetch("/api/strava")
+      .then((r) => (r.ok ? (r.json() as Promise<StravaStatus>) : null))
+      .then((s) => {
+        if (!cancelled && s) setStatus(s);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function disconnect() {
+    setConfirm(false);
+    const res = await fetch("/api/strava", { method: "DELETE" }).catch(() => null);
+    if (res?.ok) setStatus((s) => (s ? { ...s, connected: false, athleteName: null, lastSyncAt: null } : s));
+  }
+
+  if (!status?.configured) return null;
+  return (
+    <section className="mt-8">
+      <SectionLabel>Strava</SectionLabel>
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2.5 text-sm">
+        <div className="min-w-0">
+          <div className="truncate font-medium">
+            {status.connected ? `Connected${status.athleteName ? ` · ${status.athleteName}` : ""}` : "Pull in your runs, rides and workouts"}
+          </div>
+          <div className="text-xs text-[var(--color-muted-foreground)]">
+            {status.connected
+              ? status.lastSyncAt
+                ? `Synced ${relTime(status.lastSyncAt)}`
+                : "Syncing…"
+              : "They join this log, so plans account for them."}
+          </div>
+        </div>
+        {!status.connected ? (
+          <a href="/api/strava/connect" className={btnSecondary + " shrink-0"}>
+            Connect
+          </a>
+        ) : confirm ? (
+          <div className="flex shrink-0 items-center gap-1">
+            <button onClick={() => void disconnect()} className={btnDanger}>
+              Disconnect
+            </button>
+            <button onClick={() => setConfirm(false)} className={btnGhost}>
+              Keep
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => setConfirm(true)} className={btnGhost + " shrink-0 text-[var(--color-muted-foreground)]"}>
+            Disconnect
+          </button>
+        )}
+      </div>
+      {notice && <p className="mt-2 text-xs text-[var(--color-muted-foreground)]">{notice}</p>}
+    </section>
+  );
+}
+
+// ---- Whiteboard review ------------------------------------------------------
+
+/** "2026-10-17T18:05" for a datetime-local input, in local time. */
+function localInput(ts: number): string {
+  const d = new Date(ts - new Date(ts).getTimezoneOffset() * 60000);
+  return d.toISOString().slice(0, 16);
+}
+
+/** Check what Claude read off the board, fill in weights and the score, and save it to the log. */
+function BoardReview({
+  draft,
+  history,
+  onBack,
+  onSave,
+}: {
+  draft: BoardDraft;
+  history: HistoryEntry[];
+  onBack: () => void;
+  onSave: (record: WorkoutRecord) => void;
+}) {
+  const [d, setD] = useState(draft);
+  // Sets are edited as text ("21, 15, 9", "5x5") and parsed on save.
+  const [setTexts, setSetTexts] = useState(() => draft.exercises.map((e) => setsText(e.sets)));
+  const [rounds, setRounds] = useState(1);
+  const [score, setScore] = useState("");
+  const [minutes, setMinutes] = useState(String(draft.timeCapMin ?? 20));
+  const [when, setWhen] = useState(() => localInput(Date.now()));
+
+  const patch = (i: number, p: Partial<BoardDraft["exercises"][number]>) =>
+    setD((x) => ({ ...x, exercises: x.exercises.map((e, j) => (j === i ? { ...e, ...p } : e)) }));
+  const remove = (i: number) => {
+    setD((x) => ({ ...x, exercises: x.exercises.filter((_, j) => j !== i) }));
+    setSetTexts((t) => t.filter((_, j) => j !== i));
+  };
+  const add = () => {
+    setD((x) => ({ ...x, exercises: [...x.exercises, { name: "", equipment: "bodyweight", load: "bodyweight", sets: [] }] }));
+    setSetTexts((t) => [...t, ""]);
+  };
+
+  const exercises = d.exercises.map((e, i) => ({ ...e, sets: parseSetsText(setTexts[i] ?? "") }));
+  const canSave = exercises.some((e) => e.name.trim() && e.sets.length);
+
+  function save() {
+    const at = new Date(when).getTime();
+    onSave(
+      boardRecord(
+        { ...d, exercises },
+        {
+          id: `b-${Date.now().toString(36)}`,
+          finishedAt: Number.isFinite(at) ? at : Date.now(),
+          durationMin: Number(minutes) || 20,
+          rounds,
+          score,
+        },
+      ),
+    );
+  }
+
+  return (
+    <div className="px-4 py-4 pb-28 sm:px-6 md:px-8 md:py-6 max-w-2xl animate-fade-in-up">
+      <PageHeader title="Class workout" />
+      <button onClick={onBack} className="mb-3 inline-flex items-center gap-1 text-sm text-[var(--color-muted-foreground)]">
+        <ChevronLeft className="size-4" /> Back
+      </button>
+      <header className="mb-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-[var(--color-tint)]">From the whiteboard</div>
+        <input
+          value={d.title}
+          onChange={(e) => setD({ ...d, title: e.target.value })}
+          aria-label="Title"
+          data-large-title
+          className="w-full bg-transparent text-large-title font-bold focus:outline-none"
+        />
+        <input
+          value={d.format}
+          onChange={(e) => setD({ ...d, format: e.target.value })}
+          aria-label="Format"
+          placeholder="For time, AMRAP 20 min, 5×5…"
+          className="w-full bg-transparent text-sm text-[var(--color-muted-foreground)] focus:outline-none"
+        />
+      </header>
+
+      <section className="mb-5 grid grid-cols-2 gap-2">
+        <label className="col-span-2 text-xs text-[var(--color-label-secondary)]">
+          When
+          <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className={input + " mt-1"} />
+        </label>
+        <label className="text-xs text-[var(--color-label-secondary)]">
+          Minutes
+          <input type="number" inputMode="numeric" min={1} max={600} value={minutes} onChange={(e) => setMinutes(e.target.value)} className={input + " mt-1"} />
+        </label>
+        {d.amrap && (
+          <div className="col-span-2 flex items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2">
+            <div className="text-sm text-[var(--color-muted-foreground)]">Rounds completed</div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setRounds((r) => Math.max(1, r - 1))} className={stepper} aria-label="Fewer rounds">
+                <Minus className="size-5" />
+              </button>
+              <div className="w-10 text-center text-2xl font-bold tabular-nums">{rounds}</div>
+              <button onClick={() => setRounds((r) => Math.min(60, r + 1))} className={stepper} aria-label="More rounds">
+                <Plus className="size-5" />
+              </button>
+            </div>
+          </div>
+        )}
+        <label className="text-xs text-[var(--color-label-secondary)]">
+          Score
+          <input value={score} onChange={(e) => setScore(e.target.value)} placeholder={d.amrap ? "7 + 12" : "8:42"} className={input + " mt-1"} />
+        </label>
+      </section>
+
+      <SectionLabel>{d.amrap ? "One round" : "Movements"}</SectionLabel>
+      <ul className="mb-3 space-y-2">
+        {d.exercises.map((e, i) => {
+          const prev = e.name.trim() ? lastPerformance(history, e.name) : null;
+          return (
+            <li key={i} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-3">
+              <div className="flex items-center gap-2">
+                <input value={e.name} onChange={(ev) => patch(i, { name: ev.target.value })} aria-label="Movement" placeholder="Movement" className={input + " font-medium"} />
+                <button onClick={() => remove(i)} className="rounded-full p-1.5 text-[var(--color-label-tertiary)] hover:bg-[var(--color-fill)]" aria-label={`Remove ${e.name || "movement"}`}>
+                  <X className="size-4" />
+                </button>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <div className="text-sm text-[var(--color-muted-foreground)]">Reps</div>
+                <input
+                  value={setTexts[i] ?? ""}
+                  onChange={(ev) => setSetTexts((t) => t.map((x, j) => (j === i ? ev.target.value : x)))}
+                  aria-label={`Reps for ${e.name || "movement"}`}
+                  placeholder="21, 15, 9 · 5x5 · 45s"
+                  className={input + " w-48 min-w-0 text-center tabular-nums"}
+                />
+              </div>
+              <div className="mt-2">
+                <LoadRow load={e.load} onChange={(load) => patch(i, { load })} />
+              </div>
+              {prev && (
+                <LastTime
+                  last={{ at: prev.at, sets: prev.exercise.sets, advice: adviseLoad(prev.exercise, exercises[i].sets[0]?.reps ?? null) }}
+                  onUse={(load) => patch(i, { load })}
+                  className="mt-2"
+                />
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <button onClick={add} className={btnGhost + " mb-5 text-[var(--color-muted-foreground)]"}>
+        <Plus className="size-4" /> Add movement
+      </button>
+
+      <label className="mb-6 block text-xs text-[var(--color-label-secondary)]">
+        Notes
+        <textarea value={d.notes} onChange={(e) => setD({ ...d, notes: e.target.value })} rows={2} className={input + " mt-1 resize-none"} />
+      </label>
+
+      <button onClick={save} disabled={!canSave} className={btnPrimary + " w-full py-3 text-base"}>
+        <Check className="size-4" /> Save to log
+      </button>
     </div>
   );
 }
@@ -665,7 +1089,14 @@ function PlanReview({
         </div>
       </header>
 
-      {equipment.length > 0 && (
+      {proposal.health && <HealthCard health={proposal.health} />}
+
+      {proposal.fullGym ? (
+        <section className="mb-5">
+          <SectionLabel>Equipment</SectionLabel>
+          <span className={chip(false) + " cursor-default"}>Full gym</span>
+        </section>
+      ) : equipment.length > 0 && (
         <section className="mb-5">
           <SectionLabel>Equipment spotted</SectionLabel>
           <div className="flex flex-wrap gap-1.5">
@@ -699,6 +1130,31 @@ function PlanReview({
         </button>
       </div>
     </div>
+  );
+}
+
+/** The health data the plan used, and what recovery did to today's weights. */
+function HealthCard({ health }: { health: HealthSummary }) {
+  if (!health.facts.length && !health.note) return null;
+  return (
+    <section className="mb-5">
+      <SectionLabel>From your health data</SectionLabel>
+      {health.facts.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {health.facts.map((f) => (
+            <span key={f} className={chip(false) + " cursor-default"}>
+              {f}
+            </span>
+          ))}
+        </div>
+      )}
+      {health.note && (
+        <p className="mt-2 text-sm text-[var(--color-muted-foreground)]">
+          <span className="font-semibold text-[var(--color-tint)]">{health.readiness === "low" ? "↓" : "✓"}</span>{" "}
+          {health.readiness === "low" ? `Recovery is low. ${health.note} No weight increases today.` : `Recovery is normal. ${health.note}`}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -736,6 +1192,7 @@ function ExerciseRow({ exercise: e, showRest }: { exercise: Exercise; showRest: 
           <div className="text-sm text-[var(--color-muted-foreground)]">
             {prescription(e)} · {e.load}
           </div>
+          {e.last && <LastTime last={e.last} className="mt-0.5" />}
         </div>
         <ChevronRight className={`size-4 shrink-0 text-[var(--color-label-tertiary)] transition-transform ${open ? "rotate-90" : ""}`} />
       </button>
@@ -794,12 +1251,14 @@ function Player({
 }: {
   session: WorkoutSession;
   onChange: (s: WorkoutSession) => void;
-  onFinish: () => void;
+  /** With the final session when the last set's log is part of the same update. */
+  onFinish: (final?: WorkoutSession) => void;
   onExit: () => void;
   onExtend: (minutes: ExtendMinutes) => Promise<void>;
 }) {
   const steps = useMemo(() => flattenPlan(session.plan), [session.plan]);
   const idx = Math.min(session.stepIndex, steps.length - 1);
+  const upcoming = useMemo(() => upcomingSteps(steps, idx), [steps, idx]);
   const step = steps[idx];
   const previous = steps[idx - 1] ?? null;
   const next = steps[idx + 1] ?? null;
@@ -877,8 +1336,7 @@ function Player({
     const logs = [...session.logs.filter((l) => l.stepKey !== step.key), log];
     const isLast = idx >= steps.length - 1;
     if (isLast) {
-      onChange({ ...session, logs, timerEndsAt: null, timerKind: null, timerPausedRemainingMs: null });
-      onFinish();
+      onFinish({ ...session, logs, timerEndsAt: null, timerKind: null, timerPausedRemainingMs: null });
       return;
     }
     const advanced: WorkoutSession = { ...session, logs, stepIndex: idx + 1, timerEndsAt: null, timerKind: null, timerPausedRemainingMs: null };
@@ -966,6 +1424,7 @@ function Player({
                   {e.perSide && <span className="text-sm font-normal text-[var(--color-muted-foreground)]"> each side</span>}
                 </div>
                 <div className="text-sm text-[var(--color-muted-foreground)]">{e.load}</div>
+                {e.last && <LastTime last={e.last} className="mt-1" />}
                 <MuscleMap muscles={e.muscles} className="mt-2 h-20 justify-start" />
               </div>
             </div>
@@ -1065,12 +1524,13 @@ function Player({
         </div>
       )}
 
+      <ComingUp groups={upcoming} currentId={step.exercise.id} />
       <ExtendRow onExtend={onExtend} className="mt-6" />
       <div className="mt-4 flex justify-center">
         {confirmEnd ? (
           <div className="flex items-center gap-2 text-sm">
             <span className="text-[var(--color-muted-foreground)]">End the workout?</span>
-            <button onClick={onFinish} className={btnDanger}>
+            <button onClick={() => onFinish()} className={btnDanger}>
               End
             </button>
             <button onClick={() => setConfirmEnd(false)} className={btnGhost}>
@@ -1144,6 +1604,46 @@ function RestCard({
   );
 }
 
+/** The rest of the session, one row per exercise in the order it comes up. */
+function ComingUp({ groups, currentId }: { groups: UpcomingGroup[]; currentId: string }) {
+  if (!groups.length) return null;
+  return (
+    <section className="mt-6">
+      <SectionLabel>Coming up</SectionLabel>
+      <div className="space-y-3">
+        {groups.map((g, i) => (
+          <div key={`${g.name}-${i}`}>
+            <div className="mb-1 flex items-center gap-2 text-xs font-medium text-[var(--color-label-secondary)]">
+              {g.name}
+              {g.blockType !== "straight" && (
+                <span className="rounded-full bg-[var(--color-fill)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">{g.blockType}</span>
+              )}
+            </div>
+            <ul className="divide-y divide-[var(--color-separator)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]">
+              {g.items.map(({ exercise: x, setsLeft }) => {
+                const amount = `${x.durationSec !== null ? `${x.durationSec}s` : x.reps}${x.perSide ? " each side" : ""}`;
+                return (
+                  <li key={x.id} className="flex items-center gap-3 px-3 py-2">
+                    <div className="size-10 shrink-0 rounded-lg bg-[var(--color-fill-secondary)]">
+                      <ExerciseFigure pattern={x.pattern} playing={false} prop={propForEquipment(x.equipment, x.load)} className="h-full w-full" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">{x.name}</div>
+                      <div className="truncate text-xs text-[var(--color-muted-foreground)]">
+                        {x.id === currentId ? `${setsLeft} more ${setsLeft === 1 ? "set" : "sets"} of ${amount}` : `${setsLeft} × ${amount}`} · {x.load}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Ring({ value, label, sub, big }: { value: number; label: string; sub?: string; big?: boolean }) {
   const size = big ? 180 : 132;
   const r = size / 2 - 8;
@@ -1199,12 +1699,19 @@ function Summary({
     for (const l of session.logs) m.set(l.exerciseName, [...(m.get(l.exerciseName) ?? []), l]);
     return Array.from(m.entries());
   }, [session.logs]);
+  // What to lift next time, from what was just done.
+  const nextLoads = useMemo(() => {
+    const m = new Map<string, LoadAdvice>();
+    for (const e of recordFromSession(session, session.finishedAt ?? Date.now()).exercises) {
+      const advice = adviseLoad(e, null);
+      if (advice) m.set(e.name, advice);
+    }
+    return m;
+  }, [session]);
 
   async function logToPersonal() {
     setLogState("busy");
-    const notes = byExercise
-      .map(([name, logs]) => `${name}: ${logs.map((l) => (l.reps !== null ? `${l.reps}` : `${l.durationSec}s`)).join(", ")}${logs[0]?.load ? ` @ ${logs[0].load}` : ""}`)
-      .join("\n");
+    const notes = byExercise.map(([name, logs]) => `${name}: ${formatSets(logs)}`).join("\n");
     try {
       const res = await fetch("/api/workout/log", {
         method: "POST",
@@ -1237,17 +1744,20 @@ function Summary({
       </div>
       {byExercise.length > 0 && (
         <ul className="mb-6 divide-y divide-[var(--color-separator)] rounded-xl border border-[var(--color-border)] bg-[var(--color-card)]">
-          {byExercise.map(([name, logs]) => (
-            <li key={name} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-              <div className="min-w-0">
+          {byExercise.map(([name, logs]) => {
+            const next = nextLoads.get(name);
+            return (
+              <li key={name} className="px-3 py-2 text-sm">
                 <div className="truncate font-medium">{name}</div>
-                <div className="text-xs text-[var(--color-muted-foreground)]">{logs[0]?.load}</div>
-              </div>
-              <div className="shrink-0 tabular-nums text-[var(--color-label-secondary)]">
-                {logs.map((l) => (l.reps !== null ? l.reps : `${l.durationSec}s`)).join(" · ")}
-              </div>
-            </li>
-          ))}
+                <div className="text-xs tabular-nums text-[var(--color-label-secondary)]">{formatSets(logs)}</div>
+                {next && (
+                  <div className="text-xs text-[var(--color-muted-foreground)]">
+                    <span className="font-semibold text-[var(--color-tint)]">{ARROW[next.direction]}</span> Next time {next.load} · {next.reason}
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       <ExtendRow onExtend={onExtend} className="mb-5" label="Not done yet?" />
@@ -1260,6 +1770,36 @@ function Summary({
           <Dumbbell className="size-4" /> New workout
         </button>
       </div>
+    </div>
+  );
+}
+
+const ARROW: Record<LoadAdvice["direction"], string> = { up: "↑", same: "→", down: "↓" };
+
+/**
+ * "Last · Oct 12: 10, 10, 9 @ 2×25 lb", and why today's weight moved. With
+ * `onUse` (where the advice isn't already the load) the advice is a button.
+ */
+function LastTime({ last, onUse, className = "" }: { last: ExerciseLast; onUse?: (load: string) => void; className?: string }) {
+  const advice = last.advice;
+  return (
+    <div className={`text-xs text-[var(--color-muted-foreground)] ${className}`}>
+      <div>
+        Last · {shortDate(last.at)}: {formatSets(last.sets)}
+      </div>
+      {advice && !onUse && (
+        <div>
+          <span className="font-semibold text-[var(--color-tint)]">{ARROW[advice.direction]}</span> {advice.reason}
+        </div>
+      )}
+      {advice && onUse && (
+        <button onClick={() => onUse(advice.load)} className="text-left">
+          <span className="font-semibold text-[var(--color-tint)]">
+            {ARROW[advice.direction]} Use {advice.load}
+          </span>{" "}
+          · {advice.reason}
+        </button>
+      )}
     </div>
   );
 }
@@ -1361,13 +1901,17 @@ function Segmented({ options, value, onChange }: { options: { value: string; lab
   );
 }
 
+function shortDate(ts: number): string {
+  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 function relTime(ts: number): string {
   const min = Math.round((Date.now() - ts) / 60000);
   if (min < 1) return "just now";
   if (min < 60) return `${min} min ago`;
   const h = Math.round(min / 60);
   if (h < 24) return `${h} h ago`;
-  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return shortDate(ts);
 }
 
 const chip = (on: boolean) =>

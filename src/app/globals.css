@@ -298,9 +298,11 @@
     select {
       font-size: 16px !important;
     }
-    /* Notes editor (notes-pane.tsx): both already clear 16px, so keep the
-       large title and 17px body instead of flattening them. */
-    input[data-note-title] {
+    /* Notes editor (notes-pane.tsx) and other editable large titles: both
+       already clear 16px, so keep the large title and 17px body instead of
+       flattening them. */
+    input[data-note-title],
+    input[data-large-title] {
       font-size: 1.75rem !important;
     }
     textarea[data-note-body] {
