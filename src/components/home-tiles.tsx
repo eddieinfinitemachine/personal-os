@@ -172,7 +172,6 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
                 list={t.list}
                 todos={t.todos}
                 totalCount={t.totalCount}
-                groupByProject
                 leadingContent={callSheet(t.list)}
               />
             </div>
@@ -188,7 +187,6 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
             list={t.list}
             todos={t.todos}
             totalCount={t.totalCount}
-            groupByProject
             leadingContent={callSheet(t.list)}
           />
         ))}

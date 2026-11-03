@@ -26,7 +26,7 @@ const STEPS: Step[] = [
   {
     icon: FolderPlus,
     title: "Group work into projects",
-    body: "Projects live in the sidebar. Tag a todo with a project from its detail panel, or right-click any list item. Project pages show every task that belongs to it.",
+    body: "Projects live in the sidebar. Todos you add from a project's page belong to it, alongside its notes and files.",
   },
   {
     icon: ListPlus,

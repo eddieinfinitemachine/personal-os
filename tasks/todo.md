@@ -1,3 +1,42 @@
+# Retire filing todos into projects — 2026-11-03
+
+Eddie asked whether projects make sense for him. Usage says lists do the routing
+and very few todos ever reach a real project (counts stay local: this repo is
+public). `/projects` (inferred initiatives) stays and is the only thing called a
+project. UI only: no schema change, no data change, reversible with a revert.
+
+- [x] Todo row: remove the project chip, popover and "Project…" menu item. Send to tracker keeps its own chip (it's the only mobile path)
+- [x] Keyboard: remove `p`
+- [x] Sidebar: a todo dropped on a project row no longer files it
+- [x] Home: remove "By project" (`project-card.tsx`) and the per-project groups inside list tiles
+- [x] Touch drop on a Home tile keeps the todo's project, matching desktop (it used to clear it once the groups were gone)
+- [x] Capture correction: no Project field on a todo (assets and interactions keep theirs)
+- [x] Inbox reads as To Do: gone from sidebar and drawer, `/inbox` redirects to Home, capture results say "To Do"
+- [x] Tests, typecheck
+- [x] Browser check
+- [x] Onboarding copy no longer tells people to tag todos with a project
+- [ ] Eddie: approve shipping; PR, merge, verify on the live app
+
+Left alone on purpose: capture still writes the Inbox project under the hood,
+existing project pages and their todos, the sidebar Projects section. Separating
+Journal and the trackers from Project is the next step, if wanted.
+
+## Review
+`pnpm typecheck` clean; `pnpm test` 155 files passed / 23 skipped, 1490 tests
+passed; `next build --webpack` passes. One earlier full run failed
+`dating-message-sync.test.ts` on a timing check (it passes alone and on the rerun,
+and imports nothing changed here).
+
+Browser on a local scratch DB with fake data, `next dev --webpack`, 1440 and 390:
+flat list tiles with no group headers and no By project; Inbox gone from sidebar
+and drawer; `p` does nothing; `l` moves a todo and keeps its project; right-click
+menu has no Project item; Tracker chip offers enabled trackers on desktop and in
+mobile edit mode; a touch drag to another list sends and keeps the project;
+`/inbox` lands on Home; a project page still lists its todos. Scratch DB dropped.
+
+Not exercised in the browser: desktop drag, a real tracker send (needs Claude),
+the capture correction form and capture labels (unit tests only).
+
 # Capture Inbox on Home — 2026-11-01
 
 - [x] Confirm all four capture sources and Home section placement with Eddie.

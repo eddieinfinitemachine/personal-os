@@ -112,7 +112,6 @@ describe("capture corrections", () => {
     await render();
     await change("title", "Read this");
     await change("listId", "today");
-    await change("projectId", "project");
     await click("Save correction");
     expect(fetcher.mock.calls[0][0]).toBe(
       "/api/capture-reviews/review/correct",
@@ -124,9 +123,8 @@ describe("capture corrections", () => {
         title: "Read this",
         notes: "Original notes",
         listName: "To Do",
-        projectId: "project",
       },
-      fields: { listId: "today", projectId: "project" },
+      fields: { listId: "today" },
     });
     expect(saved).toHaveBeenCalledWith(
       expect.objectContaining({ revision: 5 }),

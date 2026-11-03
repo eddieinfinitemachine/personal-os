@@ -9,20 +9,18 @@ import { FuzzyPicker } from "./fuzzy-picker";
 // Email-style keyboard navigation over the todo rows on the page:
 //   j / k  — move the highlight through every visible open todo
 //   l      — file the highlighted todo to a list (fuzzy picker; "ben" ⏎ → EC/Ben)
-//   p      — file to a project
 //   e      — complete
 //   u      — undo the last action (same stack as ⌘Z; see lib/undo.ts)
 //   Esc    — clear the highlight
 // Rows are discovered from the DOM ([data-kbd-todo]) so this works across
-// tiles and project cards without threading state through them.
+// tiles without threading state through them.
 
 type Option = { id: string; label: string };
 
 export function KeyboardListNav() {
   const router = useRouter();
-  const [picker, setPicker] = useState<null | "list" | "project">(null);
+  const [picker, setPicker] = useState(false);
   const [lists, setLists] = useState<Option[] | null>(null);
-  const [projects, setProjects] = useState<Option[] | null>(null);
   const activeIdRef = useRef<string | null>(null);
   const busyRef = useRef(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -136,8 +134,8 @@ export function KeyboardListNav() {
   }, []);
 
   const rows = () => {
-    // The same todo renders multiple times (hidden mobile layout, tile,
-    // By-Project card). Only VISIBLE instances count — the hidden mobile
+    // The same todo renders twice (hidden mobile layout, desktop tile).
+    // Only VISIBLE instances count — the hidden mobile
     // clone comes first in the DOM and highlighting it shows nothing
     // (that bug cost three rounds of debugging; check pixels, not DOM).
     const seen = new Set<string>();
@@ -265,22 +263,14 @@ export function KeyboardListNav() {
     [setActive]
   );
 
-  const ensureOptions = useCallback(async (kind: "list" | "project") => {
-    if (kind === "list" && !lists) {
-      const res = await fetch("/api/lists");
-      if (res.ok) {
-        const { lists } = (await res.json()) as { lists: { id: string; name: string }[] };
-        setLists(lists.map((l) => ({ id: l.id, label: l.name })));
-      }
+  const ensureLists = useCallback(async () => {
+    if (lists) return;
+    const res = await fetch("/api/lists");
+    if (res.ok) {
+      const { lists } = (await res.json()) as { lists: { id: string; name: string }[] };
+      setLists(lists.map((l) => ({ id: l.id, label: l.name })));
     }
-    if (kind === "project" && !projects) {
-      const res = await fetch("/api/projects");
-      if (res.ok) {
-        const { projects } = (await res.json()) as { projects: { id: string; name: string }[] };
-        setProjects(projects.map((p) => ({ id: p.id, label: p.name })));
-      }
-    }
-  }, [lists, projects]);
+  }, [lists]);
 
   const patch = useCallback(
     async (todoId: string, body: Record<string, unknown>) => {
@@ -416,14 +406,8 @@ export function KeyboardListNav() {
           break;
         case "l":
           if (activeIdRef.current) {
-            void ensureOptions("list");
-            setPicker("list");
-          }
-          break;
-        case "p":
-          if (activeIdRef.current) {
-            void ensureOptions("project");
-            setPicker("project");
+            void ensureLists();
+            setPicker(true);
           }
           break;
         case "e":
@@ -450,7 +434,7 @@ export function KeyboardListNav() {
     // can stop propagation (inputs/overlays are still respected above).
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [picker, move, complete, ensureOptions, setActive, toggleSelected, clearSelection, copySelection, applySelection]);
+  }, [picker, move, complete, ensureLists, setActive, toggleSelected, clearSelection, copySelection, applySelection]);
 
   const pill =
     copied != null ? (
@@ -464,16 +448,15 @@ export function KeyboardListNav() {
     ) : null;
 
   if (!picker) return pill;
-  const options = picker === "list" ? lists : projects;
   return (
     <div className="fixed inset-0 z-50">
       {pill}
       <FuzzyPicker
-        title={picker === "list" ? "Move to list" : "File to project"}
-        options={options ?? []}
+        title="Move to list"
+        options={lists ?? []}
         onPick={(targetId) => {
           const todoId = activeIdRef.current;
-          setPicker(null);
+          setPicker(false);
           if (!todoId) return;
           // Ride the row's own optimistic move (instant, same as drag) —
           // the row PATCHes the server itself, and registers the undo.
@@ -482,14 +465,13 @@ export function KeyboardListNav() {
             new CustomEvent("personalos:kbd-move", {
               detail: {
                 todoId,
-                kind: picker,
                 targetId,
               },
             })
           );
           haptic("tick");
         }}
-        onClose={() => setPicker(null)}
+        onClose={() => setPicker(false)}
       />
     </div>
   );

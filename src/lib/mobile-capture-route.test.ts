@@ -9,7 +9,7 @@ import { GET, POST } from "@/app/api/capture/mobile/route";
 const requestId = "12345678-1234-4234-8234-123456789abc";
 const request = (body: unknown) => new Request("https://example.com/api/capture/mobile", { method: "POST", headers: { "content-type": "application/json", "authorization": "Bearer example" }, body: JSON.stringify(body) });
 describe("mobile capture route", () => {
-  beforeEach(() => { vi.clearAllMocks(); mocks.auth.mockResolvedValue("user-1"); mocks.user.mockResolvedValue({ email: "person@example.com" }); mocks.capture.mockResolvedValue({ ok: true, id: "todo-1", type: "todo", title: "Task", destination: "Inbox", path: "/inbox" }); });
+  beforeEach(() => { vi.clearAllMocks(); mocks.auth.mockResolvedValue("user-1"); mocks.user.mockResolvedValue({ email: "person@example.com" }); mocks.capture.mockResolvedValue({ ok: true, id: "todo-1", type: "todo", title: "Task", destination: "To Do", path: "/" }); });
   it("checks credentials before parsing or saving", async () => {
     mocks.auth.mockResolvedValue(null);
     const response = await POST(request({ requestId, text: "hello" }));
@@ -26,7 +26,7 @@ describe("mobile capture route", () => {
     const response = await POST(request({ requestId, text: "hello", userId: "victim" }));
     expect(response.status).toBe(200);
     expect(mocks.capture).toHaveBeenCalledWith("user-1", expect.objectContaining({ requestId, text: "hello" }));
-    expect(await response.json()).toMatchObject({ ok: true, id: "todo-1", destination: "Inbox" });
+    expect(await response.json()).toMatchObject({ ok: true, id: "todo-1", destination: "To Do" });
   });
   it("rejects invalid payloads before calling the service", async () => {
     const response = await POST(request({ requestId, text: 42 }));

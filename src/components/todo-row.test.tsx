@@ -7,7 +7,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
 }));
 
-import { TodoRow } from "./todo-row";
+import { TodoRow, dropTargetProjectId } from "./todo-row";
 
 let container: HTMLDivElement, root: Root;
 beforeEach(() => {
@@ -142,15 +142,23 @@ describe("TodoRow send to tracker", () => {
   const openPicker = async () => {
     await render();
     await act(async () => {
-      (container.querySelector("[data-project-picker]") as HTMLElement).click();
+      (container.querySelector("[data-tracker-picker]") as HTMLElement).click();
     });
-    return document.body.querySelector("[data-project-picker-popover]") as HTMLElement;
+    return document.body.querySelector("[data-tracker-picker-popover]") as HTMLElement;
   };
 
   it("lists no trackers when none are enabled", async () => {
     const pop = await openPicker();
     expect(pop).not.toBeNull();
     expect(pop.querySelector("[data-send-to-tracker]")).toBeNull();
+    expect(pop.textContent).toContain("No trackers enabled");
+  });
+
+  it("offers no way to file the todo to a project", async () => {
+    const pop = await openPicker();
+    expect(container.querySelector("[data-project-picker]")).toBeNull();
+    expect(pop.textContent).not.toContain("Journal");
+    expect(calls.some((c) => c.url === "/api/projects")).toBe(false);
   });
 
   it("offers enabled asset trackers and sends the todo to one", async () => {
@@ -167,7 +175,7 @@ describe("TodoRow send to tracker", () => {
     expect(send.init?.method).toBe("POST");
     expect(JSON.parse(String(send.init?.body))).toEqual({ kind: "media" });
     // Picker closes; the row says what it's doing while Claude works.
-    expect(document.body.querySelector("[data-project-picker-popover]")).toBeNull();
+    expect(document.body.querySelector("[data-tracker-picker-popover]")).toBeNull();
     expect(container.querySelector('[role="status"]')?.textContent).toBe("Sending to Media…");
 
     const { peekUndo } = await import("@/lib/undo");
@@ -193,5 +201,16 @@ describe("TodoRow send to tracker", () => {
     expect(container.querySelector('[role="status"]')).toBeNull();
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("try again");
     expect(titleText().textContent).toBe(todo.title);
+  });
+});
+
+describe("dropTargetProjectId", () => {
+  it("keeps the todo's project on a tile with no project scope", () => {
+    expect(dropTargetProjectId("", "p1")).toBe("p1");
+    expect(dropTargetProjectId(null, "p1")).toBe("p1");
+    expect(dropTargetProjectId("", null)).toBeNull();
+  });
+  it("uses the tile's project when it has one", () => {
+    expect(dropTargetProjectId("p2", "p1")).toBe("p2");
   });
 });

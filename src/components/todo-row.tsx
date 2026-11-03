@@ -9,7 +9,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  Folder,
   Loader2,
   MessageCircle,
   Paperclip,
@@ -24,7 +23,7 @@ import { cn, formatCalendarDate, toDateInputValue, isCalendarDateOverdue } from 
 import { linkify } from "@/lib/linkify";
 import { pushUndo, quoteTitle } from "@/lib/undo";
 import { pushTodoMoveUndo } from "@/lib/todo-undo";
-import { getLists, getProjects } from "@/lib/todo-menu-cache";
+import { getLists } from "@/lib/todo-menu-cache";
 import { ASSET_TRACKERS, type AssetTracker } from "@/lib/asset-trackers";
 import { readEnabled as readEnabledTemplates } from "./sidebar-template-picker";
 import { TodoDetailModal } from "./todo-detail-modal";
@@ -63,6 +62,15 @@ function growToFit(el: HTMLTextAreaElement) {
   el.style.height = `${el.scrollHeight}px`;
 }
 
+// A Home tile isn't scoped to a project (its drop attribute is empty), so a
+// drop there keeps the todo's project: the same rule as ListTile's desktop drop.
+export function dropTargetProjectId(
+  raw: string | null,
+  todoProjectId?: string | null
+): string | null {
+  return raw || (todoProjectId ?? null);
+}
+
 function TodoRowImpl({
   todo,
   onToggle,
@@ -73,7 +81,6 @@ function TodoRowImpl({
   listColor = "zinc",
   sourceListId,
   sourceProjectId = null,
-  showProjectBadge,
   showCreator,
   isSubtask,
   leaving,
@@ -90,7 +97,6 @@ function TodoRowImpl({
   listColor?: string;
   sourceListId?: string;
   sourceProjectId?: string | null;
-  showProjectBadge?: React.ReactNode;
   // When true (collaborative list), render the creator's name on the row.
   showCreator?: boolean;
   isSubtask?: boolean;
@@ -342,35 +348,24 @@ function TodoRowImpl({
     });
   }
 
-  // Project picker (mobile + desktop edit row). Rendered via portal at the
+  // Tracker picker (mobile + desktop edit row). Rendered via portal at the
   // body level with position computed from the chip's bounding rect — keeps
   // it from being constrained by row overflow or weird ancestor positioning.
-  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
-  const [projectPickerPos, setProjectPickerPos] = useState<{
+  const [trackerPickerOpen, setTrackerPickerOpen] = useState(false);
+  const [trackerPickerPos, setTrackerPickerPos] = useState<{
     top: number;
     left: number;
   } | null>(null);
-  const [availableProjects, setAvailableProjects] = useState<
-    { id: string; name: string }[]
-  >([]);
-  const projectPickerNeedsLoad =
-    (projectPickerOpen || ctx.isOpen) && availableProjects.length === 0;
   useEffect(() => {
-    if (!projectPickerNeedsLoad) return;
-    getProjects()
-      .then((projects) => setAvailableProjects(projects))
-      .catch(() => {});
-  }, [projectPickerNeedsLoad]);
-  useEffect(() => {
-    if (!projectPickerOpen) {
-      setProjectPickerPos(null);
+    if (!trackerPickerOpen) {
+      setTrackerPickerPos(null);
       return;
     }
     function onDown(e: MouseEvent | TouchEvent) {
       const t = e.target as HTMLElement | null;
-      if (t?.closest("[data-project-picker]")) return;
-      if (t?.closest("[data-project-picker-popover]")) return;
-      setProjectPickerOpen(false);
+      if (t?.closest("[data-tracker-picker]")) return;
+      if (t?.closest("[data-tracker-picker-popover]")) return;
+      setTrackerPickerOpen(false);
     }
     document.addEventListener("mousedown", onDown);
     document.addEventListener("touchstart", onDown);
@@ -378,7 +373,7 @@ function TodoRowImpl({
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("touchstart", onDown);
     };
-  }, [projectPickerOpen]);
+  }, [trackerPickerOpen]);
   const [listPickerOpen, setListPickerOpen] = useState(false);
   const [listPickerPos, setListPickerPos] = useState<{ top: number; left: number } | null>(null);
   useEffect(() => {
@@ -405,76 +400,24 @@ function TodoRowImpl({
       getLists().then((lists) => setAvailableLists(lists)).catch(() => {});
     }
   }
-  function openProjectPicker(anchorRect: DOMRect) {
+  function openTrackerPicker(anchorRect: DOMRect) {
     const POP_W = 192; // matches w-48
     const left = Math.min(
       anchorRect.left,
       window.innerWidth - POP_W - 8
     );
-    setProjectPickerPos({ top: anchorRect.bottom + 4, left });
-    setProjectPickerOpen(true);
-  }
-  async function moveToProject(projectId: string | null) {
-    setProjectPickerOpen(false);
-    // Optimistic source-side hide + destination insert via the move event.
-    if (sourceListId && sourceProjectId !== projectId) {
-      const toProjectName =
-        projectId === null
-          ? null
-          : availableProjects.find((p) => p.id === projectId)?.name ?? null;
-      window.dispatchEvent(
-        new CustomEvent("personalos:todo-moved", {
-          detail: {
-            todoId: todo.id,
-            fromListId: sourceListId,
-            fromProjectId: sourceProjectId,
-            toListId: sourceListId,
-            toProjectId: projectId,
-            toProjectName,
-            todo: {
-              ...todo,
-              projectId,
-              projectName: toProjectName,
-              completedAt: todo.completedAt ?? null,
-            },
-          },
-        }),
-      );
-    }
-    fetch(`/api/todos/${todo.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId }),
-    }).then((res) => {
-      if (!res.ok) return;
-      startTransition(() => router.refresh());
-      if (!sourceListId) return;
-      pushTodoMoveUndo({
-        label: projectId
-          ? `Filed ${quoteTitle(displayTitle)} under ${
-              availableProjects.find((p) => p.id === projectId)?.name ?? "a project"
-            }`
-          : `Unfiled ${quoteTitle(displayTitle)}`,
-        todo,
-        from: {
-          listId: sourceListId,
-          projectId: sourceProjectId,
-          projectName: todo.projectName ?? null,
-        },
-        to: { listId: sourceListId, projectId },
-        refresh: () => startTransition(() => router.refresh()),
-      });
-    });
+    setTrackerPickerPos({ top: anchorRect.bottom + 4, left });
+    setTrackerPickerOpen(true);
   }
   // "Send to tracker": the Asset-backed trackers enabled in this browser.
   // Read when a picker opens (enabled templates are client-only state) so
   // rows don't each subscribe to the sidebar's change event.
   const [trackers, setTrackers] = useState<AssetTracker[]>([]);
   useEffect(() => {
-    if (!projectPickerOpen && !ctx.isOpen) return;
+    if (!trackerPickerOpen && !ctx.isOpen) return;
     const enabled = readEnabledTemplates();
     setTrackers(ASSET_TRACKERS.filter((t) => enabled.has(t.slug)));
-  }, [projectPickerOpen, ctx.isOpen]);
+  }, [trackerPickerOpen, ctx.isOpen]);
   // Label of the tracker a send is in flight to. Claude takes 10-30 s, so
   // the row stays put (no optimistic removal) and says what it's doing.
   const [sendingTo, setSendingTo] = useState<string | null>(null);
@@ -486,7 +429,7 @@ function TodoRowImpl({
     return () => window.clearTimeout(t);
   }, [sendFailed]);
   async function sendToTracker(tracker: AssetTracker) {
-    setProjectPickerOpen(false);
+    setTrackerPickerOpen(false);
     if (sendingTo) return;
     setSendFailed(false);
     setSendingTo(tracker.label);
@@ -545,27 +488,6 @@ function TodoRowImpl({
           label: l.name,
           onSelect: () => moveToList(l.id),
         })),
-    },
-    {
-      label: "Project…",
-      icon: <Folder className="size-3.5" />,
-      submenu: [
-        ...(todo.projectId
-          ? [
-              {
-                label: "Remove from project",
-                destructive: true,
-                onSelect: () => moveToProject(null),
-              },
-            ]
-          : []),
-        ...availableProjects
-          .filter((pr) => pr.id !== todo.projectId)
-          .map((pr) => ({
-            label: pr.name,
-            onSelect: () => moveToProject(pr.id),
-          })),
-      ],
     },
     ...(trackers.length > 0 && !isSubtask
       ? [
@@ -681,8 +603,10 @@ function TodoRowImpl({
     clearTargetHighlight();
     if (!tgt) return;
     const tgtList = tgt.getAttribute("data-droptarget-list");
-    const tgtProjRaw = tgt.getAttribute("data-droptarget-project") ?? "";
-    const tgtProj = tgtProjRaw === "" ? null : tgtProjRaw;
+    const tgtProj = dropTargetProjectId(
+      tgt.getAttribute("data-droptarget-project"),
+      todo.projectId
+    );
     const samePlace =
       tgtList === sourceListId && tgtProj === (todo.projectId ?? null);
     if (samePlace) return;
@@ -729,10 +653,7 @@ function TodoRowImpl({
           toListId: targetListId,
           toProjectId: targetProjectId,
           toProjectName:
-            targetProjectId === null
-              ? null
-              : availableProjects.find((p) => p.id === targetProjectId)
-                  ?.name ?? todo.projectName ?? null,
+            targetProjectId === null ? null : todo.projectName ?? null,
           todo: { ...todo, completedAt: todo.completedAt ?? null },
         },
       })
@@ -866,8 +787,10 @@ function TodoRowImpl({
       }, 350);
       if (tgt) {
         const tgtList = tgt.getAttribute("data-droptarget-list");
-        const tgtProjRaw = tgt.getAttribute("data-droptarget-project") ?? "";
-        const tgtProj = tgtProjRaw === "" ? null : tgtProjRaw;
+        const tgtProj = dropTargetProjectId(
+          tgt.getAttribute("data-droptarget-project"),
+          todo.projectId
+        );
         if (tgtList) void performTouchMove(tgtList, tgtProj);
       }
     }
@@ -901,12 +824,11 @@ function TodoRowImpl({
   useEffect(() => {
     function onKbdMove(e: Event) {
       const d = (e as CustomEvent).detail as
-        | { todoId: string; kind: "list" | "project"; targetId: string | null }
+        | { todoId: string; targetId: string }
         | undefined;
       if (!d || d.todoId !== todo.id) return;
       if (!rootRef.current || rootRef.current.getClientRects().length === 0) return;
-      if (d.kind === "list" && d.targetId) void moveToList(d.targetId);
-      else if (d.kind === "project") void moveToProject(d.targetId);
+      void moveToList(d.targetId);
     }
     window.addEventListener("personalos:kbd-move", onKbdMove);
     return () => window.removeEventListener("personalos:kbd-move", onKbdMove);
@@ -1174,25 +1096,23 @@ function TodoRowImpl({
               ) : null}
               {editing ? (
                 <button
-                  data-project-picker
+                  data-tracker-picker
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={(e) => {
                     e.stopPropagation();
-                    openProjectPicker(
+                    openTrackerPicker(
                       (e.currentTarget as HTMLElement).getBoundingClientRect()
                     );
                   }}
-                  className="inline-flex items-center gap-0.5 py-1 -my-1 max-w-[8rem]"
+                  className="inline-flex items-center gap-0.5 py-1 -my-1"
                 >
-                  <Folder className="size-3" />
-                  <span className="truncate">
-                    {todo.projectName ?? "Project"}
-                  </span>
+                  <Send className="size-3" />
+                  <span>Tracker</span>
                 </button>
               ) : null}
             </div>
           ) : null}
-          {/* Desktop-only chip row: date pill, subtask count, add-subtask, project picker. */}
+          {/* Desktop-only chip row: date pill, subtask count, add-subtask, tracker picker. */}
           <div className="mt-1 hidden md:flex flex-wrap items-center gap-2 whitespace-nowrap text-xs text-[var(--color-muted-foreground)]">
             {(() => {
               // Age chip: decay made visible. Only past the two-week cliff.
@@ -1284,20 +1204,18 @@ function TodoRowImpl({
                   <span>Subtask</span>
                 </button>
                 <button
-                  data-project-picker
+                  data-tracker-picker
                   onClick={(e) => {
                     e.stopPropagation();
-                    openProjectPicker(
+                    openTrackerPicker(
                       (e.currentTarget as HTMLElement).getBoundingClientRect()
                     );
                   }}
                   className="inline-flex items-center gap-1 rounded px-1 py-0.5 opacity-0 md:group-hover:opacity-60 md:hover:opacity-100 hover:bg-[var(--color-accent)] transition"
-                  title={todo.projectName ?? "Assign to project"}
+                  title="Send to tracker"
                 >
-                  <Folder className="size-3" />
-                  <span className="max-w-[8rem] truncate">
-                    {todo.projectName ?? "Project"}
-                  </span>
+                  <Send className="size-3" />
+                  <span>Tracker</span>
                 </button>
                 <button
                   data-list-picker
@@ -1394,46 +1312,21 @@ function TodoRowImpl({
           onClose={() => setDetailOpen(false)}
         />
       ) : null}
-      {projectPickerOpen && projectPickerPos && typeof document !== "undefined"
+      {trackerPickerOpen && trackerPickerPos && typeof document !== "undefined"
         ? createPortal(
             <div
-              data-project-picker-popover
+              data-tracker-picker-popover
               style={{
                 position: "fixed",
-                top: projectPickerPos.top,
-                left: projectPickerPos.left,
+                top: trackerPickerPos.top,
+                left: trackerPickerPos.left,
                 zIndex: 60,
               }}
               className="animate-scale-in origin-top-left w-48 max-h-64 overflow-y-auto rounded-xl border border-[var(--color-card-border)] bg-[var(--color-elevated)] shadow-popover"
               onClick={(e) => e.stopPropagation()}
             >
-              {todo.projectId ? (
-                <button
-                  onClick={() => moveToProject(null)}
-                  className="block w-full text-left px-3 py-2 text-[13px] text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]"
-                >
-                  Remove from project
-                </button>
-              ) : null}
-              {availableProjects
-                .filter((pr) => pr.id !== todo.projectId)
-                .map((pr) => (
-                  <button
-                    key={pr.id}
-                    onClick={() => moveToProject(pr.id)}
-                    className="block w-full text-left px-3 py-2 text-[13px] text-[var(--color-foreground)] hover:bg-[var(--color-accent)]"
-                  >
-                    {pr.name}
-                  </button>
-                ))}
-              {availableProjects.length === 0 ? (
-                <div className="px-3 py-2 text-[13px] text-[var(--color-muted-foreground)]">
-                  Loading…
-                </div>
-              ) : null}
-              {trackers.length > 0 && !isSubtask ? (
+              {trackers.length > 0 ? (
                 <div data-send-to-tracker>
-                  <div className="my-1 h-px bg-[var(--color-separator)]" />
                   <div className="px-3 pt-1.5 pb-1 text-[11px] font-medium text-[var(--color-muted-foreground)]">
                     Send to tracker
                   </div>
@@ -1447,7 +1340,11 @@ function TodoRowImpl({
                     </button>
                   ))}
                 </div>
-              ) : null}
+              ) : (
+                <div className="px-3 py-2 text-[13px] text-[var(--color-muted-foreground)]">
+                  No trackers enabled
+                </div>
+              )}
             </div>,
             document.body
           )
@@ -1593,10 +1490,6 @@ function arePropsEqual(
   if (prev.isSubtask !== next.isSubtask) return false;
   if (prev.showCreator !== next.showCreator) return false;
   if (prev.leaving !== next.leaving) return false;
-  // showProjectBadge is a ReactNode; only compare presence (parents pass
-  // either undefined or an empty fragment, never per-row dynamic content).
-  if ((prev.showProjectBadge == null) !== (next.showProjectBadge == null))
-    return false;
   return true;
 }
 
