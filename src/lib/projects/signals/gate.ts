@@ -6,7 +6,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { relationshipCategory } from "@/lib/call-sheet/policy";
-import { isTherapyTitle, namesToMatch, selectMeeting, wordMatcher } from "@/lib/granola";
+import { DATING_KEYWORDS, isTherapyTitle, namesToMatch, wordMatcher } from "@/lib/granola";
 
 export const EXCLUSION_RULES = [
   "private",
@@ -104,6 +104,12 @@ export const FAMILY_WORDS = [
   "thanksgiving",
 ];
 
+// DATING_KEYWORDS is tuned for the dating filer, which wants every candidate. An
+// exclusion gate can't use all of it: these words also mean a ship date, an
+// ex-Apple hire or a vendor relationship, and "date" alone hid most work email.
+const WORK_AMBIGUOUS_DATING_WORDS = new Set(["date", "ex", "relationship"]);
+export const GATE_DATING_WORDS = DATING_KEYWORDS.filter((k) => !WORK_AMBIGUOUS_DATING_WORDS.has(k));
+
 export type GateContext = {
   /** Everyone on /dating: full and first names. */
   datingNames: string[];
@@ -113,6 +119,8 @@ export type GateContext = {
   blockedEmails: Set<string>;
   /** Granola note ids that dating records were filed from. */
   datingNoteIds: Set<string>;
+  /** Granola notes in a Therapy folder, whatever they are titled. */
+  therapyNoteIds?: Set<string>;
 };
 
 export type GateInput = {
@@ -130,19 +138,21 @@ export type GateInput = {
 
 export function createGate(ctx: GateContext) {
   const counts = Object.fromEntries(EXCLUSION_RULES.map((r) => [r, 0])) as ExclusionCounts;
-  const excludedNoteIds = new Set(ctx.datingNoteIds);
+  const excludedNoteIds = new Set([...ctx.datingNoteIds, ...(ctx.therapyNoteIds ?? [])]);
+  const dating = wordMatcher([...ctx.datingNames, ...GATE_DATING_WORDS])!;
   const health = wordMatcher(HEALTH_WORDS)!;
   const family = wordMatcher([...FAMILY_WORDS, ...ctx.familyNames])!;
 
   function reason(input: GateInput): ExclusionRule | null {
     if (input.private) return "private";
+    if (input.granolaId && ctx.therapyNoteIds?.has(input.granolaId)) return "therapy";
     if (input.granolaId && ctx.datingNoteIds.has(input.granolaId)) return "dating-record";
     if (input.fromNoteId && excludedNoteIds.has(input.fromNoteId)) return "excluded-meeting";
     if (input.emails?.some((e) => !!e && ctx.blockedEmails.has(e.trim().toLowerCase()))) return "contact";
     if (isTherapyTitle(input.title)) return "therapy";
     const text = [input.title, input.text].filter(Boolean).join("\n");
     if (!text) return null;
-    if (selectMeeting({ title: input.title, summary: input.text }, ctx.datingNames).candidate) return "dating";
+    if (dating.test(text)) return "dating";
     if (health.test(text)) return "health";
     if (family.test(text)) return "family";
     return null;

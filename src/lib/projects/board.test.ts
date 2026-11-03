@@ -37,6 +37,17 @@ describe("bucketCards", () => {
   });
 });
 
+describe("quiet cards", () => {
+  it("sorts them after active cards, with pinned still first", () => {
+    const { cards } = bucketCards([
+      card("quiet-new", 1, { stale: true }),
+      card("active-old", 9),
+      card("pin-quiet", 40, { visibility: "pinned", stale: true }),
+    ]);
+    expect(cards.map((c) => c.name)).toEqual(["pin-quiet", "active-old", "quiet-new"]);
+  });
+});
+
 describe("evidence helpers", () => {
   const ev = (ref: string, kind: "meeting" | "email" | "todo" | "note", at: Date) => ({ ref, kind, title: ref, at: at.toISOString(), url: null });
 
@@ -118,6 +129,18 @@ describe("getProjectsBoard", () => {
     // Pinned and not returned by the latest run: stale. Unknown company / state fall back.
     expect(board.cards[0]).toMatchObject({ visibility: "pinned", stale: true, company: "Personal" });
     expect(board.cards.find((x) => x.name === "weird")).toMatchObject({ visibility: "auto", next: null });
+  });
+
+  it("marks any shown card the latest run didn't return as quiet, but never a hidden one", async () => {
+    mocks.sourceFindMany.mockResolvedValueOnce([
+      row("back"),
+      row("gone"),
+      row("gone-hidden", { state: "hidden" }),
+      run({ lastCheckedAt: ago(0.1).toISOString(), lastSuccessAt: ago(0.5).toISOString(), keys: ["back"] }),
+    ]);
+    const board = await getProjectsBoard("u1", true, NOW);
+    expect(board.cards.map((c) => [c.name, c.stale])).toEqual([["back", false], ["gone", true]]);
+    expect(board.hidden.map((c) => [c.name, c.stale])).toEqual([["gone-hidden", false]]);
   });
 
   it("flags a failed last run and survives a missing run row", async () => {

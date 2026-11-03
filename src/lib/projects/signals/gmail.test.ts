@@ -56,11 +56,49 @@ describe("collectEmails", () => {
         title: "ERP cutover plan",
         at: new Date(2000).toISOString(),
         url: `https://mail.google.com/mail/?authuser=${encodeURIComponent(ME)}#all/work`,
-        detail: "Looks good & thanks",
+        detail: "Draft attached // Looks good & thanks",
         domains: ["vendor.example"],
         from: ME,
+        threadCount: 2,
+        lastFrom: "vendor.example",
       },
     ]);
+  });
+
+  it("keeps the latest five snippets and says when Eddie sent the last message", async () => {
+    const long = thread(
+      "long",
+      Array.from({ length: 7 }, (_, i) =>
+        msg(String(i), 1000 + i, { Subject: "Order", From: i % 2 ? ME : "ops@vendor.example", To: i % 2 ? "ops@vendor.example" : ME }, `s${i}`),
+      ),
+    );
+    const res = await collectEmails({
+      mine,
+      account: ME,
+      gate: gate(),
+      deps: { listThreads: vi.fn().mockResolvedValue([{ id: "long" }]), getThreadMeta: vi.fn(async () => long) },
+    });
+    // Message 6 is even, so it came from the vendor; add one from Eddie to check "me".
+    expect(res.items[0]).toMatchObject({ detail: "s2 // s3 // s4 // s5 // s6", threadCount: 7, lastFrom: "vendor.example" });
+    long.messages.push(msg("7", 2000, { Subject: "Order", From: ME, To: "ops@vendor.example" }, "s7"));
+    const again = await collectEmails({
+      mine,
+      account: ME,
+      gate: gate(),
+      deps: { listThreads: vi.fn().mockResolvedValue([{ id: "long" }]), getThreadMeta: vi.fn(async () => long) },
+    });
+    expect(again.items[0]).toMatchObject({ threadCount: 8, lastFrom: "me" });
+  });
+
+  it("no longer drops a work thread for the word date", async () => {
+    const shipDate = thread("ship", [msg("1", 1000, { Subject: "IM order 1,150 pcs", From: ME, To: "ops@vendor.example" }, "Please confirm the ship date")]);
+    const res = await collectEmails({
+      mine,
+      account: ME,
+      gate: gate(),
+      deps: { listThreads: vi.fn().mockResolvedValue([{ id: "ship" }]), getThreadMeta: vi.fn(async () => shipDate) },
+    });
+    expect(res.items.map((i) => i.ref)).toEqual(["gmail:ship"]);
   });
 
   it("backs off on 429 and fails the collection after the retries", async () => {

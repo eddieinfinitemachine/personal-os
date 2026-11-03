@@ -109,13 +109,14 @@ beforeEach(() => {
   m.db.datingSuggestion.findMany.mockResolvedValue([]);
   m.db.datingSourceRecord.findMany.mockResolvedValue([]);
   m.db.todo.findMany.mockResolvedValue([
-    { id: "td1", title: "Ship ERP cutover", notes: null, updatedAt: new Date(at(1)), completedAt: null, autopilotKey: null, project: null },
-    { id: "td2", title: "Do the homework", notes: null, updatedAt: new Date(at(1)), completedAt: null, autopilotKey: "granola:not_therapy:0", project: null },
-    { id: "td3", title: "Oil change", notes: null, updatedAt: new Date(at(1)), completedAt: null, autopilotKey: "vehicle:x:oil", project: null },
+    { id: "td1", title: "Ship ERP cutover", notes: null, createdAt: new Date(at(4)), updatedAt: new Date(at(1)), completedAt: null, autopilotKey: null, project: null },
+    { id: "td2", title: "Do the homework", notes: null, createdAt: new Date(at(4)), updatedAt: new Date(at(1)), completedAt: null, autopilotKey: "granola:not_therapy:0", project: null },
+    { id: "td3", title: "Oil change", notes: null, createdAt: new Date(at(4)), updatedAt: new Date(at(1)), completedAt: null, autopilotKey: "vehicle:x:oil", project: null },
     {
       id: "td4",
       title: "Refill",
       notes: null,
+      createdAt: new Date(at(4)),
       updatedAt: new Date(at(1)),
       completedAt: null,
       autopilotKey: null,
@@ -139,7 +140,7 @@ beforeEach(() => {
   ps.update.mockImplementation((args) => ({ op: "update", args }));
   m.db.$transaction.mockImplementation(async (ops: unknown[]) => ops);
   m.claude.mockImplementation(async () => ({
-    projects: [{ key: null, name: "ERP migration", company: "Olto", status: "Cutover planned", next: "Review on Tuesday", evidence: ["m1", "t1"] }],
+    projects: [{ key: null, name: "ERP migration", company: "Olto", status: "Cutover planned", steps: [{ text: "Review on Tuesday", due: null, who: "Eddie", waiting: false }], evidence: ["m1", "t1"] }],
   }));
 });
 
@@ -169,6 +170,42 @@ describe("syncInferredProjects", () => {
     expect(res.counts).toMatchObject({ calendarEvents: 6, granolaNotes: 4, gmailThreads: 2, meetings: 3, emails: 1, todoItems: 1, noteItems: 1 });
     expect(m.db.$transaction).toHaveBeenCalledOnce();
     expect(m.db.projectSource.upsert.mock.calls[0][0].create).toMatchObject({ key: "erp-migration", name: "ERP migration" });
+  });
+
+  it("keeps a Therapy-folder note and its todos out, whatever the note is titled", async () => {
+    const note = full("not_session", "Tuesday afternoon", "Long talk about the launch");
+    g = {
+      ...granola(),
+      listFolders: vi.fn().mockResolvedValue([
+        { id: "fol_t", name: "Therapy", parentFolderId: null },
+        { id: "fol_w", name: "Work", parentFolderId: null },
+      ]),
+      listNotes: vi.fn(async ({ folderId }: { folderId?: string }) =>
+        folderId === "fol_t" ? [summary("not_session", "Tuesday afternoon")] : folderId ? [] : [...NOTES, summary("not_session", "Tuesday afternoon")],
+      ),
+      getNote: vi.fn(async (id: string) => (id === "not_session" ? note : FULL[id])),
+    } as never;
+    m.db.todo.findMany.mockResolvedValue([
+      { id: "td9", title: "Write down the homework plan", notes: null, createdAt: new Date(at(4)), updatedAt: new Date(at(1)), completedAt: null, autopilotKey: "granola:not_session:0", project: null },
+    ]);
+    const res = await syncInferredProjects("u1", { now: NOW, collect });
+    expect(res.status).toBe("ok");
+    const prompt = m.claude.mock.calls[0][0].user as string;
+    expect(prompt).not.toContain("Tuesday afternoon");
+    expect(prompt).not.toContain("homework");
+    expect(g.getNote).not.toHaveBeenCalledWith("not_session");
+    // The folder is listed with no date limit, so older sessions count too.
+    expect(g.listNotes).toHaveBeenCalledWith({ createdAfter: new Date(0), folderId: "fol_t" });
+  });
+
+  it("fails the run rather than risk Therapy notes when the folder lookup fails", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    g = { ...granola(), listFolders: vi.fn().mockRejectedValue(Object.assign(new Error("nope"), { status: 503 })) } as never;
+    const res = await syncInferredProjects("u1", { now: NOW, collect });
+    expect(res).toMatchObject({ status: "failed", error: "granola: HTTP 503" });
+    expect(m.claude).not.toHaveBeenCalled();
+    expect(m.db.$transaction).not.toHaveBeenCalled();
+    err.mockRestore();
   });
 
   it("writes no projects when a source fails, and records the failure class", async () => {

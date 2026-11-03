@@ -45,6 +45,7 @@ export async function collectPersonal(userId: string, opts: { since: Date; gate:
         id: true,
         title: true,
         notes: true,
+        createdAt: true,
         updatedAt: true,
         completedAt: true,
         autopilotKey: true,
@@ -77,6 +78,7 @@ export async function collectPersonal(userId: string, opts: { since: Date; gate:
       detail: t.notes?.trim() || null,
       project: t.project?.name ?? null,
       done: !!t.completedAt,
+      writtenAt: t.createdAt.toISOString(),
     });
   }
 

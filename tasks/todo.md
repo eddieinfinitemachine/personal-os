@@ -1,3 +1,61 @@
+# /projects: a board Claude runs — in progress 2026-11-03
+
+Eddie wants the Projects tab to help him manage everything: Claude keeps it up
+to date and he only corrects it, and it has to catch small real projects. No
+schema change (`plan` stays an array). Three PRs, with real output shown before
+each merge. Plan: `~/.claude/plans/lively-swimming-shannon.md`. Real project
+names and per-rule counts stay local: this repo is public.
+
+## PR 1: find the right projects
+- [x] Gate: its own dating check (names plus `DATING_KEYWORDS` minus "date", "ex", "relationship"); `selectMeeting` and `DATING_KEYWORDS` untouched
+- [x] Gate: every note in a Therapy folder is out, no date limit; a failed lookup fails the run
+- [x] Evidence: last five snippets, message count and last sender per thread; todo written date; both ends of long notes; today and coming dates in the prompt
+- [x] Inference: new prompt, `steps[]` and `problem`, `next` is the first step; stated keys bind first; new-card evidence rule; gate checks steps and who; waiting and date fixes
+- [x] Store: quiet cards stay until 30 days after last activity; flagged cards, re-checked text and rename duplicates go at once; last activity never moves back
+- [x] Board: `stale` covers every unreturned shown card; quiet cards sort after active ones
+- [x] `pnpm typecheck`, `pnpm test`; read-only dry run `--twice`; browser on a scratch database
+- [ ] Eddie reviews the list, merges; Refresh on live `/projects`; count notes dropped per rule once Granola notes are in
+
+## PR 2: This week view
+- [ ] Pure function in `board-model.ts`: Stuck, This week, Waiting on, No next step
+- [ ] Cards list their steps instead of one Next line
+
+## PR 3: corrections
+- [ ] Tick a step done (Claude echoes step ids; done steps go in the prompt)
+- [ ] Mark a project Finished
+- [ ] Rename a card or add a project by name (name locked)
+- [ ] Route and `saveInferred` take a `FOR UPDATE` row lock; add Eddie's corrections to `evidenceHash`
+
+## PR 1 review
+`pnpm typecheck` clean; `pnpm test` 155 files passed / 23 skipped, 1521 tests
+passed. `eslint` can't run here: the repo's config predates the installed
+version.
+
+Dry run against prod (read-only client, `--twice`, no Granola key locally):
+35 projects on both runs, every key kept, none added or renamed, about 60 s per
+run. Named nowhere in the prompt, the merch order and accessories work both get
+their own cards. No private item on any card. Upcoming one-off meetings on no
+card: 7 (mostly personal, two real).
+
+Changed from the plan after the dry run, all because a check failed:
+- The prompt's "15 to 25" made Claude stop at 25 and drop a project with a
+  meeting the next day. It now says most weeks are 20 to 35 and to walk the
+  upcoming meetings first. `MAX_CARDS` is 40, not 30.
+- The prompt alone still let closed todos through as steps, so an undated step
+  copying a closed todo is dropped. Dated steps stay: the earlier version of
+  this check removed real future events.
+- Claude quoted an evidence id in a status line, so the prompt forbids it.
+
+Store checked on local Postgres (`personal_os_projects_pm`, since dropped),
+seeded through `saveInferred`: quiet cards kept, flagged and 40-day-old cards
+removed, last activity held, pin and hide survive. Browser (`next dev --webpack`):
+1440 and 390, light and dark, no horizontal overflow, no console errors, quiet
+cards last with "No activity since …".
+
+Open: a card can call an interview Friday when a closed todo said Wednesday; 35
+cards still includes a few that aren't really projects (Not a project handles
+those); Granola notes are untested until this runs in production.
+
 # Retire filing todos into projects — 2026-11-03
 
 Eddie asked whether projects make sense for him. Usage says lists do the routing

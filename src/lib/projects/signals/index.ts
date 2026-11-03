@@ -7,7 +7,7 @@ import { granolaFromEnv, type GranolaClient } from "@/lib/granola";
 import { SourceError, fromSource, notConfigured } from "./errors";
 import { createGate, loadGateContext, type ExclusionCounts, type Gate } from "./gate";
 import { collectEmails } from "./gmail";
-import { collectMeetings, listPrimaryEvents } from "./meetings";
+import { collectMeetings, listPrimaryEvents, listTherapyNoteIds } from "./meetings";
 import { collectPersonal } from "./personal";
 import type { SignalItem } from "./types";
 
@@ -49,15 +49,19 @@ export async function collectSignals(
   const until = new Date(now.getTime() + FUTURE_DAYS * DAY);
   if (!isGoogleConfigured()) throw new SourceError("google", notConfigured("Google"));
 
-  const gate = createGate(await fromSource("gate", () => loadGateContext(userId)));
+  const granola =
+    opts.granola !== undefined ? opts.granola : granolaFromEnv({ signal: AbortSignal.timeout(GRANOLA_DEADLINE_MS) });
+  const [context, therapyNoteIds] = await Promise.all([
+    fromSource("gate", () => loadGateContext(userId)),
+    granola ? fromSource("granola", () => listTherapyNoteIds(granola)) : new Set<string>(),
+  ]);
+  const gate = createGate({ ...context, therapyNoteIds });
   const { account, addresses } = await fromSource("gmail", getGmailAddresses);
   const mine = new Set(addresses);
   for (const raw of [process.env.FOUNDER_EMAIL, process.env.GRANOLA_OWNER_EMAIL]) {
     const v = raw?.trim().toLowerCase();
     if (v?.includes("@")) mine.add(v);
   }
-  const granola =
-    opts.granola !== undefined ? opts.granola : granolaFromEnv({ signal: AbortSignal.timeout(GRANOLA_DEADLINE_MS) });
 
   const [meetings, emails] = await Promise.all([
     collectMeetings({

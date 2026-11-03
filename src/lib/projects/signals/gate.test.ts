@@ -47,6 +47,38 @@ describe("createGate", () => {
     expect(gate.counts["excluded-meeting"]).toBe(1);
   });
 
+  it("lets work words through that the dating filer treats as candidates", () => {
+    const gate = createGate(ctx());
+    for (const text of ["Confirm the ship date with the factory", "Hired an ex-Apple engineer", "Our vendor relationship is solid", "Up to date on the deposit"]) {
+      expect(gate.excludes({ title: "Production order", text })).toBe(false);
+    }
+    expect(gate.counts.dating).toBe(0);
+  });
+
+  it("still excludes real dating signals, in the title or the text", () => {
+    const gate = createGate(ctx());
+    for (const input of [
+      { title: "First date Friday" },
+      { title: "Dinner", text: "second date went well" },
+      { title: "Catch-up", text: "my girlfriend is visiting" },
+      { title: "Notes", text: "matched on Tinder" },
+      { title: "Coffee", text: "with Jordan" },
+      { title: "Lunch", text: "Jordan Vale picked the place" },
+    ]) {
+      expect(gate.excludes(input)).toBe(true);
+    }
+    expect(gate.counts.dating).toBe(6);
+  });
+
+  it("excludes a Therapy-folder note whatever it is titled, and the todos made from it", () => {
+    const gate = createGate(ctx({ therapyNoteIds: new Set(["not_session"]) }));
+    expect(gate.excludes({ title: "Tuesday afternoon", text: "pricing review", granolaId: "not_session" })).toBe(true);
+    expect(gate.counts.therapy).toBe(1);
+    // Even before the note itself is seen in this run's window.
+    const fresh = createGate(ctx({ therapyNoteIds: new Set(["not_old"]) }));
+    expect(fresh.excludes({ title: "Send the invoice", fromNoteId: "not_old" })).toBe(true);
+  });
+
   it("checks model text without counting", () => {
     const gate = createGate(ctx());
     expect(gate.matchesText("Help Jordan move")).toBe(true);

@@ -20,7 +20,7 @@ export type BoardCard = {
   next: string | null;
   /** Upcoming first (soonest first), then newest first. */
   evidence: StoredEvidence[];
-  /** Pinned, but the latest run found nothing for it: it shows its saved data. */
+  /** The latest run didn't return it, so it has gone quiet: it shows its saved data. */
   stale: boolean;
   sourceId: string;
 };
@@ -41,14 +41,16 @@ export function evidenceCounts(evidence: StoredEvidence[]): Record<EvidenceKind,
 }
 
 /**
- * Shown cards (pinned first, then newest) and Hidden (newest first). Every
- * row is from the latest run or pinned, so nothing ages out here.
+ * Shown cards (pinned first, then active before quiet, then newest) and Hidden
+ * (newest first). The store ages quiet cards out, so nothing does here.
  */
 export function bucketCards(cards: BoardCard[]): Pick<ProjectsBoard, "cards" | "hidden"> {
   const at = (c: BoardCard) => (c.lastActivityAt ? Date.parse(c.lastActivityAt) : 0);
   const byRecent = (a: BoardCard, b: BoardCard) => at(b) - at(a) || a.name.localeCompare(b.name);
   const pinnedFirst = (a: BoardCard, b: BoardCard) =>
-    Number(b.visibility === "pinned") - Number(a.visibility === "pinned") || byRecent(a, b);
+    Number(b.visibility === "pinned") - Number(a.visibility === "pinned") ||
+    Number(a.stale) - Number(b.stale) ||
+    byRecent(a, b);
 
   const shown: BoardCard[] = [];
   const hidden: BoardCard[] = [];

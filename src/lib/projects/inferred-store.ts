@@ -5,7 +5,9 @@
 //   key            stable slug
 //   name, company  as inferred
 //   description    the status line
-//   plan           [{ text: next }]
+//   plan           step objects [{ text, due, who, waiting }], then an optional
+//                  { type: "problem", text } last. Still an array whose first
+//                  entry has `text`, so a rollback to the old reader shows Next.
 //   commits        evidence [{ ref, kind, title, at, url }]
 //   lastActivityAt newest evidence that has happened
 //   state          "auto" | "pinned" | "hidden" (the user's; a run never changes it)
@@ -19,7 +21,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { VISIBILITIES, type Visibility } from "./board-model";
 import { isCompany } from "./company";
-import type { InferredProject, PreviousProject } from "./infer";
+import type { InferredProject, PreviousProject, ProjectStep } from "./infer";
 import { EVIDENCE_KINDS, type StoredEvidence } from "./signals/types";
 
 export const INFERRED_KIND = "inferred";
@@ -27,6 +29,8 @@ export const RUN_KIND = "inferred-run";
 export const RUN_KEY = "latest";
 /** A lock older than this belongs to a run that died (maxDuration is 300 s). */
 export const LOCK_MS = 5 * 60 * 1000;
+/** How long a card a run didn't return stays on the board after its last activity. */
+export const QUIET_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type RunMeta = {
   lastRunAt: string | null;
@@ -45,6 +49,8 @@ const EMPTY_META: RunMeta = { lastRunAt: null, lastCheckedAt: null, lastSuccessA
 
 export type StoredProject = PreviousProject & {
   id: string;
+  problem: string | null;
+  steps: ProjectStep[];
   evidence: StoredEvidence[];
   lastActivityAt: string | null;
 };
@@ -74,6 +80,24 @@ function readEvidence(value: unknown): StoredEvidence[] {
   });
 }
 
+/** Old rows hold [{ text }]; a problem entry is never a step. */
+function readPlan(value: unknown): { steps: ProjectStep[]; problem: string | null } {
+  const steps: ProjectStep[] = [];
+  let problem: string | null = null;
+  for (const e of Array.isArray(value) ? value : []) {
+    const x = e as { type?: unknown; text?: unknown; due?: unknown; who?: unknown; waiting?: unknown } | null;
+    const text = str(x?.text);
+    if (!text) continue;
+    if (x?.type === "problem") problem = text;
+    else steps.push({ text, due: str(x?.due), who: str(x?.who), waiting: x?.waiting === true });
+  }
+  return { steps, problem };
+}
+
+function writePlan(p: Pick<InferredProject, "steps" | "problem">): Prisma.InputJsonValue {
+  return [...p.steps, ...(p.problem ? [{ type: "problem", text: p.problem }] : [])] as Prisma.InputJsonValue;
+}
+
 type Row = {
   id: string;
   key: string;
@@ -84,18 +108,21 @@ type Row = {
   commits: Prisma.JsonValue;
   lastActivityAt: Date | null;
   state: string;
+  createdAt?: Date;
 };
 
 export function rowToProject(r: Row): StoredProject {
   const evidence = readEvidence(r.commits);
-  const plan = Array.isArray(r.plan) ? (r.plan[0] as { text?: unknown } | undefined) : undefined;
+  const { steps, problem } = readPlan(r.plan);
   return {
     id: r.id,
     key: r.key,
     name: r.name,
     company: isCompany(r.company) ? r.company : "Personal",
     status: r.description,
-    next: str(plan?.text),
+    next: steps[0]?.text ?? null,
+    problem,
+    steps,
     state: (VISIBILITIES as readonly string[]).includes(r.state) ? (r.state as Visibility) : "auto",
     refs: evidence.map((e) => e.ref),
     evidence,
@@ -152,24 +179,62 @@ const unlock = (userId: string, meta: RunMeta) =>
   });
 
 /**
- * One transaction: upsert every returned project, delete the auto rows it
- * didn't return (pinned and hidden rows are never deleted), record the run and
- * release the lock.
+ * Which cards the run didn't return go now. The rest stay as quiet cards, since
+ * a project going silent is when it needs watching. Pinned and hidden cards are
+ * Eddie's own decisions, so they are never removed here.
  */
-export async function saveInferred(userId: string, projects: InferredProject[], run: { hash: string; now: Date }): Promise<void> {
+export function cardsToRemove(
+  rows: Row[],
+  returned: InferredProject[],
+  opts: { now: Date; rejectedKeys?: string[]; isSensitive?: (text: string) => boolean },
+): string[] {
+  const returnedKeys = new Set(returned.map((p) => p.key));
+  const heldRefs = new Set(returned.flatMap((p) => p.evidence.map((e) => e.ref)));
+  const rejected = new Set(opts.rejectedKeys ?? []);
+  return rows
+    .filter((r) => r.state === "auto" && !returnedKeys.has(r.key))
+    .filter((r) => {
+      if (rejected.has(r.key)) return true;
+      const p = rowToProject(r);
+      // Stored text is re-checked every run: the filter can learn a name after the card was written.
+      const texts = [p.name, p.status, p.problem, ...p.steps.flatMap((s) => [s.text, s.who]), ...p.evidence.map((e) => e.title)];
+      if (opts.isSensitive && texts.some((t) => t && opts.isSensitive!(t))) return true;
+      // Most of its evidence moved to a returned card: it was renamed or merged.
+      const held = p.refs.filter((ref) => heldRefs.has(ref)).length;
+      if (p.refs.length && held * 2 >= p.refs.length) return true;
+      const lastSeen = r.lastActivityAt ?? r.createdAt;
+      return !lastSeen || opts.now.getTime() - lastSeen.getTime() > QUIET_KEEP_MS;
+    })
+    .map((r) => r.key);
+}
+
+/**
+ * One transaction: upsert every returned project, remove the cards that should
+ * go (see `cardsToRemove`), record the run and release the lock.
+ */
+export async function saveInferred(
+  userId: string,
+  projects: InferredProject[],
+  run: { hash: string; now: Date; rejectedKeys?: string[]; isSensitive?: (text: string) => boolean },
+): Promise<void> {
   const meta = await currentMeta(userId);
+  const rows = await prisma.projectSource.findMany({ where: { userId, kind: INFERRED_KIND } });
+  const stored = new Map(rows.map((r) => [r.key, r]));
   const at = run.now.toISOString();
   const keys = projects.map((p) => p.key);
   await prisma.$transaction([
     ...projects.map((p) => {
+      // The evidence window rolls forward, so never move a card's last activity back.
+      const before = stored.get(p.key)?.lastActivityAt ?? null;
+      const latest = p.lastActivityAt ? new Date(p.lastActivityAt) : null;
       const data = {
         name: p.name,
         company: p.company,
         description: p.status,
         url: null,
-        plan: (p.next ? [{ text: p.next }] : []) as Prisma.InputJsonValue,
+        plan: writePlan(p),
         commits: p.evidence as unknown as Prisma.InputJsonValue,
-        lastActivityAt: p.lastActivityAt ? new Date(p.lastActivityAt) : null,
+        lastActivityAt: before && (!latest || before > latest) ? before : latest,
       };
       return prisma.projectSource.upsert({
         where: { userId_kind_key: { userId, kind: INFERRED_KIND, key: p.key } },
@@ -177,7 +242,9 @@ export async function saveInferred(userId: string, projects: InferredProject[], 
         update: data,
       });
     }),
-    prisma.projectSource.deleteMany({ where: { userId, kind: INFERRED_KIND, state: "auto", key: { notIn: keys } } }),
+    prisma.projectSource.deleteMany({
+      where: { userId, kind: INFERRED_KIND, state: "auto", key: { in: cardsToRemove(rows, projects, run) } },
+    }),
     unlock(userId, { ...meta, lastRunAt: at, lastCheckedAt: at, lastSuccessAt: at, hash: run.hash, error: null, keys }),
   ]);
 }

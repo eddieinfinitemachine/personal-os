@@ -42,10 +42,10 @@ export async function syncInferredProjects(
       await saveUnchanged(userId, now);
       return { status: "unchanged", ...base, omitted: 0, projects: run?.keys.length ?? 0, ms: Date.now() - started };
     }
-    const { projects, omitted } = await fromSource("claude", () =>
+    const { projects, rejectedKeys, omitted } = await fromSource("claude", () =>
       (opts.infer ?? inferProjects)({ items: signals.items, previous, now, isSensitive: signals.gate.matchesText }),
     );
-    await saveInferred(userId, projects, { hash, now });
+    await saveInferred(userId, projects, { hash, now, rejectedKeys, isSensitive: signals.gate.matchesText });
     return { status: "ok", ...base, omitted, projects: projects.length, ms: Date.now() - started };
   } catch (e) {
     const error = failureClass(e);

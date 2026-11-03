@@ -104,6 +104,23 @@ function noteRefs(summary: GranolaNoteSummary, full?: GranolaNote | null): NoteR
   return refs.filter((r) => r.title && !Number.isNaN(r.at));
 }
 
+const THERAPY_FOLDER = /therap/i;
+
+/**
+ * Every note in a Therapy folder, with no date limit: a todo made from an old
+ * session must stay out too. A failure here fails the run rather than risk
+ * letting those notes through.
+ */
+export async function listTherapyNoteIds(granola: GranolaClient): Promise<Set<string>> {
+  const ids = new Set<string>();
+  const folders = (await granola.listFolders?.()) ?? [];
+  for (const folder of folders.filter((f) => THERAPY_FOLDER.test(f.name))) {
+    const notes = await granola.listNotes({ createdAfter: new Date(0), folderId: folder.id });
+    for (const note of notes) ids.add(note.id);
+  }
+  return ids;
+}
+
 export type MeetingsResult = {
   items: SignalItem[];
   /** Calendar events with other people in the window (before dedupe and the gate). */
