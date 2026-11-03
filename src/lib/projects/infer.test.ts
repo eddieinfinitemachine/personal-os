@@ -351,6 +351,25 @@ describe("validateProjects", () => {
     expect(out.map((p) => p.key)).toEqual(["a", "a-again"]);
   });
 
+  it("keeps a finished project closed: same key, no steps, not counted against the cap", () => {
+    const previous = [prev("done", ["gmail:1"], { state: "finished" })];
+    const [p] = v([{ key: "done", name: "Done", steps: [{ text: "Do more" }], evidence: ["e1"] }], previous);
+    expect(p.key).toBe("done");
+    expect(p.steps).toEqual([]);
+    expect(p.next).toBeNull();
+
+    // Fresh evidence under a new name still lands on the finished card.
+    const [renamed] = v([{ name: "Done again", evidence: ["e1"] }], previous);
+    expect(renamed.key).toBe("done");
+
+    const many = Array.from({ length: 2 * MAX_CARDS + 2 }, (_, i) => item(`gmail:x${i}`, { at: ago(i / 100) }));
+    const projects: unknown[] = Array.from({ length: MAX_CARDS }, (_, i) => ({ name: `P${i}`, evidence: [`e${2 * i + 1}`, `e${2 * i + 2}`] }));
+    projects.push({ key: "closed", name: "Closed", evidence: [`e${2 * MAX_CARDS + 1}`] });
+    const out = validateProjects({ projects }, { ids: idsFor(many), previous: [prev("closed", [], { state: "finished" })], now: NOW }).projects;
+    expect(out).toHaveLength(MAX_CARDS + 1);
+    expect(out.map((x) => x.key)).toContain("closed");
+  });
+
   it("caps shown cards, keeping pinned ones and every hidden one", () => {
     const extra = 5;
     const count = MAX_CARDS + extra;

@@ -37,6 +37,20 @@ describe("bucketCards", () => {
   });
 });
 
+describe("finished cards", () => {
+  it("go in their own bucket, newest first, away from shown and hidden", () => {
+    const { cards, hidden, finished } = bucketCards([
+      card("open", 1),
+      card("done-old", 30, { visibility: "finished" }),
+      card("done-new", 2, { visibility: "finished" }),
+      card("nope", 3, { visibility: "hidden" }),
+    ]);
+    expect(cards.map((c) => c.name)).toEqual(["open"]);
+    expect(hidden.map((c) => c.name)).toEqual(["nope"]);
+    expect(finished.map((c) => c.name)).toEqual(["done-new", "done-old"]);
+  });
+});
+
 describe("quiet cards", () => {
   it("sorts them after active cards, with pinned still first", () => {
     const { cards } = bucketCards([
@@ -101,7 +115,7 @@ describe("getProjectsBoard", () => {
   });
 
   it("gives a non-founder an empty board without querying", async () => {
-    expect(await getProjectsBoard("u1", false, NOW)).toEqual({ cards: [], hidden: [], syncedAt: null, refreshFailed: false });
+    expect(await getProjectsBoard("u1", false, NOW)).toEqual({ cards: [], hidden: [], finished: [], syncedAt: null, refreshFailed: false });
     expect(mocks.sourceFindMany).not.toHaveBeenCalled();
   });
 
@@ -141,6 +155,13 @@ describe("getProjectsBoard", () => {
     const board = await getProjectsBoard("u1", true, NOW);
     expect(board.cards.map((c) => [c.name, c.stale])).toEqual([["back", false], ["gone", true]]);
     expect(board.hidden.map((c) => [c.name, c.stale])).toEqual([["gone-hidden", false]]);
+  });
+
+  it("reads a finished card from the store, and never calls it quiet", async () => {
+    mocks.sourceFindMany.mockResolvedValueOnce([row("done", { state: "finished" }), run({ lastSuccessAt: ago(0.5).toISOString(), keys: [] })]);
+    const board = await getProjectsBoard("u1", true, NOW);
+    expect(board.cards).toEqual([]);
+    expect(board.finished.map((c) => [c.name, c.visibility, c.stale])).toEqual([["done", "finished", false]]);
   });
 
   it("flags a failed last run and survives a missing run row", async () => {

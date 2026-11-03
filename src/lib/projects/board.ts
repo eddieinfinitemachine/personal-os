@@ -1,8 +1,8 @@
 // The /projects page model: the projects Claude inferred from Eddie's
 // meetings, email, todos and notes (founder only; the projects-infer cron
 // keeps them current). Pinned first, then active before quiet, then newest;
-// hidden ones ("Not a project") collapse into Hidden. Other tenants get an
-// empty board.
+// hidden ones ("Not a project") collapse into Hidden and closed-out ones into
+// Finished. Other tenants get an empty board.
 
 import { bucketCards, type BoardCard, type ProjectsBoard } from "./board-model";
 import { loadInferred } from "./inferred-store";
@@ -20,7 +20,7 @@ export function orderEvidence(evidence: StoredEvidence[], now: Date): StoredEvid
 }
 
 export async function getProjectsBoard(userId: string, isFounder: boolean, now = new Date()): Promise<ProjectsBoard> {
-  if (!isFounder) return { cards: [], hidden: [], syncedAt: null, refreshFailed: false };
+  if (!isFounder) return { cards: [], hidden: [], finished: [], syncedAt: null, refreshFailed: false };
 
   const { projects, run } = await loadInferred(userId);
   const returned = new Set(run?.keys ?? []);
@@ -33,7 +33,7 @@ export async function getProjectsBoard(userId: string, isFounder: boolean, now =
     status: p.status,
     next: p.next,
     evidence: orderEvidence(p.evidence, now),
-    stale: p.state !== "hidden" && !!run?.lastSuccessAt && !returned.has(p.key),
+    stale: (p.state === "auto" || p.state === "pinned") && !!run?.lastSuccessAt && !returned.has(p.key),
     sourceId: p.id,
   }));
 

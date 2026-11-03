@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-// Inferred cards on /projects can be pinned, hidden ("Not a project") or put
-// back on auto. Nothing else.
-const STATES = new Set(["auto", "pinned", "hidden"]);
+// Inferred cards on /projects can be pinned, hidden ("Not a project"), closed
+// out ("finished") or put back on auto. Nothing else.
+const STATES = new Set(["auto", "pinned", "hidden", "finished"]);
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getCurrentUserId(request);

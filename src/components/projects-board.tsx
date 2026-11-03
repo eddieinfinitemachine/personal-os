@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CalendarDays,
+  CheckCircle2,
   CheckSquare,
   ChevronDown,
   ChevronRight,
@@ -16,6 +17,7 @@ import {
   Pin,
   PinOff,
   RefreshCw,
+  RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/time";
@@ -141,8 +143,8 @@ export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
     setOverrides(new Map());
   }
 
-  const allCards = useMemo(() => [...board.cards, ...board.hidden], [board]);
-  const { cards, hidden } = useMemo(
+  const allCards = useMemo(() => [...board.cards, ...board.hidden, ...board.finished], [board]);
+  const { cards, hidden, finished } = useMemo(
     () => bucketCards(allCards.map((c) => (overrides.has(c.id) ? { ...c, visibility: overrides.get(c.id)! } : c))),
     [allCards, overrides],
   );
@@ -194,6 +196,12 @@ export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
       {hidden.length ? (
         <Collapsible label={`Hidden · ${hidden.length}`}>
           <CardGrid cards={hidden} onVisibility={setVisibility} />
+        </Collapsible>
+      ) : null}
+
+      {finished.length ? (
+        <Collapsible label={`Finished · ${finished.length}`}>
+          <CardGrid cards={finished} onVisibility={setVisibility} />
         </Collapsible>
       ) : null}
     </div>
@@ -256,6 +264,7 @@ function ProjectCard({ card, onVisibility }: { card: BoardCard; onVisibility: (c
   const [open, setOpen] = useState(false);
   const pinned = card.visibility === "pinned";
   const hiddenCard = card.visibility === "hidden";
+  const finishedCard = card.visibility === "finished";
 
   const choose = (v: Visibility) => {
     setMenuOpen(false);
@@ -298,6 +307,8 @@ function ProjectCard({ card, onVisibility }: { card: BoardCard; onVisibility: (c
               <div className="absolute right-0 top-full z-50 mt-1 w-40 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg">
                 {hiddenCard ? (
                   <MenuItem onClick={() => choose("auto")} icon={<Eye className="size-3.5" />} label="Unhide" />
+                ) : finishedCard ? (
+                  <MenuItem onClick={() => choose("auto")} icon={<RotateCcw className="size-3.5" />} label="Reopen" />
                 ) : (
                   <>
                     {pinned ? (
@@ -305,6 +316,7 @@ function ProjectCard({ card, onVisibility }: { card: BoardCard; onVisibility: (c
                     ) : (
                       <MenuItem onClick={() => choose("pinned")} icon={<Pin className="size-3.5" />} label="Pin" />
                     )}
+                    <MenuItem onClick={() => choose("finished")} icon={<CheckCircle2 className="size-3.5" />} label="Mark finished" />
                     <MenuItem onClick={() => choose("hidden")} icon={<EyeOff className="size-3.5" />} label="Not a project" />
                   </>
                 )}
@@ -315,12 +327,12 @@ function ProjectCard({ card, onVisibility }: { card: BoardCard; onVisibility: (c
       </header>
 
       {card.status ? <p className="text-sm">{card.status}</p> : null}
-      {card.next ? (
+      {card.next && !finishedCard ? (
         <p className="text-sm text-[var(--color-label-secondary)]">
           <span className="font-medium text-[var(--color-foreground)]">Next:</span> {card.next}
         </p>
       ) : null}
-      {card.stale && card.lastActivityAt ? (
+      {card.stale && card.lastActivityAt && !finishedCard ? (
         <p className="text-xs text-[var(--color-muted-foreground)]" suppressHydrationWarning>
           No activity since {shortDate(card.lastActivityAt)}
         </p>
