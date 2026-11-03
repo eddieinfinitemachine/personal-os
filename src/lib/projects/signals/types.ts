@@ -21,7 +21,7 @@ export type SignalItem = StoredEvidence & {
   upcoming?: boolean;
   /** Calendar recurring series id. */
   series?: string | null;
-  /** Meeting summary, email snippet or note body (already gated; truncated in the prompt). */
+  /** Meeting summary, a thread's latest snippets or note body (already gated; truncated in the prompt). */
   detail?: string | null;
   /** Other participants' email domains. */
   domains?: string[];
@@ -29,6 +29,12 @@ export type SignalItem = StoredEvidence & {
   from?: string | null;
   /** The personal-os Project a todo or note lives in. */
   project?: string | null;
-  /** A completed todo. */
+  /** A closed todo. Closed means off the list, not proof the work happened. */
   done?: boolean;
+  /** When a todo was written: its relative deadlines ("by Sunday") count from here. */
+  writtenAt?: string;
+  /** Messages in an email thread. */
+  threadCount?: number;
+  /** Who sent a thread's last message: "me", or the sender's domain. */
+  lastFrom?: string | null;
 };

@@ -1,6 +1,6 @@
 // /projects inference: one Claude call turns the gated evidence (meetings,
-// sent email, todos, notes) into initiative-level projects. Pure apart from
-// that call, which is injectable: no database access here.
+// sent email, todos, notes) into projects, with their next steps and anything
+// stuck. Pure apart from that call, which is injectable: no database access here.
 //
 // Stability: the previous projects, pinned and hidden ones included, go into
 // the prompt with the evidence they already own, and a card that comes back
@@ -14,12 +14,27 @@ import type { Visibility } from "./board-model";
 import { isCompany, type Company } from "./company";
 import type { EvidenceKind, SignalItem, StoredEvidence } from "./signals/types";
 
-export const MAX_CARDS = 12;
+/** A backstop, not a target: a silent cut is how real projects went missing. */
+export const MAX_CARDS = 40;
+export const MAX_STEPS = 3;
 export const NAME_CHARS = 60;
 export const LINE_CHARS = 160;
+const STEP_CHARS = 100;
+const WHO_CHARS = 40;
+/** A thread this long is enough for a new card by itself. */
+const LONG_THREAD = 3;
+/** Share of a step's words found in a closed todo for it to count as a copy. */
+const CLOSED_COPY = 0.6;
 /** Prompt size cap (the email-scan.ts approach): items are added newest first until it is reached. */
-export const PROMPT_CHARS = 60_000;
-const DETAIL_CHARS: Record<EvidenceKind, number> = { meeting: 600, email: 240, todo: 160, note: 400 };
+export const PROMPT_CHARS = 130_000;
+const DETAIL_CHARS: Record<EvidenceKind, number> = { meeting: 1900, email: 1100, todo: 160, note: 400 };
+/** Long notes keep both ends: next steps are usually last. */
+const NOTE_HEAD = 650;
+const NOTE_TAIL = 1200;
+const COMING_DAYS = 14;
+const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const OWNER = /^(eddie|eddie cohen|me)$/i;
+const dayFormat = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" });
 const SKIP_WINDOW_MS = 24 * 60 * 60 * 1000;
 const PREFIX: Record<EvidenceKind, string> = { meeting: "m", email: "e", todo: "t", note: "n" };
 const KIND_ORDER: EvidenceKind[] = ["meeting", "email", "todo", "note"];
@@ -35,11 +50,24 @@ export type PreviousProject = {
   refs: string[];
 };
 
+export type ProjectStep = {
+  text: string;
+  /** YYYY-MM-DD, only when the evidence gives a date. */
+  due: string | null;
+  who: string | null;
+  /** The next move belongs to `who`, not Eddie. */
+  waiting: boolean;
+};
+
 export type InferredProject = {
   key: string;
   name: string;
   company: Company;
   status: string | null;
+  /** What is stuck, late or at risk. */
+  problem: string | null;
+  steps: ProjectStep[];
+  /** The first step's text. */
   next: string | null;
   /** Newest first. */
   evidence: StoredEvidence[];
@@ -86,43 +114,78 @@ export function shouldSkip(
 // ---------------------------------------------------------------------------
 // Prompt
 
-export const SYSTEM = `You work out which projects Eddie Cohen is working on right now, from his last two weeks of meetings, sent email, todos and notes, plus his calendar for the coming week.
-Eddie runs Infinite Machine (electric scooters/vehicles; "C2" is a product), and also works on Olto, Silo and Walden; anything else is Personal.
+export const SYSTEM = `You keep Eddie Cohen's project board. From his last two weeks of meetings, sent email, todos and notes, plus his calendar for the coming week, work out the projects he is moving forward right now and what has to happen next on each.
+Eddie runs Infinite Machine (electric vehicles; Olto and C2 are its products). He also works on Silo and Walden. Anything else is Personal.
 
-A project is an initiative: a distinct piece of work with a goal, such as "ERP migration", "Product launch", "Inventory financing" or "Apartment search". Not a person, not a whole company, not a single errand, not a recurring meeting.
+A project is a piece of work with a goal and an end that takes several steps or other people over more than a few days. A single production order, a collaboration with one outside studio, one regulatory filing or one event all count, however small the budget.
+
+Not a project: a one-off errand (activating software, sending images, one refund, signing one form, a reimbursement), a person, a whole company, a recurring meeting, or anything already finished or declined with nothing left to do. A first intro with no agreed work is not its own project: put it under the fundraise or partnership project it feeds. Errands stay on his todo list, so leave them out.
 
 Rules:
-- Expect 5–12 projects. Group evidence at initiative level and merge near-duplicates.
+- List every real project: most weeks that is 20 to 35. Never drop one to reach a count.
+- Before you answer, go through the upcoming meetings. Any that isn't routine and belongs to a project must be on that project's card, as a step.
+- One project across todos, email and meetings is one card. Keep projects separate when they have a different vendor, product, deadline or outcome. No umbrella cards that collect unrelated items.
+- Name each project the way the people doing it would, using the product, vendor or partner name when the evidence gives one.
 - Routine 1:1s, standups, all-hands and recurring series are not projects by themselves. Use them only as supporting evidence for a project other items establish.
 - Every project needs evidence that Eddie himself was involved: he sent the email, attended the meeting, or wrote the todo or note.
 - Work and personal both count, but leave out anything about health, therapy, dating, family or relationships entirely.
-- company: one of "Infinite Machine", "Olto", "Silo", "Walden", "Personal".
-- status: one factual line (under 140 characters) on where it stands, from the evidence only.
-- next: one factual line (under 140 characters) on the next concrete step, such as an upcoming meeting, an open todo or an awaited reply. null when nothing is evident.
-- Never name personal contacts in name, status or next. Company names and roles are fine.
-- evidence: the ids (m…, e…, t…, n…) that belong to the project, only from the list.
-- key: for a project that continues one under "Previous projects", that project's key exactly. null for a new project.
+- company: one of "Infinite Machine", "Silo", "Walden", "Personal".
+- status: one factual line (under 140 characters) on where it stands, from the evidence only. State figures only when an item states them.
+- problem: one short factual line naming what is stuck, late or at risk, with any amount at stake. null otherwise.
+- A todo marked CLOSED is off Eddie's list. That does not prove the work happened. Never make it a step, and never report it as pending or as done. When a CLOSED todo is the only sign of whether something happened, say in status that it is unclear. A CLOSED todo never cancels a meeting still on the calendar.
+- steps: the open next actions, 0 to ${MAX_STEPS}, from the evidence only, most urgent first. An upcoming meeting that belongs to the project is a step with its date. Each step has:
+  - text: under 80 characters.
+  - due: YYYY-MM-DD only when the evidence gives a date. Resolve a weekday or "this weekend" in a todo from the day it was written, and in a meeting or email from its date, using the coming dates listed. A deadline may already be past: keep the real date. Otherwise null. Never guess.
+  - who: "Eddie", a colleague, or the outside company. null if unclear.
+  - waiting: true only when the next move belongs to someone other than Eddie, and who names them. When Eddie sent the last message in a thread more than 3 days ago with no reply, the next move is theirs: list it as waiting and say since when.
+- Never name personal contacts in name, status, problem or steps. Company names, colleagues and roles are fine.
+- evidence: the ids (m…, e…, t…, n…) that belong to the project, only from the list. Never mention these ids in name, status, problem or steps.
+- key: for a project that continues one under "Previous projects", that project's key exactly. Return every previous project that still has evidence. null for a new project.
 - Previous projects marked hidden are ones Eddie said are not projects. Return them with the same key while their evidence continues, and never re-create them under another name.
-- If you are unsure whether a project touches a private matter, set "sensitive": true.
+- If you are unsure whether a project touches a private matter, set "sensitive": true and keep its key if it has one.
 
 Reply with JSON only:
-{"projects":[{"key":"…"|null,"name":"…","company":"…","status":"…","next":"…"|null,"evidence":["m1","e2"],"sensitive":false}]}`;
+{"projects":[{"key":"…"|null,"name":"…","company":"…","status":"…","problem":"…"|null,"steps":[{"text":"…","due":"…"|null,"who":"…"|null,"waiting":false}],"evidence":["m1","e2"],"sensitive":false}]}`;
 
 const oneLine = (s: string | null | undefined, max: number) => {
   const t = (s ?? "").replace(/\s+/g, " ").trim();
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 };
-const day = (iso: string) => iso.slice(0, 10);
+/** The calendar day in New York, where "by Sunday" is meant. */
+const day = (iso: string | Date) => dayFormat.format(new Date(iso));
+const weekdayOf = (ymd: string): string | undefined => WEEKDAYS[new Date(`${ymd}T12:00:00Z`).getUTCDay()];
+
+/** "Today is tuesday 2026-11-03. Coming dates: wed 2026-11-04, …" */
+function datesLine(now: Date): string {
+  const noon = Date.parse(`${day(now)}T12:00:00Z`);
+  const coming = Array.from({ length: COMING_DAYS }, (_, i) => {
+    const ymd = new Date(noon + (i + 1) * SKIP_WINDOW_MS).toISOString().slice(0, 10);
+    return `${weekdayOf(ymd)!.slice(0, 3)} ${ymd}`;
+  });
+  return `Today is ${weekdayOf(day(now))} ${day(now)}. Coming dates: ${coming.join(", ")}.`;
+}
+
+function itemDetail(item: SignalItem): string {
+  if (item.kind !== "meeting") return oneLine(item.detail, DETAIL_CHARS[item.kind]);
+  const text = oneLine(item.detail, Number.POSITIVE_INFINITY);
+  return text.length > DETAIL_CHARS.meeting ? `${text.slice(0, NOTE_HEAD)} … ${text.slice(-NOTE_TAIL)}` : text;
+}
 
 function itemLine(id: string, item: SignalItem): string {
-  const parts = [id, item.upcoming ? `UPCOMING ${day(item.at)}` : day(item.at)];
-  if (item.kind === "todo") parts.push(item.done ? "done" : "open");
+  const parts = [id];
+  if (item.kind === "todo") {
+    if (item.writtenAt) parts.push(`written ${day(item.writtenAt)}`);
+    parts.push(item.done ? `CLOSED ${day(item.at)}` : "OPEN");
+  } else {
+    parts.push(item.upcoming ? `UPCOMING ${day(item.at)}` : day(item.at));
+  }
   parts.push(oneLine(item.title, 160));
   if (item.series) parts.push("recurring");
   if (item.project) parts.push(`project: ${oneLine(item.project, 60)}`);
   if (item.from) parts.push(`sent as ${item.from}`);
   if (item.domains?.length) parts.push(`with: ${item.domains.slice(0, 6).join(", ")}`);
-  const detail = oneLine(item.detail, DETAIL_CHARS[item.kind]);
+  if (item.threadCount) parts.push(`${item.threadCount} messages${item.lastFrom ? `, last from ${item.lastFrom}` : ""}`);
+  const detail = itemDetail(item);
   if (detail) parts.push(detail);
   return parts.join(" | ");
 }
@@ -134,7 +197,7 @@ export type Prompt = {
   omitted: number;
 };
 
-export function buildPrompt(items: SignalItem[], previous: PreviousProject[], budget = PROMPT_CHARS): Prompt {
+export function buildPrompt(items: SignalItem[], previous: PreviousProject[], now: Date, budget = PROMPT_CHARS): Prompt {
   // Upcoming first (soonest first), then newest first, per kind; kinds take turns.
   const order = (a: SignalItem, b: SignalItem) =>
     Number(!!b.upcoming) - Number(!!a.upcoming) ||
@@ -157,7 +220,8 @@ export function buildPrompt(items: SignalItem[], previous: PreviousProject[], bu
           )
           .join("\n")
       : "(none)";
-  let used = SYSTEM.length + prevBlock(() => []).length + previous.length * 40;
+  const dates = datesLine(now);
+  let used = SYSTEM.length + dates.length + prevBlock(() => []).length + previous.length * 40;
   let omitted = 0;
   const full = new Set<EvidenceKind>();
   for (let round = 0; full.size < KIND_ORDER.length; round++) {
@@ -185,10 +249,11 @@ export function buildPrompt(items: SignalItem[], previous: PreviousProject[], bu
 
   const section = (title: string, kind: EvidenceKind) => `${title}:\n${lines[kind].join("\n") || "(none)"}`;
   const user = [
+    dates,
     `Previous projects (key | name | company | state | status | next | evidence ids this run):\n${prevBlock((refs) =>
       refs.map((r) => idOf.get(r)).filter((x): x is string => !!x),
     )}`,
-    "Evidence (id | date | … ). Dates are YYYY-MM-DD.",
+    "Evidence (id | date | … ). Dates are YYYY-MM-DD. Todos show the day they were written and whether they are OPEN or CLOSED.",
     section("Meetings", "meeting"),
     section("Sent email threads", "email"),
     section("Todos", "todo"),
@@ -200,12 +265,15 @@ export function buildPrompt(items: SignalItem[], previous: PreviousProject[], bu
 // ---------------------------------------------------------------------------
 // Validation
 
+type RawStep = { text?: unknown; due?: unknown; who?: unknown; waiting?: unknown };
+
 type RawProject = {
   key?: unknown;
   name?: unknown;
   company?: unknown;
   status?: unknown;
-  next?: unknown;
+  problem?: unknown;
+  steps?: unknown;
   evidence?: unknown;
   sensitive?: unknown;
 };
@@ -216,32 +284,80 @@ const clip = (v: unknown, max: number): string => {
   return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t;
 };
 
+/** A real date, unless the step's text names a different weekday. */
+function readDue(value: unknown, text: string): string | null {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const weekday = weekdayOf(value);
+  if (!weekday) return null;
+  const named = WEEKDAYS.find((d) => new RegExp(`\\b${d}\\b`, "i").test(text));
+  return named && named !== weekday ? null : value;
+}
+
+const wordsOf = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9$ ]+/g, " ").split(/\s+/).filter((w) => w.length > 2));
+
+function copiesClosedTodo(text: string, closedTitles: Set<string>[]): boolean {
+  const words = [...wordsOf(text)];
+  return !!words.length && closedTitles.some((t) => words.filter((w) => t.has(w)).length / words.length >= CLOSED_COPY);
+}
+
+/**
+ * A flagged step goes on its own: the card's name and status decide whether the
+ * card stays. An undated step that copies a closed todo goes too. A dated one
+ * stays, since it can be a real event that outlived its todo.
+ */
+function readSteps(value: unknown, items: SignalItem[], isSensitive?: (text: string) => boolean): ProjectStep[] {
+  const closedTitles = items.filter((i) => i.kind === "todo" && i.done).map((i) => wordsOf(i.title));
+  if (!Array.isArray(value)) return [];
+  const steps: ProjectStep[] = [];
+  for (const entry of value) {
+    if (steps.length === MAX_STEPS) break;
+    if (!entry || typeof entry !== "object") continue;
+    const r = entry as RawStep;
+    const text = clip(r.text, STEP_CHARS);
+    if (!text || isSensitive?.(text)) continue;
+    const named = clip(r.who, WHO_CHARS);
+    const who = named && !isSensitive?.(named) ? named : null;
+    const due = readDue(r.due, text);
+    if (!due && copiesClosedTodo(text, closedTitles)) continue;
+    steps.push({ text, due, who, waiting: r.waiting === true && !!who && !OWNER.test(who) });
+  }
+  return steps;
+}
+
+export type ValidatedProjects = {
+  projects: InferredProject[];
+  /** Previous cards Claude or the gate flagged as private: the store removes them now. */
+  rejectedKeys: string[];
+};
+
 export function validateProjects(
   raw: unknown,
   ctx: {
     ids: Map<string, SignalItem>;
     previous: PreviousProject[];
     now: Date;
-    /** The privacy gate's text check, applied to names, status and next. */
+    /** The privacy gate's text check, applied to names, status, problem and steps. */
     isSensitive?: (text: string) => boolean;
   },
-): InferredProject[] {
+): ValidatedProjects {
   const list = (raw as { projects?: unknown } | null)?.projects;
   if (!Array.isArray(list)) throw new ValidationError("no projects array");
   const prevByKey = new Map(ctx.previous.map((p) => [p.key, p]));
+  const entries = list.filter((e): e is RawProject => !!e && typeof e === "object");
   const taken = new Set<string>();
   const out: (InferredProject & { state: Visibility })[] = [];
+  const rejected = new Set<string>();
 
-  for (const entry of list) {
-    if (!entry || typeof entry !== "object") continue;
-    const r = entry as RawProject;
-    if (r.sensitive === true) continue;
-    const name = clip(r.name, NAME_CHARS);
-    if (!name) continue;
-    const status = clip(r.status, LINE_CHARS) || null;
-    const next = clip(r.next, LINE_CHARS) || null;
-    if ([name, status, next].some((t) => t && ctx.isSensitive?.(t))) continue;
+  // Keys Claude stated bind first, so a small card matched on shared evidence
+  // below can't take the key, pin or history of the card that really owns it.
+  const stated = new Map<RawProject, string>();
+  for (const r of entries) {
+    if (typeof r.key !== "string" || !prevByKey.has(r.key) || taken.has(r.key)) continue;
+    stated.set(r, r.key);
+    taken.add(r.key);
+  }
 
+  for (const r of entries) {
     const seen = new Set<string>();
     const items: SignalItem[] = [];
     for (const id of Array.isArray(r.evidence) ? r.evidence : []) {
@@ -251,13 +367,30 @@ export function validateProjects(
         items.push(item);
       }
     }
+    const reject = () => {
+      const key = stated.get(r) ?? carryOver([...seen], ctx.previous, taken);
+      if (key) rejected.add(key);
+    };
+
+    if (r.sensitive === true) {
+      reject();
+      continue;
+    }
+    const name = clip(r.name, NAME_CHARS);
+    if (!name) continue;
+    const status = clip(r.status, LINE_CHARS) || null;
+    const problem = clip(r.problem, LINE_CHARS) || null;
+    if ([name, status, problem].some((t) => t && ctx.isSensitive?.(t))) {
+      reject();
+      continue;
+    }
 
     const free = (k: string) => prevByKey.has(k) && !taken.has(k);
-    let key = typeof r.key === "string" && free(r.key) ? r.key : null;
-    if (!key) key = carryOver([...seen], ctx.previous, taken);
+    let key = stated.get(r) ?? carryOver([...seen], ctx.previous, taken);
     if (!key && free(slugify(name))) key = slugify(name);
     const existing = !!key;
-    if (items.length < (existing ? 1 : 2)) continue;
+    const longThread = items.some((i) => (i.threadCount ?? 0) >= LONG_THREAD);
+    if (items.length < (existing ? 1 : 2) && !longThread) continue;
     // One recurring series alone (a weekly 1:1) is not a project.
     const series = new Set(items.map((i) => i.series ?? null));
     if (series.size === 1 && !series.has(null)) continue;
@@ -265,6 +398,7 @@ export function validateProjects(
     if (!key) continue;
     taken.add(key);
 
+    const steps = readSteps(r.steps, items, ctx.isSensitive);
     const evidence = items
       .map(({ ref, kind, title, at, url }) => ({ ref, kind, title, at, url }))
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
@@ -274,7 +408,9 @@ export function validateProjects(
       name,
       company: isCompany(r.company) ? r.company : "Personal",
       status,
-      next,
+      problem,
+      steps,
+      next: steps[0]?.text ?? null,
       evidence,
       lastActivityAt: past?.at ?? null,
       state: prevByKey.get(key)?.state ?? "auto",
@@ -288,7 +424,9 @@ export function validateProjects(
     .sort((a, b) => Number(b.state === "pinned") - Number(a.state === "pinned") || at(b) - at(a))
     .slice(0, MAX_CARDS);
   const keep = new Set([...shown, ...out.filter((p) => p.state === "hidden")]);
-  return out.filter((p) => keep.has(p)).map(({ state: _state, ...p }) => p);
+  const projects = out.filter((p) => keep.has(p)).map(({ state: _state, ...p }) => p);
+  const returned = new Set(projects.map((p) => p.key));
+  return { projects, rejectedKeys: [...rejected].filter((k) => !returned.has(k)) };
 }
 
 /** The previous card sharing at least half of this card's evidence (the most, if several). */
@@ -321,17 +459,17 @@ export async function inferProjects(input: {
   now: Date;
   isSensitive?: (text: string) => boolean;
   claude?: typeof callClaudeJSON;
-}): Promise<{ projects: InferredProject[]; omitted: number }> {
-  if (!input.items.length) return { projects: [], omitted: 0 };
-  const prompt = buildPrompt(input.items, input.previous);
+}): Promise<ValidatedProjects & { omitted: number }> {
+  if (!input.items.length) return { projects: [], rejectedKeys: [], omitted: 0 };
+  const prompt = buildPrompt(input.items, input.previous, input.now);
   const raw = await (input.claude ?? callClaudeJSON)<unknown>({
     system: SYSTEM,
     user: prompt.user,
-    maxTokens: 8000,
+    maxTokens: 16_000,
     timeoutMs: 150_000,
   });
   return {
-    projects: validateProjects(raw, { ids: prompt.ids, previous: input.previous, now: input.now, isSensitive: input.isSensitive }),
+    ...validateProjects(raw, { ids: prompt.ids, previous: input.previous, now: input.now, isSensitive: input.isSensitive }),
     omitted: prompt.omitted,
   };
 }

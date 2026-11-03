@@ -9,6 +9,8 @@ import type { SignalItem } from "./types";
 
 export const GMAIL_QUERY = "in:sent newer_than:14d -in:chats";
 export const MAX_THREADS = 100;
+/** Snippets per thread in the prompt, newest last. One often says too little ("Ok thanks"). */
+const SNIPPETS_PER_THREAD = 5;
 const CONCURRENCY = 5;
 const RETRIES_429 = 3;
 
@@ -96,15 +98,19 @@ export function threadItem(
 
   const sentFrom = [...messages].reverse().map((m) => addressesIn(header(m, "From"))[0]).find((a) => a && opts.mine.has(a));
   const last = messages[messages.length - 1];
+  const lastSender = addressesIn(header(last, "From"))[0];
+  const snippets = messages.slice(-SNIPPETS_PER_THREAD).map((m) => (m.snippet ? decodeEntities(m.snippet) : ""));
   return {
     ref: `gmail:${thread.id}`,
     kind: "email",
     title: subject || "(no subject)",
     at: new Date(Number(last.internalDate ?? 0)).toISOString(),
     url: `https://mail.google.com/mail/?authuser=${encodeURIComponent(opts.account)}#all/${encodeURIComponent(thread.id)}`,
-    detail: last.snippet ? decodeEntities(last.snippet) : null,
+    detail: snippets.filter(Boolean).join(" // ") || null,
     domains: otherDomains(others, opts.mine),
     from: sentFrom ?? null,
+    threadCount: messages.length,
+    lastFrom: !lastSender ? null : opts.mine.has(lastSender) ? "me" : (lastSender.split("@")[1] ?? null),
   };
 }
 

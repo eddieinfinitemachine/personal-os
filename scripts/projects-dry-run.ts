@@ -81,7 +81,7 @@ async function main() {
     return;
   }
 
-  const prompt = buildPrompt(signals.items, []);
+  const prompt = buildPrompt(signals.items, [], now);
   console.log(`\n## Prompt: ${prompt.ids.size} items, ${prompt.omitted} omitted for the budget, ${prompt.user.length} chars`);
   console.log(`Evidence hash: ${evidenceHash(signals.items)}`);
 
@@ -91,6 +91,10 @@ async function main() {
       const { projects } = await inferProjects({ items: signals.items, previous, now, isSensitive: signals.gate.matchesText });
       console.log(`\n## ${label}: ${projects.length} projects (${((Date.now() - started) / 1000).toFixed(1)} s)`);
       for (const p of projects) printProject(p);
+      const held = new Set(projects.flatMap((p) => p.evidence.map((e) => e.ref)));
+      const loose = signals.items.filter((i) => i.upcoming && !i.series && !held.has(i.ref));
+      console.log(`\nUpcoming one-off meetings on no card: ${loose.length}`);
+      for (const i of loose) console.log(`  - ${i.at.slice(0, 10)}: ${i.title}`);
       return projects;
     } catch (e) {
       console.log(`\n## ${label}: inference failed (${failureClass(e)})`);
@@ -139,7 +143,10 @@ async function main() {
     console.log(`\n### ${p.name}  [${p.key}]`);
     console.log(`Company: ${p.company} · last touched ${p.lastActivityAt?.slice(0, 10) ?? "-"}`);
     console.log(`Status: ${p.status ?? "-"}`);
-    console.log(`Next: ${p.next ?? "-"}`);
+    if (p.problem) console.log(`Problem: ${p.problem}`);
+    for (const s of p.steps) {
+      console.log(`Step: ${s.due ?? "no date"} | ${s.who ?? "?"}${s.waiting ? " | WAITING" : ""} | ${s.text}`);
+    }
     console.log(`Evidence: ${[...counts].map(([k, n]) => `${n} ${k}`).join(" · ")}`);
     for (const e of p.evidence) console.log(`  - ${e.kind} ${e.at.slice(0, 10)}${Date.parse(e.at) > now.getTime() ? " (upcoming)" : ""}: ${e.title}`);
   }
