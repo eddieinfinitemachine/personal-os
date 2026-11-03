@@ -24,14 +24,14 @@ export interface MobileCaptureResult {
 type Tx = Prisma.TransactionClient;
 const VISION_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
-function replay(receipt: { requestHash: string; result: unknown }, requestHash: string): MobileCaptureResult {
+export function replay<T = MobileCaptureResult>(receipt: { requestHash: string; result: unknown }, requestHash: string): T {
   if (receipt.requestHash !== requestHash) throw new MobileCaptureError(409, "This requestId was already used for different content. Create a new capture to change its content.");
-  return receipt.result as MobileCaptureResult;
+  return receipt.result as T;
 }
 function joinNotes(...parts: Array<string | null | undefined>): string | null {
   return parts.filter((part): part is string => typeof part === "string" && part.trim().length > 0).join("\n\n") || null;
 }
-async function assertQuota(db: Pick<Tx, "attachment">, userId: string, bytes: number): Promise<void> {
+export async function assertQuota(db: Pick<Tx, "attachment">, userId: string, bytes: number): Promise<void> {
   if (!bytes) return;
   const used = await db.attachment.aggregate({ where: { userId, kind: "file" }, _sum: { size: true } });
   if ((used._sum.size ?? 0) + bytes > MOBILE_QUOTA_BYTES) throw new MobileCaptureError(413, "Storage quota exceeded. Remove some files from Personal OS and retry.");

@@ -33,7 +33,10 @@ export async function capturedFiles(tx: Prisma.TransactionClient, userId: string
   const files: StoredCaptureFile[] = [];
   for (const effect of effects.writes.filter(w => w.model === "attachment")) {
     const row = await checkEffect(tx, userId, effect);
-    if (row.kind !== "file" || typeof row.url !== "string") continue;
+    // A notebook scan gives all but its first item a "link" to the shared page
+    // photo. Move that row too; otherwise commitCore would add a second "file"
+    // row for one blob, and deleting either would break the other.
+    if ((row.kind !== "file" && row.kind !== "link") || typeof row.url !== "string") continue;
     files.push({ attachmentId: effect.id, url: row.url, file: { name: String(row.title ?? "Shared file"), type: typeof row.mimeType === "string" ? row.mimeType : "application/octet-stream", size: typeof row.size === "number" ? row.size : 0 } });
   }
   for (const file of input.files) if (!files.some(item => item.url === file.url)) files.push({ url: file.url, file: { name: file.name, type: file.mimeType ?? "application/octet-stream", size: file.size ?? 0 } });

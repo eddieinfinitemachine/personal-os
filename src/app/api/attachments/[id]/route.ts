@@ -23,7 +23,10 @@ export async function DELETE(
   // DB row is gone.
   if (existing.kind === "file" && existing.url) {
     try {
-      await del(existing.url);
+      // A notebook scan's items share one page photo: keep it while another
+      // attachment still points at it.
+      const shared = await prisma.attachment.count({ where: { userId, url: existing.url } });
+      if (!shared) await del(existing.url);
     } catch (err) {
       console.error("blob delete failed (orphaned)", existing.url, err);
     }

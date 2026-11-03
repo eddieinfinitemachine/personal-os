@@ -9,7 +9,9 @@ export async function deleteAssetWithBlobs(id: string) {
   });
   for (const file of files) {
     try {
-      await del(file.url);
+      // A corrected notebook item can own a page photo that other items link to.
+      const shared = await prisma.attachment.count({ where: { url: file.url, OR: [{ assetId: null }, { assetId: { not: id } }] } });
+      if (!shared) await del(file.url);
     } catch (error) {
       console.error("asset blob delete failed (orphaned)", file.url, error);
     }

@@ -44,6 +44,9 @@ export interface ClaudeCall {
   maxTokens: number;
   model?: string;
   timeoutMs?: number;
+  effort?: "low" | "medium" | "high" | "xhigh" | "max";
+  /** Retry a safety-classifier decline on Anthropic's recommended fallback model. */
+  refusalFallback?: boolean;
 }
 
 /**
@@ -57,6 +60,8 @@ export async function callClaudeText({
   maxTokens,
   model = DEFAULT_MODEL,
   timeoutMs,
+  effort,
+  refusalFallback,
 }: ClaudeCall): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
@@ -69,11 +74,14 @@ export async function callClaudeText({
       "Content-Type": "application/json",
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
+      ...(refusalFallback ? { "anthropic-beta": "server-side-fallback-2026-07-01" } : {}),
     },
     body: JSON.stringify({
       model,
       max_tokens: maxTokens,
       ...(system ? { system } : {}),
+      ...(effort ? { output_config: { effort } } : {}),
+      ...(refusalFallback ? { fallbacks: "default" } : {}),
       messages: msgs,
     }),
   });
