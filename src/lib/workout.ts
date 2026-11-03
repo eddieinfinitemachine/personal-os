@@ -5,6 +5,9 @@
 // Kept framework-free so it can be unit-tested and shared by the API route
 // and the client.
 
+import type { ExerciseLast } from "./workout-history";
+import type { HealthSummary, Readiness } from "./workout-health";
+
 export const MOVEMENT_PATTERNS = [
   "squat",
   "hinge",
@@ -94,6 +97,8 @@ export type Exercise = {
   muscles: Muscle[];
   /** Same-side or unilateral: the player shows "each side". */
   perSide: boolean;
+  /** The last logged performance and the load advice from it. Filled in client-side. */
+  last?: ExerciseLast;
 };
 
 export type Block = {
@@ -116,7 +121,39 @@ export type WorkoutPlan = {
 export type PlanResponse = {
   equipment: EquipmentItem[];
   plan: WorkoutPlan;
+  /** Planned for the full-gym list rather than the user's own equipment. */
+  fullGym?: boolean;
+  /** The health data the plan used; null without a health profile. */
+  health?: HealthSummary | null;
 };
+
+/** "Full gym": everything a well-equipped commercial gym has, so no photos are needed. */
+export const FULL_GYM_EQUIPMENT: EquipmentItem[] = [
+  { name: "Olympic barbells & plates", detail: "up to 400+ lb" },
+  { name: "Power racks & squat racks" },
+  { name: "Adjustable benches", detail: "flat, incline, decline" },
+  { name: "Dumbbells", detail: "5–120 lb" },
+  { name: "Kettlebells", detail: "10–80 lb" },
+  { name: "EZ curl bar & trap bar" },
+  { name: "Smith machine" },
+  { name: "Cable stations", detail: "dual adjustable pulleys, handles, rope, bars" },
+  { name: "Lat pulldown & seated cable row" },
+  { name: "Leg press & hack squat" },
+  { name: "Leg extension & leg curl machines" },
+  { name: "Chest press, shoulder press & pec deck machines" },
+  { name: "Hip thrust machine" },
+  { name: "Calf raise machine" },
+  { name: "Assisted pull-up / dip machine" },
+  { name: "Pull-up bars & dip station" },
+  { name: "Landmine" },
+  { name: "Sled & turf lane" },
+  { name: "Plyo boxes" },
+  { name: "Medicine & slam balls" },
+  { name: "Resistance bands" },
+  { name: "Battle ropes" },
+  { name: "Ab wheel, mats & foam rollers" },
+  { name: "Treadmills, rowers, bikes & stair climbers" },
+];
 
 export type PlanRequest = {
   minutes: number;
@@ -125,9 +162,13 @@ export type PlanRequest = {
   notes: string;
   /** Equipment the user already confirmed (no photos needed). */
   knownEquipment: EquipmentItem[];
+  /** knownEquipment is FULL_GYM_EQUIPMENT. */
+  fullGym: boolean;
   hasPhotos: boolean;
-  /** Short lines like "2026-09-18 · Upper · 42 min" for variety. */
-  recentTitles: string[];
+  /** The training log (historyPrompt), "" without one. */
+  history: string;
+  /** The athlete's health data (healthPrompt), "" without any. */
+  health: string;
 };
 
 export function buildSystemPrompt(): string {
@@ -189,7 +230,9 @@ export function buildSystemPrompt(): string {
     "- 2–5 short cues per exercise. Loads should reference the weights you actually saw.",
     "- Always include 2–4 warm-up movements (timed, 20–45 s) and 2–3 cool-down stretches (timed, 20–40 s).",
     "- Keep total time (work + rest + warm-up + cool-down) inside the requested minutes.",
-    "- If recent sessions are listed, vary the selection so the week is balanced.",
+    "- If a training log is included, vary the selection so the week is balanced and skip the exercises it says not to repeat.",
+    "- When you program an exercise the log has a next load for, name it exactly as in the log and use that load (or the closest the equipment allows).",
+    "- If health data is included: work around its conditions, follow its recovery note, and pick starting loads for exercises the log doesn't cover from body weight, sex, age and training history, leaving about 2 reps in reserve.",
   ].join("\n");
 }
 
@@ -199,7 +242,13 @@ export function buildUserPrompt(req: PlanRequest): string {
     `Focus: ${req.focus}.`,
     `Intensity: ${req.intensity}.`,
   ];
-  if (req.knownEquipment.length) {
+  if (req.fullGym) {
+    lines.push(
+      "They are in a fully equipped commercial gym. All of this is available: " +
+        req.knownEquipment.map((e) => (e.detail ? `${e.name} (${e.detail})` : e.name)).join("; ") +
+        ".",
+    );
+  } else if (req.knownEquipment.length) {
     lines.push(
       "Confirmed equipment (use in addition to anything in the photos): " +
         req.knownEquipment
@@ -214,9 +263,8 @@ export function buildUserPrompt(req: PlanRequest): string {
     lines.push("No equipment photos or list — assume bodyweight only.");
   }
   if (req.notes.trim()) lines.push(`Notes from the athlete: ${req.notes.trim()}`);
-  if (req.recentTitles.length) {
-    lines.push("Recent sessions:\n" + req.recentTitles.map((t) => `- ${t}`).join("\n"));
-  }
+  if (req.health) lines.push(req.health);
+  if (req.history) lines.push(req.history);
   return lines.join("\n");
 }
 
@@ -379,6 +427,10 @@ export type ExtendRequest = {
   /** Names of the exercises already in the session, so the extra work varies. */
   exercises: string[];
   notes: string;
+  /** The training log (historyPrompt), "" without one. */
+  history: string;
+  /** The athlete's health data (healthPrompt), "" without any. */
+  health: string;
 };
 
 export function buildExtendPrompt(req: ExtendRequest): string {
@@ -390,6 +442,8 @@ export function buildExtendPrompt(req: ExtendRequest): string {
   ];
   if (req.exercises.length) lines.push("Already done today (choose different movements, or a clear progression of one):\n" + req.exercises.map((n) => `- ${n}`).join("\n"));
   if (req.notes.trim()) lines.push(`Notes from the athlete: ${req.notes.trim()}`);
+  if (req.health) lines.push(req.health);
+  if (req.history) lines.push(req.history);
   lines.push(
     `Design main blocks that fit in ${req.minutes} minutes including rest. No warm-up or cool-down. They are already warm.`,
     'Return ONLY a JSON object {"blocks": [<Block object>, ...]} using the Block and Exercise shapes above.',
@@ -529,6 +583,36 @@ export function flattenPlan(plan: WorkoutPlan): Step[] {
   return steps;
 }
 
+export type UpcomingGroup = {
+  /** Block name, or "Warm-up" / "Cool-down". */
+  name: string;
+  blockType: Block["type"];
+  items: { exercise: Exercise; setsLeft: number }[];
+};
+
+/** What's still ahead after step `index`: one row per exercise in the order it next comes up, grouped by block. */
+export function upcomingSteps(steps: Step[], index: number): UpcomingGroup[] {
+  const groups: UpcomingGroup[] = [];
+  const byId = new Map<string, { exercise: Exercise; setsLeft: number }>();
+  for (const step of steps.slice(index + 1)) {
+    const seen = byId.get(step.exercise.id);
+    if (seen) {
+      seen.setsLeft += 1;
+      continue;
+    }
+    const name = step.section === "main" ? step.blockName : step.section === "warmup" ? "Warm-up" : "Cool-down";
+    let group = groups[groups.length - 1];
+    if (!group || group.name !== name) {
+      group = { name, blockType: step.blockType, items: [] };
+      groups.push(group);
+    }
+    const item = { exercise: step.exercise, setsLeft: 1 };
+    byId.set(step.exercise.id, item);
+    group.items.push(item);
+  }
+  return groups;
+}
+
 export type SetLog = {
   stepKey: string;
   exerciseId: string;
@@ -552,6 +636,8 @@ export type WorkoutSession = {
   timerEndsAt: number | null;
   timerKind: "work" | "rest" | null;
   timerPausedRemainingMs: number | null;
+  /** Recovery when the plan was built; holds weight increases on a low day. */
+  readiness?: Readiness | null;
 };
 
 export function estimatePlanMinutes(plan: WorkoutPlan): number {
