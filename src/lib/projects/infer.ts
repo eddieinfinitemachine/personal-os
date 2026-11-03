@@ -2,7 +2,7 @@
 // sent email, todos, notes) into projects, with their next steps and anything
 // stuck. Pure apart from that call, which is injectable: no database access here.
 //
-// Stability: the previous projects, pinned and hidden ones included, go into
+// Stability: the previous projects, pinned, hidden and finished ones included, go into
 // the prompt with the evidence they already own, and a card that comes back
 // without its key inherits it from the previous card it shares at least half
 // its evidence with. Hidden cards stay in the output so they keep their key
@@ -142,6 +142,7 @@ Rules:
 - evidence: the ids (m…, e…, t…, n…) that belong to the project, only from the list. Never mention these ids in name, status, problem or steps.
 - key: for a project that continues one under "Previous projects", that project's key exactly. Return every previous project that still has evidence. null for a new project.
 - Previous projects marked hidden are ones Eddie said are not projects. Return them with the same key while their evidence continues, and never re-create them under another name.
+- Previous projects marked finished are ones Eddie closed out. Return them with the same key and no steps while their evidence continues, and never re-create them under another name.
 - If you are unsure whether a project touches a private matter, set "sensitive": true and keep its key if it has one.
 
 Reply with JSON only:
@@ -398,7 +399,8 @@ export function validateProjects(
     if (!key) continue;
     taken.add(key);
 
-    const steps = readSteps(r.steps, items, ctx.isSensitive);
+    const finished = prevByKey.get(key)?.state === "finished";
+    const steps = finished ? [] : readSteps(r.steps, items, ctx.isSensitive);
     const evidence = items
       .map(({ ref, kind, title, at, url }) => ({ ref, kind, title, at, url }))
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
@@ -417,13 +419,13 @@ export function validateProjects(
     });
   }
 
-  // At most MAX_CARDS shown: pinned first, then the most recent. Hidden ones don't count.
+  // At most MAX_CARDS shown: pinned first, then the most recent. Hidden and finished ones don't count.
   const at = (p: InferredProject) => (p.lastActivityAt ? Date.parse(p.lastActivityAt) : 0);
   const shown = out
-    .filter((p) => p.state !== "hidden")
+    .filter((p) => p.state !== "hidden" && p.state !== "finished")
     .sort((a, b) => Number(b.state === "pinned") - Number(a.state === "pinned") || at(b) - at(a))
     .slice(0, MAX_CARDS);
-  const keep = new Set([...shown, ...out.filter((p) => p.state === "hidden")]);
+  const keep = new Set([...shown, ...out.filter((p) => p.state === "hidden" || p.state === "finished")]);
   const projects = out.filter((p) => keep.has(p)).map(({ state: _state, ...p }) => p);
   const returned = new Set(projects.map((p) => p.key));
   return { projects, rejectedKeys: [...rejected].filter((k) => !returned.has(k)) };

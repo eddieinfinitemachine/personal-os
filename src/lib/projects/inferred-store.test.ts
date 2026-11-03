@@ -193,10 +193,10 @@ describe("cardsToRemove", () => {
     expect(remove(rows, { returned })).toEqual(["renamed"]);
   });
 
-  it("never touches returned, pinned or hidden cards", () => {
+  it("never touches returned, pinned, hidden or finished cards", () => {
     const expired = { lastActivityAt: ago(QUIET_KEEP_MS * 2) };
-    const rows = [row("back", expired), row("pin", { ...expired, state: "pinned" }), row("hid", { ...expired, state: "hidden" })];
-    expect(remove(rows, { returned: [project("back")], rejectedKeys: ["pin", "hid"], isSensitive: () => true })).toEqual([]);
+    const rows = [row("back", expired), row("pin", { ...expired, state: "pinned" }), row("hid", { ...expired, state: "hidden" }), row("done", { ...expired, state: "finished" })];
+    expect(remove(rows, { returned: [project("back")], rejectedKeys: ["pin", "hid", "done"], isSensitive: () => true })).toEqual([]);
   });
 });
 

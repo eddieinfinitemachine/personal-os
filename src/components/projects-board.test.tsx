@@ -33,7 +33,7 @@ const launch = card("Product launch", 1, {
     { ref: "todo:4", kind: "todo", title: "Write FAQ", at: iso(5), url: "/projects/p1" },
   ],
 });
-const board: ProjectsBoard = { cards: [launch, card("Apartment search", 5)], hidden: [], syncedAt: null, refreshFailed: false };
+const board: ProjectsBoard = { cards: [launch, card("Apartment search", 5)], hidden: [], finished: [], syncedAt: null, refreshFailed: false };
 
 let container: HTMLDivElement, root: Root;
 beforeEach(() => {
@@ -124,6 +124,24 @@ describe("ProjectsBoardView", () => {
     expect(hiddenDetails()).toBeUndefined();
     expect(shownNames()).toContain("Old thing");
     expect(fetch.mock.calls.map((c) => JSON.parse(c[1].body).state)).toEqual(["pinned", "auto"]);
+  });
+
+  it("closes a project out into Finished, and reopens it", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    await act(async () => root.render(<ProjectsBoardView board={board} />));
+    await choose("Product launch", "Mark finished");
+    expect(shownNames()).not.toContain("Product launch");
+    const finished = () => [...container.querySelectorAll("details")].find((d) => d.querySelector("summary")?.textContent?.startsWith("Finished"));
+    expect(finished()?.querySelector("summary")?.textContent).toBe("Finished · 1");
+    expect(finished()?.textContent).toContain("Product launch");
+    // A closed project has no next step, even before the next run clears it.
+    expect(finished()?.textContent).not.toContain("Next:");
+
+    await choose("Product launch", "Reopen");
+    expect(shownNames()).toContain("Product launch");
+    expect(finished()).toBeUndefined();
+    expect(fetch.mock.calls.map((c) => JSON.parse(c[1].body).state)).toEqual(["finished", "auto"]);
   });
 
   it("says when a pinned card has gone quiet", async () => {

@@ -16,15 +16,24 @@ names and per-rule counts stay local: this repo is public.
 - [x] `pnpm typecheck`, `pnpm test`; read-only dry run `--twice`; browser on a scratch database
 - [ ] Eddie reviews the list, merges; Refresh on live `/projects`; count notes dropped per rule once Granola notes are in
 
+## Mark finished (pulled forward from PR 3, Eddie asked)
+- [x] `finished` state: card menu "Mark finished", Finished section, Reopen; no schema change
+- [x] A run never reopens one: it keeps its key, loses its steps, and doesn't count against the cap
+- [x] Tests; browser on a scratch database with real mouse clicks, pinned card included, surviving a reload, 1440 and 390
+
 ## PR 2: This week view
 - [ ] Pure function in `board-model.ts`: Stuck, This week, Waiting on, No next step
 - [ ] Cards list their steps instead of one Next line
 
 ## PR 3: corrections
 - [ ] Tick a step done (Claude echoes step ids; done steps go in the prompt)
-- [ ] Mark a project Finished
 - [ ] Rename a card or add a project by name (name locked)
 - [ ] Route and `saveInferred` take a `FOR UPDATE` row lock; add Eddie's corrections to `evidenceHash`
+
+## Slack (Eddie asked, 2026-11-03)
+- [ ] Eddie creates a Slack app with a user token (`search:read`); token in Vercel and local `.env`
+- [ ] New source: messages Eddie sent, grouped per channel or DM, through the privacy filter; any flagged message drops a whole DM
+- [ ] Read-only dry run, show Eddie the list before merging
 
 ## PR 1 review
 `pnpm typecheck` clean; `pnpm test` 155 files passed / 23 skipped, 1521 tests

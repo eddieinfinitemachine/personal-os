@@ -5,8 +5,8 @@
 import type { Company } from "./company";
 import { EVIDENCE_KINDS, type EvidenceKind, type StoredEvidence } from "./signals/types";
 
-export type Visibility = "auto" | "pinned" | "hidden";
-export const VISIBILITIES: readonly Visibility[] = ["auto", "pinned", "hidden"];
+export type Visibility = "auto" | "pinned" | "hidden" | "finished";
+export const VISIBILITIES: readonly Visibility[] = ["auto", "pinned", "hidden", "finished"];
 
 /** One project Claude inferred. */
 export type BoardCard = {
@@ -28,6 +28,8 @@ export type BoardCard = {
 export type ProjectsBoard = {
   cards: BoardCard[];
   hidden: BoardCard[];
+  /** Closed out by Eddie. A run never reopens one. */
+  finished: BoardCard[];
   /** Last run that ended well (founder only). */
   syncedAt: string | null;
   /** The latest run failed; the board shows the result from `syncedAt`. */
@@ -41,10 +43,10 @@ export function evidenceCounts(evidence: StoredEvidence[]): Record<EvidenceKind,
 }
 
 /**
- * Shown cards (pinned first, then active before quiet, then newest) and Hidden
- * (newest first). The store ages quiet cards out, so nothing does here.
+ * Shown cards (pinned first, then active before quiet, then newest), then Hidden
+ * and Finished (newest first). The store ages quiet cards out, so nothing does here.
  */
-export function bucketCards(cards: BoardCard[]): Pick<ProjectsBoard, "cards" | "hidden"> {
+export function bucketCards(cards: BoardCard[]): Pick<ProjectsBoard, "cards" | "hidden" | "finished"> {
   const at = (c: BoardCard) => (c.lastActivityAt ? Date.parse(c.lastActivityAt) : 0);
   const byRecent = (a: BoardCard, b: BoardCard) => at(b) - at(a) || a.name.localeCompare(b.name);
   const pinnedFirst = (a: BoardCard, b: BoardCard) =>
@@ -54,6 +56,7 @@ export function bucketCards(cards: BoardCard[]): Pick<ProjectsBoard, "cards" | "
 
   const shown: BoardCard[] = [];
   const hidden: BoardCard[] = [];
-  for (const c of cards) (c.visibility === "hidden" ? hidden : shown).push(c);
-  return { cards: shown.sort(pinnedFirst), hidden: hidden.sort(byRecent) };
+  const finished: BoardCard[] = [];
+  for (const c of cards) (c.visibility === "hidden" ? hidden : c.visibility === "finished" ? finished : shown).push(c);
+  return { cards: shown.sort(pinnedFirst), hidden: hidden.sort(byRecent), finished: finished.sort(byRecent) };
 }

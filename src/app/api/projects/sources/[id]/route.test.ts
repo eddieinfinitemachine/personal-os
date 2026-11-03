@@ -25,16 +25,16 @@ describe("PATCH /api/projects/sources/[id]", () => {
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
-  it("lets an inferred project be pinned, hidden or put back on auto, nothing else", async () => {
+  it("lets an inferred project be pinned, hidden, finished or put back on auto, nothing else", async () => {
     mocks.findUnique.mockResolvedValue({ id: "s1", userId: "u1", kind: "inferred", state: "auto" });
-    for (const state of ["pinned", "hidden", "auto"]) {
+    for (const state of ["pinned", "hidden", "finished", "auto"]) {
       expect((await PATCH(patch({ state }), ctx)).status).toBe(200);
     }
-    expect(mocks.update.mock.calls.map((c) => c[0].data)).toEqual([{ state: "pinned" }, { state: "hidden" }, { state: "auto" }]);
+    expect(mocks.update.mock.calls.map((c) => c[0].data)).toEqual([{ state: "pinned" }, { state: "hidden" }, { state: "finished" }, { state: "auto" }]);
     for (const state of ["dismissed", "accepted", "suggested", "", 3]) {
       expect((await PATCH(patch({ state }), ctx)).status).toBe(400);
     }
-    expect(mocks.update).toHaveBeenCalledTimes(3);
+    expect(mocks.update).toHaveBeenCalledTimes(4);
   });
 
   it("404s on other rows: old repos and topics, and the run row", async () => {
