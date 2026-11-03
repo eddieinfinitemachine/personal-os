@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Calendar, ChevronDown, FolderKanban, ChevronRight, LayoutGrid, Eye, EyeOff, FlaskConical, Folder, Home, Inbox as InboxIcon, PanelLeftClose, PanelLeftOpen, Phone, Pencil, Plus, Loader2, MoreHorizontal, Settings, Trash2, WandSparkles } from "lucide-react";
+import { Calendar, ChevronDown, FolderKanban, ChevronRight, LayoutGrid, Eye, EyeOff, FlaskConical, Folder, Home, PanelLeftClose, PanelLeftOpen, Phone, Pencil, Plus, Loader2, MoreHorizontal, Settings, Trash2, WandSparkles } from "lucide-react";
 import { AddTemplateButton, useEnabledTemplates } from "./sidebar-template-picker";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
@@ -93,7 +93,7 @@ export function Sidebar({
   const visibleProjects = projects.filter((p) => !hiddenProjectIds.has(p.id));
   const hiddenProjects = projects.filter((p) => hiddenProjectIds.has(p.id));
 
-  // Inbox pinned first, projects with open todos next (manual order kept),
+  // Projects with open todos first (manual order kept),
   // zero-todo tail collapsed behind "N more". The currently-open project
   // always stays above the fold even when empty.
   const activeProjectId = pathname.startsWith("/projects/")
@@ -101,7 +101,6 @@ export function Sidebar({
     : null;
   const [dormantOpen, setDormantOpen] = useState(false);
   const {
-    inbox: inboxProject,
     active: activeProjects,
     dormant: dormantProjects,
   } = partitionProjects(
@@ -316,20 +315,6 @@ export function Sidebar({
         </div>
 
         <div className="space-y-0.5">
-          {inboxProject ? (
-            <ProjectSidebarRow
-              key={inboxProject.id}
-              project={inboxProject}
-              active={pathname === `/projects/${inboxProject.id}`}
-              inbox
-              onTodoDropped={() => {
-                startTransition(() => router.refresh());
-              }}
-              onDeleted={() => {
-                startTransition(() => router.refresh());
-              }}
-            />
-          ) : null}
           {activeProjects.map((project) => (
             <ProjectSidebarRow
               key={project.id}
@@ -353,9 +338,6 @@ export function Sidebar({
                 } else {
                   startTransition(() => router.refresh());
                 }
-              }}
-              onTodoDropped={() => {
-                startTransition(() => router.refresh());
               }}
               onRenamed={(newName) => {
                 setProjects((prev) =>
@@ -397,9 +379,6 @@ export function Sidebar({
                       onDrop={persistOrder}
                       dragging={draggingId === project.id}
                       onDeleted={() => {
-                        startTransition(() => router.refresh());
-                      }}
-                      onTodoDropped={() => {
                         startTransition(() => router.refresh());
                       }}
                       onRenamed={(newName) => {
@@ -637,34 +616,27 @@ function ProjectSidebarRow({
   project,
   active,
   hidden,
-  inbox,
   onToggleHidden,
   onDeleted,
   onDragStart,
   onDragOver,
   onDrop,
-  onTodoDropped,
   onRenamed,
   dragging,
 }: {
   project: SidebarProject;
   active: boolean;
   hidden?: boolean;
-  // Pinned capture spout: tray icon, no drag, no rename/hide/delete menu —
-  // Smart Capture files by the literal name "Inbox", so renaming would fork it.
-  inbox?: boolean;
   onToggleHidden?: () => void;
   onDeleted: () => void;
   onDragStart?: () => void;
   onDragOver?: () => void;
   onDrop?: () => void;
-  onTodoDropped?: () => void;
   onRenamed?: (newName: string) => void;
   dragging?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [todoOver, setTodoOver] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(project.name);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -718,58 +690,6 @@ function ProjectSidebarRow({
     if (res.ok) onDeleted();
   }
 
-  async function handleTodoDrop(e: React.DragEvent<HTMLDivElement>) {
-    const raw = e.dataTransfer.getData("application/x-personalos-todo");
-    if (!raw) return;
-    let payload: {
-      todoId: string;
-      sourceListId?: string;
-      sourceProjectId?: string | null;
-      todo?: {
-        id: string;
-        title: string;
-        notes?: string | null;
-        dueDate?: Date | string | null;
-        completedAt?: Date | string | null;
-        projectId?: string | null;
-      };
-    } | null = null;
-    try {
-      payload = JSON.parse(raw);
-    } catch {
-      return;
-    }
-    if (!payload?.todoId) return;
-    if (payload.todo?.projectId === project.id) return;
-
-    // Optimistic: emit the move in the standard event format BEFORE the PATCH
-    // so list-tile/project-card can re-bucket the todo immediately. The list
-    // doesn't change — only the project does.
-    if (payload.sourceListId) {
-      window.dispatchEvent(
-        new CustomEvent("personalos:todo-moved", {
-          detail: {
-            todoId: payload.todoId,
-            fromListId: payload.sourceListId,
-            fromProjectId: payload.sourceProjectId ?? null,
-            toListId: payload.sourceListId,
-            toProjectId: project.id,
-            toProjectName: project.name,
-            todo: payload.todo,
-          },
-        })
-      );
-    }
-    onTodoDropped?.();
-
-    // Fire-and-forget — the optimistic event already updated the UI.
-    fetch(`/api/todos/${payload.todoId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId: project.id }),
-    }).catch(() => {});
-  }
-
   return (
     <div
       draggable={!!onDragStart}
@@ -779,31 +699,13 @@ function ProjectSidebarRow({
         onDragStart?.();
       }}
       onDragOver={(e) => {
-        const types = e.dataTransfer.types;
-        if (types.includes("application/x-personalos-todo")) {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-          if (!todoOver) setTodoOver(true);
-          return;
-        }
-        if (!types.includes("application/x-personalos-project")) return;
+        if (!e.dataTransfer.types.includes("application/x-personalos-project")) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
         onDragOver?.();
       }}
-      onDragLeave={() => {
-        if (todoOver) setTodoOver(false);
-      }}
       onDrop={(e) => {
-        const types = e.dataTransfer.types;
-        if (types.includes("application/x-personalos-todo")) {
-          e.preventDefault();
-          e.stopPropagation();
-          setTodoOver(false);
-          void handleTodoDrop(e);
-          return;
-        }
-        if (!types.includes("application/x-personalos-project")) return;
+        if (!e.dataTransfer.types.includes("application/x-personalos-project")) return;
         e.preventDefault();
         onDrop?.();
       }}
@@ -812,8 +714,6 @@ function ProjectSidebarRow({
         active
           ? "bg-[var(--color-accent)]"
           : "hover:bg-[var(--color-accent)]",
-        todoOver &&
-          "ring-2 ring-[var(--color-ring)] bg-[var(--color-accent)]",
         dragging && "opacity-40"
       )}
     >
@@ -845,7 +745,7 @@ function ProjectSidebarRow({
           draggable={false}
           onDoubleClick={(e) => {
             e.preventDefault();
-            if (!inbox) startRename();
+            startRename();
           }}
           className={cn(
             "flex-1 flex items-center gap-2 px-2 py-1.5 text-sm",
@@ -854,17 +754,10 @@ function ProjectSidebarRow({
               : "text-[var(--color-muted-foreground)] group-hover/row:text-[var(--color-foreground)]"
           )}
         >
-          {inbox ? (
-            <InboxIcon
-              className="size-4 text-[var(--color-muted-foreground)]"
-              strokeWidth={1.75}
-            />
-          ) : (
-            <Folder
-              className="size-4 text-[var(--color-muted-foreground)]"
-              strokeWidth={1.75}
-            />
-          )}
+          <Folder
+            className="size-4 text-[var(--color-muted-foreground)]"
+            strokeWidth={1.75}
+          />
           <span className="flex-1 truncate">{project.name}</span>
           {project._count.todos > 0 ? (
             <span className="text-xs text-[var(--color-muted-foreground)] tabular-nums">
@@ -873,7 +766,6 @@ function ProjectSidebarRow({
           ) : null}
         </Link>
       )}
-      {inbox ? null : (
       <button
         onClick={(e) => {
           e.preventDefault();
@@ -889,7 +781,6 @@ function ProjectSidebarRow({
           <MoreHorizontal className="size-3.5" />
         )}
       </button>
-      )}
       {menuOpen ? (
         <>
           <button

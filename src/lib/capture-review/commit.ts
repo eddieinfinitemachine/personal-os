@@ -110,7 +110,7 @@ export async function commitCore(tx: Tx, userId: string, input: { text: string; 
     const todo = toLater
       ? await tx.todo.create({ data: { userId, title, notes, listId: (await ensureList(tx, userId, "Later")).id, projectId } })
       : await inboxTodo(tx, userId, title, notes, mode === "auto" ? projectId : undefined);
-    related.push({ type: "todo", id: todo.id, title: todo.title, destination: toLater ? "Later" : "Inbox", path: toLater ? "/" : "/inbox" });
+    related.push({ type: "todo", id: todo.id, title: todo.title, destination: toLater ? "Later" : CAPTURE_LIST_NAME, path: "/" });
     return todo;
   }
   const imageUrl = stored.find(item => VISION_TYPES.has(item.file.type.toLowerCase()))?.url ?? ("photoUrl" in proposal ? proposal.photoUrl ?? null : null);
@@ -128,7 +128,7 @@ export async function commitCore(tx: Tx, userId: string, input: { text: string; 
       result = { ok: true, id: todo.id, type: "todo", title: todo.title, destination: list.name, path: "/" };
     } else {
       todo = await inboxTodo(tx, userId, proposal.title, notes, options.projectId !== undefined ? projectId : undefined, date(proposal.dueDate));
-      result = { ok: true, id: todo.id, type: "todo", title: todo.title, destination: "Inbox", path: "/inbox" };
+      result = { ok: true, id: todo.id, type: "todo", title: todo.title, destination: CAPTURE_LIST_NAME, path: "/" };
     }
     attachmentOwner = { todoId: todo.id };
   } else if (proposal.type === "asset") {

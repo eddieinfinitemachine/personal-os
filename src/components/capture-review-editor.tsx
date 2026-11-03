@@ -466,7 +466,6 @@ export function CaptureReviewEditor({
                 ))}
               </select>
             </Field>
-            {project()}
           </>
         ) : proposal?.type === "asset" ? (
           <>

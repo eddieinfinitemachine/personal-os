@@ -11,7 +11,6 @@ import {
   Folder,
   FolderKanban,
   Home,
-  Inbox as InboxIcon,
   LayoutGrid,
   Loader2,
   Menu,
@@ -202,7 +201,7 @@ function MobileDrawer({
   const pathname = usePathname();
   const router = useRouter();
   // Same grouping as the desktop sidebar: Trackers get their own labeled
-  // section, Inbox pins to the top of Projects, empty projects collapse.
+  // section, empty projects collapse.
   const trackers = enabled.filter((t) => t.slug !== "print-lists");
   const printLists = enabled.find((t) => t.slug === "print-lists") ?? null;
   const activeProjectId = pathname.startsWith("/projects/")
@@ -222,7 +221,6 @@ function MobileDrawer({
     reorder(order);
   }
   const {
-    inbox: inboxProject,
     active: activeProjects,
     dormant: dormantProjects,
   } = partitionProjects(
@@ -378,19 +376,12 @@ function MobileDrawer({
             </div>
           </div>
         ) : null}
-        {projects.length > 0 ? (
+        {activeProjects.length + dormantProjects.length > 0 ? (
           <div className="mt-4 px-2">
             <div className="px-3 mb-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
               Projects
             </div>
             <div className="space-y-0.5">
-              {inboxProject ? (
-                <DrawerProjectLink
-                  project={inboxProject}
-                  active={pathname === `/projects/${inboxProject.id}`}
-                  inbox
-                />
-              ) : null}
               {activeProjects.map((p) => (
                 <DrawerProjectLink
                   key={p.id}
@@ -500,11 +491,9 @@ function DrawerLink({
 function DrawerProjectLink({
   project,
   active,
-  inbox,
 }: {
   project: MobileProject;
   active: boolean;
-  inbox?: boolean;
 }) {
   return (
     <Link
@@ -516,7 +505,7 @@ function DrawerProjectLink({
           : "text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
       )}
     >
-      {inbox ? <InboxIcon className="size-4" /> : <Folder className="size-4" />}
+      <Folder className="size-4" />
       <span className="flex-1 truncate">{project.name}</span>
       {project.count > 0 ? (
         <span className="text-xs text-[var(--color-muted-foreground)] tabular-nums">

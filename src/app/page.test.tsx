@@ -66,9 +66,6 @@ vi.mock("@/components/home-tiles", () => ({
     <div data-home-tiles>Existing mobile pager and list tiles</div>
   ),
 }));
-vi.mock("@/components/project-card", () => ({
-  ProjectCard: () => <div data-project-card>Reading</div>,
-}));
 vi.mock("@/components/capture-review-inbox", () => ({
   CaptureReviewInbox: ({
     initialData,
@@ -121,20 +118,16 @@ const render = async () => {
   await act(async () => root.render(page));
 };
 describe("Home Capture Inbox placement", () => {
-  it("renders a compact Inbox, then list tiles, then desktop-only Projects", async () => {
+  it("renders a compact Inbox, then list tiles, with no By project section", async () => {
     await render();
-    const project = container.querySelector("[data-project-card]")!,
-      inbox = container.querySelector("[data-capture-review]")!,
+    const inbox = container.querySelector("[data-capture-review]")!,
       tiles = container.querySelector("[data-home-tiles]")!;
     expect(inbox).not.toBeNull();
     expect(inbox.hasAttribute("data-compact")).toBe(true);
     expect(
       inbox.compareDocumentPosition(tiles) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(
-      tiles.compareDocumentPosition(project) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(project.closest("section")?.className).toContain("hidden md:block");
+    expect(container.textContent).not.toContain("By project");
     expect(mocks.review).toHaveBeenCalledWith("user", {
       state: "pending",
       offset: 0,

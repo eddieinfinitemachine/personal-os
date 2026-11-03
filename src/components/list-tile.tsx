@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
-import { Check, ChevronDown, ChevronRight, MoreHorizontal, Plus, Trash2, Users } from "lucide-react";
+import { Check, MoreHorizontal, Plus, Trash2, Users } from "lucide-react";
 import { LIST_PALETTE, palette } from "@/lib/lists";
 import { haptic } from "@/lib/haptic";
 import { pushUndo, quoteTitle } from "@/lib/undo";
@@ -35,7 +35,6 @@ export function ListTile({
   totalCount,
   projectId,
   projectLabel,
-  groupByProject,
   leadingContent,
 }: {
   list: ListInfo;
@@ -46,9 +45,6 @@ export function ListTile({
   // this tile is scoped to a project. Helps differentiate project-scoped
   // tiles from personal tiles on the Home view.
   projectLabel?: string;
-  // When true, group items by their project under collapsible sub-headers
-  // (Personal first, then each project). Used on the Home unified tiles.
-  groupByProject?: boolean;
   leadingContent?: ReactNode;
 }) {
   const router = useRouter();
@@ -125,125 +121,10 @@ export function ListTile({
       window.removeEventListener("personalos:start-add-todo", handler);
   }, [list.id]);
 
-  // Per-group collapse state, persisted in localStorage. Used only when
-  // groupByProject is enabled.
-  const groupCollapseKey = `personalos:listgroupcollapse:${list.id}`;
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  useEffect(() => {
-    if (!groupByProject) return;
-    try {
-      const raw = localStorage.getItem(groupCollapseKey);
-      if (raw) {
-        const arr = JSON.parse(raw);
-        if (Array.isArray(arr)) setCollapsedGroups(new Set(arr));
-      }
-    } catch {}
-  }, [groupByProject, groupCollapseKey]);
-  function toggleGroup(key: string) {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      try {
-        localStorage.setItem(groupCollapseKey, JSON.stringify([...next]));
-      } catch {}
-      return next;
-    });
-  }
-
-  // Which project sub-group (if any) is currently being hovered as a drop
-  // target. Used to highlight the section.
-  const [overGroupKey, setOverGroupKey] = useState<string | null>(null);
-
-  async function handleGroupDrop(
-    e: React.DragEvent<HTMLDivElement>,
-    groupProjectId: string | null
-  ) {
-    if (!e.dataTransfer.types.includes("application/x-personalos-todo")) return;
-    const raw = e.dataTransfer.getData("application/x-personalos-todo");
-    if (!raw) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setOverGroupKey(null);
-    let payload: {
-      todoId: string;
-      sourceListId: string;
-      sourceProjectId: string | null;
-      todo: TodoLike;
-    };
-    try {
-      payload = JSON.parse(raw);
-    } catch {
-      return;
-    }
-    const samePlace =
-      payload.sourceListId === list.id &&
-      (payload.todo.projectId ?? null) === groupProjectId;
-    if (samePlace) return;
-
-    // Intra-tile move: same list, different project sub-section. Skip the
-    // hiddenIds/pendingTodos optimistic dance — they're designed for
-    // cross-tile transitions and would collide on the same todoId here
-    // (pendingTodos duplicates, hiddenIds masks both copies). Just PATCH and
-    // refresh; the server-rendered row will pop into the new section.
-    const sameTile = payload.sourceListId === list.id;
-    if (!sameTile) {
-      setPendingTodos((prev) => [
-        ...prev,
-        { ...payload.todo, projectId: groupProjectId },
-      ]);
-      window.dispatchEvent(
-        new CustomEvent("personalos:todo-moved", {
-          detail: {
-            todoId: payload.todoId,
-            fromListId: payload.sourceListId,
-            fromProjectId: payload.sourceProjectId,
-            toListId: list.id,
-            toProjectId: groupProjectId,
-          },
-        })
-      );
-    }
-    try {
-      const res = await fetch(`/api/todos/${payload.todoId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          listId: list.id,
-          projectId: groupProjectId,
-        }),
-      });
-      if (res.ok) {
-        startTransition(() => router.refresh());
-        pushTodoMoveUndo({
-          label: `Moved ${quoteTitle(payload.todo.title)}`,
-          todo: payload.todo,
-          from: {
-            listId: payload.sourceListId,
-            projectId: payload.sourceProjectId,
-            projectName: payload.todo.projectName ?? null,
-          },
-          to: { listId: list.id, projectId: groupProjectId },
-          refresh: () => startTransition(() => router.refresh()),
-        });
-      } else if (!sameTile) {
-        setPendingTodos((prev) =>
-          prev.filter((t) => t.id !== payload.todoId)
-        );
-      }
-    } catch {
-      if (!sameTile) {
-        setPendingTodos((prev) =>
-          prev.filter((t) => t.id !== payload.todoId)
-        );
-      }
-    }
-  }
-
   // Listen for move events so this tile updates immediately (without waiting
-  // for router.refresh). A Home tile (myProjectKey null + groupByProject) shows
-  // todos from every project, so a move that only changes the todo's project
-  // keeps the row in this tile and re-buckets it via an override; a move that
+  // for router.refresh). A Home tile (myProjectKey null) shows todos from
+  // every project, so a move that only changes the todo's project keeps the
+  // row in this tile and re-buckets it via an override; a move that
   // changes the list takes the row out via hiddenIds.
   const myProjectKey = projectId ?? null;
   useEffect(() => {
@@ -987,9 +868,9 @@ export function ListTile({
     } catch {
       return;
     }
-    // When the target tile isn't project-scoped (e.g. Home columns rendered
-    // with groupByProject and no explicit projectId), preserve the source
-    // todo's project rather than nulling it out.
+    // When the target tile isn't project-scoped (e.g. Home columns with no
+    // explicit projectId), preserve the source todo's project rather than
+    // nulling it out.
     const targetProjectId =
       myProjectKey ?? payload.todo.projectId ?? null;
 
@@ -1259,144 +1140,24 @@ export function ListTile({
           )}
         </div>
 
-        {groupByProject ? (
-          (() => {
-            const buckets = new Map<string, TodoLike[]>();
-            for (const t of visibleTodos) {
-              // Fold no-project todos AND the "Inbox" project into one Inbox
-              // bucket so there's a single Inbox group, not two.
-              const key =
-                !t.projectName || t.projectName.toLowerCase() === "inbox"
-                  ? "__inbox__"
-                  : t.projectName;
-              const arr = buckets.get(key) ?? [];
-              arr.push(t);
-              buckets.set(key, arr);
-            }
-            const ordered: Array<{ key: string; label: string; todos: TodoLike[] }> = [];
-            if (buckets.has("__inbox__")) {
-              ordered.push({
-                key: "__inbox__",
-                label: "Inbox",
-                todos: buckets.get("__inbox__")!,
-              });
-            }
-            for (const [key, ts] of [...buckets.entries()].sort(([a], [b]) =>
-              a.localeCompare(b)
-            )) {
-              if (key === "__inbox__") continue;
-              ordered.push({ key, label: key, todos: ts });
-            }
-            return (
-              <div className="-mx-1">
-                {ordered.map((g) => {
-                  const open = !collapsedGroups.has(g.key);
-                  // Prefer a real project id within the group so the merged
-                  // Inbox bucket (no-project + Inbox-project todos) drops onto
-                  // the Inbox project, not "no project".
-                  const groupProjectId =
-                    g.todos.find((t) => t.projectId)?.projectId ?? null;
-                  const isOver = overGroupKey === g.key;
-                  return (
-                    <div
-                      key={g.key}
-                      data-droptarget-list={list.id}
-                      data-droptarget-project={groupProjectId ?? ""}
-                      onDragOver={(e) => {
-                        if (
-                          !e.dataTransfer.types.includes(
-                            "application/x-personalos-todo"
-                          )
-                        )
-                          return;
-                        e.preventDefault();
-                        e.stopPropagation();
-                        e.dataTransfer.dropEffect = "move";
-                        if (overGroupKey !== g.key) setOverGroupKey(g.key);
-                      }}
-                      onDragLeave={(e) => {
-                        if (
-                          e.currentTarget.contains(
-                            e.relatedTarget as Node | null
-                          )
-                        )
-                          return;
-                        if (overGroupKey === g.key) setOverGroupKey(null);
-                      }}
-                      onDrop={(e) => handleGroupDrop(e, groupProjectId)}
-                      className={cn(
-                        "mb-1 rounded transition",
-                        isOver &&
-                          "ring-2 ring-[var(--color-ring)] bg-[var(--color-accent)]/40"
-                      )}
-                    >
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleGroup(g.key);
-                        }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        className="w-full flex items-center gap-1.5 px-0 py-3 text-[13px] md:text-[11px] font-medium md:font-semibold uppercase tracking-[0.06em] md:tracking-wider text-[var(--color-muted-foreground)] active:bg-[var(--color-accent)]/60 md:hover:bg-[var(--color-accent)]/40 rounded md:py-1"
-                      >
-                        <span className="truncate">{g.label}</span>
-                        <span className="tabular-nums opacity-70">
-                          {g.todos.length}
-                        </span>
-                        <span className="ml-auto">
-                          {open ? (
-                            <ChevronDown className="size-3" />
-                          ) : (
-                            <ChevronRight className="size-3" />
-                          )}
-                        </span>
-                      </button>
-                      {open ? (
-                        <ul className="space-y-px">
-                          {g.todos.map((todo) => (
-                            <TodoRow
-                              key={todo.id}
-                              todo={todo}
-                              listColor={list.color}
-                              sourceListId={list.id}
-                              sourceProjectId={myProjectKey}
-                              showProjectBadge={<></>}
-                              showCreator={list.collaborative}
-                              leaving={leavingIds.has(todo.id)}
-                              onToggle={toggleComplete}
-                              onToggleSubtask={toggleSubtask}
-                              onAddSubtask={addSubtask}
-                              onSaveDueDate={saveDueDate}
-                              onDelete={deleteTodo}
-                            />
-                          ))}
-                        </ul>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()
-        ) : (
-          <ul className="space-y-px -mx-1">
-            {visibleTodos.map((todo) => (
-              <TodoRow
-                key={todo.id}
-                todo={todo}
-                listColor={list.color}
-                sourceListId={list.id}
-                sourceProjectId={myProjectKey}
-                showCreator={list.collaborative}
-                leaving={leavingIds.has(todo.id)}
-                onToggle={toggleComplete}
-                onToggleSubtask={toggleSubtask}
-                onAddSubtask={addSubtask}
-                onSaveDueDate={saveDueDate}
-                onDelete={deleteTodo}
-              />
-            ))}
-          </ul>
-        )}
+        <ul className="space-y-px -mx-1">
+          {visibleTodos.map((todo) => (
+            <TodoRow
+              key={todo.id}
+              todo={todo}
+              listColor={list.color}
+              sourceListId={list.id}
+              sourceProjectId={myProjectKey}
+              showCreator={list.collaborative}
+              leaving={leavingIds.has(todo.id)}
+              onToggle={toggleComplete}
+              onToggleSubtask={toggleSubtask}
+              onAddSubtask={addSubtask}
+              onSaveDueDate={saveDueDate}
+              onDelete={deleteTodo}
+            />
+          ))}
+        </ul>
 
         {/* Quiet celebration when the user completes the last todo. */}
         {visibleTodos.length === 0 && justCleared ? (

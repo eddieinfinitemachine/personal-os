@@ -1118,7 +1118,7 @@ function TodoFields({
           <div
             className={`${INPUT_CLASS} flex items-center text-[var(--color-muted-foreground)]`}
           >
-            Inbox · sort it later
+            To Do · sort it later
           </div>
         </Field>
       </div>

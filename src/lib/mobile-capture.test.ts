@@ -68,7 +68,7 @@ beforeEach(() => {
 describe("mobile capture receipts", () => {
   it("commits receipt and organized record together, then replays without AI", async () => {
     const first = await captureMobile("alice", input());
-    expect(first).toMatchObject({ ok: true, type: "todo", title: "Buy milk", destination: "Inbox", path: "/inbox" });
+    expect(first).toMatchObject({ ok: true, type: "todo", title: "Buy milk", destination: "To Do", path: "/" });
     expect(events).toEqual(["lock", "todo", "receipt"]); expect(receipts.size).toBe(1);
     expect(await captureMobile("alice", input())).toEqual(first);
     expect(mocks.parse).toHaveBeenCalledTimes(1); expect(mocks.todoCreate).toHaveBeenCalledTimes(1);
