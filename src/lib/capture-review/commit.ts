@@ -75,7 +75,7 @@ async function ensureList(tx: Tx, userId: string, name: string) {
   if (!defaults) throw new CaptureReviewError(404, "The selected list no longer exists.");
   return tx.list.create({ data: { ...defaults, userId, isDefault: true } });
 }
-async function inboxTodo(tx: Tx, userId: string, title: string, notes: string | null, explicitProjectId?: string | null, dueDate: Date | null = null) {
+async function inboxTodo(tx: Tx, userId: string, title: string, notes: string | null, explicitProjectId?: string | null, dueDate: Date | null = null, createdAt?: Date) {
   const list = await ensureList(tx, userId, CAPTURE_LIST_NAME);
   let projectId = explicitProjectId;
   if (projectId === undefined) {
@@ -83,10 +83,10 @@ async function inboxTodo(tx: Tx, userId: string, title: string, notes: string | 
     if (!project) project = await tx.project.create({ data: { userId, name: INBOX_PROJECT_NAME, icon: "Inbox", color: "neutral", position: 0 } });
     projectId = project.id;
   }
-  return tx.todo.create({ data: { userId, title, notes, listId: list.id, projectId, dueDate } });
+  return tx.todo.create({ data: { userId, title, notes, listId: list.id, projectId, dueDate, ...(createdAt ? { createdAt } : {}) } });
 }
 
-export async function commitCore(tx: Tx, userId: string, input: { text: string; url: string | null }, proposal: CoreProposal, stored: StoredCaptureFile[], options: { mode?: "mobile" | "web" | "auto" | "correction"; listId?: string | null; projectId?: string | null; autoFollowup?: boolean } = {}): Promise<ReviewPlacement & { ok: true }> {
+export async function commitCore(tx: Tx, userId: string, input: { text: string; url: string | null }, proposal: CoreProposal, stored: StoredCaptureFile[], options: { mode?: "mobile" | "web" | "auto" | "correction"; listId?: string | null; projectId?: string | null; autoFollowup?: boolean; createdAt?: Date } = {}): Promise<ReviewPlacement & { ok: true }> {
   validateCoreProposal(proposal);
   if (typeof input.text !== "string" || input.text.length > 100_000) fail("Invalid original capture text.");
   httpUrl(input.url);
@@ -127,7 +127,7 @@ export async function commitCore(tx: Tx, userId: string, input: { text: string; 
       todo = await tx.todo.create({ data: { userId, title: proposal.title, notes, listId: list.id, projectId, dueDate: date(proposal.dueDate) } });
       result = { ok: true, id: todo.id, type: "todo", title: todo.title, destination: list.name, path: "/" };
     } else {
-      todo = await inboxTodo(tx, userId, proposal.title, notes, options.projectId !== undefined ? projectId : undefined, date(proposal.dueDate));
+      todo = await inboxTodo(tx, userId, proposal.title, notes, options.projectId !== undefined ? projectId : undefined, date(proposal.dueDate), options.createdAt);
       result = { ok: true, id: todo.id, type: "todo", title: todo.title, destination: CAPTURE_LIST_NAME, path: "/" };
     }
     attachmentOwner = { todoId: todo.id };

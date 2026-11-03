@@ -31,6 +31,7 @@ export interface RecordCapture {
   proposal?: CaptureProposal | null;
   placement: ReviewPlacement;
   effects: CaptureEffects;
+  createdAt?: Date;
 }
 export async function recordCapture(tx: Prisma.TransactionClient, capture: RecordCapture) {
   const { placement, effects } = capture;
@@ -47,6 +48,7 @@ export async function recordCapture(tx: Prisma.TransactionClient, capture: Recor
     ...(capture.proposal ? { proposal: capture.proposal as unknown as Prisma.InputJsonValue } : {}),
     placement: { ...placement, ...(related.length ? { related } : {}) } as unknown as Prisma.InputJsonValue,
     effects: effects as unknown as Prisma.InputJsonValue,
+    ...(capture.createdAt ? { createdAt: capture.createdAt } : {}),
   } });
 }
 
