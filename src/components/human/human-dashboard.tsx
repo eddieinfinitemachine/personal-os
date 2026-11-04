@@ -46,6 +46,33 @@ const MARQUEE_MARKERS = [
   "Free Testosterone",
 ];
 
+// Plain names for biometric kinds, in the order they appear. Any other kind shows as stored.
+const BIOMETRIC_LABELS: Record<string, string> = {
+  weight: "Weight",
+  bodyFat: "Body fat",
+  visceralFat: "Visceral fat",
+  bmi: "BMI",
+  rhr: "RHR",
+  bpSystolic: "BP systolic",
+  bpDiastolic: "BP diastolic",
+  heartAge: "Heart age",
+  abi: "ABI",
+  anklePressure: "Ankle pressure",
+  spo2: "Blood oxygen",
+  ekgConductionTime: "EKG conduction",
+  ekgVentricularContraction: "EKG contraction",
+  ekgContractAndReset: "EKG contract + reset",
+  gripRight: "Grip, right hand",
+  eyePressure: "Eye pressure",
+  skinMarkings: "Skin markings",
+};
+const BIOMETRIC_ORDER = Object.keys(BIOMETRIC_LABELS);
+
+function biometricRank(kind: string): number {
+  const rank = BIOMETRIC_ORDER.indexOf(kind);
+  return rank === -1 ? BIOMETRIC_ORDER.length : rank;
+}
+
 function fmtDate(d: Date | string | null | undefined): string {
   if (!d) return "—";
   return new Date(d).toLocaleDateString(undefined, {
@@ -72,7 +99,8 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
   const human = await prisma.human.findUnique({
     where: { projectId },
     include: {
-      biometrics: { orderBy: { measuredAt: "desc" }, take: 30 },
+      // The latest of each kind, so daily readings can't crowd out a one-off.
+      biometrics: { orderBy: [{ kind: "asc" }, { measuredAt: "desc" }], distinct: ["kind"] },
       // Not limited: trends need the oldest draw, and each draw is about 100 rows.
       labResults: { orderBy: { drawnAt: "desc" } },
       medicalVisits: { orderBy: { performedAt: "desc" }, take: 12 },
@@ -102,7 +130,6 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
 
   const latestWeight = human.biometrics.find((b) => b.kind === "weight");
   const latestRhr = human.biometrics.find((b) => b.kind === "rhr");
-  const latestBodyFat = human.biometrics.find((b) => b.kind === "bodyFat");
   const latestApoB = human.labResults.find((l) => l.marker === "ApoB");
 
   // Group labs by draw date. Each draw becomes a tab.
@@ -277,23 +304,10 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
           </p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {latestWeight && (
-              <BioCard label="Weight" reading={latestWeight} />
-            )}
-            {latestBodyFat && (
-              <BioCard label="Body fat" reading={latestBodyFat} />
-            )}
-            {latestRhr && <BioCard label="RHR" reading={latestRhr} />}
-            {human.biometrics
-              .filter(
-                (b) =>
-                  b.kind !== "weight" &&
-                  b.kind !== "bodyFat" &&
-                  b.kind !== "rhr"
-              )
-              .slice(0, 4)
+            {[...human.biometrics]
+              .sort((a, b) => biometricRank(a.kind) - biometricRank(b.kind))
               .map((b) => (
-                <BioCard key={b.id} label={b.kind} reading={b} />
+                <BioCard key={b.id} label={BIOMETRIC_LABELS[b.kind] ?? b.kind} reading={b} />
               ))}
           </div>
         )}

@@ -28,6 +28,8 @@ export type HealthSummaryInput = {
   visits: { performedAt: Date; specialty: string | null; reason: string; summary: string | null }[];
   fitness: { performedAt: Date; kind: string; durationMin: number | null }[];
   dna: { category: string; title: string; finding: string }[];
+  /** The latest reading of each kind. */
+  biometrics: { kind: string; measuredAt: Date; value: number; unit: string }[];
   biometricReadings: number;
 };
 
@@ -65,6 +67,7 @@ export type HealthSummary = {
     lastSession: string | null;
   };
   dna: { category: string; title: string; finding: string }[];
+  biometrics: { kind: string; date: string; value: number; unit: string }[];
   coverage: {
     biometricReadings: number;
     dnaResults: number;
@@ -117,12 +120,14 @@ function summarizeMarkers(labs: HealthSummaryInput["labs"]): MarkerSummary[] {
       const latest = sorted[sorted.length - 1];
       const previous = sorted[sorted.length - 2];
       const comparable = previous && !isLimitResult(latest) && !isLimitResult(previous);
+      // Not every lab reports a range, so a draw without one keeps the last one on record.
+      const ranged = sorted.findLast((row) => row.refLow != null || row.refHigh != null);
       return {
         marker: latest.marker,
         panel: latest.panel,
         unit: latest.unit,
-        refLow: latest.refLow,
-        refHigh: latest.refHigh,
+        refLow: ranged?.refLow ?? null,
+        refHigh: ranged?.refHigh ?? null,
         points: sorted.map((row) => ({
           date: day(row.drawnAt),
           value: row.value,
@@ -175,6 +180,9 @@ export function buildHealthSummary(input: HealthSummaryInput, now: Date): Health
       lastSession,
     },
     dna: input.dna,
+    biometrics: input.biometrics
+      .map((b) => ({ kind: b.kind, date: day(b.measuredAt), value: b.value, unit: b.unit }))
+      .sort((a, b) => a.kind.localeCompare(b.kind)),
     coverage: {
       biometricReadings: input.biometricReadings,
       dnaResults: input.dna.length,
@@ -204,6 +212,6 @@ export function healthFingerprints(summary: HealthSummary): PictureFingerprint {
       dna: summary.dna,
       notes: summary.notes,
     }),
-    activity: hash({ activity: summary.activity, biometricReadings: summary.coverage.biometricReadings }),
+    activity: hash({ activity: summary.activity, biometrics: summary.biometrics }),
   };
 }

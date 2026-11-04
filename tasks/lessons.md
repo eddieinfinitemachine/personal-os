@@ -250,3 +250,7 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 ## 2026-11-04 — agents can't run prod schema changes in auto mode
 **Context**: An approved `ALTER TABLE` on prod was refused by the auto-mode classifier as a production deploy, although a plan approval covered it.
 **Rule**: Don't retry it another way. Test the exact command against a scratch database, finish everything else, then give Eddie the single line to run and verify the result with `information_schema`. Say this up front when a plan needs it. Also: on this Mac, start a scratch Postgres with `LC_ALL=en_US.UTF-8`, or it dies with "postmaster became multithreaded during startup".
+
+## 2026-11-04 — the same marker name from a second lab isn't always the same test
+**Context**: A scan from a second lab reported Lp(a) in a different unit, serum magnesium where the first lab ran RBC magnesium, plain glucose where the first was labeled fasting, and no reference ranges. Merging by name would have invented trends, and a blank range on the newest row would have erased the marker's range in the summary.
+**Rule**: Before importing from a new source, compare every marker's name, unit and method with what's stored. Convert only exact scale changes (k/uL to cells/uL). Otherwise give it a new marker. Never copy another lab's range onto a row: leave it blank and keep the source's own flag.
