@@ -56,6 +56,8 @@ const input = (overrides: Partial<HealthSummaryInput> = {}): HealthSummaryInput 
   dna: [],
   biometrics: [{ kind: "bpSystolic", measuredAt: new Date("2030-05-01T00:00:00Z"), value: 118, unit: "mmHg" }],
   biometricReadings: 1,
+  workouts: [],
+  recoveryReadings: [],
   ...overrides,
 });
 

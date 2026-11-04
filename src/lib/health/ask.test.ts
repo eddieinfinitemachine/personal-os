@@ -35,6 +35,19 @@ const summary = buildHealthSummary(
     dna: [],
     biometrics: [],
     biometricReadings: 0,
+    workouts: [
+      {
+        id: "w-1",
+        source: "guided",
+        title: "Lower day",
+        focus: "lower",
+        startedAt: Date.parse("2030-06-10T11:20:00Z"),
+        finishedAt: Date.parse("2030-06-10T12:00:00Z"),
+        durationMin: 40,
+        exercises: [{ name: "Goblet squat", equipment: "dumbbell", targetReps: 10, sets: [{ reps: 10, durationSec: null, load: "35 lb" }] }],
+      },
+    ],
+    recoveryReadings: [{ kind: "rhr", value: 52, unit: "bpm", measuredAt: new Date("2030-06-15T07:00:00Z") }],
   },
   now,
 );
@@ -62,6 +75,16 @@ describe("askAboutHealth", () => {
     expect(call.system).toContain("140.5");
     expect(call.system).toContain("keep Marker A under 110");
     expect(call.messages.map((m: { content: string }) => m.content)).toEqual(["Earlier", "Answer", "How is Marker A?"]);
+  });
+
+  it("sends the workout log and recovery read", async () => {
+    await ask();
+    const { system } = mocks.callClaudeReply.mock.calls[0][0];
+    const records = JSON.parse(system.slice(system.indexOf("Their records:\n") + "Their records:\n".length));
+    expect(records.training.lastSession).toMatchObject({ date: "2030-06-10", title: "Lower day" });
+    expect(records.training.lifts[0]).toMatchObject({ name: "Goblet squat", next: "40 lb" });
+    expect(records.recovery.rhr).toEqual({ latest: { date: "2030-06-15", value: 52, unit: "bpm" }, baseline: null });
+    expect(system).toContain('"training" is their workout log');
   });
 
   it("sends no identity or provider details", async () => {
