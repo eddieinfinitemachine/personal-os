@@ -58,7 +58,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 /** Corrections use the journal endpoint, including when the destination changes. */
 export function CaptureReviewEditor({
   review,
-  projects = [],
   lists = [],
   onSaved,
   onCancel,
@@ -177,29 +176,6 @@ export function CaptureReviewEditor({
           {options.map((option) => (
             <option key={option} value={option}>
               {option}
-            </option>
-          ))}
-        </select>
-      </Field>
-    );
-  }
-  function project() {
-    const value = String(values.projectId ?? "");
-    return (
-      <Field label="Project">
-        <select
-          name="projectId"
-          value={value}
-          className={inputClass}
-          onChange={(event) => patch("projectId", event.target.value || null)}
-        >
-          <option value="">None</option>
-          {value && !projects.some((item) => item.id === value) ? (
-            <option value={value}>Current project</option>
-          ) : null}
-          {projects.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
             </option>
           ))}
         </select>
@@ -482,7 +458,6 @@ export function CaptureReviewEditor({
             {text("category", "Category")}
             {text("status", "Status")}
             {text("notes", "Notes", { multiline: true })}
-            {project()}
             <details>
               <summary className="min-h-11 cursor-pointer py-3 text-sm">
                 More asset fields
@@ -686,7 +661,6 @@ export function CaptureReviewEditor({
             ])}
             {text("location", "Location")}
             {text("notes", "Notes", { multiline: true })}
-            {project()}
             {proposal.personHints.map((person, index) => (
               <div key={index} className="grid grid-cols-2 gap-2">
                 <Field label="Person first name">

@@ -14,7 +14,6 @@ import type {
 } from "@/lib/capture-review/types";
 
 export type CaptureReviewChoices = {
-  projects?: { id: string; name: string }[];
   lists?: { id: string; name: string }[];
 };
 const actionClass =
@@ -76,7 +75,6 @@ export function CaptureReviewInbox({
   fullPage = false,
   compact = false,
   initialState = "pending",
-  projects = [],
   lists = [],
 }: CaptureReviewChoices & {
   initialData: CaptureReviewList | null;
@@ -476,7 +474,6 @@ export function CaptureReviewInbox({
                   <CaptureReviewEditor
                     key={`${editing.id}:${editing.revision}`}
                     review={editing}
-                    projects={projects}
                     lists={lists}
                     onSaved={corrected}
                     onCancel={() => setEditing(null)}

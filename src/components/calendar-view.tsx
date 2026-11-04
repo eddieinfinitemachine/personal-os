@@ -11,7 +11,6 @@ type Event = {
   dueDate: string;
   listColor: string;
   listName: string;
-  projectId?: string | null;
   projectName: string | null;
 };
 
@@ -174,15 +173,7 @@ export function CalendarView({
                           </div>
                         );
                         return (
-                          <li key={ev.id}>
-                            {ev.projectId ? (
-                              <Link href={`/projects/${ev.projectId}?tab=tasks`}>
-                                {inner}
-                              </Link>
-                            ) : (
-                              inner
-                            )}
-                          </li>
+                          <li key={ev.id}>{inner}</li>
                         );
                       })}
                     </ul>
@@ -279,18 +270,9 @@ export function CalendarView({
                             className="rounded px-1 py-0.5 hover:bg-[var(--color-accent)]/60 truncate"
                             title={`${ev.title}${ev.projectName ? ` · ${ev.projectName}` : ""} · ${ev.listName}`}
                           >
-                            {ev.projectId ? (
-                              <Link
-                                href={`/projects/${ev.projectId}?tab=tasks`}
-                                className="flex items-center"
-                              >
-                                {content}
-                              </Link>
-                            ) : (
-                              <span className="flex items-center">
-                                {content}
-                              </span>
-                            )}
+                            <span className="flex items-center">
+                              {content}
+                            </span>
                           </li>
                         );
                       })}

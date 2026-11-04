@@ -38,11 +38,6 @@ vi.mock("@/lib/prisma", () => ({
         },
       ],
     },
-    project: {
-      findMany: async () => [
-        { id: "project", name: "Reading", kind: "personal" },
-      ],
-    },
     todo: {
       findMany: async () => [
         {
@@ -50,7 +45,6 @@ vi.mock("@/lib/prisma", () => ({
           listId: "list",
           projectId: "project",
           title: "Read",
-          project: { name: "Reading" },
           user: null,
           _count: { attachments: 0 },
           subtasks: [],

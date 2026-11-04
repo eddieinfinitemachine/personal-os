@@ -44,6 +44,14 @@ function assetHref(kind: string): string {
 
 const PER_TYPE = 5;
 
+// Project kinds that back a dashboard (/projects/<id>, or /health for human).
+const DASHBOARD_KINDS = ["vehicle", "pet", "human"] as const;
+const DASHBOARD_LABEL: Record<(typeof DASHBOARD_KINDS)[number], string> = {
+  vehicle: "Vehicle",
+  pet: "Pet",
+  human: "Health",
+};
+
 export async function GET(request: Request) {
   const userId = await getCurrentUserId(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -57,12 +65,13 @@ export async function GET(request: Request) {
     await Promise.all([
       prisma.todo.findMany({
         where: { list: listAccessWhere(userId), completedAt: null, parentId: null, title: contains },
-        select: { id: true, title: true, projectId: true, project: { select: { name: true } }, list: { select: { name: true } } },
+        select: { id: true, title: true, list: { select: { name: true } } },
         orderBy: { updatedAt: "desc" },
         take: PER_TYPE,
       }),
+      // Project rows surface only as the dashboards they back.
       prisma.project.findMany({
-        where: { userId, archived: false, name: contains },
+        where: { userId, archived: false, kind: { in: [...DASHBOARD_KINDS] }, name: contains },
         select: { id: true, name: true, kind: true },
         orderBy: { updatedAt: "desc" },
         take: PER_TYPE,
@@ -144,14 +153,14 @@ export async function GET(request: Request) {
       id: t.id,
       type: "todo" as const,
       label: t.title,
-      sublabel: t.project?.name ?? t.list?.name ?? "Reminder",
-      href: t.projectId ? `/projects/${t.projectId}` : "/",
+      sublabel: t.list?.name ?? "Reminder",
+      href: "/",
     })),
     ...projects.map((p) => ({
         id: p.id,
         type: "project" as const,
         label: p.name,
-        sublabel: "Project",
+        sublabel: DASHBOARD_LABEL[p.kind as (typeof DASHBOARD_KINDS)[number]],
         href: p.kind === "human" ? "/health" : `/projects/${p.id}`,
       })),
     ...lists.map((l) => ({ id: l.id, type: "list" as const, label: l.name, sublabel: "List", href: "/" })),
@@ -173,7 +182,7 @@ export async function GET(request: Request) {
     ...vehicles.map((v) => ({ id: v.id, type: "vehicle" as const, label: [v.make, v.model].filter(Boolean).join(" "), sublabel: "Vehicle", href: "/vehicles" })),
     ...assets.map((a) => ({ id: a.id, type: "asset" as const, label: a.title, sublabel: a.subtitle ?? a.kind, href: assetHref(a.kind) })),
     ...recs.map((r) => ({ id: r.id, type: "recommendation" as const, label: r.title, sublabel: "Recommendation", href: "/media" })),
-    ...pets.map((p) => ({ id: p.id, type: "pet" as const, label: p.name, sublabel: "Pet", href: "/personal" })),
+    ...pets.map((p) => ({ id: p.id, type: "pet" as const, label: p.name, sublabel: "Pet", href: "/pets" })),
     ...labs.map((l) => ({
       id: l.id,
       type: "lab" as const,

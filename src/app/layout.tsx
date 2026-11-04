@@ -17,39 +17,6 @@ import { prisma } from "@/lib/prisma";
 import { initials } from "@/lib/initials";
 import { listAccessWhere } from "@/lib/list-access";
 
-// Per-request: small enough to not warrant a cache layer for a friends-only
-// deployment. The prior `_count.todos` shape emitted a correlated subquery
-// per project — fine for a few projects, but scales linearly. Replaced with
-// a single groupBy + in-memory merge so the sidebar issues two indexed reads
-// regardless of project count.
-async function getSidebarProjects(userId: string) {
-  const [projects, counts] = await Promise.all([
-    prisma.project.findMany({
-      // The health record is a tracker (/health), not a project row.
-      where: { userId, archived: false, kind: { not: "human" } },
-      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-      select: { id: true, name: true, icon: true },
-    }),
-    prisma.todo.groupBy({
-      by: ["projectId"],
-      where: {
-        userId,
-        completedAt: null,
-        projectId: { not: null },
-      },
-      _count: { _all: true },
-    }),
-  ]);
-  const countByProject = new Map<string, number>();
-  for (const c of counts) {
-    if (c.projectId) countByProject.set(c.projectId, c._count._all);
-  }
-  return projects.map((p) => ({
-    ...p,
-    _count: { todos: countByProject.get(p.id) ?? 0 },
-  }));
-}
-
 // Static metadata uses the generic product name. The installed-app name is
 // personalized to the signed-in person's initials via app/manifest.ts (which
 // reads the session through the credentialed manifest <link> below).
@@ -111,9 +78,6 @@ export default async function RootLayout({
     );
   }
 
-  // userId is guaranteed here because !isBare means middleware found a valid session.
-  const projects = userId ? await getSidebarProjects(userId) : [];
-
   // The signed-in person's installed copy is branded with their initials; the
   // generic product name "EC" is the fallback. See lib/initials.ts.
   // canImprove: the founder-only Improve button (sidebar + mobile drawer).
@@ -127,12 +91,6 @@ export default async function RootLayout({
     isFounderUser(userId),
   ]);
   const appName = (me && initials(me.name, me.email)) || "EC";
-
-  const mobileProjects = projects.map((p) => ({
-    id: p.id,
-    name: p.name,
-    count: p._count.todos,
-  }));
 
   // The mobile drawer's main job: pull up the lists (same order as Home's
   // pager, so a tap lands on the matching tile via /#list-<id>).
@@ -158,10 +116,10 @@ export default async function RootLayout({
           <CaptureInbox />
           <UndoHost />
           <LayoutOverlays canImprove={canImprove} />
-          <MobileChromeProvider projects={mobileProjects} lists={mobileLists} appName={appName} isPrivate={isPrivate} canImprove={canImprove}>
+          <MobileChromeProvider lists={mobileLists} appName={appName} isPrivate={isPrivate} canImprove={canImprove}>
             <div className="flex min-h-screen">
               <div data-app-sidebar className="hidden md:flex print:hidden">
-                <Sidebar projects={projects} appName={appName} isPrivate={isPrivate} canImprove={canImprove} />
+                <Sidebar appName={appName} isPrivate={isPrivate} canImprove={canImprove} />
               </div>
               <main data-app-main className="flex-1 overflow-x-hidden pt-[calc(48px+env(safe-area-inset-top))] pb-[calc(16px+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 print:pt-0 print:pb-0">
                 {children}

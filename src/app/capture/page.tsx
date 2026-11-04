@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { Sparkles } from "lucide-react";
-import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { SmartCaptureForm } from "@/components/smart-capture-form";
 
@@ -9,13 +8,6 @@ export const dynamic = "force-dynamic";
 export default async function CapturePage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  const userId = session.userId;
-
-  const projects = await prisma.project.findMany({
-    where: { userId, archived: false },
-    select: { id: true, name: true, kind: true },
-    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-  });
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-8 sm:py-12">
@@ -32,7 +24,7 @@ export default async function CapturePage() {
         </div>
       </header>
 
-      <SmartCaptureForm projects={projects} />
+      <SmartCaptureForm />
     </div>
   );
 }

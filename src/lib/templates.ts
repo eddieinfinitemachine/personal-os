@@ -12,6 +12,7 @@ import {
   Lightbulb,
   MapPin,
   Package,
+  PawPrint,
   Plane,
   Printer,
   TrendingUp,
@@ -28,6 +29,7 @@ export type TemplateSlug =
   | "friends"
   | "dating"
   | "vehicles"
+  | "pets"
   | "trips"
   | "investments"
   | "inventory"
@@ -98,6 +100,13 @@ export const TEMPLATES: SidebarTemplate[] = [
     label: "Vehicles",
     description: "Cars, bikes, service records, fuel/charging logs.",
     Icon: Car,
+  },
+  {
+    slug: "pets",
+    href: "/pets",
+    label: "Pets",
+    description: "Weight, vaccinations, vet visits and a chat about each pet.",
+    Icon: PawPrint,
   },
   {
     slug: "trips",

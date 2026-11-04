@@ -67,7 +67,6 @@ const render = async (review = row()) =>
     root.render(
       <CaptureReviewEditor
         review={review}
-        projects={[{ id: "project", name: "Reading" }]}
         lists={[
           { id: "later", name: "Later" },
           { id: "today", name: "To Do" },

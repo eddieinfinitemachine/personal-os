@@ -6,8 +6,6 @@ import { Camera, Loader2, Sparkles, X } from "lucide-react";
 import type { CaptureProposal } from "@/lib/smart-capture";
 import { compressImage } from "@/lib/image-compress";
 
-export type Project = { id: string; name: string; kind: string };
-
 const PLACEHOLDERS = [
   "Paid $850 at Brooklyn Flea, in the living room",
   "Had dinner with Joe Milstein at Lucali",
@@ -16,7 +14,7 @@ const PLACEHOLDERS = [
   "Bought a vintage KitchenAid mixer from eBay for $220",
 ];
 
-export function SmartCaptureForm({ projects }: { projects: Project[] }) {
+export function SmartCaptureForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -193,12 +191,7 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
       window.dispatchEvent(new CustomEvent("personalos:capture-saved"));
       // Route to the most relevant destination.
       // Post-save routing per proposal type.
-      const projectHop =
-        (proposal.type === "asset" || proposal.type === "todo") &&
-        proposal.projectId;
-      if (projectHop) {
-        router.push(`/projects/${projectHop}`);
-      } else if (proposal.type === "asset") {
+      if (proposal.type === "asset") {
         // 5 asset kinds → 5 sections.
         const ROUTE: Record<typeof proposal.assetKind, string> = {
           inventory: "/inventory",
@@ -238,7 +231,6 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
     return (
       <Preview
         proposal={proposal}
-        projects={projects}
         suggestedFollowupTitle={suggestedFollowupTitle}
         onChange={setProposal}
         onSave={onCommit}
@@ -340,7 +332,6 @@ export function SmartCaptureForm({ projects }: { projects: Project[] }) {
 
 export type ProposalEditorProps = {
   proposal: CaptureProposal;
-  projects: Project[];
   suggestedFollowupTitle: string | null;
   onChange: (p: CaptureProposal) => void;
   onSave: () => void;
@@ -358,7 +349,6 @@ export function ProposalEditor(props: ProposalEditorProps) {
 
 function Preview({
   proposal,
-  projects,
   suggestedFollowupTitle,
   onChange,
   onSave,
@@ -382,12 +372,11 @@ function Preview({
         {proposal.type === "asset" ? (
           <InventoryFields
             proposal={proposal}
-            projects={projects}
             suggestedFollowupTitle={suggestedFollowupTitle}
             patch={patch}
           />
         ) : proposal.type === "interaction" ? (
-          <InteractionFields proposal={proposal} projects={projects} patch={patch} />
+          <InteractionFields proposal={proposal} patch={patch} />
         ) : proposal.type === "person" ? (
           <PersonFields proposal={proposal} patch={patch} />
         ) : proposal.type === "trip" ? (
@@ -395,7 +384,7 @@ function Preview({
         ) : proposal.type === "call_sheet" ? (
           <CallSheetFields proposal={proposal} patch={patch} />
         ) : (
-          <TodoFields proposal={proposal} projects={projects} patch={patch} />
+          <TodoFields proposal={proposal} patch={patch} />
         )}
 
         {error ? <div className="mt-3 text-sm text-rose-500">{error}</div> : null}
@@ -519,12 +508,10 @@ const ASSET_KIND_UI: Record<AssetKind, AssetKindUi> = {
 
 function InventoryFields({
   proposal,
-  projects,
   suggestedFollowupTitle,
   patch,
 }: {
   proposal: Extract<CaptureProposal, { type: "asset" }>;
-  projects: Project[];
   suggestedFollowupTitle: string | null;
   patch: (part: Partial<Extract<CaptureProposal, { type: "asset" }>>) => void;
 }) {
@@ -619,13 +606,6 @@ function InventoryFields({
           </select>
         </Field>
       )}
-      <Field label="Project">
-        <ProjectSelect
-          value={proposal.projectId ?? null}
-          projects={projects}
-          onChange={(v) => patch({ projectId: v })}
-        />
-      </Field>
       <Field label="Notes">
         <textarea
           value={proposal.notes ?? ""}
@@ -683,11 +663,9 @@ function InventoryFields({
 
 function InteractionFields({
   proposal,
-  projects,
   patch,
 }: {
   proposal: Extract<CaptureProposal, { type: "interaction" }>;
-  projects: Project[];
   patch: (part: Partial<Extract<CaptureProposal, { type: "interaction" }>>) => void;
 }) {
   return (
@@ -765,13 +743,6 @@ function InteractionFields({
             }
           />
         </div>
-      </Field>
-      <Field label="Project">
-        <ProjectSelect
-          value={proposal.projectId ?? null}
-          projects={projects}
-          onChange={(v) => patch({ projectId: v })}
-        />
       </Field>
       <Field label="Notes">
         <textarea
@@ -1089,11 +1060,9 @@ function TripFields({
 
 function TodoFields({
   proposal,
-  projects,
   patch,
 }: {
   proposal: Extract<CaptureProposal, { type: "todo" }>;
-  projects: Project[];
   patch: (part: Partial<Extract<CaptureProposal, { type: "todo" }>>) => void;
 }) {
   return (
@@ -1184,31 +1153,6 @@ function previewLabel(p: CaptureProposal): string {
   if (p.type === "asset") return p.assetKind;
   if (p.type === "call_sheet") return "call sheet";
   return p.type;
-}
-
-function ProjectSelect({
-  value,
-  projects,
-  onChange,
-}: {
-  value: string | null;
-  projects: Project[];
-  onChange: (v: string | null) => void;
-}) {
-  return (
-    <select
-      value={value ?? ""}
-      onChange={(e) => onChange(e.target.value || null)}
-      className={INPUT_CLASS}
-    >
-      <option value="">— None —</option>
-      {projects.map((p) => (
-        <option key={p.id} value={p.id}>
-          {p.name}
-        </option>
-      ))}
-    </select>
-  );
 }
 
 function AddPersonChip({

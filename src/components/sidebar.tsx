@@ -1,48 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { Calendar, ChevronDown, FolderKanban, ChevronRight, LayoutGrid, Eye, EyeOff, FlaskConical, Folder, Home, PanelLeftClose, PanelLeftOpen, Phone, Pencil, Plus, Loader2, MoreHorizontal, Settings, Trash2, WandSparkles } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Calendar, FolderKanban, LayoutGrid, FlaskConical, Home, PanelLeftClose, PanelLeftOpen, Phone, Settings, WandSparkles } from "lucide-react";
 import { AddTemplateButton, useEnabledTemplates } from "./sidebar-template-picker";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { partitionProjects } from "@/lib/project-groups";
 import type { TemplateSlug } from "@/lib/templates";
 import { moveSlug, orderedTemplates } from "@/lib/tracker-order";
 import { OPEN_IMPROVE_EVENT } from "@/lib/improvements/request";
 import { ThemeToggle } from "./theme-toggle";
 
-type SidebarProject = {
-  id: string;
-  name: string;
-  icon: string;
-  _count: { todos: number };
-};
-
 export function Sidebar({
-  projects: initialProjects,
   appName = "EC",
   isPrivate = false,
   canImprove = false,
 }: {
-  projects: SidebarProject[];
   appName?: string;
   isPrivate?: boolean;
   /** Founder only: shows "Improve", which opens the Improve dialog. */
   canImprove?: boolean;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const [adding, setAdding] = useState(false);
-  const [name, setName] = useState("");
-  const [pending, startTransition] = useTransition();
-  const [projects, setProjects] = useState(initialProjects);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
-
-  useEffect(() => {
-    setProjects(initialProjects);
-  }, [initialProjects]);
 
   useEffect(() => {
     try {
@@ -59,56 +39,6 @@ export function Sidebar({
     } catch {}
   }
 
-  const [hiddenProjectIds, setHiddenProjectIds] = useState<Set<string>>(
-    new Set()
-  );
-  const [hiddenOpen, setHiddenOpen] = useState(false);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("personalos:hidden-projects");
-      if (raw) {
-        const arr = JSON.parse(raw);
-        if (Array.isArray(arr))
-          setHiddenProjectIds(new Set(arr.filter((v) => typeof v === "string")));
-      }
-    } catch {}
-  }, []);
-
-  function toggleHidden(projectId: string) {
-    setHiddenProjectIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(projectId)) next.delete(projectId);
-      else next.add(projectId);
-      try {
-        localStorage.setItem(
-          "personalos:hidden-projects",
-          JSON.stringify([...next])
-        );
-      } catch {}
-      return next;
-    });
-  }
-
-  const visibleProjects = projects.filter((p) => !hiddenProjectIds.has(p.id));
-  const hiddenProjects = projects.filter((p) => hiddenProjectIds.has(p.id));
-
-  // Projects with open todos first (manual order kept),
-  // zero-todo tail collapsed behind "N more". The currently-open project
-  // always stays above the fold even when empty.
-  const activeProjectId = pathname.startsWith("/projects/")
-    ? pathname.slice("/projects/".length)
-    : null;
-  const [dormantOpen, setDormantOpen] = useState(false);
-  const {
-    active: activeProjects,
-    dormant: dormantProjects,
-  } = partitionProjects(
-    visibleProjects,
-    (p) => p._count.todos,
-    activeProjectId ? new Set([activeProjectId]) : undefined
-  );
-
   // Trackers (template pages) are lifted here so the footer can pull
   // Print lists out of the content group and park it next to Settings.
   const {
@@ -119,8 +49,8 @@ export function Sidebar({
   } = useEnabledTemplates(isPrivate);
   const enabledTrackers = enabledTemplates.filter((t) => t.slug !== "print-lists");
   const printLists = enabledTemplates.find((t) => t.slug === "print-lists") ?? null;
-  // Drag-reorder trackers the same way projects reorder: rows shuffle live
-  // during the drag (local order), and the drop persists it via the hook.
+  // Drag-reorder trackers: rows shuffle live during the drag (local
+  // order), and the drop persists it via the hook.
   const [trackerDrag, setTrackerDrag] = useState<{ slug: TemplateSlug; order: TemplateSlug[] } | null>(null);
   const trackers = trackerDrag ? orderedTemplates(trackerDrag.order, enabledTrackers) : enabledTrackers;
 
@@ -137,57 +67,6 @@ export function Sidebar({
   function persistTrackerOrder() {
     if (trackerDrag) reorderTemplates(trackerDrag.order);
     setTrackerDrag(null);
-  }
-
-  function moveTo(fromId: string, toId: string) {
-    if (fromId === toId) return;
-    setProjects((prev) => {
-      const fromIdx = prev.findIndex((p) => p.id === fromId);
-      const toIdx = prev.findIndex((p) => p.id === toId);
-      if (fromIdx < 0 || toIdx < 0) return prev;
-      const next = [...prev];
-      const [moved] = next.splice(fromIdx, 1);
-      next.splice(toIdx, 0, moved);
-      return next;
-    });
-  }
-
-  async function persistOrder() {
-    const ids = projects.map((p) => p.id);
-    setDraggingId(null);
-    await fetch("/api/projects/reorder", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids }),
-    });
-    startTransition(() => router.refresh());
-  }
-
-  async function createProject(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    const res = await fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: trimmed }),
-    });
-    if (res.ok) {
-      const { project } = await res.json();
-      setName("");
-      setAdding(false);
-      // Invalidate the shared menu cache so the next "Move to project"
-      // picker open picks up this new project without waiting for a refresh.
-      window.dispatchEvent(
-        new CustomEvent("personalos:project-created", {
-          detail: { project },
-        }),
-      );
-      startTransition(() => {
-        router.push(`/projects/${project.id}`);
-        router.refresh();
-      });
-    }
   }
 
   if (collapsed) {
@@ -298,183 +177,6 @@ export function Sidebar({
           ))}
           <AddTemplateButton available={availableTemplates} onAdd={addTemplate} />
         </nav>
-      </div>
-
-      <div className="px-2 mt-4">
-        <div className="px-2 mb-1.5 flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
-            Projects
-          </span>
-          <button
-            onClick={() => setAdding(true)}
-            className="rounded p-1 text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] transition"
-            title="New project"
-          >
-            <Plus className="size-3.5" />
-          </button>
-        </div>
-
-        <div className="space-y-0.5">
-          {activeProjects.map((project) => (
-            <ProjectSidebarRow
-              key={project.id}
-              project={project}
-              active={pathname === `/projects/${project.id}`}
-              hidden={false}
-              onToggleHidden={() => toggleHidden(project.id)}
-              onDragStart={() => setDraggingId(project.id)}
-              onDragOver={() => {
-                if (!draggingId) return;
-                moveTo(draggingId, project.id);
-              }}
-              onDrop={persistOrder}
-              dragging={draggingId === project.id}
-              onDeleted={() => {
-                if (pathname === `/projects/${project.id}`) {
-                  startTransition(() => {
-                    router.push("/");
-                    router.refresh();
-                  });
-                } else {
-                  startTransition(() => router.refresh());
-                }
-              }}
-              onRenamed={(newName) => {
-                setProjects((prev) =>
-                  prev.map((p) =>
-                    p.id === project.id ? { ...p, name: newName } : p
-                  )
-                );
-                startTransition(() => router.refresh());
-              }}
-            />
-          ))}
-          {dormantProjects.length > 0 ? (
-            <div className="pt-1">
-              <button
-                onClick={() => setDormantOpen((v) => !v)}
-                className="w-full flex items-center gap-1.5 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]/40 rounded"
-              >
-                {dormantOpen ? (
-                  <ChevronDown className="size-3" />
-                ) : (
-                  <ChevronRight className="size-3" />
-                )}
-                <span className="tabular-nums">{dormantProjects.length} more</span>
-              </button>
-              {dormantOpen ? (
-                <div className="space-y-0.5 mt-0.5">
-                  {dormantProjects.map((project) => (
-                    <ProjectSidebarRow
-                      key={project.id}
-                      project={project}
-                      active={pathname === `/projects/${project.id}`}
-                      hidden={false}
-                      onToggleHidden={() => toggleHidden(project.id)}
-                      onDragStart={() => setDraggingId(project.id)}
-                      onDragOver={() => {
-                        if (!draggingId) return;
-                        moveTo(draggingId, project.id);
-                      }}
-                      onDrop={persistOrder}
-                      dragging={draggingId === project.id}
-                      onDeleted={() => {
-                        startTransition(() => router.refresh());
-                      }}
-                      onRenamed={(newName) => {
-                        setProjects((prev) =>
-                          prev.map((p) =>
-                            p.id === project.id ? { ...p, name: newName } : p
-                          )
-                        );
-                        startTransition(() => router.refresh());
-                      }}
-                    />
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          {hiddenProjects.length > 0 ? (
-            <div className="pt-1">
-              <button
-                onClick={() => setHiddenOpen((v) => !v)}
-                className="w-full flex items-center gap-1.5 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]/40 rounded"
-              >
-                {hiddenOpen ? (
-                  <ChevronDown className="size-3" />
-                ) : (
-                  <ChevronRight className="size-3" />
-                )}
-                <span>Hidden</span>
-                <span className="tabular-nums opacity-70">
-                  {hiddenProjects.length}
-                </span>
-              </button>
-              {hiddenOpen ? (
-                <div className="space-y-0.5 mt-0.5 opacity-70">
-                  {hiddenProjects.map((project) => (
-                    <ProjectSidebarRow
-                      key={project.id}
-                      project={project}
-                      active={pathname === `/projects/${project.id}`}
-                      hidden
-                      onToggleHidden={() => toggleHidden(project.id)}
-                      onDeleted={() => {
-                        if (pathname === `/projects/${project.id}`) {
-                          startTransition(() => {
-                            router.push("/");
-                            router.refresh();
-                          });
-                        } else {
-                          startTransition(() => router.refresh());
-                        }
-                      }}
-                      onRenamed={(newName) => {
-                        setProjects((prev) =>
-                          prev.map((p) =>
-                            p.id === project.id ? { ...p, name: newName } : p
-                          )
-                        );
-                        startTransition(() => router.refresh());
-                      }}
-                    />
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          {adding ? (
-            <form onSubmit={createProject} className="px-2 pt-1">
-              <input
-                autoFocus
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onBlur={() => {
-                  if (!name.trim()) setAdding(false);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setAdding(false);
-                    setName("");
-                  }
-                }}
-                placeholder="Project name"
-                className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 py-1 text-sm focus:border-[var(--color-ring)] focus:outline-none"
-              />
-              {pending && (
-                <Loader2 className="size-3 animate-spin mt-1 text-[var(--color-muted-foreground)]" />
-              )}
-            </form>
-          ) : projects.length === 0 ? (
-            <button
-              onClick={() => setAdding(true)}
-              className="w-full rounded-md px-2 py-1.5 text-left text-sm text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] transition"
-            >
-              + New project
-            </button>
-          ) : null}
-        </div>
       </div>
 
       <div className="mt-auto border-t border-[var(--color-border)]">
@@ -609,226 +311,5 @@ function SidebarButton({
       <span className="text-[var(--color-muted-foreground)]">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
     </button>
-  );
-}
-
-function ProjectSidebarRow({
-  project,
-  active,
-  hidden,
-  onToggleHidden,
-  onDeleted,
-  onDragStart,
-  onDragOver,
-  onDrop,
-  onRenamed,
-  dragging,
-}: {
-  project: SidebarProject;
-  active: boolean;
-  hidden?: boolean;
-  onToggleHidden?: () => void;
-  onDeleted: () => void;
-  onDragStart?: () => void;
-  onDragOver?: () => void;
-  onDrop?: () => void;
-  onRenamed?: (newName: string) => void;
-  dragging?: boolean;
-}) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [draftName, setDraftName] = useState(project.name);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  function startRename() {
-    setDraftName(project.name);
-    setEditing(true);
-    setMenuOpen(false);
-    queueMicrotask(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    });
-  }
-
-  async function commitRename() {
-    const trimmed = draftName.trim();
-    if (!trimmed || trimmed === project.name) {
-      setEditing(false);
-      setDraftName(project.name);
-      return;
-    }
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/projects/${project.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmed }),
-      });
-      if (res.ok) {
-        onRenamed?.(trimmed);
-      } else {
-        setDraftName(project.name);
-      }
-    } catch {
-      setDraftName(project.name);
-    } finally {
-      setBusy(false);
-      setEditing(false);
-    }
-  }
-
-  async function deleteProject(e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!confirm(`Delete project "${project.name}"? Any todos in it will move back to Home.`))
-      return;
-    setBusy(true);
-    const res = await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
-    setBusy(false);
-    setMenuOpen(false);
-    if (res.ok) onDeleted();
-  }
-
-  return (
-    <div
-      draggable={!!onDragStart}
-      onDragStart={(e) => {
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("application/x-personalos-project", project.id);
-        onDragStart?.();
-      }}
-      onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes("application/x-personalos-project")) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        onDragOver?.();
-      }}
-      onDrop={(e) => {
-        if (!e.dataTransfer.types.includes("application/x-personalos-project")) return;
-        e.preventDefault();
-        onDrop?.();
-      }}
-      className={cn(
-        "group/row relative flex items-center rounded-md transition",
-        active
-          ? "bg-[var(--color-accent)]"
-          : "hover:bg-[var(--color-accent)]",
-        dragging && "opacity-40"
-      )}
-    >
-      {editing ? (
-        <div className="flex-1 flex items-center gap-2 px-2 py-1.5 text-sm">
-          <Folder className="size-4 text-[var(--color-muted-foreground)]" />
-          <input
-            ref={inputRef}
-            value={draftName}
-            onChange={(e) => setDraftName(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                void commitRename();
-              } else if (e.key === "Escape") {
-                e.preventDefault();
-                setEditing(false);
-                setDraftName(project.name);
-              }
-            }}
-            onClick={(e) => e.stopPropagation()}
-            className="flex-1 min-w-0 rounded-sm border border-[var(--color-border)] bg-[var(--color-background)] px-1.5 py-0.5 text-sm focus:border-[var(--color-ring)] focus:outline-none"
-          />
-        </div>
-      ) : (
-        <Link
-          href={`/projects/${project.id}`}
-          draggable={false}
-          onDoubleClick={(e) => {
-            e.preventDefault();
-            startRename();
-          }}
-          className={cn(
-            "flex-1 flex items-center gap-2 px-2 py-1.5 text-sm",
-            active
-              ? "text-[var(--color-foreground)] font-medium"
-              : "text-[var(--color-muted-foreground)] group-hover/row:text-[var(--color-foreground)]"
-          )}
-        >
-          <Folder
-            className="size-4 text-[var(--color-muted-foreground)]"
-            strokeWidth={1.75}
-          />
-          <span className="flex-1 truncate">{project.name}</span>
-          {project._count.todos > 0 ? (
-            <span className="text-xs text-[var(--color-muted-foreground)] tabular-nums">
-              {project._count.todos}
-            </span>
-          ) : null}
-        </Link>
-      )}
-      <button
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setMenuOpen((v) => !v);
-        }}
-        className="rounded p-1 mr-1 text-[var(--color-muted-foreground)] opacity-50 md:opacity-0 md:group-hover/row:opacity-100 hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] transition"
-        title="Project options"
-      >
-        {busy ? (
-          <Loader2 className="size-3.5 animate-spin" />
-        ) : (
-          <MoreHorizontal className="size-3.5" />
-        )}
-      </button>
-      {menuOpen ? (
-        <>
-          <button
-            onClick={() => setMenuOpen(false)}
-            className="fixed inset-0 z-40 cursor-default"
-            aria-label="Close menu"
-          />
-          <div className="absolute right-1 top-full z-50 mt-1 w-40 rounded-md border border-[var(--color-border)] bg-[var(--color-card)] shadow-lg overflow-hidden">
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                startRename();
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--color-accent)]"
-            >
-              <Pencil className="size-3.5" /> Rename
-            </button>
-            {onToggleHidden ? (
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setMenuOpen(false);
-                  onToggleHidden();
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--color-accent)]"
-              >
-                {hidden ? (
-                  <>
-                    <Eye className="size-3.5" /> Show in sidebar
-                  </>
-                ) : (
-                  <>
-                    <EyeOff className="size-3.5" /> Hide from sidebar
-                  </>
-                )}
-              </button>
-            ) : null}
-            <button
-              onClick={deleteProject}
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rose-500 hover:bg-[var(--color-accent)]"
-            >
-              <Trash2 className="size-3.5" /> Delete project
-            </button>
-          </div>
-        </>
-      ) : null}
-    </div>
   );
 }
