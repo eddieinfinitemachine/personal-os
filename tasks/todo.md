@@ -1992,7 +1992,11 @@ Ask: read health data over time and say where biomarkers stand and what to focus
 - [x] `health-picture.tsx` at the top of the Health page; refreshes itself once per view when the data changed
 - [x] ⚠️ SCHEMA (approved 2026-11-04): `Human.pictureJson Json?`, `Human.pictureAt DateTime?`. Additive, nullable; rollback = drop both. SQL in `prisma/changes/20261104_health_picture.sql`
 - [x] Verified: `tsc`, full `vitest`, `pnpm build`; browser check on a scratch database with made-up data (first run, reload makes no second call, 126 rows keep the oldest draw, "less than" display, 375 px with no overflow); one real generation not saved
-- [ ] Eddie: apply the SQL above to prod (blocked for agents by the auto-mode production check); verify with `information_schema`
-- [ ] Merge, confirm the deploy, check the live page and Vercel logs
+- [x] Eddie: apply the SQL above to prod (blocked for agents by the auto-mode production check); verified with `information_schema`
+- [x] Eddie merged #90; production deploy confirmed; signed-out requests go to login
+- [x] A second lab's scan (2026-11-04): added with a one-off script, not committed. Same-named markers join the Quest trend only when they're the same test in the same unit; anything else gets its own marker
+- [x] Summary keeps the last range on record when a lab reports none, and sends the latest biometric of each kind to the picture
+- [x] Biometrics section shows every kind under a plain name, no longer the first 4 of the last 30 rows
+- [ ] Check the live page and Vercel logs (needs Eddie's sign-in)
 - [ ] Phase 2: Apple Health through the ec iPhone app (`POST /api/capture/health`, read-only HealthKit). No schema change
 - [ ] Phase 3, only if a raw DNA file exists: local extraction into `DnaResult`; the raw file never leaves the Mac

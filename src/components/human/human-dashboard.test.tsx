@@ -10,7 +10,7 @@ vi.mock("@/lib/prisma", () => ({
     medicalVisit: { findMany: vi.fn().mockResolvedValue([]) },
     fitnessSession: { findMany: vi.fn().mockResolvedValue([]) },
     dnaResult: { findMany: vi.fn().mockResolvedValue([]) },
-    biometricReading: { count: vi.fn().mockResolvedValue(0) },
+    biometricReading: { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) },
   },
 }));
 
@@ -64,5 +64,35 @@ describe("HumanDashboard", () => {
   it("keeps the oldest draw when there are more than 100 lab rows", async () => {
     const html = renderToStaticMarkup(await HumanDashboard({ projectId: "p1" }));
     for (const date of DRAWS) expect(html).toContain(date);
+  });
+
+  it("shows the latest reading of every biometric kind under a plain name", async () => {
+    const reading = (kind: string, value: number) => ({
+      id: kind,
+      kind,
+      value,
+      unit: "u",
+      measuredAt: new Date("2030-03-01T00:00:00Z"),
+    });
+    mocks.findUnique.mockResolvedValue({
+      ...human,
+      labResults: [],
+      biometrics: [
+        reading("skinMarkings", 11),
+        reading("bpSystolic", 12),
+        reading("bpDiastolic", 13),
+        reading("spo2", 14),
+        reading("abi", 15),
+        reading("eyePressure", 16),
+        reading("someNewKind", 17),
+        reading("weight", 18),
+      ],
+    });
+    const html = renderToStaticMarkup(await HumanDashboard({ projectId: "p1" }));
+    for (const label of ["Skin markings", "BP systolic", "BP diastolic", "Blood oxygen", "ABI", "Eye pressure", "someNewKind"]) {
+      expect(html).toContain(label);
+    }
+    expect(html.indexOf(">Weight<", html.indexOf("Biometrics"))).toBeLessThan(html.indexOf("BP systolic"));
+    expect(mocks.findUnique.mock.calls[0][0].include.biometrics.distinct).toEqual(["kind"]);
   });
 });

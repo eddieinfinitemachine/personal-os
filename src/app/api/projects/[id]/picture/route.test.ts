@@ -18,7 +18,7 @@ vi.mock("@/lib/prisma", () => ({
     medicalVisit: { findMany: vi.fn().mockResolvedValue([]) },
     fitnessSession: { findMany: vi.fn().mockResolvedValue([]) },
     dnaResult: { findMany: vi.fn().mockResolvedValue([]) },
-    biometricReading: { count: vi.fn().mockResolvedValue(0) },
+    biometricReading: { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) },
   },
 }));
 vi.mock("@/lib/claude", () => {

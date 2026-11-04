@@ -15,7 +15,7 @@ type HumanForSummary = {
 export async function loadHealthSummary(human: HumanForSummary, now: Date): Promise<HealthSummary> {
   const humanId = human.id;
   const windowStart = new Date(now.getTime() - ACTIVITY_WINDOW_DAYS * 86_400_000);
-  const [labs, visits, fitness, dna, biometricReadings] = await Promise.all([
+  const [labs, visits, fitness, dna, biometrics, biometricReadings] = await Promise.all([
     prisma.labResult.findMany({
       where: { humanId },
       orderBy: { drawnAt: "asc" },
@@ -45,6 +45,12 @@ export async function loadHealthSummary(human: HumanForSummary, now: Date): Prom
       orderBy: { title: "asc" },
       select: { category: true, title: true, finding: true },
     }),
+    prisma.biometricReading.findMany({
+      where: { humanId },
+      orderBy: [{ kind: "asc" }, { measuredAt: "desc" }],
+      distinct: ["kind"],
+      select: { kind: true, measuredAt: true, value: true, unit: true },
+    }),
     prisma.biometricReading.count({ where: { humanId } }),
   ]);
   return buildHealthSummary(
@@ -59,6 +65,7 @@ export async function loadHealthSummary(human: HumanForSummary, now: Date): Prom
       visits,
       fitness,
       dna,
+      biometrics,
       biometricReadings,
     },
     now,

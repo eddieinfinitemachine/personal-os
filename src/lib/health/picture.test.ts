@@ -54,7 +54,8 @@ const input = (overrides: Partial<HealthSummaryInput> = {}): HealthSummaryInput 
   visits: [],
   fitness: [],
   dna: [],
-  biometricReadings: 0,
+  biometrics: [{ kind: "bpSystolic", measuredAt: new Date("2030-05-01T00:00:00Z"), value: 118, unit: "mmHg" }],
+  biometricReadings: 1,
   ...overrides,
 });
 
@@ -109,6 +110,10 @@ describe("parsePictureContent", () => {
   it("accepts a reply whose numbers all come from the records", () => {
     const content = parsePictureContent(reply(), summary);
     expect(content.focus[0].kind).toBe("established");
+  });
+
+  it("accepts a number that comes from a biometric reading", () => {
+    expect(() => parsePictureContent(reply({ headline: "Systolic blood pressure was 118." }), summary)).not.toThrow();
   });
 
   it("drops cited markers that don't exist", () => {

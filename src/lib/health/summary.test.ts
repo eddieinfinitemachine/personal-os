@@ -28,6 +28,7 @@ const input = (overrides: Partial<HealthSummaryInput> = {}): HealthSummaryInput 
   visits: [],
   fitness: [],
   dna: [],
+  biometrics: [],
   biometricReadings: 0,
   ...overrides,
 });
@@ -77,6 +78,45 @@ describe("buildHealthSummary", () => {
     const marker = summary.labs.markers[0];
     expect(marker.change).toBeNull();
     expect(marker.points.map((p) => p.shown)).toEqual(["<1", "<2"]);
+  });
+
+  it("keeps the last range on record when the latest lab reports none, and that lab's own flag", () => {
+    const summary = buildHealthSummary(
+      input({
+        labs: [
+          lab("Marker D", "2028-01-01", 90, { refHigh: 100 }),
+          lab("Marker D", "2029-01-01", 95, { refLow: 10, refHigh: 110 }),
+          lab("Marker D", "2030-01-01", 96, { refHigh: null, flag: "high" }),
+        ],
+      }),
+      now,
+    );
+    const marker = summary.labs.markers[0];
+    expect([marker.refLow, marker.refHigh]).toEqual([10, 110]);
+    expect(marker.points.map((p) => p.status)).toEqual(["normal", "normal", "high"]);
+  });
+
+  it("reports no range for a marker that never had one", () => {
+    const summary = buildHealthSummary(input({ labs: [lab("Marker E", "2030-01-01", 5, { refHigh: null })] }), now);
+    expect([summary.labs.markers[0].refLow, summary.labs.markers[0].refHigh]).toEqual([null, null]);
+  });
+
+  it("includes each biometric's latest value and date, sorted by kind", () => {
+    const summary = buildHealthSummary(
+      input({
+        biometrics: [
+          { kind: "weight", measuredAt: new Date("2030-06-01T00:00:00Z"), value: 170, unit: "lb" },
+          { kind: "bpSystolic", measuredAt: new Date("2030-05-01T00:00:00Z"), value: 118, unit: "mmHg" },
+        ],
+        biometricReadings: 40,
+      }),
+      now,
+    );
+    expect(summary.biometrics).toEqual([
+      { kind: "bpSystolic", date: "2030-05-01", value: 118, unit: "mmHg" },
+      { kind: "weight", date: "2030-06-01", value: 170, unit: "lb" },
+    ]);
+    expect(summary.coverage.biometricReadings).toBe(40);
   });
 
   it("leaves out identity and provider details", () => {
@@ -138,5 +178,17 @@ describe("healthFingerprints", () => {
     );
     expect(withWorkout.core).toBe(base.core);
     expect(withWorkout.activity).not.toBe(base.activity);
+  });
+
+  it("keeps biometric readings out of core", () => {
+    const base = healthFingerprints(buildHealthSummary(input({ labs }), now));
+    const withReading = healthFingerprints(
+      buildHealthSummary(
+        input({ labs, biometrics: [{ kind: "rhr", measuredAt: new Date("2030-06-10T00:00:00Z"), value: 60, unit: "bpm" }] }),
+        now,
+      ),
+    );
+    expect(withReading.core).toBe(base.core);
+    expect(withReading.activity).not.toBe(base.activity);
   });
 });
