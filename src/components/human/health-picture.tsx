@@ -3,19 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Compass, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { labDate } from "@/lib/health/lab-value";
 import type { EvidenceRow, HealthPicture } from "@/lib/health/picture";
 
 type Evidence = Record<string, EvidenceRow>;
-
-// UTC and en-US, so the server render and hydration always agree.
-function fmtDay(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 function EvidenceLine({ row }: { row: EvidenceRow }) {
   return (
@@ -87,7 +78,7 @@ export function PictureBody({ picture, evidence }: { picture: HealthPicture; evi
 
       <p className="border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-muted-foreground)]">
         Written by AI from {picture.basedOn.draws} lab {picture.basedOn.draws === 1 ? "draw" : "draws"}
-        {picture.basedOn.latestDraw ? ` through ${fmtDay(picture.basedOn.latestDraw)}` : ""}. Use it to guide a
+        {picture.basedOn.latestDraw ? ` through ${labDate(picture.basedOn.latestDraw)}` : ""}. Use it to guide a
         conversation with your doctor; it isn&apos;t a diagnosis.
       </p>
     </div>
@@ -161,7 +152,7 @@ export function HealthPictureCard({
                   ? "Couldn't update. Showing the last version."
                   : ""
                 : picture
-                  ? `Updated ${fmtDay(picture.generatedAt)}`
+                  ? `Updated ${labDate(picture.generatedAt)}`
                   : ""}
           </span>
           <button

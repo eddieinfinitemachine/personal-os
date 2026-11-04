@@ -1997,6 +1997,10 @@ Ask: read health data over time and say where biomarkers stand and what to focus
 - [x] A second lab's scan (2026-11-04): added with a one-off script, not committed. Same-named markers join the Quest trend only when they're the same test in the same unit; anything else gets its own marker
 - [x] Summary keeps the last range on record when a lab reports none, and sends the latest biometric of each kind to the picture
 - [x] Biometrics section shows every kind under a plain name, no longer the first 4 of the last 30 rows
-- [ ] Check the live page and Vercel logs (needs Eddie's sign-in)
+- [x] Picture written on prod from Eddie's first signed-in view; every number compared with the stored labs, marker by marker; no production errors
+- [x] Formatting from the live page: no empty range line, "range" instead of "optimal", values keep the marker's decimals (5.0, not 5), round chart dots, a range band that stays visible, readable dates, notes rendered instead of raw markdown
+- [x] Health is a tracker at `/health` and no longer a sidebar project row (#86 kept the Projects section on purpose; whether to remove the rest is Eddie's call)
+- [x] Chat on the Health page reads the code-built summary and answers with Fable, with the refusal fallback on. Saves nothing. Checked with made-up records in the browser and once on the real summary: no fallback, no identity fields sent
+- [ ] Check the live page after that deploy (needs Eddie's sign-in or a screenshot)
 - [ ] Phase 2: Apple Health through the ec iPhone app (`POST /api/capture/health`, read-only HealthKit). No schema change
 - [ ] Phase 3, only if a raw DNA file exists: local extraction into `DnaResult`; the raw file never leaves the Mac

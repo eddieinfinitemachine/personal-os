@@ -8,6 +8,7 @@ import {
   Car,
   Dumbbell,
   Heart,
+  HeartPulse,
   Lightbulb,
   MapPin,
   Package,
@@ -23,6 +24,7 @@ export type TemplateSlug =
   | "reader"
   | "highlights"
   | "personal"
+  | "health"
   | "friends"
   | "dating"
   | "vehicles"
@@ -65,6 +67,14 @@ export const TEMPLATES: SidebarTemplate[] = [
     label: "Personal",
     description: "Your birth record, passport, parents — the official profile.",
     Icon: User,
+    privateOnly: true,
+  },
+  {
+    slug: "health",
+    href: "/health",
+    label: "Health",
+    description: "Your labs and biometrics over time, what to focus on next, and a chat about them.",
+    Icon: HeartPulse,
     privateOnly: true,
   },
   {

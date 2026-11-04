@@ -3,9 +3,35 @@ import { prisma } from "@/lib/prisma";
 import { computeDue } from "@/lib/maintenance";
 import { getCurrentUserId } from "@/lib/auth";
 import { callClaudeText } from "@/lib/claude";
+import { askAboutHealth, readHealthHistory } from "@/lib/health/ask";
+import { loadHealthSummary } from "@/lib/health/load";
+import { pictureFailureClass, readStoredPicture } from "@/lib/health/picture";
 import { applyPetActions, validatePetActions } from "@/lib/pet-edit";
 
+export const maxDuration = 300;
+
 type ChatTurn = { role: "user" | "assistant"; content: string };
+
+/** A Health question goes to Fable with the person's records, and nothing about it is saved. */
+async function answerHealthQuestion(projectId: string, question: string, history: unknown) {
+  const headers = { "Cache-Control": "private, no-store" };
+  const human = await prisma.human.findUnique({ where: { projectId } });
+  if (!human) return NextResponse.json({ error: "project not found" }, { status: 404, headers });
+  try {
+    const summary = await loadHealthSummary(human, new Date());
+    const reply = await askAboutHealth({
+      summary,
+      picture: readStoredPicture(human.pictureJson),
+      question,
+      history: readHealthHistory(history),
+    });
+    return NextResponse.json(reply, { headers });
+  } catch (error) {
+    // The failure type only: messages from these errors can quote health data.
+    console.error(`health chat failed: ${pictureFailureClass(error)}`);
+    return NextResponse.json({ error: "Fable couldn't answer just now. Try again." }, { status: 502, headers });
+  }
+}
 
 // For pet projects the chat is read-write: Claude replies with a JSON object
 // carrying the answer plus zero or more structured edit actions. The action
@@ -257,6 +283,8 @@ export async function POST(
   if (!project || project.userId !== userId) {
     return NextResponse.json({ error: "project not found" }, { status: 404 });
   }
+  if (project.kind === "human") return answerHealthQuestion(project.id, question, body.history);
+
   const pet =
     project.kind === "pet"
       ? await prisma.pet.findUnique({

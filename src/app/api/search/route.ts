@@ -63,7 +63,7 @@ export async function GET(request: Request) {
       }),
       prisma.project.findMany({
         where: { userId, archived: false, name: contains },
-        select: { id: true, name: true },
+        select: { id: true, name: true, kind: true },
         orderBy: { updatedAt: "desc" },
         take: PER_TYPE,
       }),
@@ -147,7 +147,13 @@ export async function GET(request: Request) {
       sublabel: t.project?.name ?? t.list?.name ?? "Reminder",
       href: t.projectId ? `/projects/${t.projectId}` : "/",
     })),
-    ...projects.map((p) => ({ id: p.id, type: "project" as const, label: p.name, sublabel: "Project", href: `/projects/${p.id}` })),
+    ...projects.map((p) => ({
+        id: p.id,
+        type: "project" as const,
+        label: p.name,
+        sublabel: "Project",
+        href: p.kind === "human" ? "/health" : `/projects/${p.id}`,
+      })),
     ...lists.map((l) => ({ id: l.id, type: "list" as const, label: l.name, sublabel: "List", href: "/" })),
     ...notes.map((n) => ({
       id: n.id,

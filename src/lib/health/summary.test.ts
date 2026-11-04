@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { labRange, labShown, labStatus } from "./lab-value";
+import { alignDecimals, labDate, labRange, labShown, labStatus } from "./lab-value";
 import { buildHealthSummary, healthFingerprints, type HealthSummaryInput } from "./summary";
 
 const now = new Date("2030-06-15T12:00:00Z");
@@ -51,6 +51,18 @@ describe("lab values", () => {
     expect(labRange({ refLow: 1, refHigh: null })).toBe(">1");
     expect(labRange({ refLow: null, refHigh: 2 })).toBe("<2");
     expect(labRange({ refLow: null, refHigh: null })).toBeNull();
+  });
+
+  it("pads a marker's results to the same decimals and leaves limits alone", () => {
+    expect(alignDecimals(["5.2", "5", "5.1"])).toEqual(["5.2", "5.0", "5.1"]);
+    expect(alignDecimals(["87", "97"])).toEqual(["87", "97"]);
+    expect(alignDecimals(["<2", "1.5", "3"])).toEqual(["<2", "1.5", "3.0"]);
+    expect(alignDecimals(["<2"])).toEqual(["<2"]);
+  });
+
+  it("formats a draw date in UTC, so midnight doesn't slip a day", () => {
+    expect(labDate("2030-01-10")).toBe("Jan 10, 2030");
+    expect(labDate("2030-01-10T00:00:00.000Z")).toBe("Jan 10, 2030");
   });
 });
 

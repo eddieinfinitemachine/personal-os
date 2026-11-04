@@ -11,6 +11,7 @@ import {
   Syringe,
   User,
 } from "lucide-react";
+import { SimpleMarkdown } from "@/components/simple-markdown";
 import { prisma } from "@/lib/prisma";
 import { loadHealthSummary } from "@/lib/health/load";
 import { isPictureStale, pictureEvidence, readStoredPicture } from "@/lib/health/picture";
@@ -218,7 +219,7 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[var(--color-muted-foreground)] text-xs uppercase tracking-wider">
-              <User className="size-3" /> Human · {human.sex ?? "—"}
+              <User className="size-3" /> {human.sex ?? "—"}
               {age !== null ? ` · ${age}y` : ""}
               {human.bloodType ? ` · ${human.bloodType}` : ""}
             </div>
@@ -573,7 +574,7 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
       {human.notes ? (
         <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
           <h3 className="font-semibold mb-2">Notes</h3>
-          <div className="text-sm whitespace-pre-wrap">{human.notes}</div>
+          <SimpleMarkdown text={human.notes} />
         </section>
       ) : null}
     </div>

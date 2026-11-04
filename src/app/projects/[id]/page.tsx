@@ -18,6 +18,13 @@ export const dynamic = "force-dynamic";
 
 const VALID_TABS: ProjectTab[] = ["dashboard", "tasks", "notes", "files"];
 
+const HEALTH_CHAT = {
+  title: "Ask Fable about your health",
+  assistantName: "Fable",
+  intro:
+    "Fable reads your lab history, biometrics, medications, notes and the picture above. It doesn't get your name or date of birth, and this chat isn't saved.",
+};
+
 export default async function ProjectPage({
   params,
   searchParams,
@@ -50,21 +57,16 @@ export default async function ProjectPage({
       <header data-focus-hide className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-large-title font-bold">{project.name}</h1>
-          <p className="text-sm text-[var(--color-muted-foreground)] mt-1">
-            {project.kind === "vehicle"
-              ? "Vehicle"
-              : project.kind === "pet"
-                ? "Pet"
-                : project.kind === "human"
-                  ? "Health"
-                  : "Project"}{" "}
-            • created{" "}
-            {new Date(project.createdAt).toLocaleDateString(undefined, {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })}
-          </p>
+          {project.kind === "human" ? null : (
+            <p className="text-sm text-[var(--color-muted-foreground)] mt-1">
+              {project.kind === "vehicle" ? "Vehicle" : project.kind === "pet" ? "Pet" : "Project"} • created{" "}
+              {new Date(project.createdAt).toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </p>
+          )}
         </div>
       </header>
 
@@ -90,6 +92,7 @@ export default async function ProjectPage({
           projectId={id}
           projectName={project.name}
           canEdit={project.kind === "pet"}
+          {...(project.kind === "human" ? HEALTH_CHAT : {})}
         />
       </div>
     </div>

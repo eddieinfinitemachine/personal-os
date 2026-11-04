@@ -254,3 +254,11 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 ## 2026-11-04 — the same marker name from a second lab isn't always the same test
 **Context**: A scan from a second lab reported Lp(a) in a different unit, serum magnesium where the first lab ran RBC magnesium, plain glucose where the first was labeled fasting, and no reference ranges. Merging by name would have invented trends, and a blank range on the newest row would have erased the marker's range in the summary.
 **Rule**: Before importing from a new source, compare every marker's name, unit and method with what's stored. Convert only exact scale changes (k/uL to cells/uL). Otherwise give it a new marker. Never copy another lab's range onto a row: leave it blank and keep the source's own flag.
+
+## 2026-11-04 — after importing a new source, look at the page it lands on
+**Context**: Eddie: "formatting is weird". The scan's blank ranges printed "optimal —" on every card in that draw, whole numbers lost their decimals, and the notes I appended showed raw `##` and `**`. Every test passed, because none of them rendered a draw without ranges. The chart dots had been ovals for longer, but nobody had looked closely.
+**Rule**: Data that's valid can still render badly. After an import, render the page with rows shaped like the new source (blank fields included) before calling it done, and don't write markdown into a field until you've checked how that field displays.
+
+## 2026-11-04 — check where a page belongs before pointing Eddie at it
+**Context**: I told Eddie to find Health under a collapsed row in the sidebar's Projects section. Eddie's reply: "shouldnt it be a tracker? i thought we got rid of the projects?" #86 had said the day before that `/projects` becomes the only thing that reads as a project, and I had the PR open. A personal record with a dashboard is what trackers are for.
+**Rule**: When "where is X?" has an awkward answer, the placement is the bug. Check recent direction (merged PRs, memory) and fix it, rather than explaining the workaround. Also: read what a feature already sends to the model before assuming it works; the Health chat bubble had never been given any health data.
