@@ -46,7 +46,6 @@ export default async function CalendarPage({
     dueDate: t.dueDate!.toISOString(),
     listColor: t.list.color,
     listName: t.list.name,
-    projectId: t.projectId,
     projectName: t.project?.name ?? null,
   }));
 

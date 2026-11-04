@@ -8,7 +8,6 @@ import {
   ChevronRight,
   ChevronUp,
   FlaskConical,
-  Folder,
   FolderKanban,
   Home,
   LayoutGrid,
@@ -35,7 +34,6 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { palette, LIST_PALETTE, type ListColor } from "@/lib/lists";
-import { partitionProjects } from "@/lib/project-groups";
 import { OPEN_IMPROVE_EVENT } from "@/lib/improvements/request";
 import { ThemeToggle } from "./theme-toggle";
 import { MobileFab } from "./mobile-fab";
@@ -56,19 +54,16 @@ type ChromeApi = {
 
 const Ctx = createContext<ChromeApi | null>(null);
 
-export type MobileProject = { id: string; name: string; count: number };
 export type MobileList = { id: string; name: string; color: string };
 
 export function MobileChromeProvider({
   children,
-  projects,
   lists = [],
   appName = "EC",
   isPrivate = false,
   canImprove = false,
 }: {
   children: ReactNode;
-  projects: MobileProject[];
   lists?: MobileList[];
   appName?: string;
   isPrivate?: boolean;
@@ -95,7 +90,7 @@ export function MobileChromeProvider({
     <Ctx.Provider value={api}>
       {children}
       <MobileTopBar />
-      <MobileDrawer projects={projects} lists={lists} appName={appName} isPrivate={isPrivate} canImprove={canImprove} />
+      <MobileDrawer lists={lists} appName={appName} isPrivate={isPrivate} canImprove={canImprove} />
       <MobileFab />
     </Ctx.Provider>
   );
@@ -170,7 +165,7 @@ function MobileTopBar() {
 }
 
 // The drawer is the sole mobile nav (no bottom tab bar). Kept deliberately
-// minimal: the lists/trackers/projects below are the point; Home, Calendar, Board,
+// minimal: the lists/trackers below are the point; Home, Calendar, Board,
 // and Settings ride along at the bottom so they stay reachable on phones.
 const DRAWER_LISTS_SHOWN = 3;
 
@@ -184,13 +179,11 @@ const DRAWER_PRIMARY = [
 ];
 
 function MobileDrawer({
-  projects,
   lists,
   appName,
   isPrivate,
   canImprove,
 }: {
-  projects: MobileProject[];
   lists: MobileList[];
   appName: string;
   isPrivate: boolean;
@@ -201,14 +194,10 @@ function MobileDrawer({
   const pathname = usePathname();
   const router = useRouter();
   // Same grouping as the desktop sidebar: Trackers get their own labeled
-  // section, empty projects collapse.
+  // section.
   const trackers = enabled.filter((t) => t.slug !== "print-lists");
   const printLists = enabled.find((t) => t.slug === "print-lists") ?? null;
-  const activeProjectId = pathname.startsWith("/projects/")
-    ? pathname.slice("/projects/".length)
-    : null;
-  const [dormantOpen, setDormantOpen] = useState(false);
-  // Lists beyond the first few fold behind "N more", like dormant projects.
+  // Lists beyond the first few fold behind "N more".
   const [moreListsOpen, setMoreListsOpen] = useState(false);
   const leadLists = lists.slice(0, DRAWER_LISTS_SHOWN);
   const moreLists = lists.slice(DRAWER_LISTS_SHOWN);
@@ -220,14 +209,6 @@ function MobileDrawer({
     [order[index], order[to]] = [order[to], order[index]];
     reorder(order);
   }
-  const {
-    active: activeProjects,
-    dormant: dormantProjects,
-  } = partitionProjects(
-    projects,
-    (p) => p.count,
-    activeProjectId ? new Set([activeProjectId]) : undefined
-  );
   // Close on route change.
   useEffect(() => {
     closeDrawer();
@@ -376,53 +357,13 @@ function MobileDrawer({
             </div>
           </div>
         ) : null}
-        {activeProjects.length + dormantProjects.length > 0 ? (
-          <div className="mt-4 px-2">
-            <div className="px-3 mb-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
-              Projects
-            </div>
-            <div className="space-y-0.5">
-              {activeProjects.map((p) => (
-                <DrawerProjectLink
-                  key={p.id}
-                  project={p}
-                  active={pathname === `/projects/${p.id}`}
-                />
-              ))}
-              {dormantProjects.length > 0 ? (
-                <>
-                  <button
-                    onClick={() => setDormantOpen((v) => !v)}
-                    className="w-full flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)] active:bg-[var(--color-accent)] rounded-md"
-                  >
-                    {dormantOpen ? (
-                      <ChevronDown className="size-3" />
-                    ) : (
-                      <ChevronRight className="size-3" />
-                    )}
-                    <span className="tabular-nums">{dormantProjects.length} more</span>
-                  </button>
-                  {dormantOpen
-                    ? dormantProjects.map((p) => (
-                        <DrawerProjectLink
-                          key={p.id}
-                          project={p}
-                          active={pathname === `/projects/${p.id}`}
-                        />
-                      ))
-                    : null}
-                </>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
         <nav className="mt-4 px-2 pt-3 space-y-0.5 border-t border-[var(--color-border)]">
           {DRAWER_PRIMARY.map((d) => (
             <DrawerLink
               key={d.href}
               href={d.href}
-              // "/" and "/projects" match exactly: /projects/<id> lights up its
-              // project row below, not the Projects index.
+              // "/" and "/projects" match exactly: /projects/<id> is a vehicle
+              // or pet dashboard, not the Projects board.
               active={d.href === "/" || d.href === "/projects" ? pathname === d.href : pathname.startsWith(d.href)}
               icon={<d.Icon className="size-4" />}
               label={d.label}
@@ -484,34 +425,6 @@ function DrawerLink({
     >
       {icon}
       <span className="flex-1 truncate">{label}</span>
-    </Link>
-  );
-}
-
-function DrawerProjectLink({
-  project,
-  active,
-}: {
-  project: MobileProject;
-  active: boolean;
-}) {
-  return (
-    <Link
-      href={`/projects/${project.id}`}
-      className={cn(
-        "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm active:bg-[var(--color-accent)]",
-        active
-          ? "bg-[var(--color-accent)] text-[var(--color-foreground)] font-medium"
-          : "text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
-      )}
-    >
-      <Folder className="size-4" />
-      <span className="flex-1 truncate">{project.name}</span>
-      {project.count > 0 ? (
-        <span className="text-xs text-[var(--color-muted-foreground)] tabular-nums">
-          {project.count}
-        </span>
-      ) : null}
     </Link>
   );
 }

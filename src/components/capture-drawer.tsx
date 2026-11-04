@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
@@ -13,7 +13,6 @@ import {
 import { cn } from "@/lib/utils";
 import { useCapture, type Capture } from "@/lib/capture-store";
 import { useOverlayTransition } from "@/lib/use-overlay-transition";
-import type { Project } from "@/components/smart-capture-form";
 
 // The proposal editor pulls in the full smart-capture-form (~1.2k lines).
 // Defer it so the drawer chunk itself stays light — most drawer mounts are
@@ -40,25 +39,8 @@ export function CaptureDrawer() {
   const { captures, drawerOpen, setDrawerOpen, patch, commit, dismiss, retry } =
     useCapture();
   const router = useRouter();
-  const [projects, setProjects] = useState<Project[]>([]);
   // Keeps the drawer mounted through the slide-up exit animation.
   const { mounted, state: overlayState } = useOverlayTransition(drawerOpen);
-
-  // Fetch active projects once when the drawer opens — needed by the
-  // ProposalEditor for the project dropdown.
-  useEffect(() => {
-    if (!drawerOpen || projects.length > 0) return;
-    let cancelled = false;
-    fetch("/api/projects")
-      .then((r) => r.json())
-      .then((d: { projects: Project[] }) => {
-        if (!cancelled && Array.isArray(d.projects)) setProjects(d.projects);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [drawerOpen, projects.length]);
 
   useEffect(() => {
     if (!drawerOpen) return;
@@ -120,7 +102,6 @@ export function CaptureDrawer() {
             <CaptureCard
               key={c.id}
               capture={c}
-              projects={projects}
               onPatch={(p) => patch(c.id, p)}
               onSave={() => commit(c.id)}
               onDismiss={() => dismiss(c.id)}
@@ -142,14 +123,12 @@ export function CaptureDrawer() {
 
 function CaptureCard({
   capture,
-  projects,
   onPatch,
   onSave,
   onDismiss,
   onRetry,
 }: {
   capture: Capture;
-  projects: Project[];
   onPatch: (p: NonNullable<Capture["proposal"]>) => void;
   onSave: () => void;
   onDismiss: () => void;
@@ -227,7 +206,6 @@ function CaptureCard({
         <div className="border-t border-[var(--color-border)] p-3">
           <ProposalEditor
             proposal={capture.proposal}
-            projects={projects}
             suggestedFollowupTitle={suggestedFollowupTitle}
             onChange={onPatch}
             onSave={onSave}

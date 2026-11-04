@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
   session: vi.fn(),
   review: vi.fn(),
   lists: vi.fn(),
-  projects: vi.fn(),
 }));
 vi.mock("@/lib/auth", () => ({ getSession: mocks.session }));
 vi.mock("@/lib/capture-review/read", () => ({
@@ -18,7 +17,6 @@ vi.mock("@/lib/list-access", () => ({
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     list: { findMany: mocks.lists },
-    project: { findMany: mocks.projects },
   },
 }));
 vi.mock("next/navigation", () => ({
@@ -54,7 +52,6 @@ beforeEach(() => {
       hasMore: false,
     });
   mocks.lists.mockResolvedValue([]);
-  mocks.projects.mockResolvedValue([]);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);

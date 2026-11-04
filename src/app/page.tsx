@@ -34,7 +34,7 @@ export default async function HomePage() {
 
   // Single fetch for all open top-level todos plus their subtasks. Bucket in
   // memory rather than firing a query per list tile.
-  const [lists, projects, allTodos, comments, commentReads, captures] = await Promise.all([
+  const [lists, allTodos, comments, commentReads, captures] = await Promise.all([
     prisma.list.findMany({
       where: listAccessWhere(userId),
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
@@ -45,10 +45,6 @@ export default async function HomePage() {
         },
         _count: { select: { members: true } },
       },
-    }),
-    prisma.project.findMany({
-      where: { userId, archived: false },
-      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
     }),
     prisma.todo.findMany({
       // Scope by list membership rather than direct ownership so todos in
@@ -66,7 +62,6 @@ export default async function HomePage() {
         { createdAt: "asc" },
       ],
       include: {
-        project: { select: { name: true } },
         _count: { select: { attachments: true } },
         // Creator, surfaced as "added by …" on collaborative lists.
         user: { select: { name: true, email: true } },
@@ -118,7 +113,6 @@ export default async function HomePage() {
     createdAt: t.createdAt,
     snoozedUntil: t.snoozedUntil,
     projectId: t.projectId,
-    projectName: t.project?.name ?? null,
     creatorName: creatorLabel(t.user),
     commentCount: commentStats.get(t.id)?.count ?? 0,
     attachmentCount: t._count.attachments,
@@ -189,7 +183,6 @@ export default async function HomePage() {
         compact
         initialData={captures.data}
         initialError={captures.error}
-        projects={projects.map(({ id, name }) => ({ id, name }))}
         lists={lists.map(({ id, name }) => ({ id, name }))}
       />
       <HomeTiles tiles={tiles} />

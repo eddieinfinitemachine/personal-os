@@ -41,7 +41,7 @@ async function destinationRows(db: ReadDb, userId: string, rows: CaptureReview[]
   const all = new Map<string, Row>();
   await Promise.all([...ids].map(async ([model, values]) => {
     const delegate = db[model as keyof ReadDb] as unknown as ReadDelegate;
-    const records = await delegate.findMany({ where: { userId, id: { in: [...values] }, ...(model === "todo" ? { list: listAccessWhere(userId) } : {}) }, ...(model === "todo" ? { include: { list: { select: { name: true, userId: true, isDefault: true, members: { where: { userId }, select: { role: true } } } }, project: { select: { name: true } } } } : model === "asset" ? { include: { project: { select: { name: true } } } } : {}) });
+    const records = await delegate.findMany({ where: { userId, id: { in: [...values] }, ...(model === "todo" ? { list: listAccessWhere(userId) } : {}) }, ...(model === "todo" ? { include: { list: { select: { name: true, userId: true, isDefault: true, members: { where: { userId }, select: { role: true } } } } } } : model === "asset" ? { include: { project: { select: { name: true } } } } : {}) });
     records.forEach(record => all.set(`${model}:${record.id}`, record));
   }));
   const people = new Set<string>();
@@ -57,8 +57,8 @@ function resolvePlacement(place: ReviewPlacement, rows: Map<string, Row>): Revie
   if (!row) return { ...place, missing: true, related: place.related?.map(p => resolvePlacement(p, rows)) };
   let next = { ...place, missing: false };
   if (place.type === "todo") {
-    const list = string(object(row.list), "name") ?? "Tasks", project = string(object(row.project), "name");
-    next = { ...next, title: string(row, "title") ?? place.title, destination: project ? `${project} → ${list}` : list, path: typeof row.projectId === "string" ? `/projects/${row.projectId}` : "/" };
+    const list = string(object(row.list), "name") ?? "Tasks";
+    next = { ...next, title: string(row, "title") ?? place.title, destination: list, path: "/" };
   } else if (place.type === "asset") {
     const kind = string(row, "kind") as keyof typeof ASSET_PLACES, location = ASSET_PLACES[kind];
     const category = string(row, "category"), project = string(object(row.project), "name");

@@ -62,7 +62,7 @@ describe.skipIf(!databaseUrl)("capture review — real Postgres", () => {
     await state.db!.todo.update({ where: { id: saved.id }, data: { listId: list.id, projectId: project.id, title: "Changed outside Inbox" } });
     await state.db!.list.update({ where: { id: list.id }, data: { name: "Renamed list" } });
     const result = await listCaptureReviews(userId);
-    expect(result.items[0].placement).toMatchObject({ title: "Changed outside Inbox", destination: "Review test project → Renamed list", path: `/projects/${project.id}` });
+    expect(result.items[0].placement).toMatchObject({ title: "Changed outside Inbox", destination: "Renamed list", path: "/" });
   });
   it("dismisses and restores only review state with ownership and revision guards", async () => {
     const userId = await user(), stranger = await user();

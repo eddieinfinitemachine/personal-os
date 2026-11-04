@@ -20,7 +20,7 @@ async function input(text: string) {
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); router.push.mockReset(); router.refresh.mockReset();
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
-  await act(async () => root.render(<SmartCaptureForm projects={[]} />));
+  await act(async () => root.render(<SmartCaptureForm />));
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 describe("capture form intake identity", () => {

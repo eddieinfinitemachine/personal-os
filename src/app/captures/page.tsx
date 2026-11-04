@@ -24,18 +24,13 @@ export default async function CapturesPage({
     Number.isSafeInteger(requestedOffset) && requestedOffset >= 0
       ? Math.min(requestedOffset, 1_000_000)
       : 0;
-  const [captures, projects, lists] = await Promise.all([
+  const [captures, lists] = await Promise.all([
     listCaptureReviews(session.userId, { state, offset, limit: 10 })
       .then((data) => ({ data, error: null }))
       .catch(() => ({
         data: null,
         error: "Could not load captures. Try again.",
       })),
-    prisma.project.findMany({
-      where: { userId: session.userId, archived: false },
-      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-      select: { id: true, name: true },
-    }),
     prisma.list.findMany({
       where: listAccessWhere(session.userId),
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
@@ -63,7 +58,6 @@ export default async function CapturesPage({
         initialData={captures.data}
         initialError={captures.error}
         initialState={state}
-        projects={projects}
         lists={lists}
         fullPage
       />
