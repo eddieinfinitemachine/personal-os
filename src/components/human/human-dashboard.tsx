@@ -12,6 +12,9 @@ import {
   User,
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { loadHealthSummary } from "@/lib/health/load";
+import { isPictureStale, pictureEvidence, readStoredPicture } from "@/lib/health/picture";
+import { HealthPictureCard } from "./health-picture";
 import { LabGrid, type LabRow } from "./lab-grid";
 import { LabSection } from "./lab-section";
 import type { MarkerSeries } from "./lab-trends";
@@ -70,7 +73,8 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
     where: { projectId },
     include: {
       biometrics: { orderBy: { measuredAt: "desc" }, take: 30 },
-      labResults: { orderBy: { drawnAt: "desc" }, take: 100 },
+      // Not limited: trends need the oldest draw, and each draw is about 100 rows.
+      labResults: { orderBy: { drawnAt: "desc" } },
       medicalVisits: { orderBy: { performedAt: "desc" }, take: 12 },
       vaccinations: { orderBy: { administeredAt: "desc" }, take: 12 },
       fitnessSessions: { orderBy: { performedAt: "desc" }, take: 12 },
@@ -85,6 +89,11 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
       </div>
     );
   }
+
+  const pictureNow = new Date();
+  const summary = await loadHealthSummary(human, pictureNow);
+  const picture = readStoredPicture(human.pictureJson);
+  const hasLabs = summary.labs.markers.length > 0;
 
   const age = ageYears(human.birthDate ?? null);
   const allergies = (human.allergiesJson as Allergy[] | null) ?? [];
@@ -119,6 +128,7 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
           refLow: l.refLow,
           refHigh: l.refHigh,
           flag: l.flag,
+          notes: l.notes,
         }))
     );
   }
@@ -137,6 +147,7 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
       refLow: l.refLow,
       refHigh: l.refHigh,
       flag: l.flag,
+      notes: l.notes,
     });
     allByMarker.set(l.marker, arr);
   }
@@ -217,6 +228,15 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
           </div>
         </div>
       </section>
+
+      {hasLabs || picture ? (
+        <HealthPictureCard
+          projectId={projectId}
+          initial={picture}
+          initialEvidence={picture ? pictureEvidence(picture, summary) : {}}
+          stale={hasLabs && isPictureStale(picture, summary, pictureNow)}
+        />
+      ) : null}
 
       {/* Alerts */}
       {(overdueVax.length > 0 || dueVax.length > 0) && (

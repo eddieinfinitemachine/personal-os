@@ -1979,3 +1979,20 @@ Ask (Eddie): "make it live", about the unmerged `claude/workout-log-weights` wor
 - [ ] ⚠️ DATABASE: apply `prisma/changes/20261017_workout_log.sql` and `20261017_strava_connection.sql` to prod (needs Eddie's approval). Additive and idempotent; rollback lines are in each file. `20261011_exercise_video.sql` is not needed, that table already exists
 - [ ] Merge, confirm the production deploy, then check /workout in a browser: a live plan with the training log and health section, a real whiteboard photo, history saved across devices
 - [ ] Eddie, for Strava only: create an app at strava.com/settings/api (callback domain = the host used), set `STRAVA_CLIENT_ID` + `STRAVA_CLIENT_SECRET` in Vercel, redeploy. The Strava row stays hidden until then
+
+## Health page: the picture (2026-11-04)
+
+Ask: read health data over time and say where biomarkers stand and what to focus on next. No real values in this repo (public): tests use made-up data.
+
+- [x] Remove the `take: 100` limit that hid most of the oldest lab draw; regression test fails if it returns
+- [x] Backfill missing values from the original lab reports (one-off script, not committed); keep "less than" results as `LabResult.notes`
+- [x] `src/lib/health/summary.ts`: trends, changes and gaps in plain code, with no identity fields
+- [x] `src/lib/health/picture.ts`: written picture; rejected and retried once if it cites a number not in the records
+- [x] `POST /api/projects/[id]/picture`: session and ownership checks; skips when nothing changed; logs only the failure type
+- [x] `health-picture.tsx` at the top of the Health page; refreshes itself once per view when the data changed
+- [x] ⚠️ SCHEMA (approved 2026-11-04): `Human.pictureJson Json?`, `Human.pictureAt DateTime?`. Additive, nullable; rollback = drop both. SQL in `prisma/changes/20261104_health_picture.sql`
+- [x] Verified: `tsc`, full `vitest`, `pnpm build`; browser check on a scratch database with made-up data (first run, reload makes no second call, 126 rows keep the oldest draw, "less than" display, 375 px with no overflow); one real generation not saved
+- [ ] Eddie: apply the SQL above to prod (blocked for agents by the auto-mode production check); verify with `information_schema`
+- [ ] Merge, confirm the deploy, check the live page and Vercel logs
+- [ ] Phase 2: Apple Health through the ec iPhone app (`POST /api/capture/health`, read-only HealthKit). No schema change
+- [ ] Phase 3, only if a raw DNA file exists: local extraction into `DnaResult`; the raw file never leaves the Mac

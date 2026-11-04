@@ -242,3 +242,11 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 **Context**: Shark Ninja research report marked Failed although report.pdf was complete on disk.
 **Mistake / surprise**: (1) Node `setTimeout` counts only awake time on macOS, so a 45-min timeout fired 53 min wall-clock and a wall-clock stale sweep disagreed with it. (2) After a lid close the job keeps progressing in ~45 s maintenance wakes where network calls fail, and one failed status write left the row `running` for the sweeper to mislabel. (3) Logging only `error.name` (PrismaClientKnownRequestError) made 468 poll failures undiagnosable.
 **Rule**: In a Mac background worker, treat the produced artifact as the success signal (not exit code or timeout), retry every network write that records a job's outcome, and log error codes (P1001, ECONNRESET), never just the class.
+
+## 2026-11-04 — a display limit silently cut medical history
+**Context**: The Health page loaded labs with `take: 100`. It was fine at one draw. By the third draw it dropped 62 of the 65 oldest rows, so trends lost their baseline with no error and no sign on the page.
+**Rule**: Never put a row limit on a query whose results are grouped or trended over time. Filter by time if the volume needs bounding. When a page "shows history", compare its row count to the table's before trusting it.
+
+## 2026-11-04 — agents can't run prod schema changes in auto mode
+**Context**: An approved `ALTER TABLE` on prod was refused by the auto-mode classifier as a production deploy, although a plan approval covered it.
+**Rule**: Don't retry it another way. Test the exact command against a scratch database, finish everything else, then give Eddie the single line to run and verify the result with `information_schema`. Say this up front when a plan needs it. Also: on this Mac, start a scratch Postgres with `LC_ALL=en_US.UTF-8`, or it dies with "postmaster became multithreaded during startup".
