@@ -263,7 +263,7 @@ describe("stored pictures", () => {
   it("supplies current values for the cited markers only", () => {
     const evidence = pictureEvidence(stored(now), summary);
     expect(Object.keys(evidence)).toEqual(["Marker A"]);
-    expect(evidence["Marker A"].points.map((p) => p.shown)).toEqual(["120", "140.5"]);
+    expect(evidence["Marker A"].points.map((p) => p.shown)).toEqual(["120.0", "140.5"]);
     expect(evidence["Marker A"].range).toBe("<150");
   });
 });

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Beaker } from "lucide-react";
 import { LabGrid, type LabRow } from "./lab-grid";
 import { LabTrends, type MarkerSeries } from "./lab-trends";
+import { labDate } from "@/lib/health/lab-value";
 import { cn } from "@/lib/utils";
 
 export function LabSection({
@@ -35,7 +36,7 @@ export function LabSection({
           <h3 className="font-semibold mb-3 flex items-center gap-2">
             <Beaker className="size-4" /> Marker trends
             <span className="text-xs text-[var(--color-muted-foreground)] font-normal">
-              {sorted[0]} → {latest}
+              {labDate(sorted[0])} → {labDate(latest)}
             </span>
           </h3>
           <LabTrends series={marqueeSeries} />
@@ -59,7 +60,7 @@ export function LabSection({
                     : "bg-[var(--color-accent)] text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
                 )}
               >
-                {date}
+                {labDate(date)}
                 {date === latest ? (
                   <span className="ml-1 text-[9px] uppercase opacity-70">latest</span>
                 ) : null}

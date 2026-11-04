@@ -1,5 +1,5 @@
 import { TrendingDown, TrendingUp, Minus } from "lucide-react";
-import { isLimitResult, labShown, labStatus, type LabStatus } from "@/lib/health/lab-value";
+import { alignDecimals, isLimitResult, labRange, labShown, labStatus, type LabStatus } from "@/lib/health/lab-value";
 import { cn } from "@/lib/utils";
 
 export type LabRow = {
@@ -26,13 +26,6 @@ function flagStyles(flag: LabStatus) {
     default:
       return { dot: "bg-zinc-500", text: "text-zinc-400", label: "—" };
   }
-}
-
-function fmtRange(r: LabRow): string {
-  if (r.refLow != null && r.refHigh != null) return `${r.refLow}–${r.refHigh}`;
-  if (r.refLow != null) return `> ${r.refLow}`;
-  if (r.refHigh != null) return `< ${r.refHigh}`;
-  return "—";
 }
 
 // Markers where a HIGHER value is the goal (most are inverted — lower=better).
@@ -97,6 +90,8 @@ export function LabGrid({
               const flag = labStatus(r);
               const fs = flagStyles(flag);
               const prior = priorByMarker?.get(r.marker);
+              const [shown, priorShown] = alignDecimals(prior ? [labShown(r), labShown(prior)] : [labShown(r)]);
+              const range = labRange(r);
               // A reporting limit isn't a measurement, so there's no change to show.
               const t =
                 prior && !isLimitResult(r) && !isLimitResult(prior)
@@ -120,9 +115,7 @@ export function LabGrid({
                     </span>
                   </div>
                   <div className="mt-1 flex items-baseline gap-1.5">
-                    <div className="text-lg font-semibold tabular-nums">
-                      {labShown(r)}
-                    </div>
+                    <div className="text-lg font-semibold tabular-nums">{shown}</div>
                     <div className="text-xs text-[var(--color-muted-foreground)]">
                       {r.unit}
                     </div>
@@ -132,7 +125,7 @@ export function LabGrid({
                           "ml-auto inline-flex items-center gap-0.5 text-[11px] font-medium tabular-nums",
                           t.better ? "text-emerald-500" : "text-rose-500"
                         )}
-                        title={`vs ${new Date(prior!.drawnAt).toLocaleDateString()}: ${labShown(prior!)} ${prior!.unit}`}
+                        title={`vs ${new Date(prior!.drawnAt).toLocaleDateString()}: ${priorShown} ${prior!.unit}`}
                       >
                         {t.direction === "up" ? (
                           <TrendingUp className="size-3" />
@@ -148,9 +141,11 @@ export function LabGrid({
                       </div>
                     ) : null}
                   </div>
-                  <div className="text-[11px] text-[var(--color-muted-foreground)] tabular-nums mt-0.5">
-                    optimal {fmtRange(r)}
-                  </div>
+                  {range ? (
+                    <div className="text-[11px] text-[var(--color-muted-foreground)] tabular-nums mt-0.5">
+                      range {range}
+                    </div>
+                  ) : null}
                 </div>
               );
             })}

@@ -25,7 +25,8 @@ import { listAccessWhere } from "@/lib/list-access";
 async function getSidebarProjects(userId: string) {
   const [projects, counts] = await Promise.all([
     prisma.project.findMany({
-      where: { userId, archived: false },
+      // The health record is a tracker (/health), not a project row.
+      where: { userId, archived: false, kind: { not: "human" } },
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
       select: { id: true, name: true, icon: true },
     }),

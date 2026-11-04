@@ -49,11 +49,19 @@ export interface ClaudeCall {
   refusalFallback?: boolean;
 }
 
+export type ClaudeReply = {
+  text: string;
+  /** "refusal" with no text means every model in the fallback chain declined. */
+  stopReason: string | null;
+  /** The model that wrote this reply, which a refusal fallback can change. */
+  servedBy: string | null;
+};
+
 /**
- * Call Claude and return the first text block, trimmed. Throws if the API key
- * is missing or the API returns a non-2xx response.
+ * Call Claude and return the first text block, trimmed, with how the turn ended.
+ * Throws if the API key is missing or the API returns a non-2xx response.
  */
-export async function callClaudeText({
+export async function callClaudeReply({
   system,
   user,
   messages,
@@ -62,7 +70,7 @@ export async function callClaudeText({
   timeoutMs,
   effort,
   refusalFallback,
-}: ClaudeCall): Promise<string> {
+}: ClaudeCall): Promise<ClaudeReply> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
 
@@ -88,8 +96,19 @@ export async function callClaudeText({
   if (!res.ok) throw new ClaudeAPIError(res.status, await res.text());
   const data = (await res.json()) as {
     content?: Array<{ type: string; text?: string }>;
+    stop_reason?: string | null;
+    model?: string;
   };
-  return data.content?.find((c) => c.type === "text")?.text?.trim() ?? "";
+  return {
+    text: data.content?.find((c) => c.type === "text")?.text?.trim() ?? "",
+    stopReason: data.stop_reason ?? null,
+    servedBy: data.model ?? null,
+  };
+}
+
+/** Call Claude and return the first text block, trimmed. */
+export async function callClaudeText(call: ClaudeCall): Promise<string> {
+  return (await callClaudeReply(call)).text;
 }
 
 /**

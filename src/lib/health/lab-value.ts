@@ -23,6 +23,28 @@ export function labShown(row: Pick<LabValue, "value" | "notes">): string {
   return isLimitResult(row) ? row.notes!.replace(/\s+/g, "") : String(row.value);
 }
 
+const PLAIN_NUMBER = /^\d+(?:\.\d+)?$/;
+
+/**
+ * Labs print 5.0, but it's stored as 5. Pads one marker's results to the same
+ * number of decimals so they read as the report did. Limits like "<2" stay as they are.
+ */
+export function alignDecimals(shown: string[]): string[] {
+  const places = shown.filter((s) => PLAIN_NUMBER.test(s)).map((s) => s.split(".")[1]?.length ?? 0);
+  const wanted = Math.max(0, ...places);
+  return shown.map((s) => (PLAIN_NUMBER.test(s) ? Number(s).toFixed(wanted) : s));
+}
+
+/** An ISO date as "Jan 10, 2030". UTC and en-US, so the server render and hydration always agree. */
+export function labDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export function labStatus(row: LabValue): LabStatus {
   if (row.flag === "low" || row.flag === "high" || row.flag === "normal") return row.flag;
   if (isLimitResult(row)) {
