@@ -2004,3 +2004,24 @@ Ask: read health data over time and say where biomarkers stand and what to focus
 - [ ] Check the live page after that deploy (needs Eddie's sign-in or a screenshot)
 - [ ] Phase 2: Apple Health through the ec iPhone app (`POST /api/capture/health`, read-only HealthKit). No schema change
 - [ ] Phase 3, only if a raw DNA file exists: local extraction into `DnaResult`; the raw file never leaves the Mac
+
+---
+
+## 2026-11-04 — Retire project folders; Pets becomes a tracker
+
+**Ask (Eddie, with a screenshot of the sidebar's PROJECTS section):** get rid of these projects, not needed even as a concept; the two he named should be trackers.
+
+**What the data says (read-only audit):** the two rows he named are a vehicle row and a pet row. They only showed under Projects because every `Project` row (the folder model that also backs the vehicle / pet / health dashboards) was listed there. Health moved out to a tracker in #92; Vehicles has been a tracker all along; Pets had none. The remaining generic folders hold the capture Inbox, a work folder with meeting links, a journal of notes, and a few small folders with todos or assets.
+
+**Phase 1 (this PR, UI only, no schema change, no row deletion):**
+- [ ] Sidebar + mobile drawer: remove the Projects section, New project, rename/delete/hide/reorder of project rows. Keep the top-nav "Projects" link (the inferred PM board, #87).
+- [ ] layout.tsx stops loading sidebar projects.
+- [ ] Capture: remove the "file to project" pickers and the post-save hop to a project page.
+- [ ] Home: stop threading `projects` into the capture review inbox if it only fed a picker.
+- [ ] Delete the project CRUD API (POST / reorder / PATCH / DELETE) that only the sidebar used. Keep `[id]/ask`, `[id]/picture`, sources, sync (board + dashboards).
+- [ ] Search: todo results stop linking to project folders; project rows only surface as Vehicle / Pet / Health.
+- [ ] Calendar: event rows stop linking into project folders.
+- [ ] New **Pets** tracker (`/pets`, template slug `pets`, palette entry) listing pet rows like `/vehicles` does; cards open the existing pet dashboard.
+- [ ] Tests updated/added; `tsc`, lint and vitest green.
+
+**Deliberately left for Phase 2 (schema change, needs Eddie's OK):** dropping the `Project` table means making Vehicle / Pet / Human standalone, giving notes and meeting links a new home, and moving the dashboards off `/projects/[id]`. Until then those pages still exist and are reachable from search; nothing is deleted.
