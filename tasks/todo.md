@@ -1,3 +1,39 @@
+# Ask Fable about your health: workouts and diet — in progress 2026-11-04
+
+Eddie, after a chat where Fable said "Your records don't log your diet":
+"i want this ask fable to be better. i want it to integrate with the workout
+tab and it should link to the food tracking app i use which sends to apple
+health". Branch `claude/health-chat-workouts` off main (#93).
+
+## Part A — the chat reads the workout log (no schema change)
+Today the health summary only sees FitnessSession rows (kind + minutes, 90
+days). The Workout tab keeps a set-by-set log in `WorkoutLog` (guided
+sessions, class whiteboards, Strava) that the chat never sees.
+
+- [ ] `src/lib/health/training.ts` (pure): `summarizeTraining(records, now)` → sessions per week over 12 weeks, by source, minutes, per-exercise last performance + first/last working load + trend, recent cardio (distance / HR notes), last session
+- [ ] `load.ts`: read `WorkoutLog` (90 days, newest 60) and HRV/RHR (33 days) for the person's user; missing-table (P2021) reads as no log
+- [ ] `summary.ts`: `training` and `recovery` (readiness via `workout-health.ts`) on `HealthSummary`; activity fingerprint covers them
+- [ ] `ask.ts` + `picture.ts` prompts: explain the new fields; the Workout tab plans from the same log
+- [ ] Health page: "Workouts" card from the log (title · focus · minutes · source) with a link to /workout; `FitnessSession` list stays as the fallback. Chat intro names the workout log
+- [ ] Workout tab: "From your health data" links to /health (Ask Fable lives there)
+- [ ] Tests: training, summary, load, ask, page; `pnpm typecheck`, `pnpm test`
+
+## Part B — diet from the food app via Apple Health (needs Eddie's OK: schema)
+Apple Health has no web API. Path: an iOS Shortcut (daily automation) reads
+nutrition and vitals samples and POSTs them to the app with the capture bearer,
+like the Read Later share-sheet Shortcut.
+- New `NutritionDay` table (one row per user per day: kcal, protein, carbs,
+  fat, saturated fat, fiber, sugar, sodium, source, app). Alternative with
+  no schema change: 7 `BiometricReading` rows per day with diet kinds; rejected
+  as a draft because the dashboard's biometric cards would fill with them.
+- Same endpoint also upserts weight / RHR / HRV / VO2 / steps / sleep into
+  `BiometricReading` (source "apple-health"), which the workout planner's
+  readiness already reads. No schema change for that part.
+- Summary + chat: 7/14/28-day averages, protein per lb, fiber, saturated fat;
+  dashboard "Nutrition" card with an "Open <app>" deep link.
+- Open question for Eddie: which food app (MacroFactor, Cronometer,
+  MyFitnessPal, Lose It, FoodNoms…) — only the deep link depends on it.
+
 # /projects: a board Claude runs — in progress 2026-11-03
 
 Eddie wants the Projects tab to help him manage everything: Claude keeps it up
