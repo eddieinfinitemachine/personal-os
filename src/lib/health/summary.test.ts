@@ -1,0 +1,142 @@
+import { describe, expect, it } from "vitest";
+import { labRange, labShown, labStatus } from "./lab-value";
+import { buildHealthSummary, healthFingerprints, type HealthSummaryInput } from "./summary";
+
+const now = new Date("2030-06-15T12:00:00Z");
+
+const lab = (marker: string, date: string, value: number, extra: Partial<HealthSummaryInput["labs"][number]> = {}) => ({
+  panel: "Lipids",
+  marker,
+  drawnAt: new Date(`${date}T00:00:00Z`),
+  value,
+  unit: "mg/dL",
+  refLow: null,
+  refHigh: 100,
+  flag: null,
+  notes: null,
+  ...extra,
+});
+
+const input = (overrides: Partial<HealthSummaryInput> = {}): HealthSummaryInput => ({
+  sex: "M",
+  birthDate: new Date("1990-07-01T00:00:00Z"),
+  notes: null,
+  medications: null,
+  conditions: null,
+  allergies: null,
+  labs: [],
+  visits: [],
+  fitness: [],
+  dna: [],
+  biometricReadings: 0,
+  ...overrides,
+});
+
+describe("lab values", () => {
+  it("shows a reporting limit as the report did", () => {
+    expect(labShown({ value: 2, notes: "<2" })).toBe("<2");
+    expect(labShown({ value: 2.5, notes: null })).toBe("2.5");
+    expect(labShown({ value: 2.5, notes: "fasting" })).toBe("2.5");
+  });
+
+  it("doesn't call a limit above the range high", () => {
+    expect(labStatus({ value: 2, notes: "<2", refLow: null, refHigh: 1 })).toBe("unknown");
+    expect(labStatus({ value: 2, notes: "<2", refLow: null, refHigh: 2 })).toBe("normal");
+    expect(labStatus({ value: 2, notes: null, refLow: null, refHigh: 1 })).toBe("high");
+  });
+
+  it("formats ranges", () => {
+    expect(labRange({ refLow: 1, refHigh: 2 })).toBe("1–2");
+    expect(labRange({ refLow: 1, refHigh: null })).toBe(">1");
+    expect(labRange({ refLow: null, refHigh: 2 })).toBe("<2");
+    expect(labRange({ refLow: null, refHigh: null })).toBeNull();
+  });
+});
+
+describe("buildHealthSummary", () => {
+  it("builds each marker's history oldest first, with the latest change", () => {
+    const summary = buildHealthSummary(
+      input({ labs: [lab("Marker A", "2029-06-01", 120), lab("Marker A", "2028-01-01", 100), lab("Marker B", "2029-06-01", 50)] }),
+      now,
+    );
+    const a = summary.labs.markers.find((m) => m.marker === "Marker A")!;
+    expect(a.points.map((p) => p.date)).toEqual(["2028-01-01", "2029-06-01"]);
+    expect(a.change).toBe(20);
+    expect(a.changePct).toBe(20);
+    expect(summary.labs.markers.find((m) => m.marker === "Marker B")!.change).toBeNull();
+    expect(summary.labs.draws).toEqual(["2028-01-01", "2029-06-01"]);
+    expect(summary.labs.latestDraw).toBe("2029-06-01");
+    expect(summary.labs.monthsSinceLatestDraw).toBe(12);
+  });
+
+  it("reports no change when either side is a reporting limit", () => {
+    const summary = buildHealthSummary(
+      input({ labs: [lab("Marker C", "2028-01-01", 1, { notes: "<1" }), lab("Marker C", "2029-01-01", 2, { notes: "<2" })] }),
+      now,
+    );
+    const marker = summary.labs.markers[0];
+    expect(marker.change).toBeNull();
+    expect(marker.points.map((p) => p.shown)).toEqual(["<1", "<2"]);
+  });
+
+  it("leaves out identity and provider details", () => {
+    const summary = buildHealthSummary(
+      input({ medications: [{ name: "Supplement A", dosage: "1 mg", prescribedBy: "Dr. Example", since: "2029-01" }] }),
+      now,
+    );
+    expect(summary.medications).toEqual([{ name: "Supplement A", dosage: "1 mg", since: "2029-01" }]);
+    expect(JSON.stringify(summary)).not.toContain("Dr. Example");
+    expect(JSON.stringify(summary)).not.toContain("1990");
+    expect(summary.person.age).toBe(39);
+  });
+
+  it("knows when medication start dates are missing", () => {
+    const missing = buildHealthSummary(input({ medications: [{ name: "A" }, { name: "B", since: "2029" }] }), now);
+    expect(missing.coverage.medicationStartDatesKnown).toBe(false);
+    const known = buildHealthSummary(input({ medications: [{ name: "B", since: "2029" }] }), now);
+    expect(known.coverage.medicationStartDatesKnown).toBe(true);
+  });
+
+  it("counts recent activity only", () => {
+    const summary = buildHealthSummary(
+      input({
+        fitness: [
+          { performedAt: new Date("2030-06-01T00:00:00Z"), kind: "run", durationMin: 30 },
+          { performedAt: new Date("2030-06-10T00:00:00Z"), kind: "lift", durationMin: 45 },
+          { performedAt: new Date("2029-01-01T00:00:00Z"), kind: "run", durationMin: 30 },
+        ],
+      }),
+      now,
+    );
+    expect(summary.activity.sessionsInWindow).toBe(2);
+    expect(summary.activity.byKind).toEqual({ run: 1, lift: 1 });
+    expect(summary.activity.lastSession).toBe("2030-06-10");
+  });
+});
+
+describe("healthFingerprints", () => {
+  const labs = [lab("Marker A", "2029-06-01", 90)];
+
+  it("doesn't change just because time passed", () => {
+    const earlier = healthFingerprints(buildHealthSummary(input({ labs }), now));
+    const later = healthFingerprints(buildHealthSummary(input({ labs }), new Date("2031-02-01T00:00:00Z")));
+    expect(later.core).toBe(earlier.core);
+  });
+
+  it("changes core when labs or notes change", () => {
+    const base = healthFingerprints(buildHealthSummary(input({ labs }), now));
+    const newLab = healthFingerprints(buildHealthSummary(input({ labs: [...labs, lab("Marker B", "2030-01-01", 5)] }), now));
+    const newNote = healthFingerprints(buildHealthSummary(input({ labs, notes: "New goal" }), now));
+    expect(newLab.core).not.toBe(base.core);
+    expect(newNote.core).not.toBe(base.core);
+  });
+
+  it("keeps activity out of core", () => {
+    const base = healthFingerprints(buildHealthSummary(input({ labs }), now));
+    const withWorkout = healthFingerprints(
+      buildHealthSummary(input({ labs, fitness: [{ performedAt: new Date("2030-06-10T00:00:00Z"), kind: "run", durationMin: 30 }] }), now),
+    );
+    expect(withWorkout.core).toBe(base.core);
+    expect(withWorkout.activity).not.toBe(base.activity);
+  });
+});

@@ -1,4 +1,5 @@
 import { TrendingDown, TrendingUp, Minus } from "lucide-react";
+import { isLimitResult, labShown, labStatus, type LabStatus } from "@/lib/health/lab-value";
 import { cn } from "@/lib/utils";
 
 export type LabRow = {
@@ -11,17 +12,10 @@ export type LabRow = {
   refLow: number | null;
   refHigh: number | null;
   flag: string | null;
+  notes?: string | null;
 };
 
-function classifyFlag(r: LabRow): "low" | "high" | "normal" | "unknown" {
-  if (r.flag === "low" || r.flag === "high" || r.flag === "normal") return r.flag;
-  if (r.refLow != null && r.value < r.refLow) return "low";
-  if (r.refHigh != null && r.value > r.refHigh) return "high";
-  if (r.refLow != null || r.refHigh != null) return "normal";
-  return "unknown";
-}
-
-function flagStyles(flag: ReturnType<typeof classifyFlag>) {
+function flagStyles(flag: LabStatus) {
   switch (flag) {
     case "high":
       return { dot: "bg-rose-500", text: "text-rose-500", label: "high" };
@@ -100,10 +94,14 @@ export function LabGrid({
           </div>
           <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {rows.map((r) => {
-              const flag = classifyFlag(r);
+              const flag = labStatus(r);
               const fs = flagStyles(flag);
               const prior = priorByMarker?.get(r.marker);
-              const t = prior ? trend(r.value, prior.value, r.marker) : null;
+              // A reporting limit isn't a measurement, so there's no change to show.
+              const t =
+                prior && !isLimitResult(r) && !isLimitResult(prior)
+                  ? trend(r.value, prior.value, r.marker)
+                  : null;
               return (
                 <div
                   key={r.id}
@@ -123,7 +121,7 @@ export function LabGrid({
                   </div>
                   <div className="mt-1 flex items-baseline gap-1.5">
                     <div className="text-lg font-semibold tabular-nums">
-                      {r.value}
+                      {labShown(r)}
                     </div>
                     <div className="text-xs text-[var(--color-muted-foreground)]">
                       {r.unit}
@@ -134,7 +132,7 @@ export function LabGrid({
                           "ml-auto inline-flex items-center gap-0.5 text-[11px] font-medium tabular-nums",
                           t.better ? "text-emerald-500" : "text-rose-500"
                         )}
-                        title={`vs ${new Date(prior!.drawnAt).toLocaleDateString()}: ${prior!.value} ${prior!.unit}`}
+                        title={`vs ${new Date(prior!.drawnAt).toLocaleDateString()}: ${labShown(prior!)} ${prior!.unit}`}
                       >
                         {t.direction === "up" ? (
                           <TrendingUp className="size-3" />

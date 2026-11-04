@@ -291,6 +291,10 @@ model Human {
   lifeStageNote   String?
   lifeStageNoteAt DateTime?
 
+  // The Health page's generated picture (src/lib/health/picture.ts)
+  pictureJson Json?
+  pictureAt   DateTime?
+
   notes String?
 
   createdAt DateTime @default(now())
