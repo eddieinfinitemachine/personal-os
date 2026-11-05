@@ -1956,3 +1956,14 @@ Ask: read health data over time and say where biomarkers stand and what to focus
 - [ ] Browser check of the sidebar and `/pets` after deploy (needs Eddie's sign-in)
 
 **Deliberately left for Phase 2 (schema change, needs Eddie's OK):** dropping the `Project` table means making Vehicle / Pet / Human standalone, giving notes and meeting links a new home, and moving the dashboards off `/projects/[id]`. Until then those pages still exist and are reachable from search; nothing is deleted.
+
+## 2026-11-05 — iPhone Duo
+
+Ask (Eddie): "optimize this for the iphone duo". Read as: Personal OS (the PWA he uses on the phone) on the Duo's two displays. Safari 27.1 gives a page these CSS-px viewports (WebKit blog, Safari 27.1): outer portrait 382×580, outer landscape 594×368, inner portrait 669×867, inner landscape 951×585, two windows side by side 385 each. Every pose is `(hover: none)` / `(pointer: coarse)`. Folding fires `resize` (a transient 466×498 mid-swing), no reload. Device Posture / Viewport Segments APIs are behind Safari feature flags, so nothing is built on them.
+
+What that means for the app: `md:` (768) is the mobile/desktop split, so inner-portrait (669) keeps the phone chrome like an iPad mini in portrait, and inner-landscape (951) gets the desktop sidebar on a touch-only screen. Tailwind v4 wraps `hover:`/`group-hover:` in `@media (hover: hover)`, so every "visible on mobile, hover-reveal on desktop" control written as `md:opacity-0 md:group-hover:opacity-100` is invisible and unreachable at 951 on the Duo. Width is also used as a proxy for touch in todo-row (long-press drag) and list-tile (tap-to-add), so the unfolded Duo gets mouse-only behaviour.
+
+- [ ] `hoverable` custom variant (`(hover: hover) and (pointer: fine)`) in globals.css; every hover-reveal control uses `hoverable:opacity-0 group-hover:opacity-100` with a visible touch baseline (18 files)
+- [ ] Touch detection by capability, not width: todo-row `touchEnv`, list-tile tile-tap composer (shared `TOUCH_QUERY` in `src/lib/touch.ts`)
+- [ ] Audit at the five Duo viewports with touch emulation (local dev + scratch DB, agent-browser): Home, list, Research, Workout, Notes, Call Sheet, Calendar, Settings, todo detail modal; outer 382 overflow, inner-landscape 585 height, fold transition
+- [ ] Fix what the audit finds; verify; PR
