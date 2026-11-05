@@ -417,7 +417,7 @@ export function TodoDetailModal({
       <div
         data-overlay="modal"
         data-state={closing ? "closed" : "open"}
-        className="w-full max-w-xl rounded-2xl border border-[var(--color-card-border)] bg-[var(--color-elevated)] shadow-modal max-md:max-h-[85dvh] max-md:max-w-none max-md:overflow-y-auto max-md:rounded-b-none"
+        className="w-full max-w-xl rounded-2xl border border-[var(--color-card-border)] bg-[var(--color-elevated)] shadow-modal max-h-[85dvh] overflow-y-auto md:max-h-[calc(100dvh-2rem)] max-md:max-w-none max-md:rounded-b-none"
       >
         {/* Header */}
         <div className="flex items-start justify-between gap-3 border-b border-[var(--color-border)] px-5 py-4">
@@ -689,13 +689,14 @@ export function TodoDetailModal({
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-[var(--color-border)] px-5 py-3">
-          <span className="text-[11px] text-[var(--color-muted-foreground)]">
+          {/* No Escape key on a touch screen, so the hint shows only with a mouse. */}
+          <span className="hidden hoverable:inline text-[11px] text-[var(--color-muted-foreground)]">
             <kbd className="rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono">esc</kbd>{" "}
             to close
           </span>
           <button
             onClick={closeModal}
-            className="rounded-md px-3 py-1.5 text-sm text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
+            className="ml-auto rounded-md px-3 py-1.5 text-sm text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
           >
             Done
           </button>

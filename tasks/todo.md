@@ -1967,5 +1967,21 @@ What that means for the app: `md:` (768) is the mobile/desktop split, so inner-p
   - Done: 18 components converted (23 sites). Touch keeps the old phone baseline (50/60, full opacity where `sm:` sites had none, 50 where there was none); the mood-board caption stays visible on touch. Compiled CSS checked: `group-hover:`/`hover:`/`focus:` (0,2,0) beat `hoverable:opacity-0` (0,1,0). Left alone: todo-row Tracker / Move to chips (desktop-only by design; touch reaches both from the long-press menu) and the exercise-video thumbnail fade (decorative).
 - [x] Touch detection by capability, not width: todo-row `touchEnv`, list-tile tile-tap composer (shared `TOUCH_QUERY` in `src/lib/touch.ts`)
   - Done: `touchEnv` uses `TOUCH_QUERY` (long-press drag, ghost, touch-action); tile tap returns early only on `FINE_POINTER_QUERY`. Left alone as layout: notes-pane `(min-width: 1024px)` scroll fix, MobileFab / drawer `md:hidden`, popover placement by `innerWidth`. New tests: todo-row arms long-press at 951 touch and not for a narrow mouse window; list-tile tap composes without a fine pointer at 951 and not with one (all four fail on the old code). Repo suite 1735 passed / 184 skipped, 0 failed (`pnpm test` also picks up two stale `.claude/worktrees` checkouts, which fail 62 on their own); typecheck has the same 128 pre-existing errors as before (stale Prisma client), none in changed files.
-- [ ] Audit at the five Duo viewports with touch emulation (local dev + scratch DB, agent-browser): Home, list, Research, Workout, Notes, Call Sheet, Calendar, Settings, todo detail modal; outer 382 overflow, inner-landscape 585 height, fold transition
-- [ ] Fix what the audit finds; verify; PR
+- [x] Audit at the five Duo viewports with touch emulation (local dev + scratch DB, agent-browser): Home, list, Research, Workout, Notes, Call Sheet, Calendar, Settings, todo detail modal; outer 382 overflow, inner-landscape 585 height, fold transition
+  - Done: six problems found (below); no horizontal overflow at any width.
+- [x] Fix what the audit finds; verify
+  - Project Ask chat: the full-screen panel below md covered its own toggle and had no way out. Header Close button (44px, `aria-label="Close"`, below md), Escape closes, toggle hidden below md while open.
+  - Todo detail modal: height cap and scroll at every size (`max-h-[85dvh] overflow-y-auto md:max-h-[calc(100dvh-2rem)]`); "esc to close" hint is `hidden hoverable:inline`.
+  - Mobile drawer: closes when `(min-width: 768px)` starts matching (unfolding); scroll lock pins the body (`position: fixed; top: -scrollY`) and restores the position on close (skipped when a drawer link navigated). `overflow: hidden` on body never worked because html's `overflow-x: clip` stops it reaching the viewport.
+  - Sidebar: `sticky top-0 h-dvh overflow-y-auto`, so nav and Settings/theme stay on screen at 951×585.
+  - List tiles (Home, project page): `md:grid-cols-2 lg:grid-cols-3`.
+  - Mobile `<main>` bottom padding 96px + safe area so the FAB clears the last row.
+  - Tests: new project-chat (Close, Escape) and mobile-chrome (closes on unfold and stays closed on refold; body pinned and scroll restored) tests, all four fail on the old code. Repo suite 1739 passed / 184 skipped, 0 failed; typecheck 0 errors.
+  - Browser (touch emulation, dev server with every `.env` key blanked + scratch DB): 382×580 chat closes by the Close button (44×44, topmost) and by Escape; 951×585 modal 16→569px of 585 with overflow-y auto, scrolls to Done (bottom 556), esc hint `display: none`; 382×580 drawer pins the page at 600 (scrollBy no effect), close restores scrollY 600, open then resize to 951 closes it and refold to 382 leaves it closed; 951×585 Home at scrollY 700 sidebar top 0 / height 585 with Settings on screen, tiles in two 308px columns; 594×368 Calendar bottom: last content 245, FAB top 294; scrollWidth equals innerWidth at 382 and 951.
+- [ ] PR
+- Follow-ups (not done):
+  - [ ] 669-wide Home pager shows one list per slide
+  - [ ] Notes split view below lg
+  - [ ] FAB disabled on non-Home pages
+  - [ ] Personal page date bug
+  - [ ] Placeholder truncation

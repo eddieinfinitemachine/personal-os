@@ -43,6 +43,17 @@ export function ProjectChat({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [turns, open, pending]);
 
+  // Escape closes the chat; below md the panel fills the screen, so this and
+  // the header's Close button are the way out.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
   async function ask(e: React.FormEvent) {
     e.preventDefault();
     const q = question.trim();
@@ -87,7 +98,7 @@ export function ProjectChat({
     <>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="fixed right-4 z-40 grid place-items-center size-12 rounded-full bg-violet-500 text-white shadow-lg hover:bg-violet-600 transition bottom-[calc(env(safe-area-inset-bottom)+64px+1rem)] md:bottom-6 md:right-6"
+        className={`${open ? "max-md:hidden " : ""}fixed right-4 z-40 grid place-items-center size-12 rounded-full bg-violet-500 text-white shadow-lg hover:bg-violet-600 transition bottom-[calc(env(safe-area-inset-bottom)+64px+1rem)] md:bottom-6 md:right-6`}
         title={open ? "Close chat" : title}
       >
         {open ? <X className="size-5" /> : <MessageCircle className="size-5" />}
@@ -98,6 +109,14 @@ export function ProjectChat({
           <div className="px-4 py-3 border-b border-[var(--color-border)] flex items-center gap-2">
             <MessageCircle className="size-4 text-violet-400" />
             <div className="text-sm font-semibold truncate">{title}</div>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close"
+              className="md:hidden ml-auto -mr-2 -my-2 grid place-items-center size-11 rounded-full text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]"
+            >
+              <X className="size-5" />
+            </button>
           </div>
 
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
