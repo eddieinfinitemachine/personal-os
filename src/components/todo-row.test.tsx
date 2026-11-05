@@ -8,17 +8,30 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { TodoRow, dropTargetProjectId } from "./todo-row";
+import { TOUCH_QUERY } from "@/lib/touch";
+
+// Answers matchMedia as a screen of `width` px that is (or isn't) touch-only,
+// so width queries still match the way a browser would.
+const stubScreen = (width: number, touch: boolean) =>
+  vi.stubGlobal("matchMedia", (q: string) => {
+    const min = /min-width:\s*(\d+)px/.exec(q);
+    const max = /max-width:\s*(\d+)px/.exec(q);
+    const matches =
+      q === TOUCH_QUERY
+        ? touch
+        : min
+          ? width >= Number(min[1])
+          : max
+            ? width <= Number(max[1])
+            : false;
+    return { matches, media: q, addEventListener: () => {}, removeEventListener: () => {} };
+  });
 
 let container: HTMLDivElement, root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  // Desktop: the (max-width: 767px) query does not match.
-  vi.stubGlobal("matchMedia", (q: string) => ({
-    matches: false,
-    media: q,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }));
+  // Desktop with a mouse: TOUCH_QUERY does not match.
+  stubScreen(1440, false);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -201,6 +214,48 @@ describe("TodoRow send to tracker", () => {
     expect(container.querySelector('[role="status"]')).toBeNull();
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("try again");
     expect(titleText().textContent).toBe(todo.title);
+  });
+});
+
+describe("TodoRow touch long-press drag", () => {
+  // jsdom has no layout, so drop-target hit testing finds nothing.
+  beforeEach(() => {
+    Object.assign(document, { elementFromPoint: () => null });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    Reflect.deleteProperty(document, "elementFromPoint");
+  });
+  // The pointer-handling wrapper around the row; it fades while a drag is live.
+  const swipeArea = () => titleText().closest(".relative.z-10") as HTMLElement;
+  // The ghost copy of the row that follows the finger during a touch drag.
+  const ghost = () => document.body.querySelector('div[style*="z-index: 1000"]');
+  const longPress = async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    await act(async () => {
+      titleText().dispatchEvent(
+        new MouseEvent("pointerdown", { bubbles: true, button: 0, clientX: 10, clientY: 10 }),
+      );
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+  };
+
+  it("arms long-press drag on a touch screen at a desktop width (unfolded iPhone Duo)", async () => {
+    stubScreen(951, true);
+    await render();
+    await longPress();
+    expect(swipeArea().style.opacity).toBe("0.4");
+    expect(ghost()).not.toBeNull();
+  });
+
+  it("does not arm it for a mouse on a narrow window", async () => {
+    stubScreen(600, false);
+    await render();
+    await longPress();
+    expect(swipeArea().style.opacity).toBe("");
+    expect(ghost()).toBeNull();
   });
 });
 

@@ -123,7 +123,7 @@ export function PhotoGallery({
               </button>
               <button
                 onClick={() => deletePhoto(p.id)}
-                className="absolute top-1 right-1 rounded-full bg-black/60 text-white p-1 opacity-50 md:opacity-0 md:group-hover:opacity-100 transition hover:bg-rose-500"
+                className="absolute top-1 right-1 rounded-full bg-black/60 text-white p-1 opacity-50 hoverable:opacity-0 group-hover:opacity-100 transition hover:bg-rose-500"
                 title="Delete"
               >
                 <Trash2 className="size-3.5" />

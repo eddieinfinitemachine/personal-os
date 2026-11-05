@@ -369,7 +369,7 @@ export function TripPacking({
                       </div>
                       <button
                         onClick={() => void remove(it)}
-                        className="opacity-0 group-hover:opacity-100 text-[var(--color-muted-foreground)] hover:text-rose-500 transition p-0.5"
+                        className="opacity-50 hoverable:opacity-0 group-hover:opacity-100 text-[var(--color-muted-foreground)] hover:text-rose-500 transition p-0.5"
                         title="Delete item"
                       >
                         <Trash2 className="size-3.5" />

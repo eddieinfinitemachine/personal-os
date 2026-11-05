@@ -136,7 +136,7 @@ export function ResearchGrid({ initialReports, canCreate }: { initialReports: Re
                 <button
                   onClick={() => void remove(r)}
                   aria-label={`Delete ${r.title}`}
-                  className="absolute top-2 right-2 rounded-md p-1.5 text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] transition sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
+                  className="absolute top-2 right-2 rounded-md p-1.5 text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)] transition hoverable:opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                 >
                   <Trash2 className="size-3.5" />
                 </button>

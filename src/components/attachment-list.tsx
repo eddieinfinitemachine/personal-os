@@ -127,7 +127,7 @@ function AttachmentListContent({ owner, initial, onCountChange, query }: Props &
             {a.size !== null ? <span className="shrink-0 text-[11px] text-[var(--color-muted-foreground)]">{formatAttachmentSize(a.size)}</span> : null}
             <ExternalLink className="size-3 shrink-0 text-[var(--color-muted-foreground)]/50" />
           </a>
-          <button type="button" onClick={() => remove(a)} className="grid size-6 shrink-0 place-items-center rounded text-[var(--color-muted-foreground)]/40 transition hover:bg-rose-500/10 hover:text-rose-500 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100" aria-label={`Delete ${a.title}`}><Trash2 className="size-3.5" /></button>
+          <button type="button" onClick={() => remove(a)} className="grid size-6 shrink-0 place-items-center rounded text-[var(--color-muted-foreground)]/40 transition hover:bg-rose-500/10 hover:text-rose-500 hoverable:opacity-0 group-hover:opacity-100 focus:opacity-100" aria-label={`Delete ${a.title}`}><Trash2 className="size-3.5" /></button>
         </li>;
       })}
     </ul>

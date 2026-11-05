@@ -82,7 +82,7 @@ export function HeroWeightEditor({
           {delta.toFixed(1)}
         </span>
       ) : null}
-      <Pencil className="size-3 text-[var(--color-muted-foreground)] opacity-30 md:opacity-0 md:group-hover:opacity-50 transition ml-1" />
+      <Pencil className="size-3 text-[var(--color-muted-foreground)] opacity-30 hoverable:opacity-0 group-hover:opacity-50 transition ml-1" />
     </button>
   );
 }

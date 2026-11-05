@@ -537,7 +537,7 @@ export function TodoDetailModal({
                   </a>
                   <button
                     onClick={() => deleteAttachment(a.id)}
-                    className="grid size-6 shrink-0 place-items-center rounded text-[var(--color-muted-foreground)]/40 opacity-0 transition hover:bg-rose-500/10 hover:text-rose-500 group-hover:opacity-100"
+                    className="grid size-6 shrink-0 place-items-center rounded text-[var(--color-muted-foreground)]/40 opacity-50 hoverable:opacity-0 transition hover:bg-rose-500/10 hover:text-rose-500 group-hover:opacity-100"
                     aria-label="Delete file"
                   >
                     <Trash2 className="size-3.5" />
@@ -580,7 +580,7 @@ export function TodoDetailModal({
                   </span>
                   <button
                     onClick={() => deleteSubtask(s.id)}
-                    className="grid size-6 shrink-0 place-items-center rounded text-[var(--color-muted-foreground)]/40 opacity-0 transition hover:bg-rose-500/10 hover:text-rose-500 group-hover:opacity-100"
+                    className="grid size-6 shrink-0 place-items-center rounded text-[var(--color-muted-foreground)]/40 opacity-50 hoverable:opacity-0 transition hover:bg-rose-500/10 hover:text-rose-500 group-hover:opacity-100"
                     aria-label="Delete subtask"
                   >
                     <Trash2 className="size-3.5" />
@@ -644,7 +644,7 @@ export function TodoDetailModal({
                       {c.mine && !c.id.startsWith("temp-") ? (
                         <button
                           onClick={() => deleteComment(c.id)}
-                          className="ml-auto grid size-5 shrink-0 place-items-center rounded text-[var(--color-muted-foreground)]/40 opacity-0 transition hover:bg-rose-500/10 hover:text-rose-500 group-hover:opacity-100"
+                          className="ml-auto grid size-5 shrink-0 place-items-center rounded text-[var(--color-muted-foreground)]/40 opacity-50 hoverable:opacity-0 transition hover:bg-rose-500/10 hover:text-rose-500 group-hover:opacity-100"
                           aria-label="Delete comment"
                         >
                           <Trash2 className="size-3" />

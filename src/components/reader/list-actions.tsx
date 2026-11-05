@@ -70,7 +70,7 @@ export function ReaderListActions({
   }
 
   return (
-    <div className="flex items-center gap-0.5 opacity-60 md:opacity-0 md:group-hover:opacity-100 transition">
+    <div className="flex items-center gap-0.5 opacity-60 hoverable:opacity-0 group-hover:opacity-100 transition">
       {kindleConfigured ? (
         <button
           type="button"

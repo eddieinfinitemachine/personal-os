@@ -203,7 +203,7 @@ export function CoachingPanel({
                 ) : null}
                 <button
                   onClick={() => dismiss(r.id)}
-                  className="rounded p-0.5 text-[var(--color-muted-foreground)]/60 opacity-50 md:opacity-0 md:group-hover:opacity-100 hover:text-rose-500 transition"
+                  className="rounded p-0.5 text-[var(--color-muted-foreground)]/60 opacity-50 hoverable:opacity-0 group-hover:opacity-100 hover:text-rose-500 transition"
                   title="Dismiss"
                 >
                   <X className="size-3" />

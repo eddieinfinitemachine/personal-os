@@ -8,6 +8,7 @@ import { haptic } from "@/lib/haptic";
 import { pushUndo, quoteTitle } from "@/lib/undo";
 import { pushTodoMoveUndo } from "@/lib/todo-undo";
 import { cn, toDateInputValue } from "@/lib/utils";
+import { FINE_POINTER_QUERY } from "@/lib/touch";
 import { TodoRow, type TodoLike } from "./todo-row";
 import { ListShareDialog } from "./list-share-dialog";
 import { AgendaLauncher } from "./agenda-mode";
@@ -829,9 +830,11 @@ export function ListTile({
 
   function handleTileClick(e: React.MouseEvent<HTMLDivElement>) {
     if (adding) return;
-    // Desktop: clicking a tile no longer opens the composer — it hijacked
-    // focus and swallowed j/k. Use ⌘N (or the + New Reminder button).
-    if (window.matchMedia("(min-width: 768px)").matches) return;
+    // Mouse/trackpad: clicking a tile no longer opens the composer — it
+    // hijacked focus and swallowed j/k. Use ⌘N (or the + New Reminder
+    // button). Touch screens of any width (the unfolded iPhone Duo is 951px)
+    // have no ⌘N, so a tap still composes.
+    if (window.matchMedia(FINE_POINTER_QUERY).matches) return;
     const target = e.target as HTMLElement;
     if (target.closest("button, a, input, form, li")) return;
     startAdding();

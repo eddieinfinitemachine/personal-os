@@ -276,7 +276,7 @@ function ShoppingRow({
           href={item.link}
           target="_blank"
           rel="noreferrer"
-          className="rounded p-1 text-[var(--color-muted-foreground)] opacity-50 md:opacity-0 md:group-hover:opacity-100 hover:text-[var(--color-foreground)] transition"
+          className="rounded p-1 text-[var(--color-muted-foreground)] opacity-50 hoverable:opacity-0 group-hover:opacity-100 hover:text-[var(--color-foreground)] transition"
           title="Open link"
           onClick={(e) => e.stopPropagation()}
         >
@@ -285,7 +285,7 @@ function ShoppingRow({
       ) : null}
       <button
         onClick={onDelete}
-        className="rounded p-1 text-[var(--color-muted-foreground)] opacity-50 md:opacity-0 md:group-hover:opacity-100 hover:text-rose-500 transition"
+        className="rounded p-1 text-[var(--color-muted-foreground)] opacity-50 hoverable:opacity-0 group-hover:opacity-100 hover:text-rose-500 transition"
         title="Delete"
       >
         <Trash2 className="size-3.5" />

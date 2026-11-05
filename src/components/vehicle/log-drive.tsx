@@ -129,7 +129,7 @@ export function LogDrive({
                 </div>
                 <button
                   onClick={() => remove(d.id)}
-                  className="opacity-0 group-hover:opacity-50 hover:!opacity-100 transition p-1 rounded text-rose-500"
+                  className="opacity-50 hoverable:opacity-0 group-hover:opacity-50 hover:!opacity-100 transition p-1 rounded text-rose-500"
                   title="Delete drive"
                 >
                   <Trash2 className="size-3.5" />
