@@ -10,11 +10,16 @@ import {
   Stethoscope,
   Syringe,
   User,
+  Utensils,
 } from "lucide-react";
+import Link from "next/link";
 import { SimpleMarkdown } from "@/components/simple-markdown";
 import { prisma } from "@/lib/prisma";
 import { loadHealthSummary } from "@/lib/health/load";
+import { labDate } from "@/lib/health/lab-value";
+import type { NutritionSummary } from "@/lib/health/nutrition";
 import { isPictureStale, pictureEvidence, readStoredPicture } from "@/lib/health/picture";
+import type { WorkoutSource } from "@/lib/workout-history";
 import { HealthPictureCard } from "./health-picture";
 import { LabGrid, type LabRow } from "./lab-grid";
 import { LabSection } from "./lab-section";
@@ -91,6 +96,10 @@ function ageYears(dob: Date | null): number | null {
   if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) y--;
   return y;
 }
+
+const SOURCE_LABELS: Record<WorkoutSource, string | null> = { guided: null, board: "Whiteboard", strava: "Strava" };
+const APPLE_HEALTH_SHORTCUT =
+  "https://github.com/eddieinfinitemachine/personal-os/blob/main/docs/shortcuts/apple-health.md";
 
 type Allergy = { allergen?: string; severity?: string; notes?: string };
 type Medication = { name?: string; dosage?: string; frequency?: string };
@@ -443,8 +452,8 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
         </section>
       </div>
 
-      {/* Visits + Fitness */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      {/* Visits + Workouts + Nutrition */}
+      <div className="grid gap-4 lg:grid-cols-3">
         <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
           <h3 className="font-semibold mb-3 flex items-center gap-2">
             <CalendarClock className="size-4" /> Visits
@@ -480,18 +489,51 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
         </section>
 
         <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
-          <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <Dumbbell className="size-4" /> Fitness sessions
-          </h3>
-          {human.fitnessSessions.length === 0 ? (
-            <p className="text-sm text-[var(--color-muted-foreground)]">
-              None logged yet.
-            </p>
-          ) : (
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="font-semibold flex items-center gap-2">
+              <Dumbbell className="size-4" /> Workouts
+            </h3>
+            <Link
+              href="/workout"
+              className="text-xs text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
+            >
+              Open Workout →
+            </Link>
+          </div>
+          {summary.training.recent.length > 0 ? (
+            <ul className="space-y-2">
+              {summary.training.recent.map((w, i) => {
+                const details = [
+                  w.focus,
+                  `${w.durationMin}m`,
+                  SOURCE_LABELS[w.source],
+                ].filter(Boolean);
+                return (
+                  <li key={i} className="flex items-baseline gap-2 text-sm">
+                    <span className="text-xs text-[var(--color-muted-foreground)] w-20 shrink-0 tabular-nums">
+                      {labDate(w.date)}
+                    </span>
+                    <div className="min-w-0">
+                      <span className="font-medium">{w.title}</span>
+                      <span className="text-xs text-[var(--color-muted-foreground)]">
+                        {" "}
+                        · {details.join(" · ")}
+                      </span>
+                      {w.exercises === 0 && w.notes ? (
+                        <div className="text-xs text-[var(--color-muted-foreground)]">
+                          {w.notes}
+                        </div>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : human.fitnessSessions.length > 0 ? (
             <ul className="space-y-2">
               {human.fitnessSessions.map((s) => (
                 <li key={s.id} className="flex items-baseline gap-2 text-sm">
-                  <span className="text-xs text-[var(--color-muted-foreground)] w-16 shrink-0 tabular-nums">
+                  <span className="text-xs text-[var(--color-muted-foreground)] w-20 shrink-0 tabular-nums">
                     {fmtDate(s.performedAt)}
                   </span>
                   <span className="font-medium">{s.kind}</span>
@@ -508,8 +550,17 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
                 </li>
               ))}
             </ul>
+          ) : (
+            <p className="text-sm text-[var(--color-muted-foreground)]">
+              None logged yet.{" "}
+              <Link href="/workout" className="underline hover:text-[var(--color-foreground)]">
+                Plan one on the Workout tab.
+              </Link>
+            </p>
           )}
         </section>
+
+        <NutritionCard nutrition={summary.nutrition} />
       </div>
 
       {/* Vaccinations */}
@@ -578,6 +629,54 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
         </section>
       ) : null}
     </div>
+  );
+}
+
+function NutritionCard({ nutrition }: { nutrition: NutritionSummary }) {
+  const week = nutrition.averages.last7;
+  const amount = (value: number | null, unit: string) =>
+    value === null ? "—" : `${value.toLocaleString("en-US", { maximumFractionDigits: unit === "kcal" ? 0 : 1 })} ${unit}`;
+  return (
+    <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+      <h3 className="font-semibold mb-3 flex items-center gap-2">
+        <Utensils className="size-4" /> Nutrition
+      </h3>
+      {nutrition.daysLogged > 0 ? (
+        <>
+          <div className="text-xs text-[var(--color-muted-foreground)] mb-2">
+            Last 7 days · {week.days} logged
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Stat label="Calories" value={amount(week.caloriesKcal, "kcal")} />
+            <Stat label="Protein" value={amount(week.proteinG, "g")} />
+            <Stat label="Fiber" value={amount(week.fiberG, "g")} />
+            <Stat label="Saturated fat" value={amount(week.saturatedFatG, "g")} />
+          </div>
+          {week.proteinGPerLb !== null ? (
+            <p className="text-sm mt-3">
+              <span className="font-semibold tabular-nums">{week.proteinGPerLb} g</span> protein per lb of body weight
+            </p>
+          ) : null}
+          <p className="text-xs text-[var(--color-muted-foreground)] mt-3">
+            {nutrition.app ? `From ${nutrition.app} via Apple Health` : "From Apple Health"}
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-[var(--color-muted-foreground)]">Nothing from Apple Health yet.</p>
+          <p className="text-xs text-[var(--color-muted-foreground)] mt-1">
+            <a
+              href={APPLE_HEALTH_SHORTCUT}
+              target="_blank"
+              rel="noreferrer"
+              className="underline hover:text-[var(--color-foreground)]"
+            >
+              A daily Shortcut can send your food app&apos;s log here.
+            </a>
+          </p>
+        </>
+      )}
+    </section>
   );
 }
 

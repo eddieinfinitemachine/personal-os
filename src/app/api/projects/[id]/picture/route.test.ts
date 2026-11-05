@@ -19,6 +19,8 @@ vi.mock("@/lib/prisma", () => ({
     fitnessSession: { findMany: vi.fn().mockResolvedValue([]) },
     dnaResult: { findMany: vi.fn().mockResolvedValue([]) },
     biometricReading: { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) },
+    workoutLog: { findMany: vi.fn().mockResolvedValue([]) },
+    nutritionDay: { findMany: vi.fn().mockResolvedValue([]) },
   },
 }));
 vi.mock("@/lib/claude", () => {
@@ -38,6 +40,7 @@ import { POST } from "./route";
 
 const human = {
   id: "h1",
+  userId: "u1",
   sex: "M",
   birthDate: null,
   notes: null,

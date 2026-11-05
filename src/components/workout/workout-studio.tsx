@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   Camera,
   Check,
@@ -1154,6 +1155,9 @@ function HealthCard({ health }: { health: HealthSummary }) {
           {health.readiness === "low" ? `Recovery is low. ${health.note} No weight increases today.` : `Recovery is normal. ${health.note}`}
         </p>
       )}
+      <Link href="/health" className="mt-2 inline-block text-xs text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]">
+        Ask Fable about your health →
+      </Link>
     </section>
   );
 }

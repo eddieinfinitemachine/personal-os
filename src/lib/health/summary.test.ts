@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { alignDecimals, labDate, labRange, labShown, labStatus } from "./lab-value";
+import type { WorkoutRecord } from "@/lib/workout-history";
 import { buildHealthSummary, healthFingerprints, type HealthSummaryInput } from "./summary";
 
 const now = new Date("2030-06-15T12:00:00Z");
@@ -30,8 +31,42 @@ const input = (overrides: Partial<HealthSummaryInput> = {}): HealthSummaryInput 
   dna: [],
   biometrics: [],
   biometricReadings: 0,
+  workouts: [],
+  recoveryReadings: [],
+  nutrition: [],
   ...overrides,
 });
+
+const workout = (id: string, date: string, load = "25 lb"): WorkoutRecord => ({
+  id,
+  source: "guided",
+  title: "Lower day",
+  focus: "lower",
+  startedAt: new Date(`${date}T11:20:00Z`).getTime(),
+  finishedAt: new Date(`${date}T12:00:00Z`).getTime(),
+  durationMin: 40,
+  exercises: [{ name: "Goblet squat", equipment: "dumbbell", targetReps: 10, sets: [{ reps: 10, durationSec: null, load }] }],
+});
+
+const food = (date: string, extra: Partial<HealthSummaryInput["nutrition"][number]> = {}): HealthSummaryInput["nutrition"][number] => ({
+  date,
+  caloriesKcal: 2000,
+  proteinG: 140,
+  carbsG: 200,
+  fatG: 70,
+  saturatedFatG: 20,
+  fiberG: 30,
+  sugarG: 45,
+  sodiumMg: 2200,
+  app: "Food App",
+  ...extra,
+});
+
+// HRV readings ending on `latestDate`, with three earlier days for a baseline.
+const hrv = (latestDate: string, latest: number) => [
+  { kind: "hrv", value: latest, unit: "ms", measuredAt: new Date(`${latestDate}T07:00:00Z`) },
+  ...[1, 2, 3].map((d) => ({ kind: "hrv", value: 60, unit: "ms", measuredAt: new Date(new Date(`${latestDate}T07:00:00Z`).getTime() - d * 86_400_000) })),
+];
 
 describe("lab values", () => {
   it("shows a reporting limit as the report did", () => {
@@ -166,6 +201,61 @@ describe("buildHealthSummary", () => {
   });
 });
 
+describe("training and recovery", () => {
+  it("summarizes the workout log", () => {
+    const summary = buildHealthSummary(input({ workouts: [workout("w-1", "2030-06-01"), workout("w-2", "2030-06-10", "30 lb")] }), now);
+    expect(summary.training.sessions).toBe(2);
+    expect(summary.training.lastSession).toMatchObject({ date: "2030-06-10", title: "Lower day" });
+    expect(summary.training.lifts[0]).toMatchObject({ name: "Goblet squat", times: 2, next: "35 lb", loadChange: { from: 25, to: 30, unit: "lb" } });
+  });
+
+  it("reads recovery the way the Workout tab does", () => {
+    const low = buildHealthSummary(input({ recoveryReadings: hrv("2030-06-15", 40) }), now);
+    expect(low.recovery.readiness).toBe("low");
+    expect(low.recovery.note).toContain("HRV 40 ms");
+    expect(low.recovery.hrv).toEqual({ latest: { date: "2030-06-15", value: 40, unit: "ms" }, baseline: 60 });
+    expect(low.recovery.rhr).toBeNull();
+
+    const normal = buildHealthSummary(input({ recoveryReadings: hrv("2030-06-15", 58) }), now);
+    expect(normal.recovery.readiness).toBe("normal");
+  });
+
+  it("has no readiness without a recent reading, but keeps the last trend", () => {
+    const summary = buildHealthSummary(input({ recoveryReadings: hrv("2030-06-05", 40) }), now);
+    expect(summary.recovery).toMatchObject({ readiness: null, note: null });
+    expect(summary.recovery.hrv?.latest.date).toBe("2030-06-05");
+  });
+
+  it("is empty without workouts or readings", () => {
+    const summary = buildHealthSummary(input(), now);
+    expect(summary.training.sessions).toBe(0);
+    expect(summary.recovery).toEqual({ readiness: null, note: null, hrv: null, rhr: null });
+  });
+});
+
+describe("nutrition", () => {
+  it("summarizes the diet, with protein per pound of the latest weight", () => {
+    const weight = (date: string, value: number, unit = "lb") => ({ kind: "weight", measuredAt: new Date(`${date}T08:00:00Z`), value, unit });
+    const summary = buildHealthSummary(
+      input({ nutrition: [food("2030-06-14"), food("2030-06-13", { proteinG: 160 })], biometrics: [weight("2030-06-10", 180)] }),
+      now,
+    );
+    expect(summary.nutrition).toMatchObject({ daysLogged: 2, app: "Food App", latestDay: "2030-06-14" });
+    expect(summary.nutrition.averages.last7).toMatchObject({ days: 2, proteinG: 150, proteinGPerLb: 0.83 });
+
+    const kg = buildHealthSummary(input({ nutrition: [food("2030-06-14")], biometrics: [weight("2030-06-10", 70, "kg")] }), now);
+    expect(kg.nutrition.averages.last7.proteinGPerLb).toBe(0.91);
+    const other = buildHealthSummary(input({ nutrition: [food("2030-06-14")], biometrics: [weight("2030-06-10", 11, "st")] }), now);
+    expect(other.nutrition.averages.last7.proteinGPerLb).toBeNull();
+  });
+
+  it("is empty without logged days", () => {
+    const summary = buildHealthSummary(input(), now);
+    expect(summary.nutrition).toMatchObject({ windowDays: 28, daysLogged: 0, app: null, latestDay: null, recent: [] });
+    expect(summary.nutrition.averages.last28.days).toBe(0);
+  });
+});
+
 describe("healthFingerprints", () => {
   const labs = [lab("Marker A", "2029-06-01", 90)];
 
@@ -190,6 +280,53 @@ describe("healthFingerprints", () => {
     );
     expect(withWorkout.core).toBe(base.core);
     expect(withWorkout.activity).not.toBe(base.activity);
+  });
+
+  it("changes activity, not core, when a workout is logged", () => {
+    const base = healthFingerprints(buildHealthSummary(input({ labs, workouts: [workout("w-1", "2030-06-01")] }), now));
+    const more = healthFingerprints(
+      buildHealthSummary(input({ labs, workouts: [workout("w-1", "2030-06-01"), workout("w-2", "2030-06-10")] }), now),
+    );
+    expect(more.core).toBe(base.core);
+    expect(more.activity).not.toBe(base.activity);
+  });
+
+  it("changes activity, not core, when the latest HRV changes", () => {
+    const base = healthFingerprints(buildHealthSummary(input({ labs, recoveryReadings: hrv("2030-06-15", 58) }), now));
+    const moved = healthFingerprints(buildHealthSummary(input({ labs, recoveryReadings: hrv("2030-06-15", 40) }), now));
+    expect(moved.core).toBe(base.core);
+    expect(moved.activity).not.toBe(base.activity);
+  });
+
+  it("changes activity, not core, when a logged day changes", () => {
+    const base = healthFingerprints(buildHealthSummary(input({ labs, nutrition: [food("2030-06-14")] }), now));
+    const edited = healthFingerprints(buildHealthSummary(input({ labs, nutrition: [food("2030-06-14", { caloriesKcal: 2400 })] }), now));
+    const more = healthFingerprints(buildHealthSummary(input({ labs, nutrition: [food("2030-06-14"), food("2030-06-13")] }), now));
+    // Fields and days `recent` leaves out still count.
+    const sodium = healthFingerprints(buildHealthSummary(input({ labs, nutrition: [food("2030-06-14", { sodiumMg: 3100 })] }), now));
+    for (const changed of [edited, more, sodium]) {
+      expect(changed.core).toBe(base.core);
+      expect(changed.activity).not.toBe(base.activity);
+    }
+  });
+
+  it("keeps nutrition steady when only the date moves", () => {
+    // Out of the 7-day average but still inside the 28-day window.
+    const records = input({ labs, nutrition: [food("2030-06-10"), food("2030-06-01", { proteinG: 100 })] });
+    const earlier = buildHealthSummary(records, new Date("2030-06-11T12:00:00Z"));
+    const later = buildHealthSummary(records, new Date("2030-06-20T12:00:00Z"));
+    expect(earlier.nutrition.averages.last7).not.toEqual(later.nutrition.averages.last7);
+    expect(healthFingerprints(later)).toEqual(healthFingerprints(earlier));
+  });
+
+  it("keeps activity steady when only the date moves", () => {
+    // Across a week boundary and past the 2 days a recovery reading counts for.
+    const records = input({ labs, workouts: [workout("w-1", "2030-06-01"), workout("w-2", "2030-06-10")], recoveryReadings: hrv("2030-06-10", 40) });
+    const earlier = buildHealthSummary(records, new Date("2030-06-10T13:00:00Z"));
+    const later = buildHealthSummary(records, new Date("2030-06-17T12:00:00Z"));
+    expect(earlier.training.weeks[0].weekStart).not.toBe(later.training.weeks[0].weekStart);
+    expect(earlier.recovery.readiness).not.toBe(later.recovery.readiness);
+    expect(healthFingerprints(later)).toEqual(healthFingerprints(earlier));
   });
 
   it("keeps biometric readings out of core", () => {

@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
+import type { WorkoutRecord } from "@/lib/workout-history";
+import { buildSnapshot, readinessOf, trendOf, type Readiness, type Reading, type Trend } from "@/lib/workout-readiness";
 import { isLimitResult, labShown, labStatus, type LabStatus } from "./lab-value";
+import { summarizeNutrition, type NutritionDayRow, type NutritionSummary } from "./nutrition";
+import { summarizeTraining, type TrainingSummary } from "./training";
 
 // Plain-code summary of someone's health records: every trend, change and gap
 // the picture relies on is calculated here, so the model never does arithmetic.
@@ -31,6 +35,12 @@ export type HealthSummaryInput = {
   /** The latest reading of each kind. */
   biometrics: { kind: string; measuredAt: Date; value: number; unit: string }[];
   biometricReadings: number;
+  /** The Workout tab's log (WorkoutLog) from the last 90 days. */
+  workouts: WorkoutRecord[];
+  /** HRV and resting HR readings from the last ~33 days, for the recovery read. */
+  recoveryReadings: { kind: string; value: number; unit: string; measuredAt: Date }[];
+  /** Days of diet from their food app (NutritionDay) from the last 28 days. */
+  nutrition: NutritionDayRow[];
 };
 
 export type MarkerPoint = { date: string; value: number; shown: string; status: LabStatus };
@@ -45,6 +55,17 @@ export type MarkerSummary = {
   /** Latest minus previous. Null with one point, or when either is a reporting limit. */
   change: number | null;
   changePct: number | null;
+};
+
+/** The latest reading against the mean of the 30 days before it (null with under 3 readings). */
+export type RecoveryTrend = { latest: { date: string; value: number; unit: string }; baseline: number | null };
+
+export type RecoverySummary = {
+  /** As the Workout tab reads it today: null without a reading from the last 2 days or without a baseline. */
+  readiness: Readiness | null;
+  note: string | null;
+  hrv: RecoveryTrend | null;
+  rhr: RecoveryTrend | null;
 };
 
 export type HealthSummary = {
@@ -66,6 +87,9 @@ export type HealthSummary = {
     byKind: Record<string, number>;
     lastSession: string | null;
   };
+  training: TrainingSummary;
+  recovery: RecoverySummary;
+  nutrition: NutritionSummary;
   dna: { category: string; title: string; finding: string }[];
   biometrics: { kind: string; date: string; value: number; unit: string }[];
   coverage: {
@@ -144,6 +168,44 @@ function summarizeMarkers(labs: HealthSummaryInput["labs"]): MarkerSummary[] {
     .sort((a, b) => a.panel.localeCompare(b.panel) || a.marker.localeCompare(b.marker));
 }
 
+/**
+ * Readiness and its note come from the Workout tab's own read (workout-readiness.ts),
+ * so both tabs agree about today. The trends are taken as of each kind's latest
+ * reading rather than today, so they don't change just because time passed;
+ * readiness says whether that reading is recent enough to count.
+ */
+function summarizeRecovery(readings: HealthSummaryInput["recoveryReadings"], now: Date): RecoverySummary {
+  const { readiness, note } = readinessOf(
+    buildSnapshot(
+      { sex: null, birthDate: null, heightInches: null, conditionsJson: null, recovery: readings, body: [], activity: [] },
+      now.getTime(),
+    ),
+  );
+  const trend = (kind: string): RecoveryTrend | null => {
+    const series: Reading[] = readings
+      .filter((r) => r.kind === kind)
+      .map((r) => ({ value: r.value, unit: r.unit, at: r.measuredAt.getTime() }));
+    if (!series.length) return null;
+    const t: Trend | null = trendOf(series, Math.max(...series.map((r) => r.at)));
+    return t && {
+      latest: { date: day(new Date(t.latest.at)), value: t.latest.value, unit: t.latest.unit },
+      baseline: t.baseline === null ? null : Math.round(t.baseline * 10) / 10,
+    };
+  };
+  return { readiness, note, hrv: trend("hrv"), rhr: trend("rhr") };
+}
+
+const LB_PER_KG = 2.20462;
+
+/** The latest weight in pounds, for protein per pound. Null without one in lb or kg. */
+function latestWeightLb(biometrics: HealthSummaryInput["biometrics"]): number | null {
+  const weight = biometrics
+    .filter((b) => b.kind === "weight" && (b.unit === "lb" || b.unit === "kg"))
+    .sort((a, b) => b.measuredAt.getTime() - a.measuredAt.getTime())[0];
+  if (!weight) return null;
+  return weight.unit === "kg" ? weight.value * LB_PER_KG : weight.value;
+}
+
 export function buildHealthSummary(input: HealthSummaryInput, now: Date): HealthSummary {
   const draws = [...new Set(input.labs.map((row) => day(row.drawnAt)))].sort();
   const latestDraw = draws[draws.length - 1] ?? null;
@@ -179,6 +241,9 @@ export function buildHealthSummary(input: HealthSummaryInput, now: Date): Health
       byKind,
       lastSession,
     },
+    training: summarizeTraining(input.workouts, now),
+    recovery: summarizeRecovery(input.recoveryReadings, now),
+    nutrition: summarizeNutrition(input.nutrition, latestWeightLb(input.biometrics), now),
     dna: input.dna,
     biometrics: input.biometrics
       .map((b) => ({ kind: b.kind, date: day(b.measuredAt), value: b.value, unit: b.unit }))
@@ -192,13 +257,32 @@ export function buildHealthSummary(input: HealthSummaryInput, now: Date): Health
   };
 }
 
+/** The training summary without `weeks` and `sessionsPerWeek`, which move with the calendar alone. */
+function trainingLog(t: TrainingSummary) {
+  return [t.sessions, t.minutes, t.bySource, t.byFocus, t.lastSession, t.recent, t.lifts, t.cardio];
+}
+
+/**
+ * The logged days behind the nutrition summary. The 28-day averages span the
+ * same days as `daysLogged`, so they only move when a day is logged, changed
+ * or ages out, and they cover the older days and the fields `recent` leaves
+ * out. The 7- and 14-day averages move with the calendar alone.
+ */
+function nutritionLog(n: NutritionSummary) {
+  return [n.daysLogged, n.app, n.recent, n.averages.last28];
+}
+
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
 /**
  * What the picture was written from. `core` covers records that change the
  * reading (labs, notes, medications, visits, DNA). `activity` moves often, so a
  * change there alone refreshes the picture less eagerly. Neither depends on
- * today's date, or the picture would rewrite itself every day.
+ * today's date, or the picture would rewrite itself every day: training's weekly
+ * buckets and rate move with the calendar, recovery's readiness with the age of
+ * the latest reading, and nutrition's 7- and 14-day averages with the
+ * calendar too, so those stay out and the log, readings and logged days behind
+ * them go in.
  */
 export function healthFingerprints(summary: HealthSummary): PictureFingerprint {
   return {
@@ -212,6 +296,12 @@ export function healthFingerprints(summary: HealthSummary): PictureFingerprint {
       dna: summary.dna,
       notes: summary.notes,
     }),
-    activity: hash({ activity: summary.activity, biometrics: summary.biometrics }),
+    activity: hash({
+      activity: summary.activity,
+      biometrics: summary.biometrics,
+      training: trainingLog(summary.training),
+      recovery: [summary.recovery.hrv, summary.recovery.rhr],
+      nutrition: nutritionLog(summary.nutrition),
+    }),
   };
 }

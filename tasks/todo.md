@@ -1,144 +1,53 @@
-# /projects: a board Claude runs — in progress 2026-11-03
+# Ask Fable about your health: workouts and diet — in progress 2026-11-04
 
-Eddie wants the Projects tab to help him manage everything: Claude keeps it up
-to date and he only corrects it, and it has to catch small real projects. No
-schema change (`plan` stays an array). Three PRs, with real output shown before
-each merge. Plan: `~/.claude/plans/lively-swimming-shannon.md`. Real project
-names and per-rule counts stay local: this repo is public.
+Eddie, after a chat where Fable said "Your records don't log your diet":
+"i want this ask fable to be better. i want it to integrate with the workout
+tab and it should link to the food tracking app i use which sends to apple
+health". Branch `claude/health-chat-workouts` off main (#93).
 
-## PR 1: find the right projects
-- [x] Gate: its own dating check (names plus `DATING_KEYWORDS` minus "date", "ex", "relationship"); `selectMeeting` and `DATING_KEYWORDS` untouched
-- [x] Gate: every note in a Therapy folder is out, no date limit; a failed lookup fails the run
-- [x] Evidence: last five snippets, message count and last sender per thread; todo written date; both ends of long notes; today and coming dates in the prompt
-- [x] Inference: new prompt, `steps[]` and `problem`, `next` is the first step; stated keys bind first; new-card evidence rule; gate checks steps and who; waiting and date fixes
-- [x] Store: quiet cards stay until 30 days after last activity; flagged cards, re-checked text and rename duplicates go at once; last activity never moves back
-- [x] Board: `stale` covers every unreturned shown card; quiet cards sort after active ones
-- [x] `pnpm typecheck`, `pnpm test`; read-only dry run `--twice`; browser on a scratch database
-- [ ] Eddie reviews the list, merges; Refresh on live `/projects`; count notes dropped per rule once Granola notes are in
+## Part A — the chat reads the workout log (no schema change)
+Today the health summary only sees FitnessSession rows (kind + minutes, 90
+days). The Workout tab keeps a set-by-set log in `WorkoutLog` (guided
+sessions, class whiteboards, Strava) that the chat never sees.
 
-## Mark finished (pulled forward from PR 3, Eddie asked)
-- [x] `finished` state: card menu "Mark finished", Finished section, Reopen; no schema change
-- [x] A run never reopens one: it keeps its key, loses its steps, and doesn't count against the cap
-- [x] Tests; browser on a scratch database with real mouse clicks, pinned card included, surviving a reload, 1440 and 390
+- [x] `src/lib/health/training.ts` (pure): `summarizeTraining(records, now)` → sessions per week over 12 weeks, by source, minutes, per-exercise last performance + first/last working load + trend, recent cardio (distance / HR notes), last session
+- [x] `load.ts`: read `WorkoutLog` (90 days, newest 60) and HRV/RHR (33 days) for the person's user; missing-table (P2021) reads as no log
+- [x] `summary.ts`: `training` and `recovery` (readiness via `workout-health.ts`) on `HealthSummary`; activity fingerprint covers them
+- [x] `ask.ts` + `picture.ts` prompts: explain the new fields; the Workout tab plans from the same log
+- [x] Health page: "Workouts" card from the log (title · focus · minutes · source) with a link to /workout; `FitnessSession` list stays as the fallback. Chat intro names the workout log
+- [x] Workout tab: "From your health data" links to /health (Ask Fable lives there)
+- [x] Tests: training, summary, load, ask, page; `pnpm typecheck`, `pnpm test`
 
-## PR 2: This week view
-- [ ] Pure function in `board-model.ts`: Stuck, This week, Waiting on, No next step
-- [ ] Cards list their steps instead of one Next line
+## Review (Part A)
+`pnpm typecheck` clean; `pnpm test` 167 files passed / 24 skipped, 1665 tests
+passed. New: training summary (weeks, rate, lifts with first/last/next loads,
+cardio), load (P2021 reads as no log), fingerprint stays date-free, ask and
+dashboard cases. Readiness helpers moved to `src/lib/workout-readiness.ts`
+(pure) so the summary never imports Prisma; `workout-health.ts` re-exports
+them. No browser pass: the only local `.env` is prod. No schema change.
 
-## PR 3: corrections
-- [ ] Tick a step done (Claude echoes step ids; done steps go in the prompt)
-- [ ] Rename a card or add a project by name (name locked)
-- [ ] Route and `saveInferred` take a `FOR UPDATE` row lock; add Eddie's corrections to `evidenceHash`
+## Part B — diet and vitals from Apple Health (Eddie approved the table 2026-11-04)
+Apple Health has no web API. An iOS Shortcut (daily automation) reads nutrition
+and vitals samples and POSTs them with the capture bearer, like the Read Later
+share-sheet Shortcut. Eddie didn't name the food app; the Shortcut sends it.
 
-## Slack (Eddie asked, 2026-11-03)
-- [ ] Eddie creates a Slack app with a user token (`search:read`); token in Vercel and local `.env`
-- [ ] New source: messages Eddie sent, grouped per channel or DM, through the privacy filter; any flagged message drops a whole DM
-- [ ] Read-only dry run, show Eddie the list before merging
+- [x] Schema: `NutritionDay` (one row per user per day: kcal, protein, carbs, fat, saturated fat, fiber, sugar, sodium, source, app); additive SQL in `prisma/changes/`; the app tolerates the table being absent (P2021)
+- [x] `POST /api/capture/health` (bearer or session): upserts days; vitals (weight, body fat, RHR, HRV, VO2, steps, sleep) become `BiometricReading` rows with source "apple-health", one per kind per day
+- [x] Summary: `nutrition` (7/14/28-day averages, protein per lb from the latest weight, days logged, last 14 days, app); fingerprint date-free; ask + picture prompts
+- [x] Health page: Nutrition card (7-day kcal · protein · fiber · sat fat, "From <app> via Apple Health"), setup hint when empty; chat intro names diet
+- [x] `docs/shortcuts/apple-health.md`: the Shortcut recipe, step by step
+- [x] Tests; `pnpm typecheck`, `pnpm test`
 
-## PR 1 review
-`pnpm typecheck` clean; `pnpm test` 155 files passed / 23 skipped, 1521 tests
-passed. `eslint` can't run here: the repo's config predates the installed
-version.
-
-Dry run against prod (read-only client, `--twice`, no Granola key locally):
-35 projects on both runs, every key kept, none added or renamed, about 60 s per
-run. Named nowhere in the prompt, the merch order and accessories work both get
-their own cards. No private item on any card. Upcoming one-off meetings on no
-card: 7 (mostly personal, two real).
-
-Changed from the plan after the dry run, all because a check failed:
-- The prompt's "15 to 25" made Claude stop at 25 and drop a project with a
-  meeting the next day. It now says most weeks are 20 to 35 and to walk the
-  upcoming meetings first. `MAX_CARDS` is 40, not 30.
-- The prompt alone still let closed todos through as steps, so an undated step
-  copying a closed todo is dropped. Dated steps stay: the earlier version of
-  this check removed real future events.
-- Claude quoted an evidence id in a status line, so the prompt forbids it.
-
-Store checked on local Postgres (`personal_os_projects_pm`, since dropped),
-seeded through `saveInferred`: quiet cards kept, flagged and 40-day-old cards
-removed, last activity held, pin and hide survive. Browser (`next dev --webpack`):
-1440 and 390, light and dark, no horizontal overflow, no console errors, quiet
-cards last with "No activity since …".
-
-Open: a card can call an interview Friday when a closed todo said Wednesday; 35
-cards still includes a few that aren't really projects (Not a project handles
-those); Granola notes are untested until this runs in production.
-
-# Retire filing todos into projects — 2026-11-03
-
-Eddie asked whether projects make sense for him. Usage says lists do the routing
-and very few todos ever reach a real project (counts stay local: this repo is
-public). `/projects` (inferred initiatives) stays and is the only thing called a
-project. UI only: no schema change, no data change, reversible with a revert.
-
-- [x] Todo row: remove the project chip, popover and "Project…" menu item. Send to tracker keeps its own chip (it's the only mobile path)
-- [x] Keyboard: remove `p`
-- [x] Sidebar: a todo dropped on a project row no longer files it
-- [x] Home: remove "By project" (`project-card.tsx`) and the per-project groups inside list tiles
-- [x] Touch drop on a Home tile keeps the todo's project, matching desktop (it used to clear it once the groups were gone)
-- [x] Capture correction: no Project field on a todo (assets and interactions keep theirs)
-- [x] Inbox reads as To Do: gone from sidebar and drawer, `/inbox` redirects to Home, capture results say "To Do"
-- [x] Tests, typecheck
-- [x] Browser check
-- [x] Onboarding copy no longer tells people to tag todos with a project
-- [ ] Eddie: approve shipping; PR, merge, verify on the live app
-
-Left alone on purpose: capture still writes the Inbox project under the hood,
-existing project pages and their todos, the sidebar Projects section. Separating
-Journal and the trackers from Project is the next step, if wanted.
-
-## Review
-`pnpm typecheck` clean; `pnpm test` 155 files passed / 23 skipped, 1490 tests
-passed; `next build --webpack` passes. One earlier full run failed
-`dating-message-sync.test.ts` on a timing check (it passes alone and on the rerun,
-and imports nothing changed here).
-
-Browser on a local scratch DB with fake data, `next dev --webpack`, 1440 and 390:
-flat list tiles with no group headers and no By project; Inbox gone from sidebar
-and drawer; `p` does nothing; `l` moves a todo and keeps its project; right-click
-menu has no Project item; Tracker chip offers enabled trackers on desktop and in
-mobile edit mode; a touch drag to another list sends and keeps the project;
-`/inbox` lands on Home; a project page still lists its todos. Scratch DB dropped.
-
-Not exercised in the browser: desktop drag, a real tracker send (needs Claude),
-the capture correction form and capture labels (unit tests only).
-
-# Capture Inbox on Home — 2026-11-01
-
-- [x] Confirm all four capture sources and Home section placement with Eddie.
-- [x] Isolate current main in `codex/capture-review`; preserve original workspace edits.
-- [x] Map save paths, existing local queue, placement data, correction and file/merge constraints.
-- [x] Write concrete behavior/storage/rollback proposal: `docs/plans/2026-11-01-capture-inbox.md`.
-- [x] Independent review of proposed design approved after addressing retry, concurrency, correction-scope, derived-date and external-effect constraints.
-- [x] User approved the CaptureReview table, index and User foreign key, and requested implementation (2026-11-01).
-- [x] Implement atomic capture/review tracking, Home UI, dismissal/Undo and safe corrections across capture sources.
-- [x] Verify with tests and isolated Postgres, typecheck/build, then apply only approved SQL and deploy.
-
-Validation before rollout: 141 test files / 1,364 tests pass, including guarded real-Postgres correction/retry/race tests; 19 files / 150 unrelated integration tests remain opt-in. Prisma generated; TypeScript and direct production build pass. Responsive light/dark browser checks exercised correction, cross-type movement, Dismiss and Undo. Independent safety review passed after fixing revoked-list replay and derived-contact-date races. Existing middleware/jose Edge warnings remain. Applied only the two approved SQL statements and verified 12 columns, PK/FK and two indexes. Deployed `23b8a7e` to the EC Vercel project; all live hosts point to `personal-6bl2ql3n1-ec-efed32ac.vercel.app`. Live tests covered web capture, actual ec/Mac/Chrome endpoint retries, review reads, correction/move, cross-type replacement, stale/foreign guards, Dismiss/restore and preserved saved items. Synthetic captures in the founder account were removed. Quick Todo compiled and signed into a temporary bundle; Mac app installation and Chrome reload were not changed (existing clients already feed the shared Inbox).
-
-Follow-up shared-list safeguard: delayed calendar retries now use the same parent-list access predicate as Inbox reads. A real-Postgres regression reproduced the private-title leak after membership revocation, then passed after the fix. Final suite: 142 files / 1,365 tests passed; 150 unrelated opt-in cases skipped. TypeScript, direct production build and whitespace checks pass. PR #74 is merged as `29692a2`; its main-branch deployment was verified Ready.
-
-# iOS mobile capture connection — 2026-11-01
-
-- [x] Reproduce: production mobile endpoint returns an HTML 404 despite a valid token.
-- [x] Isolate work on `codex/ios-mobile-capture` from current production main; preserve existing edits.
-- [x] Baseline capture tests: 53 passed, 9 integration cases skipped without database credentials.
-- [x] Restore the handed-off authenticated mobile endpoint and test supported capture types, uploads, and retry behavior (25 new cases).
-- [x] Obtain approval for the additive receipt table/index/foreign key before changing Prisma schema or any database structure (user: “ok put it on my iphone”, 2026-11-01).
-- [x] Generate Prisma client, typecheck, run full tests, and build.
-- [x] Apply only the approved receipt SQL and verify columns, index, primary key and User foreign key.
-- [x] Deploy without the generic schema-push build helper.
-- [x] Verify live connection, native text/file saves and retries; reopen the installed app on EC PRO.
-
-Review before database approval: full Vitest suite 125 files passed, 19 skipped;
-1,227 tests passed, 150 skipped (integration cases need explicit database/test
-configuration). Typecheck reports only the three receipt-delegate references
-that require the pending Prisma model. No schema or database change applied.
-Confirmed worktree base is the exact current production commit, `6255909`.
-Independent code review found no material or blocking issues. Deployment-specific
-configuration preserves all eight cron entries and overrides only the build
-command to bypass the generic database schema push. User approved the described additive database change on 2026-11-01; applying only that reviewed change.
+## Review (Part B)
+`pnpm typecheck` clean, `pnpm prisma validate` ok. Full `pnpm test` under a
+load average near 100: 5 timeouts in improve-worker, home page and
+capture-store tests, all outside this change; the three files pass alone
+(27 tests). Health, capture and dashboard suites pass. Parser: 40 cases
+(key spellings, "1,842 kcal", kJ, kg, sleep minutes, clamps, caps). Route:
+401, session, upsert, same-day reading replaced, no-human, P2021. The SQL in
+`prisma/changes/20261104_nutrition_day.sql` reaches prod through the build's
+db push on merge. Eddie still has to build the Shortcut
+(`docs/shortcuts/apple-health.md`) and name his food app in it.
 
 # /projects v3 = initiatives Claude infers — in progress 2026-10-28
 

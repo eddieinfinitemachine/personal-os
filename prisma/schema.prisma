@@ -452,6 +452,33 @@ model WorkoutLog {
   @@index([userId, finishedAt])
 }
 
+// One day of diet from the person's food app, by way of Apple Health and the
+// capture Shortcut (POST /api/capture/health). Keyed by the user, like
+// WorkoutLog; the Health page reads it for the person's own record.
+model NutritionDay {
+  id            String   @id @default(cuid())
+  date          DateTime @db.Date // the day, as the phone saw it
+  caloriesKcal  Float?
+  proteinG      Float?
+  carbsG        Float?
+  fatG          Float?
+  saturatedFatG Float?
+  fiberG        Float?
+  sugarG        Float?
+  sodiumMg      Float?
+  source        String   @default("apple-health")
+  app           String? // the food app named by the Shortcut
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
 // The user's Strava account, for pulling activities into the workout log
 // (src/lib/strava.ts). Tokens rotate on refresh, so they live here, not in env.
 model StravaConnection {
@@ -1017,6 +1044,7 @@ model User {
   humanVaccinations   HumanVaccination[]
   fitnessSessions     FitnessSession[]
   workoutLogs         WorkoutLog[]
+  nutritionDays       NutritionDay[]
   stravaConnection    StravaConnection?
   dnaResults          DnaResult[]
   pets                Pet[]
