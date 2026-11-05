@@ -48,6 +48,20 @@ const summary = buildHealthSummary(
       },
     ],
     recoveryReadings: [{ kind: "rhr", value: 52, unit: "bpm", measuredAt: new Date("2030-06-15T07:00:00Z") }],
+    nutrition: [
+      {
+        date: "2030-06-14",
+        caloriesKcal: 2100,
+        proteinG: 150,
+        carbsG: 210,
+        fatG: 70,
+        saturatedFatG: 22,
+        fiberG: 31,
+        sugarG: 48,
+        sodiumMg: 2300,
+        app: "Food App",
+      },
+    ],
   },
   now,
 );
@@ -85,6 +99,16 @@ describe("askAboutHealth", () => {
     expect(records.training.lifts[0]).toMatchObject({ name: "Goblet squat", next: "40 lb" });
     expect(records.recovery.rhr).toEqual({ latest: { date: "2030-06-15", value: 52, unit: "bpm" }, baseline: null });
     expect(system).toContain('"training" is their workout log');
+  });
+
+  it("sends the diet from Apple Health and how to read it", async () => {
+    await ask();
+    const { system } = mocks.callClaudeReply.mock.calls[0][0];
+    const records = JSON.parse(system.slice(system.indexOf("Their records:\n") + "Their records:\n".length));
+    expect(records.nutrition).toMatchObject({ daysLogged: 1, app: "Food App", latestDay: "2030-06-14" });
+    expect(records.nutrition.averages.last7).toMatchObject({ days: 1, caloriesKcal: 2100, proteinG: 150 });
+    expect(system).toContain('"nutrition" is their diet from their food app');
+    expect(system).toContain("A day they didn't log is missing, not zero");
   });
 
   it("sends no identity or provider details", async () => {

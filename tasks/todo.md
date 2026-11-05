@@ -31,12 +31,23 @@ Apple Health has no web API. An iOS Shortcut (daily automation) reads nutrition
 and vitals samples and POSTs them with the capture bearer, like the Read Later
 share-sheet Shortcut. Eddie didn't name the food app; the Shortcut sends it.
 
-- [ ] Schema: `NutritionDay` (one row per user per day: kcal, protein, carbs, fat, saturated fat, fiber, sugar, sodium, source, app); additive SQL in `prisma/changes/`; the app tolerates the table being absent (P2021)
-- [ ] `POST /api/capture/health` (bearer or session): upserts days; vitals (weight, body fat, RHR, HRV, VO2, steps, sleep) become `BiometricReading` rows with source "apple-health", one per kind per day
-- [ ] Summary: `nutrition` (7/14/28-day averages, protein per lb from the latest weight, days logged, last 14 days, app); fingerprint date-free; ask + picture prompts
-- [ ] Health page: Nutrition card (7-day kcal · protein · fiber · sat fat, "From <app> via Apple Health"), setup hint when empty; chat intro names diet
-- [ ] `docs/shortcuts/apple-health.md`: the Shortcut recipe, step by step
-- [ ] Tests; `pnpm typecheck`, `pnpm test`
+- [x] Schema: `NutritionDay` (one row per user per day: kcal, protein, carbs, fat, saturated fat, fiber, sugar, sodium, source, app); additive SQL in `prisma/changes/`; the app tolerates the table being absent (P2021)
+- [x] `POST /api/capture/health` (bearer or session): upserts days; vitals (weight, body fat, RHR, HRV, VO2, steps, sleep) become `BiometricReading` rows with source "apple-health", one per kind per day
+- [x] Summary: `nutrition` (7/14/28-day averages, protein per lb from the latest weight, days logged, last 14 days, app); fingerprint date-free; ask + picture prompts
+- [x] Health page: Nutrition card (7-day kcal · protein · fiber · sat fat, "From <app> via Apple Health"), setup hint when empty; chat intro names diet
+- [x] `docs/shortcuts/apple-health.md`: the Shortcut recipe, step by step
+- [x] Tests; `pnpm typecheck`, `pnpm test`
+
+## Review (Part B)
+`pnpm typecheck` clean, `pnpm prisma validate` ok. Full `pnpm test` under a
+load average near 100: 5 timeouts in improve-worker, home page and
+capture-store tests, all outside this change; the three files pass alone
+(27 tests). Health, capture and dashboard suites pass. Parser: 40 cases
+(key spellings, "1,842 kcal", kJ, kg, sleep minutes, clamps, caps). Route:
+401, session, upsert, same-day reading replaced, no-human, P2021. The SQL in
+`prisma/changes/20261104_nutrition_day.sql` reaches prod through the build's
+db push on merge. Eddie still has to build the Shortcut
+(`docs/shortcuts/apple-health.md`) and name his food app in it.
 
 # /projects v3 = initiatives Claude infers — in progress 2026-10-28
 

@@ -22,7 +22,7 @@ const HEALTH_CHAT = {
   title: "Ask Fable about your health",
   assistantName: "Fable",
   intro:
-    "Fable reads your lab history, biometrics, medications, notes, your workout log from the Workout tab and the picture above. It doesn't get your name or date of birth, and this chat isn't saved.",
+    "Fable reads your lab history, biometrics, medications, notes, your workout log from the Workout tab, your diet from Apple Health and the picture above. It doesn't get your name or date of birth, and this chat isn't saved.",
 };
 
 export default async function ProjectPage({

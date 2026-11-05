@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   labs: vi.fn(),
   workouts: vi.fn(),
   biometrics: vi.fn(),
+  nutrition: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -14,6 +15,7 @@ vi.mock("@/lib/prisma", () => ({
     dnaResult: { findMany: vi.fn().mockResolvedValue([]) },
     biometricReading: { findMany: mocks.biometrics, count: vi.fn().mockResolvedValue(3) },
     workoutLog: { findMany: mocks.workouts },
+    nutritionDay: { findMany: mocks.nutrition },
   },
 }));
 
@@ -61,6 +63,20 @@ beforeEach(() => {
       notes: null,
     },
   ]);
+  mocks.nutrition.mockResolvedValue([
+    {
+      date: new Date("2030-06-14T00:00:00Z"),
+      caloriesKcal: 2100,
+      proteinG: 150,
+      carbsG: null,
+      fatG: null,
+      saturatedFatG: null,
+      fiberG: 31,
+      sugarG: null,
+      sodiumMg: null,
+      app: "Food App",
+    },
+  ]);
 });
 
 describe("loadHealthSummary", () => {
@@ -86,6 +102,23 @@ describe("loadHealthSummary", () => {
     expect(summary.labs.markers.map((m) => m.marker)).toEqual(["Marker A"]);
     expect(summary.recovery.hrv).not.toBeNull();
     expect(summary.coverage.biometricReadings).toBe(3);
+  });
+
+  it("reads the last 28 days of diet as YYYY-MM-DD days", async () => {
+    const summary = await loadHealthSummary(human, now);
+    expect(summary.nutrition).toMatchObject({ daysLogged: 1, app: "Food App", latestDay: "2030-06-14" });
+    expect(summary.nutrition.recent[0]).toMatchObject({ date: "2030-06-14", caloriesKcal: 2100, proteinG: 150 });
+    const query = mocks.nutrition.mock.calls[0][0];
+    expect(query.where).toEqual({ userId: "u1", date: { gte: new Date("2030-05-18T12:00:00Z") } });
+    expect(query).toMatchObject({ orderBy: { date: "desc" }, take: 60 });
+  });
+
+  it("reads a missing NutritionDay table as no diet, and loads the rest", async () => {
+    mocks.nutrition.mockRejectedValue(Object.assign(new Error("table does not exist"), { code: "P2021" }));
+    const summary = await loadHealthSummary(human, now);
+    expect(summary.nutrition).toMatchObject({ daysLogged: 0, latestDay: null, recent: [] });
+    expect(summary.training.sessions).toBe(1);
+    expect(summary.labs.markers.map((m) => m.marker)).toEqual(["Marker A"]);
   });
 
   it("fails on any other database error", async () => {

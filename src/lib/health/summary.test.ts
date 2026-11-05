@@ -33,6 +33,7 @@ const input = (overrides: Partial<HealthSummaryInput> = {}): HealthSummaryInput 
   biometricReadings: 0,
   workouts: [],
   recoveryReadings: [],
+  nutrition: [],
   ...overrides,
 });
 
@@ -45,6 +46,20 @@ const workout = (id: string, date: string, load = "25 lb"): WorkoutRecord => ({
   finishedAt: new Date(`${date}T12:00:00Z`).getTime(),
   durationMin: 40,
   exercises: [{ name: "Goblet squat", equipment: "dumbbell", targetReps: 10, sets: [{ reps: 10, durationSec: null, load }] }],
+});
+
+const food = (date: string, extra: Partial<HealthSummaryInput["nutrition"][number]> = {}): HealthSummaryInput["nutrition"][number] => ({
+  date,
+  caloriesKcal: 2000,
+  proteinG: 140,
+  carbsG: 200,
+  fatG: 70,
+  saturatedFatG: 20,
+  fiberG: 30,
+  sugarG: 45,
+  sodiumMg: 2200,
+  app: "Food App",
+  ...extra,
 });
 
 // HRV readings ending on `latestDate`, with three earlier days for a baseline.
@@ -218,6 +233,29 @@ describe("training and recovery", () => {
   });
 });
 
+describe("nutrition", () => {
+  it("summarizes the diet, with protein per pound of the latest weight", () => {
+    const weight = (date: string, value: number, unit = "lb") => ({ kind: "weight", measuredAt: new Date(`${date}T08:00:00Z`), value, unit });
+    const summary = buildHealthSummary(
+      input({ nutrition: [food("2030-06-14"), food("2030-06-13", { proteinG: 160 })], biometrics: [weight("2030-06-10", 180)] }),
+      now,
+    );
+    expect(summary.nutrition).toMatchObject({ daysLogged: 2, app: "Food App", latestDay: "2030-06-14" });
+    expect(summary.nutrition.averages.last7).toMatchObject({ days: 2, proteinG: 150, proteinGPerLb: 0.83 });
+
+    const kg = buildHealthSummary(input({ nutrition: [food("2030-06-14")], biometrics: [weight("2030-06-10", 70, "kg")] }), now);
+    expect(kg.nutrition.averages.last7.proteinGPerLb).toBe(0.91);
+    const other = buildHealthSummary(input({ nutrition: [food("2030-06-14")], biometrics: [weight("2030-06-10", 11, "st")] }), now);
+    expect(other.nutrition.averages.last7.proteinGPerLb).toBeNull();
+  });
+
+  it("is empty without logged days", () => {
+    const summary = buildHealthSummary(input(), now);
+    expect(summary.nutrition).toMatchObject({ windowDays: 28, daysLogged: 0, app: null, latestDay: null, recent: [] });
+    expect(summary.nutrition.averages.last28.days).toBe(0);
+  });
+});
+
 describe("healthFingerprints", () => {
   const labs = [lab("Marker A", "2029-06-01", 90)];
 
@@ -258,6 +296,27 @@ describe("healthFingerprints", () => {
     const moved = healthFingerprints(buildHealthSummary(input({ labs, recoveryReadings: hrv("2030-06-15", 40) }), now));
     expect(moved.core).toBe(base.core);
     expect(moved.activity).not.toBe(base.activity);
+  });
+
+  it("changes activity, not core, when a logged day changes", () => {
+    const base = healthFingerprints(buildHealthSummary(input({ labs, nutrition: [food("2030-06-14")] }), now));
+    const edited = healthFingerprints(buildHealthSummary(input({ labs, nutrition: [food("2030-06-14", { caloriesKcal: 2400 })] }), now));
+    const more = healthFingerprints(buildHealthSummary(input({ labs, nutrition: [food("2030-06-14"), food("2030-06-13")] }), now));
+    // Fields and days `recent` leaves out still count.
+    const sodium = healthFingerprints(buildHealthSummary(input({ labs, nutrition: [food("2030-06-14", { sodiumMg: 3100 })] }), now));
+    for (const changed of [edited, more, sodium]) {
+      expect(changed.core).toBe(base.core);
+      expect(changed.activity).not.toBe(base.activity);
+    }
+  });
+
+  it("keeps nutrition steady when only the date moves", () => {
+    // Out of the 7-day average but still inside the 28-day window.
+    const records = input({ labs, nutrition: [food("2030-06-10"), food("2030-06-01", { proteinG: 100 })] });
+    const earlier = buildHealthSummary(records, new Date("2030-06-11T12:00:00Z"));
+    const later = buildHealthSummary(records, new Date("2030-06-20T12:00:00Z"));
+    expect(earlier.nutrition.averages.last7).not.toEqual(later.nutrition.averages.last7);
+    expect(healthFingerprints(later)).toEqual(healthFingerprints(earlier));
   });
 
   it("keeps activity steady when only the date moves", () => {

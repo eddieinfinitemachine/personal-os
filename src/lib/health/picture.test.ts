@@ -58,6 +58,7 @@ const input = (overrides: Partial<HealthSummaryInput> = {}): HealthSummaryInput 
   biometricReadings: 1,
   workouts: [],
   recoveryReadings: [],
+  nutrition: [],
   ...overrides,
 });
 

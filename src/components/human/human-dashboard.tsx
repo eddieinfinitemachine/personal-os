@@ -10,12 +10,14 @@ import {
   Stethoscope,
   Syringe,
   User,
+  Utensils,
 } from "lucide-react";
 import Link from "next/link";
 import { SimpleMarkdown } from "@/components/simple-markdown";
 import { prisma } from "@/lib/prisma";
 import { loadHealthSummary } from "@/lib/health/load";
 import { labDate } from "@/lib/health/lab-value";
+import type { NutritionSummary } from "@/lib/health/nutrition";
 import { isPictureStale, pictureEvidence, readStoredPicture } from "@/lib/health/picture";
 import type { WorkoutSource } from "@/lib/workout-history";
 import { HealthPictureCard } from "./health-picture";
@@ -96,6 +98,8 @@ function ageYears(dob: Date | null): number | null {
 }
 
 const SOURCE_LABELS: Record<WorkoutSource, string | null> = { guided: null, board: "Whiteboard", strava: "Strava" };
+const APPLE_HEALTH_SHORTCUT =
+  "https://github.com/eddieinfinitemachine/personal-os/blob/main/docs/shortcuts/apple-health.md";
 
 type Allergy = { allergen?: string; severity?: string; notes?: string };
 type Medication = { name?: string; dosage?: string; frequency?: string };
@@ -448,8 +452,8 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
         </section>
       </div>
 
-      {/* Visits + Workouts */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      {/* Visits + Workouts + Nutrition */}
+      <div className="grid gap-4 lg:grid-cols-3">
         <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
           <h3 className="font-semibold mb-3 flex items-center gap-2">
             <CalendarClock className="size-4" /> Visits
@@ -555,6 +559,8 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
             </p>
           )}
         </section>
+
+        <NutritionCard nutrition={summary.nutrition} />
       </div>
 
       {/* Vaccinations */}
@@ -623,6 +629,54 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
         </section>
       ) : null}
     </div>
+  );
+}
+
+function NutritionCard({ nutrition }: { nutrition: NutritionSummary }) {
+  const week = nutrition.averages.last7;
+  const amount = (value: number | null, unit: string) =>
+    value === null ? "—" : `${value.toLocaleString("en-US", { maximumFractionDigits: unit === "kcal" ? 0 : 1 })} ${unit}`;
+  return (
+    <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+      <h3 className="font-semibold mb-3 flex items-center gap-2">
+        <Utensils className="size-4" /> Nutrition
+      </h3>
+      {nutrition.daysLogged > 0 ? (
+        <>
+          <div className="text-xs text-[var(--color-muted-foreground)] mb-2">
+            Last 7 days · {week.days} logged
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Stat label="Calories" value={amount(week.caloriesKcal, "kcal")} />
+            <Stat label="Protein" value={amount(week.proteinG, "g")} />
+            <Stat label="Fiber" value={amount(week.fiberG, "g")} />
+            <Stat label="Saturated fat" value={amount(week.saturatedFatG, "g")} />
+          </div>
+          {week.proteinGPerLb !== null ? (
+            <p className="text-sm mt-3">
+              <span className="font-semibold tabular-nums">{week.proteinGPerLb} g</span> protein per lb of body weight
+            </p>
+          ) : null}
+          <p className="text-xs text-[var(--color-muted-foreground)] mt-3">
+            {nutrition.app ? `From ${nutrition.app} via Apple Health` : "From Apple Health"}
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-[var(--color-muted-foreground)]">Nothing from Apple Health yet.</p>
+          <p className="text-xs text-[var(--color-muted-foreground)] mt-1">
+            <a
+              href={APPLE_HEALTH_SHORTCUT}
+              target="_blank"
+              rel="noreferrer"
+              className="underline hover:text-[var(--color-foreground)]"
+            >
+              A daily Shortcut can send your food app&apos;s log here.
+            </a>
+          </p>
+        </>
+      )}
+    </section>
   );
 }
 

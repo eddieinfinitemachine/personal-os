@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { WorkoutRecord } from "@/lib/workout-history";
 import { buildSnapshot, readinessOf, trendOf, type Readiness, type Reading, type Trend } from "@/lib/workout-readiness";
 import { isLimitResult, labShown, labStatus, type LabStatus } from "./lab-value";
+import { summarizeNutrition, type NutritionDayRow, type NutritionSummary } from "./nutrition";
 import { summarizeTraining, type TrainingSummary } from "./training";
 
 // Plain-code summary of someone's health records: every trend, change and gap
@@ -38,6 +39,8 @@ export type HealthSummaryInput = {
   workouts: WorkoutRecord[];
   /** HRV and resting HR readings from the last ~33 days, for the recovery read. */
   recoveryReadings: { kind: string; value: number; unit: string; measuredAt: Date }[];
+  /** Days of diet from their food app (NutritionDay) from the last 28 days. */
+  nutrition: NutritionDayRow[];
 };
 
 export type MarkerPoint = { date: string; value: number; shown: string; status: LabStatus };
@@ -86,6 +89,7 @@ export type HealthSummary = {
   };
   training: TrainingSummary;
   recovery: RecoverySummary;
+  nutrition: NutritionSummary;
   dna: { category: string; title: string; finding: string }[];
   biometrics: { kind: string; date: string; value: number; unit: string }[];
   coverage: {
@@ -191,6 +195,17 @@ function summarizeRecovery(readings: HealthSummaryInput["recoveryReadings"], now
   return { readiness, note, hrv: trend("hrv"), rhr: trend("rhr") };
 }
 
+const LB_PER_KG = 2.20462;
+
+/** The latest weight in pounds, for protein per pound. Null without one in lb or kg. */
+function latestWeightLb(biometrics: HealthSummaryInput["biometrics"]): number | null {
+  const weight = biometrics
+    .filter((b) => b.kind === "weight" && (b.unit === "lb" || b.unit === "kg"))
+    .sort((a, b) => b.measuredAt.getTime() - a.measuredAt.getTime())[0];
+  if (!weight) return null;
+  return weight.unit === "kg" ? weight.value * LB_PER_KG : weight.value;
+}
+
 export function buildHealthSummary(input: HealthSummaryInput, now: Date): HealthSummary {
   const draws = [...new Set(input.labs.map((row) => day(row.drawnAt)))].sort();
   const latestDraw = draws[draws.length - 1] ?? null;
@@ -228,6 +243,7 @@ export function buildHealthSummary(input: HealthSummaryInput, now: Date): Health
     },
     training: summarizeTraining(input.workouts, now),
     recovery: summarizeRecovery(input.recoveryReadings, now),
+    nutrition: summarizeNutrition(input.nutrition, latestWeightLb(input.biometrics), now),
     dna: input.dna,
     biometrics: input.biometrics
       .map((b) => ({ kind: b.kind, date: day(b.measuredAt), value: b.value, unit: b.unit }))
@@ -246,6 +262,16 @@ function trainingLog(t: TrainingSummary) {
   return [t.sessions, t.minutes, t.bySource, t.byFocus, t.lastSession, t.recent, t.lifts, t.cardio];
 }
 
+/**
+ * The logged days behind the nutrition summary. The 28-day averages span the
+ * same days as `daysLogged`, so they only move when a day is logged, changed
+ * or ages out, and they cover the older days and the fields `recent` leaves
+ * out. The 7- and 14-day averages move with the calendar alone.
+ */
+function nutritionLog(n: NutritionSummary) {
+  return [n.daysLogged, n.app, n.recent, n.averages.last28];
+}
+
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
 /**
@@ -253,9 +279,10 @@ const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(valu
  * reading (labs, notes, medications, visits, DNA). `activity` moves often, so a
  * change there alone refreshes the picture less eagerly. Neither depends on
  * today's date, or the picture would rewrite itself every day: training's weekly
- * buckets and rate move with the calendar, and recovery's readiness with the age
- * of the latest reading, so those stay out and the log and readings behind them
- * go in.
+ * buckets and rate move with the calendar, recovery's readiness with the age of
+ * the latest reading, and nutrition's 7- and 14-day averages with the
+ * calendar too, so those stay out and the log, readings and logged days behind
+ * them go in.
  */
 export function healthFingerprints(summary: HealthSummary): PictureFingerprint {
   return {
@@ -274,6 +301,7 @@ export function healthFingerprints(summary: HealthSummary): PictureFingerprint {
       biometrics: summary.biometrics,
       training: trainingLog(summary.training),
       recovery: [summary.recovery.hrv, summary.recovery.rhr],
+      nutrition: nutritionLog(summary.nutrition),
     }),
   };
 }
