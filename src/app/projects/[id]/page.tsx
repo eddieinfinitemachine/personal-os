@@ -138,7 +138,8 @@ async function TasksTab({ projectId, userId }: { projectId: string; userId: stri
         list: listAccessWhere(userId),
       },
       orderBy: [
-        { dueDate: "asc" },
+        // Undated todos stay in manual order on top; dated ones sink to the bottom.
+        { dueDate: { sort: "asc", nulls: "first" } },
         { position: "asc" },
         { createdAt: "asc" },
       ],

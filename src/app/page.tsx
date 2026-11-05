@@ -4,8 +4,9 @@ import { HomeTiles, type HomeTile } from "@/components/home-tiles";
 import { NewListButton } from "@/components/new-list-button";
 import { ImportGranolaButton } from "@/components/import-granola-button";
 import { EcLanding } from "@/components/ec-landing";
+import Link from "next/link";
+import { Inbox } from "lucide-react";
 import { CaptureInboxPill } from "@/components/capture-inbox";
-import { CaptureReviewInbox } from "@/components/capture-review-inbox";
 import { KeyboardListNav } from "@/components/keyboard-nav";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists } from "@/lib/lists";
@@ -13,7 +14,6 @@ import { getSession } from "@/lib/auth";
 import { isFounderUser } from "@/lib/cron";
 import { isPrivateHost } from "@/lib/hosts";
 import { listAccessWhere } from "@/lib/list-access";
-import { listCaptureReviews } from "@/lib/capture-review/read";
 import type { TodoLike } from "@/components/todo-row";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +34,7 @@ export default async function HomePage() {
 
   // Single fetch for all open top-level todos plus their subtasks. Bucket in
   // memory rather than firing a query per list tile.
-  const [lists, allTodos, comments, commentReads, captures] = await Promise.all([
+  const [lists, allTodos, comments, commentReads, pendingCaptures] = await Promise.all([
     prisma.list.findMany({
       where: listAccessWhere(userId),
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
@@ -57,7 +57,8 @@ export default async function HomePage() {
         list: listAccessWhere(userId),
       },
       orderBy: [
-        { dueDate: "asc" },
+        // Undated todos stay in manual order on top; dated ones sink to the bottom.
+        { dueDate: { sort: "asc", nulls: "first" } },
         { position: "asc" },
         { createdAt: "asc" },
       ],
@@ -81,9 +82,11 @@ export default async function HomePage() {
       where: { userId },
       select: { todoId: true, lastReadAt: true },
     }),
-    listCaptureReviews(userId, { state: "pending", offset: 0, limit: 10 })
-      .then((data) => ({ data, error: null }))
-      .catch(() => ({ data: null, error: "Could not load captures. Try again." })),
+    // The Capture Inbox itself lives on /captures so it never sits between
+    // the header and the lists; Home only shows how many captures are waiting.
+    prisma.captureReview
+      .count({ where: { userId, dismissedAt: null } })
+      .catch(() => null),
   ]);
 
   // Per-todo comment stats: total count + unread (others' comments newer than
@@ -173,18 +176,28 @@ export default async function HomePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href="/captures"
+            title="Capture Inbox"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-background)] px-2 py-0.5 text-[11px] font-medium transition hover:border-[var(--color-foreground)]"
+          >
+            <Inbox className="size-4 text-[var(--color-muted-foreground)]" />
+            <span>
+              Captures
+              {pendingCaptures ? (
+                <>
+                  {" · "}
+                  <span className="font-semibold tabular-nums">{pendingCaptures}</span>
+                </>
+              ) : null}
+            </span>
+          </Link>
           <CaptureInboxPill />
           {canImportGranola ? <ImportGranolaButton /> : null}
           <NewListButton />
         </div>
       </header>
       <KeyboardListNav />
-      <CaptureReviewInbox
-        compact
-        initialData={captures.data}
-        initialError={captures.error}
-        lists={lists.map(({ id, name }) => ({ id, name }))}
-      />
       <HomeTiles tiles={tiles} />
     </div>
   );

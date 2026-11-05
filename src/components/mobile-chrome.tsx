@@ -10,6 +10,7 @@ import {
   FlaskConical,
   FolderKanban,
   Home,
+  Inbox as InboxIcon,
   LayoutGrid,
   Loader2,
   Menu,
@@ -176,6 +177,7 @@ const DRAWER_PRIMARY = [
   { href: "/board", label: "Board", Icon: LayoutGrid },
   { href: "/call-sheet", label: "Call Sheet", Icon: Phone },
   { href: "/research", label: "Research", Icon: FlaskConical },
+  { href: "/captures", label: "Captures", Icon: InboxIcon },
 ];
 
 function MobileDrawer({

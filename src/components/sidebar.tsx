@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Calendar, FolderKanban, LayoutGrid, FlaskConical, Home, PanelLeftClose, PanelLeftOpen, Phone, Settings, WandSparkles } from "lucide-react";
+import { Calendar, FolderKanban, LayoutGrid, FlaskConical, Home, Inbox as InboxIcon, PanelLeftClose, PanelLeftOpen, Phone, Settings, WandSparkles } from "lucide-react";
 import { AddTemplateButton, useEnabledTemplates } from "./sidebar-template-picker";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -134,6 +134,12 @@ export function Sidebar({
           icon={<FlaskConical className="size-4" />}
           label="Research"
           active={pathname === "/research" || pathname.startsWith("/research/")}
+        />
+        <SidebarLink
+          href="/captures"
+          icon={<InboxIcon className="size-4" />}
+          label="Captures"
+          active={pathname === "/captures"}
         />
       </nav>
 
