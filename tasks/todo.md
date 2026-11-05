@@ -133,7 +133,7 @@ GitHub repos with my commits in the last 14 days, newest first.
 - [x] Delete the meetings pipeline: `lib/projects/meetings.ts`, `calendar.ts`, their tests, `api/cron/projects-meetings`, `api/projects/sources/[id]/accept`, the cron entry in `vercel.json`
 - [x] Tests: `board.test.ts`, `projects-board.test.tsx`; `pnpm typecheck`, `pnpm test`
 - [ ] Schema left as is (`ProjectMeeting`, `ProjectSource.projectId`, `Project.visibility` now unused) — dropping needs a flagged migration, separate PR
-- [ ] PR, merge, verify on prod
+- [x] PR #96 opened 2026-11-05 (https://github.com/eddieinfinitemachine/personal-os/pull/96); not merged, not deployed. Real-device check on the Duo is Eddie's
 
 # Projects page — auto-discovered, auto-updating `/projects` — in progress 2026-10-27
 
@@ -1978,7 +1978,7 @@ What that means for the app: `md:` (768) is the mobile/desktop split, so inner-p
   - Mobile `<main>` bottom padding 96px + safe area so the FAB clears the last row.
   - Tests: new project-chat (Close, Escape) and mobile-chrome (closes on unfold and stays closed on refold; body pinned and scroll restored) tests, all four fail on the old code. Repo suite 1739 passed / 184 skipped, 0 failed; typecheck 0 errors.
   - Browser (touch emulation, dev server with every `.env` key blanked + scratch DB): 382×580 chat closes by the Close button (44×44, topmost) and by Escape; 951×585 modal 16→569px of 585 with overflow-y auto, scrolls to Done (bottom 556), esc hint `display: none`; 382×580 drawer pins the page at 600 (scrollBy no effect), close restores scrollY 600, open then resize to 951 closes it and refold to 382 leaves it closed; 951×585 Home at scrollY 700 sidebar top 0 / height 585 with Settings on screen, tiles in two 308px columns; 594×368 Calendar bottom: last content 245, FAB top 294; scrollWidth equals innerWidth at 382 and 951.
-- [ ] PR
+- [x] PR #96 opened 2026-11-05 (https://github.com/eddieinfinitemachine/personal-os/pull/96); not merged, not deployed. Real-device check on the Duo is Eddie's
 - Follow-ups (not done):
   - [ ] 669-wide Home pager shows one list per slide
   - [ ] Notes split view below lg
