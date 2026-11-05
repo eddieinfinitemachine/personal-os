@@ -1,3 +1,23 @@
+# Capture Inbox off Home + dated todos sink — shipped 2026-11-05
+
+Eddie: "move the capture inbox to another page i dont like it in the way of
+my lists. also if i select a date for something it should get moved to the
+bottom of the list."
+
+- [x] Home no longer renders the compact `CaptureReviewInbox` between the header and the lists; `/captures` (already the full page) is the one place for it
+- [x] Home header shows a "Captures · N" link (pending count via `captureReview.count`, null-safe when the read fails)
+- [x] "Captures" reachable from the sidebar, the mobile drawer and ⌘K
+- [x] Todo ordering: `dueDate` sorts nulls first on Home, project pages and `/api/todos`, so undated todos keep manual order on top and dated ones sink to the bottom by date
+- [x] `page.test.tsx` rewritten for the new Home; `pnpm typecheck` clean; `vitest run --dir src` 161 files / 1630 tests pass
+- [x] PR, merge, Vercel deploy
+
+## Review
+First pass was built on a stale branch (`claude/research-tab`, 20+ commits
+behind main) and removed the ⌘⇧K capture *drawer* instead; the thing Eddie
+saw on prod was the compact Capture Inbox from PRs #74/#76. Redone on a
+worktree off current main. Browser check skipped: no localhost session and
+login is magic-link only. The ⌘⇧K drawer is unchanged.
+
 # Ask Fable about your health: workouts and diet — in progress 2026-11-04
 
 Eddie, after a chat where Fable said "Your records don't log your diet":

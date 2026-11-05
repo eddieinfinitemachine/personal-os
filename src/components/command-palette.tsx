@@ -14,6 +14,7 @@ import {
   Folder,
   FolderKanban,
   Home,
+  Inbox,
   Dumbbell,
   LayoutGrid,
   Lightbulb,
@@ -91,6 +92,7 @@ const NAV_COMMANDS: NavCommand[] = [
   { id: "research", label: "Research", hint: "Illustrated research reports", href: "/research", icon: <FlaskConical className="size-4" /> },
   { id: "health", label: "Health", hint: "Labs, the picture, and asking Fable", href: "/health", icon: <Heart className="size-4" /> },
   { id: "pets", label: "Pets", hint: "Weight, vaccinations and vet visits", href: "/pets", icon: <PawPrint className="size-4" /> },
+  { id: "captures", label: "Captures", hint: "Review where each capture was saved", href: "/captures", icon: <Inbox className="size-4" /> },
 ];
 
 function fuzzyMatch(needle: string, haystack: string): boolean {

@@ -38,7 +38,8 @@ export async function GET(request: Request) {
       ? [{ createdAt: "asc" }]
       : [
           { completedAt: "asc" },
-          { dueDate: "asc" },
+          // Undated todos stay in manual order on top; dated ones sink to the bottom.
+          { dueDate: { sort: "asc", nulls: "first" } },
           { position: "asc" },
           { createdAt: "asc" },
         ],
