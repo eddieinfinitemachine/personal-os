@@ -8,7 +8,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { ListTile } from "./list-tile";
-import { FINE_POINTER_QUERY } from "@/lib/touch";
+import { DESKTOP_QUERY, FINE_POINTER_QUERY } from "@/lib/touch";
 
 let container: HTMLDivElement, root: Root;
 // Answers matchMedia as a screen of `width` px with (or without) a
@@ -20,11 +20,13 @@ const stubScreen = (width: number, fine: boolean) =>
     const matches =
       q === FINE_POINTER_QUERY
         ? fine
-        : min
-          ? width >= Number(min[1])
-          : max
-            ? width <= Number(max[1])
-            : false;
+        : q === DESKTOP_QUERY
+          ? (width >= 768 && fine) || width >= 1024
+          : min
+            ? width >= Number(min[1])
+            : max
+              ? width <= Number(max[1])
+              : false;
     return { matches, media: q, addEventListener: () => {}, removeEventListener: () => {} };
   });
 beforeEach(() => {

@@ -1985,3 +1985,15 @@ What that means for the app: `md:` (768) is the mobile/desktop split, so inner-p
   - [ ] FAB disabled on non-Home pages
   - [ ] Personal page date bug
   - [ ] Placeholder truncation
+
+### Follow-up: phone chrome on the unfolded Duo (landscape)
+
+Ask (Eddie): "It should have more mobile optimization for landscape duo. It should be like mobile where I can swipe between lists."
+
+- [x] One definition of desktop: **(≥768px AND a mouse/trackpad with hover) OR ≥1024px**. Everything else, every Duo pose included, gets the phone chrome (top bar, drawer, list pager, bottom sheets, FAB). iPad mini portrait stays phone; iPad landscape (≥1024) and mouse windows 768–1023 stay desktop. `sm:`/`lg:` are still pure width.
+  - `DESKTOP_QUERY` in `src/lib/touch.ts`; Tailwind `md`/`max-md` overridden with `@custom-variant` in `globals.css` (same query and its negation). Checked in compiled CSS: all 73 `md:` utilities and 6 `max-md:` utilities emit under the compound queries, `md:` still sorts between `sm:` and `lg:`, the `sm:`/`lg:` class lists are byte-identical, and Lightning CSS (production optimize) keeps the queries.
+  - Raw CSS on 767/768 (desktop scrollbars, 17px body + 16px inputs, flat black/white page, sheet transforms) uses the same queries.
+  - Drawer closes when `DESKTOP_QUERY` starts matching; unfolding the Duo now keeps it open (supersedes the "closes on unfold" item above).
+  - No landscape rule needed: at 594×368 the pills and list title take 79px below the 48px bar, leaving 225px of list, and they scroll away with the page.
+- [x] Tests: matchMedia stubs (mobile-chrome, todo-row, list-tile) answer `DESKTOP_QUERY` from width + touch; new mobile-chrome tests: drawer stays open 382→951 on touch, closes at 1024 touch and at 900 with a mouse. Repo suite 1740 passed / 184 skipped, 0 failed; typecheck clean.
+- [x] Browser (touch emulation, dev server with every `.env` key blanked + scratch DB): 951×585 Home has the phone chrome with one list per 951px slide, and a swipe moves `scrollLeft` 0→951 with the active pill To Do→Monitor; project Tasks, Research and Calendar have the phone chrome with scrollWidth = innerWidth; a todo opens as a full-width bottom sheet (top 88, bottom 585) that scrolls to Done; 594×368 and 382×580 are phone; 1024×768 touch and 900×700 mouse have the sidebar.
