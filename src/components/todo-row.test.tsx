@@ -8,7 +8,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { TodoRow, dropTargetProjectId } from "./todo-row";
-import { TOUCH_QUERY } from "@/lib/touch";
+import { DESKTOP_QUERY, TOUCH_QUERY } from "@/lib/touch";
 
 // Answers matchMedia as a screen of `width` px that is (or isn't) touch-only,
 // so width queries still match the way a browser would.
@@ -19,11 +19,13 @@ const stubScreen = (width: number, touch: boolean) =>
     const matches =
       q === TOUCH_QUERY
         ? touch
-        : min
-          ? width >= Number(min[1])
-          : max
-            ? width <= Number(max[1])
-            : false;
+        : q === DESKTOP_QUERY
+          ? (width >= 768 && !touch) || width >= 1024
+          : min
+            ? width >= Number(min[1])
+            : max
+              ? width <= Number(max[1])
+              : false;
     return { matches, media: q, addEventListener: () => {}, removeEventListener: () => {} };
   });
 

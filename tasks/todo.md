@@ -1985,3 +1985,23 @@ What that means for the app: `md:` (768) is the mobile/desktop split, so inner-p
   - [ ] FAB disabled on non-Home pages
   - [ ] Personal page date bug
   - [ ] Placeholder truncation
+
+### Follow-up: phone chrome on the unfolded Duo (landscape)
+
+Ask (Eddie): "It should have more mobile optimization for landscape duo. It should be like mobile where I can swipe between lists."
+
+- [x] One definition of desktop: **(≥768px AND a mouse/trackpad with hover) OR ≥1024px**. Everything else, every Duo pose included, gets the phone chrome (top bar, drawer, list pager, bottom sheets, FAB). iPad mini portrait stays phone; iPad landscape (≥1024) and mouse windows 768–1023 stay desktop. `sm:`/`lg:` are still pure width.
+  - `DESKTOP_QUERY` in `src/lib/touch.ts`; Tailwind `md`/`max-md` overridden with `@custom-variant` in `globals.css` (same query and its negation). Checked in compiled CSS: all 73 `md:` utilities and 6 `max-md:` utilities emit under the compound queries, `md:` still sorts between `sm:` and `lg:`, the `sm:`/`lg:` class lists are byte-identical, and Lightning CSS (production optimize) keeps the queries.
+  - Raw CSS on 767/768 (desktop scrollbars, 17px body + 16px inputs, flat black/white page, sheet transforms) uses the same queries.
+  - Drawer closes when `DESKTOP_QUERY` starts matching; unfolding the Duo now keeps it open (supersedes the "closes on unfold" item above).
+  - No landscape rule needed: at 594×368 the pills and list title take 79px below the 48px bar, leaving 225px of list, and they scroll away with the page.
+- [x] Tests: matchMedia stubs (mobile-chrome, todo-row, list-tile) answer `DESKTOP_QUERY` from width + touch; new mobile-chrome tests: drawer stays open 382→951 on touch, closes at 1024 touch and at 900 with a mouse. Repo suite 1740 passed / 184 skipped, 0 failed; typecheck clean.
+- [x] Browser (touch emulation, dev server with every `.env` key blanked + scratch DB): 951×585 Home has the phone chrome with one list per 951px slide, and a swipe moves `scrollLeft` 0→951 with the active pill To Do→Monitor; project Tasks, Research and Calendar have the phone chrome with scrollWidth = innerWidth; a todo opens as a full-width bottom sheet (top 88, bottom 585) that scrolls to Done; 594×368 and 382×580 are phone; 1024×768 touch and 900×700 mouse have the sidebar.
+
+### Follow-up: Home lists as side-by-side columns on the unfolded Duo
+
+Ask (Eddie): the Home lists should be side-by-side columns in one horizontally scrolling row, not one full-width list per page (~400px columns, about 2.4 visible at 951, still one per swipe folded).
+
+- [x] Column rule: each pager column is `min(100vw, 400px)`; a trailing `aria-hidden` spacer of `100vw - column` lets the last list become the leftmost. Active list = leftmost snapped column, from the first column's `offsetWidth` (pills, drawer goto and the FAB's target all use it). Divider: `border-l` separator hairline on every column after the first. `scroll-snap-stop: always` moved onto the columns (on the track it was a no-op) and only below 401px, so a fling can pass several lists when more than one fits.
+- [x] Tests: new `home-tiles.test.tsx` (column classes, divider, spacer; scrollLeft 400 → Monitor and 800 → Later with a 951 track; pills and drawer goto scroll to 400/800, not multiples of 951; FAB broadcast follows). The active-index tests fail with the old track-width math. Repo suite 1745 passed / 184 skipped, 0 failed; typecheck clean.
+- [x] Browser (touch emulation, blanked `.env`, scratch DB): 951×585 columns 400/400/400 at 0/400/800 with 1px dividers, spacer 551, track scrollWidth 1751, document scrollWidth = innerWidth; scroll to 400 → Monitor active; Later pill → scrollLeft 800 and Later active; an unaligned scroll to 250 snaps to 400; drawer goto Later → 800. 669×867 same (spacer 269, scrollWidth 1469). 382×580 columns 382, spacer 0, snap-stop always, swipe to 382 → Monitor, pixel-identical to the earlier Home screenshot. FAB tap at 951 opens the To Do input. Long-press drag (CDP touch events) of a To Do todo onto the visible Monitor column moves it without scrolling and persists after reload.
