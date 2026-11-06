@@ -6,7 +6,8 @@ import UserNotifications
 let API_URL = "https://personal-os-two-gold.vercel.app/api/capture/smart/auto"
 // Mood board save — same capture token. Used for "add to board: <link>".
 let BOARD_URL = "https://personal-os-two-gold.vercel.app/api/board"
-let API_TOKEN = "nJpdojSLOrDa9q6rLgyDA5Sp9qA"
+// Baked in by build.sh (QT_TOKEN or CAPTURE_TOKEN from ../.env). Never commit a real token here.
+let API_TOKEN = "QT_TOKEN_PLACEHOLDER"
 
 // MARK: - Capture popup
 
