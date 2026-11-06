@@ -1,8 +1,8 @@
 #!/bin/bash
 # Build Quick Todo.app and install to /Applications.
 #
-# Overrides for building someone else's copy without editing main.swift:
-#   QT_TOKEN=<their capture token>  — swapped in for API_TOKEN at compile time
+# The capture token is baked in at compile time and never lives in main.swift:
+#   QT_TOKEN=<capture token>        — explicit (e.g. a teammate's); default is CAPTURE_TOKEN from ../.env
 #   QT_APP_DIR=<path to .app>       — build there instead of /Applications
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -11,11 +11,17 @@ APP_NAME="Quick Todo"
 APP_DIR="${QT_APP_DIR:-/Applications/${APP_NAME}.app}"
 EXEC_NAME="QuickTodo"
 
-SRC="main.swift"
-if [ -n "${QT_TOKEN:-}" ]; then
-    SRC="$(mktemp -d)/main.swift"
-    sed "s|^let API_TOKEN = .*|let API_TOKEN = \"${QT_TOKEN}\"|" main.swift > "${SRC}"
+# The token is never in main.swift: QT_TOKEN wins, else CAPTURE_TOKEN from the repo .env.
+TOKEN="${QT_TOKEN:-}"
+if [ -z "${TOKEN}" ] && [ -f ../.env ]; then
+    TOKEN="$(grep -E '^CAPTURE_TOKEN=' ../.env | head -1 | cut -d= -f2- | tr -d "\"'\r\n")"
 fi
+if [ -z "${TOKEN}" ]; then
+    echo "✗ No token: set QT_TOKEN or put CAPTURE_TOKEN in ../.env" >&2
+    exit 1
+fi
+SRC="$(mktemp -d)/main.swift"
+sed "s|^let API_TOKEN = .*|let API_TOKEN = \"${TOKEN}\"|" main.swift > "${SRC}"
 
 echo "→ Compiling..."
 xcrun -sdk macosx swiftc \
