@@ -49,7 +49,7 @@ export function ListEditor({
             <button
               onClick={() => onChange(items.filter((i) => i !== item))}
               aria-label={`Remove ${item}`}
-              className={cn(iconBtn, "sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100")}
+              className={cn(iconBtn, "hoverable:opacity-0 group-hover:opacity-100 focus:opacity-100")}
             >
               <X className="size-3.5" />
             </button>

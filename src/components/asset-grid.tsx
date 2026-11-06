@@ -532,7 +532,7 @@ function CardView({
                 target="_blank"
                 rel="noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                className="opacity-50 md:opacity-0 md:group-hover:opacity-100 p-1 rounded hover:bg-[var(--color-accent)] text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] transition"
+                className="opacity-50 hoverable:opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--color-accent)] text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] transition"
                 title="Open link"
               >
                 <ExternalLink className="size-3.5" />

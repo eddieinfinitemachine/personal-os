@@ -121,7 +121,7 @@ export default async function RootLayout({
               <div data-app-sidebar className="hidden md:flex print:hidden">
                 <Sidebar appName={appName} isPrivate={isPrivate} canImprove={canImprove} />
               </div>
-              <main data-app-main className="flex-1 overflow-x-hidden pt-[calc(48px+env(safe-area-inset-top))] pb-[calc(16px+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 print:pt-0 print:pb-0">
+              <main data-app-main className="flex-1 overflow-x-hidden pt-[calc(48px+env(safe-area-inset-top))] pb-[calc(96px+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 print:pt-0 print:pb-0">
                 {children}
               </main>
             </div>

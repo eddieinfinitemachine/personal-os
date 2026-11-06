@@ -212,20 +212,40 @@ function MobileDrawer({
     reorder(order);
   }
   // Close on route change.
+  const pathRef = useRef(pathname);
   useEffect(() => {
+    pathRef.current = pathname;
     closeDrawer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
-  // Lock body scroll while open.
+  // Close when the screen widens to the sidebar layout (unfolding an iPhone
+  // Duo), so the drawer and its scroll lock don't outlive the phone layout.
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const onChange = (e: MediaQueryListEvent) => {
+      if (e.matches) closeDrawer();
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [closeDrawer]);
+  // Lock page scroll while open. overflow: hidden on body never reaches the
+  // viewport here (html's overflow-x: clip stops it propagating) and iOS
+  // scrolls through it anyway, so pin the body in place and put the page
+  // back where it was on close.
   useEffect(() => {
     if (!drawerOpen) {
       setEditingTrackers(false);
       return;
     }
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const y = window.scrollY;
+    const lockedPath = pathRef.current;
+    const body = document.body.style;
+    const prev = { position: body.position, top: body.top, width: body.width };
+    Object.assign(body, { position: "fixed", top: `-${y}px`, width: "100%" });
     return () => {
-      document.body.style.overflow = prev;
+      Object.assign(body, prev);
+      // A drawer link that navigated leaves the new page at the top.
+      if (pathRef.current === lockedPath) window.scrollTo({ top: y, behavior: "instant" });
     };
   }, [drawerOpen]);
   const renderList = (l: MobileList) => (

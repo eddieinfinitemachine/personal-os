@@ -25,6 +25,7 @@ import { pushUndo, quoteTitle } from "@/lib/undo";
 import { pushTodoMoveUndo } from "@/lib/todo-undo";
 import { getLists } from "@/lib/todo-menu-cache";
 import { ASSET_TRACKERS, type AssetTracker } from "@/lib/asset-trackers";
+import { TOUCH_QUERY } from "@/lib/touch";
 import { readEnabled as readEnabledTemplates } from "./sidebar-template-picker";
 import { TodoDetailModal } from "./todo-detail-modal";
 import {
@@ -696,7 +697,8 @@ function TodoRowImpl({
   }, []);
 
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 767px)");
+    // By input, not width: the unfolded iPhone Duo is 951px wide but touch-only.
+    const mq = window.matchMedia(TOUCH_QUERY);
     const update = () => setTouchEnv(mq.matches);
     update();
     mq.addEventListener("change", update);
@@ -1182,7 +1184,7 @@ function TodoRowImpl({
                   e.stopPropagation();
                   setEditingDate(true);
                 }}
-                className="inline-flex items-center gap-1 rounded px-1 py-0.5 opacity-50 md:opacity-0 md:group-hover:opacity-60 md:hover:opacity-100 hover:bg-[var(--color-accent)] transition"
+                className="inline-flex items-center gap-1 rounded px-1 py-0.5 opacity-50 hoverable:opacity-0 group-hover:opacity-60 hover:opacity-100 hover:bg-[var(--color-accent)] transition"
                 title="Add due date"
               >
                 <Calendar className="size-3" />
@@ -1197,7 +1199,7 @@ function TodoRowImpl({
                     setAddingSub(true);
                     setSubsExpanded(true);
                   }}
-                  className="inline-flex items-center gap-1 rounded px-1 py-0.5 opacity-50 md:opacity-0 md:group-hover:opacity-60 md:hover:opacity-100 hover:bg-[var(--color-accent)] transition"
+                  className="inline-flex items-center gap-1 rounded px-1 py-0.5 opacity-50 hoverable:opacity-0 group-hover:opacity-60 hover:opacity-100 hover:bg-[var(--color-accent)] transition"
                   title="Add subtask"
                 >
                   <Plus className="size-3" />

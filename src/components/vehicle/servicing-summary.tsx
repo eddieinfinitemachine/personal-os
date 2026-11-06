@@ -212,7 +212,7 @@ export function ServicingSummary({
                 <span className="text-xs text-[var(--color-muted-foreground)]">
                   {unit}
                 </span>
-                <Pencil className="size-3 text-[var(--color-muted-foreground)] opacity-50 md:opacity-0 md:group-hover:opacity-100 transition" />
+                <Pencil className="size-3 text-[var(--color-muted-foreground)] opacity-50 hoverable:opacity-0 group-hover:opacity-100 transition" />
               </button>
             )}
           </div>

@@ -133,7 +133,7 @@ GitHub repos with my commits in the last 14 days, newest first.
 - [x] Delete the meetings pipeline: `lib/projects/meetings.ts`, `calendar.ts`, their tests, `api/cron/projects-meetings`, `api/projects/sources/[id]/accept`, the cron entry in `vercel.json`
 - [x] Tests: `board.test.ts`, `projects-board.test.tsx`; `pnpm typecheck`, `pnpm test`
 - [ ] Schema left as is (`ProjectMeeting`, `ProjectSource.projectId`, `Project.visibility` now unused) — dropping needs a flagged migration, separate PR
-- [ ] PR, merge, verify on prod
+- [x] PR #96 opened 2026-11-05 (https://github.com/eddieinfinitemachine/personal-os/pull/96); not merged, not deployed. Real-device check on the Duo is Eddie's
 
 # Projects page — auto-discovered, auto-updating `/projects` — in progress 2026-10-27
 
@@ -1956,3 +1956,32 @@ Ask: read health data over time and say where biomarkers stand and what to focus
 - [ ] Browser check of the sidebar and `/pets` after deploy (needs Eddie's sign-in)
 
 **Deliberately left for Phase 2 (schema change, needs Eddie's OK):** dropping the `Project` table means making Vehicle / Pet / Human standalone, giving notes and meeting links a new home, and moving the dashboards off `/projects/[id]`. Until then those pages still exist and are reachable from search; nothing is deleted.
+
+## 2026-11-05 — iPhone Duo
+
+Ask (Eddie): "optimize this for the iphone duo". Read as: Personal OS (the PWA he uses on the phone) on the Duo's two displays. Safari 27.1 gives a page these CSS-px viewports (WebKit blog, Safari 27.1): outer portrait 382×580, outer landscape 594×368, inner portrait 669×867, inner landscape 951×585, two windows side by side 385 each. Every pose is `(hover: none)` / `(pointer: coarse)`. Folding fires `resize` (a transient 466×498 mid-swing), no reload. Device Posture / Viewport Segments APIs are behind Safari feature flags, so nothing is built on them.
+
+What that means for the app: `md:` (768) is the mobile/desktop split, so inner-portrait (669) keeps the phone chrome like an iPad mini in portrait, and inner-landscape (951) gets the desktop sidebar on a touch-only screen. Tailwind v4 wraps `hover:`/`group-hover:` in `@media (hover: hover)`, so every "visible on mobile, hover-reveal on desktop" control written as `md:opacity-0 md:group-hover:opacity-100` is invisible and unreachable at 951 on the Duo. Width is also used as a proxy for touch in todo-row (long-press drag) and list-tile (tap-to-add), so the unfolded Duo gets mouse-only behaviour.
+
+- [x] `hoverable` custom variant (`(hover: hover) and (pointer: fine)`) in globals.css; every hover-reveal control uses `hoverable:opacity-0 group-hover:opacity-100` with a visible touch baseline (18 files)
+  - Done: 18 components converted (23 sites). Touch keeps the old phone baseline (50/60, full opacity where `sm:` sites had none, 50 where there was none); the mood-board caption stays visible on touch. Compiled CSS checked: `group-hover:`/`hover:`/`focus:` (0,2,0) beat `hoverable:opacity-0` (0,1,0). Left alone: todo-row Tracker / Move to chips (desktop-only by design; touch reaches both from the long-press menu) and the exercise-video thumbnail fade (decorative).
+- [x] Touch detection by capability, not width: todo-row `touchEnv`, list-tile tile-tap composer (shared `TOUCH_QUERY` in `src/lib/touch.ts`)
+  - Done: `touchEnv` uses `TOUCH_QUERY` (long-press drag, ghost, touch-action); tile tap returns early only on `FINE_POINTER_QUERY`. Left alone as layout: notes-pane `(min-width: 1024px)` scroll fix, MobileFab / drawer `md:hidden`, popover placement by `innerWidth`. New tests: todo-row arms long-press at 951 touch and not for a narrow mouse window; list-tile tap composes without a fine pointer at 951 and not with one (all four fail on the old code). Repo suite 1735 passed / 184 skipped, 0 failed (`pnpm test` also picks up two stale `.claude/worktrees` checkouts, which fail 62 on their own); typecheck has the same 128 pre-existing errors as before (stale Prisma client), none in changed files.
+- [x] Audit at the five Duo viewports with touch emulation (local dev + scratch DB, agent-browser): Home, list, Research, Workout, Notes, Call Sheet, Calendar, Settings, todo detail modal; outer 382 overflow, inner-landscape 585 height, fold transition
+  - Done: six problems found (below); no horizontal overflow at any width.
+- [x] Fix what the audit finds; verify
+  - Project Ask chat: the full-screen panel below md covered its own toggle and had no way out. Header Close button (44px, `aria-label="Close"`, below md), Escape closes, toggle hidden below md while open.
+  - Todo detail modal: height cap and scroll at every size (`max-h-[85dvh] overflow-y-auto md:max-h-[calc(100dvh-2rem)]`); "esc to close" hint is `hidden hoverable:inline`.
+  - Mobile drawer: closes when `(min-width: 768px)` starts matching (unfolding); scroll lock pins the body (`position: fixed; top: -scrollY`) and restores the position on close (skipped when a drawer link navigated). `overflow: hidden` on body never worked because html's `overflow-x: clip` stops it reaching the viewport.
+  - Sidebar: `sticky top-0 h-dvh overflow-y-auto`, so nav and Settings/theme stay on screen at 951×585.
+  - List tiles (Home, project page): `md:grid-cols-2 lg:grid-cols-3`.
+  - Mobile `<main>` bottom padding 96px + safe area so the FAB clears the last row.
+  - Tests: new project-chat (Close, Escape) and mobile-chrome (closes on unfold and stays closed on refold; body pinned and scroll restored) tests, all four fail on the old code. Repo suite 1739 passed / 184 skipped, 0 failed; typecheck 0 errors.
+  - Browser (touch emulation, dev server with every `.env` key blanked + scratch DB): 382×580 chat closes by the Close button (44×44, topmost) and by Escape; 951×585 modal 16→569px of 585 with overflow-y auto, scrolls to Done (bottom 556), esc hint `display: none`; 382×580 drawer pins the page at 600 (scrollBy no effect), close restores scrollY 600, open then resize to 951 closes it and refold to 382 leaves it closed; 951×585 Home at scrollY 700 sidebar top 0 / height 585 with Settings on screen, tiles in two 308px columns; 594×368 Calendar bottom: last content 245, FAB top 294; scrollWidth equals innerWidth at 382 and 951.
+- [x] PR #96 opened 2026-11-05 (https://github.com/eddieinfinitemachine/personal-os/pull/96); not merged, not deployed. Real-device check on the Duo is Eddie's
+- Follow-ups (not done):
+  - [ ] 669-wide Home pager shows one list per slide
+  - [ ] Notes split view below lg
+  - [ ] FAB disabled on non-Home pages
+  - [ ] Personal page date bug
+  - [ ] Placeholder truncation

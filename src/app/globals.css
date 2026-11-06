@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* A real hover device (mouse/trackpad). Touch screens of any width — phones,
+   iPad, the unfolded iPhone Duo at 951px — never match, so controls that
+   hide until hover must stay visible there. */
+@custom-variant hoverable (@media (hover: hover) and (pointer: fine));
+
 @theme {
   /* SF Pro on Apple devices, then a clean system fallback. */
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",

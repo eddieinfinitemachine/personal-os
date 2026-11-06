@@ -83,7 +83,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="w-64 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-muted)]/40 flex flex-col min-h-screen">
+    <aside className="sticky top-0 h-dvh overflow-y-auto w-64 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-muted)]/40 flex flex-col">
       <div className="px-4 py-5 flex items-center justify-between gap-2">
         <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
           {appName}

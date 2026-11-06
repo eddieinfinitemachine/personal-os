@@ -369,7 +369,7 @@ export function ArticleReader({
                   </blockquote>
                   <button
                     onClick={() => removeHighlight(h.id)}
-                    className="rounded p-1 text-[var(--color-muted-foreground)] opacity-0 group-hover:opacity-100 hover:text-rose-500"
+                    className="rounded p-1 text-[var(--color-muted-foreground)] opacity-50 hoverable:opacity-0 group-hover:opacity-100 hover:text-rose-500"
                     title="Remove highlight"
                   >
                     <X className="size-3.5" />

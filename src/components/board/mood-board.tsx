@@ -659,7 +659,7 @@ function Tile({
         </span>
       )}
       {(item.title || host) && (
-        <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent px-3 pb-2.5 pt-8 text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
+        <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent px-3 pb-2.5 pt-8 text-white hoverable:opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
           {item.title && <span className="block text-[13px] font-medium leading-snug line-clamp-2">{item.title}</span>}
           {host && <span className="block text-[11px] opacity-75 truncate">{host}</span>}
         </span>
