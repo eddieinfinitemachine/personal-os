@@ -272,3 +272,7 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 **Context**: First Duo pass kept the desktop sidebar layout at 951×585 (above `md:`) and adapted it to touch (hover-reveal baseline, sticky sidebar, two columns). Eddie: "It should be like mobile where I can swipe between lists."
 **Mistake / surprise**: I treated the breakpoint as the truth and patched the desktop layout for touch. The device he holds is a phone in every pose; the chrome he expects is the phone chrome (top bar, drawer, pager, bottom sheets).
 **Rule**: The desktop layout is for a mouse/trackpad or a genuinely large screen (≥ lg). A touch screen below lg gets the phone chrome regardless of width. When a new device lands between breakpoints, ask which experience Eddie expects before adapting the wrong one.
+
+## 2026-11-05 — follow-up commits went to an already-merged PR
+**Context**: PR #96 was squash-merged at 21:12 while I kept pushing the next two rounds (phone chrome everywhere, column row) to its branch and reporting "PR #96 updated". Eddie: "I already merged it before. Do we need a new pr". The later work was never on main; it needed PR #97 from a fresh branch off main.
+**Rule**: Before pushing a follow-up to a PR branch, run `gh pr view <n> --json state,mergedAt`. If it is merged, branch from `origin/main`, cherry-pick the new commits, and open a new PR. Squash merges mean later commits on the old branch never reach main.
