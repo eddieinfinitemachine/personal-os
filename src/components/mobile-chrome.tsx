@@ -36,6 +36,7 @@ import {
 import { cn } from "@/lib/utils";
 import { palette, LIST_PALETTE, type ListColor } from "@/lib/lists";
 import { OPEN_IMPROVE_EVENT } from "@/lib/improvements/request";
+import { DESKTOP_QUERY } from "@/lib/touch";
 import { ThemeToggle } from "./theme-toggle";
 import { MobileFab } from "./mobile-fab";
 
@@ -218,10 +219,11 @@ function MobileDrawer({
     closeDrawer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
-  // Close when the screen widens to the sidebar layout (unfolding an iPhone
-  // Duo), so the drawer and its scroll lock don't outlive the phone layout.
+  // Close when the screen switches to the sidebar layout (a window widened
+  // past lg, or a mouse attached), so the drawer and its scroll lock don't
+  // outlive the phone layout. Unfolding an iPhone Duo stays on the phone layout.
   useEffect(() => {
-    const mq = window.matchMedia("(min-width: 768px)");
+    const mq = window.matchMedia(DESKTOP_QUERY);
     const onChange = (e: MediaQueryListEvent) => {
       if (e.matches) closeDrawer();
     };

@@ -15,31 +15,40 @@ vi.mock("./mobile-fab", () => ({ MobileFab: () => null }));
 vi.mock("./theme-toggle", () => ({ ThemeToggle: () => null }));
 
 import { MobileChromeProvider } from "./mobile-chrome";
+import { DESKTOP_QUERY } from "@/lib/touch";
 
-// A screen whose width can change, like an iPhone Duo folding and unfolding:
-// `(min-width: Npx)` queries answer from `width` and hear "change" events.
+// A screen whose width (and touch-ness) can change, like an iPhone Duo folding
+// and unfolding or a desktop window resizing. DESKTOP_QUERY answers from both;
+// queries hear "change" events when the answer flips.
 let width = 382;
+let touch = true;
 const listeners = new Map<string, Set<(e: MediaQueryListEvent) => void>>();
+const answer = (q: string) => {
+  if (q === DESKTOP_QUERY) return (width >= 768 && !touch) || width >= 1024;
+  const min = /min-width:\s*(\d+)px/.exec(q);
+  return min ? width >= Number(min[1]) : false;
+};
 const stubScreen = () =>
   vi.stubGlobal("matchMedia", (q: string) => {
-    const min = /min-width:\s*(\d+)px/.exec(q);
     const set = listeners.get(q) ?? new Set();
     listeners.set(q, set);
     return {
       get matches() {
-        return min ? width >= Number(min[1]) : false;
+        return answer(q);
       },
       media: q,
       addEventListener: (_: string, fn: (e: MediaQueryListEvent) => void) => set.add(fn),
       removeEventListener: (_: string, fn: (e: MediaQueryListEvent) => void) => set.delete(fn),
     };
   });
-const resize = (w: number) =>
+const resize = (w: number, t = touch) =>
   act(async () => {
+    const before = new Map([...listeners.keys()].map((q) => [q, answer(q)]));
     width = w;
+    touch = t;
     for (const [q, set] of listeners) {
-      const min = /min-width:\s*(\d+)px/.exec(q);
-      const matches = min ? w >= Number(min[1]) : false;
+      const matches = answer(q);
+      if (matches === before.get(q)) continue;
       for (const fn of set) fn({ matches, media: q } as MediaQueryListEvent);
     }
   });
@@ -49,6 +58,7 @@ const scrollTo = vi.fn();
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   width = 382;
+  touch = true;
   listeners.clear();
   stubScreen();
   vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
@@ -74,16 +84,31 @@ const openDrawer = () =>
   });
 
 describe("MobileDrawer", () => {
-  it("closes when the screen widens to the desktop layout (unfolding)", async () => {
+  it("stays open when an iPhone Duo unfolds: a touch screen below lg keeps the phone layout", async () => {
     await render();
     await openDrawer();
     expect(isOpen()).toBe(true);
 
     await resize(951);
+    expect(isOpen()).toBe(true);
+  });
+
+  it("closes when the screen switches to the desktop layout", async () => {
+    // A touch screen widening past lg (iPad rotated to landscape).
+    await render();
+    await openDrawer();
+    await resize(1024);
     expect(isOpen()).toBe(false);
 
-    // Folding back must not bring it back: it was closed, not merely hidden.
+    // Narrowing back must not bring it back: it was closed, not merely hidden.
     await resize(382);
+    expect(isOpen()).toBe(false);
+
+    // A mouse-driven window widening past md.
+    await resize(600, false);
+    await openDrawer();
+    expect(isOpen()).toBe(true);
+    await resize(900, false);
     expect(isOpen()).toBe(false);
   });
 

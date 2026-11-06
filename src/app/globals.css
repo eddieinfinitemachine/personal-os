@@ -5,6 +5,20 @@
    hide until hover must stay visible there. */
 @custom-variant hoverable (@media (hover: hover) and (pointer: fine));
 
+/* "Desktop" is a pointer device on a tablet-or-wider screen, or any screen from lg up.
+   A touch screen below lg (every iPhone Duo pose) keeps the phone chrome. Keep in sync
+   with DESKTOP_QUERY in src/lib/touch.ts. */
+@custom-variant md {
+  @media ((min-width: 768px) and (hover: hover) and (pointer: fine)), (min-width: 1024px) {
+    @slot;
+  }
+}
+@custom-variant max-md {
+  @media (max-width: 1023px) and ((max-width: 767px) or (hover: none) or (pointer: coarse)) {
+    @slot;
+  }
+}
+
 @theme {
   /* SF Pro on Apple devices, then a clean system fallback. */
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
@@ -266,8 +280,8 @@
     -webkit-overflow-scrolling: touch;
   }
 
-  /* macOS-style overlay scrollbars on desktop. */
-  @media (min-width: 768px) {
+  /* macOS-style overlay scrollbars on desktop (same query as md:). */
+  @media ((min-width: 768px) and (hover: hover) and (pointer: fine)), (min-width: 1024px) {
     ::-webkit-scrollbar {
       width: 12px;
       height: 12px;
@@ -287,9 +301,10 @@
     }
   }
 
-  /* Mobile: HIG-aligned body type. Flat Reminders-style page bg — pure white
-     in light, pure black in dark — since list tiles render chrome-less. */
-  @media (max-width: 767px) {
+  /* Mobile (same query as max-md:, so the unfolded Duo too): HIG-aligned body
+     type. Flat Reminders-style page bg — pure white in light, pure black in
+     dark — since list tiles render chrome-less. */
+  @media (max-width: 1023px) and ((max-width: 767px) or (hover: none) or (pointer: coarse)) {
     body {
       font-size: 17px;
       letter-spacing: -0.022em;
@@ -314,12 +329,12 @@
       font-size: 17px !important;
     }
   }
-  @media (max-width: 767px) and (prefers-color-scheme: dark) {
+  @media (max-width: 1023px) and ((max-width: 767px) or (hover: none) or (pointer: coarse)) and (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) body {
       background: oklch(0 0 0);
     }
   }
-  @media (max-width: 767px) {
+  @media (max-width: 1023px) and ((max-width: 767px) or (hover: none) or (pointer: coarse)) {
     :root[data-theme="dark"] body {
       background: oklch(0 0 0);
     }
@@ -411,7 +426,7 @@
       transform: scale(0.96);
     }
   }
-  @media (max-width: 767px) {
+  @media (max-width: 1023px) and ((max-width: 767px) or (hover: none) or (pointer: coarse)) {
     [data-overlay="modal"][data-state="closed"] {
       transform: translateY(100%);
     }
