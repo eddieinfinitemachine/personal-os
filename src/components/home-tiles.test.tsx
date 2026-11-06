@@ -29,7 +29,8 @@ beforeEach(() => {
     queueMicrotask(() => cb(0));
     return 1;
   });
-  // The unfolded Duo: a 951px track of 400px columns. jsdom has no layout.
+  // jsdom has no layout. A slide (400) narrower than the track (951) proves the
+  // index math reads the rendered slide width, never the track width.
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (
     this: HTMLElement,
   ) {
@@ -68,31 +69,30 @@ const activePill = () =>
     .filter((b) => b.className.includes("bg-[var(--color-accent)]"))
     .map((b) => b.getAttribute("aria-label"));
 
-describe("HomeTiles phone pager columns", () => {
-  it("renders fixed-width columns with a divider after the first and a trailing spacer", async () => {
+describe("HomeTiles phone pager", () => {
+  it("renders one full-width slide per list, no dividers, no spacer", async () => {
     await render();
     const cols = [...track().querySelectorAll<HTMLElement>("[data-pager-column]")];
     expect(cols).toHaveLength(3);
-    expect(cols.every((c) => c.className.includes("w-[min(100vw,400px)]"))).toBe(true);
-    expect(cols.map((c) => c.className.includes("border-l"))).toEqual([false, true, true]);
-    const spacer = track().lastElementChild as HTMLElement;
-    expect(spacer.hasAttribute("data-pager-spacer")).toBe(true);
-    expect(spacer.getAttribute("aria-hidden")).toBe("true");
-    expect(spacer.className).toContain("w-[calc(100vw-min(100vw,400px))]");
+    expect(cols.every((c) => c.className.includes("w-screen"))).toBe(true);
+    expect(cols.every((c) => c.className.includes("[scroll-snap-stop:always]"))).toBe(true);
+    expect(cols.some((c) => c.className.includes("border-l"))).toBe(false);
+    expect(track().querySelector("[data-pager-spacer]")).toBeNull();
+    expect(track().children).toHaveLength(3);
   });
 
-  it("takes the active list from the column width, not the track width", async () => {
+  it("takes the active list from the slide width, not the track width", async () => {
     await render();
     expect(activePill()).toEqual(["Go to To Do"]);
-    // One column over. By track width (951) this would still round to 0.
+    // One slide over. By track width (951) this would still round to 0.
     await scrollTrackTo(400);
     expect(activePill()).toEqual(["Go to Monitor"]);
-    // The furthest the trailing spacer lets the track go: Later is leftmost.
+
     await scrollTrackTo(800);
     expect(activePill()).toEqual(["Go to Later"]);
   });
 
-  it("scrolls a pill's list to the leftmost column", async () => {
+  it("scrolls a pill's list into place by slide width", async () => {
     await render();
     await act(async () => pill("Later").click());
     expect(scrollTo).toHaveBeenLastCalledWith({ left: 800, behavior: "smooth" });
@@ -100,7 +100,7 @@ describe("HomeTiles phone pager columns", () => {
     expect(scrollTo).toHaveBeenLastCalledWith({ left: 400, behavior: "smooth" });
   });
 
-  it("broadcasts the leftmost list for the FAB", async () => {
+  it("broadcasts the active list for the FAB", async () => {
     const seen: string[] = [];
     const onActive = (e: Event) =>
       seen.push((e as CustomEvent<{ listId: string }>).detail.listId);
@@ -111,7 +111,7 @@ describe("HomeTiles phone pager columns", () => {
     expect(seen.at(-1)).toBe("b");
   });
 
-  it("goes to the drawer's list by column offset", async () => {
+  it("goes to the drawer's list by slide offset", async () => {
     sessionStorage.setItem("personalos:goto-list", "c");
     await render();
     expect(scrollTo).toHaveBeenLastCalledWith({ left: 800, behavior: "smooth" });
