@@ -98,6 +98,23 @@ generic schema-push helper so a deploy cannot apply unrelated database drift.
 The `pnpm build` script still contains that helper for existing manual workflows;
 do not use it with `VERCEL_ENV=production` for a narrowly approved rollout.
 
+### Quick-add Shortcut (iPhone)
+
+An "Add to EC" Shortcut adds a todo without opening the app:
+
+1. **Ask for Input** (Text, "What needs doing?").
+2. **Get Contents of URL**: `POST https://internal.eddiecohen.com/api/capture/todo`,
+   JSON body `{ "text": <Provided Input> }`, headers
+   `Authorization: Bearer <CAPTURE_TOKEN>` and `X-Capture-Source: quick`.
+   A title starting with `@<list> ` routes to that list alias.
+3. **Get Dictionary Value** `todo`, then `title` (response is `{ ok, todo, reviewId }`).
+4. **Show Notification** "Added: <title>".
+
+Triggers: the Lock Screen "Shortcut" control (in place of the flashlight or
+camera button), the Home Screen Shortcuts widget, the Control Center "Shortcut"
+control, or Back Tap (Settings > Accessibility > Touch). Keep the token on the
+phone only.
+
 ## Auth flow
 
 1. Visitor opens `/` → sees public landing page (no session) or dashboard (with session).
