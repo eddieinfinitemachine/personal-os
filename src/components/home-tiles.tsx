@@ -8,18 +8,11 @@ import { haptic } from "@/lib/haptic";
 import { cn } from "@/lib/utils";
 import type { TodoLike } from "./todo-row";
 
-// Phone pager columns. A column is the full screen on a phone and 400px once the
-// screen is wider, so the unfolded iPhone Duo (951px) shows about 2.4 lists side
-// by side and scrolls sideways; the folded 382px screen still shows one per swipe.
-// JS reads the rendered column width (offsetWidth), so the 400 lives only in
-// these class strings (the snap-stop breakpoint is "wider than one column").
-const COLUMN_CLASS = "w-[min(100vw,400px)]";
-// Lets the last list scroll to the leftmost column (0 wide on a phone).
-const SPACER_CLASS = "w-[calc(100vw-min(100vw,400px))]";
-// One column per screen: a fling stops at the next list. Several on screen: a
-// fling may pass several lists, like any horizontal row.
-const SNAP_STOP_CLASS =
-  "[scroll-snap-stop:always] min-[401px]:[scroll-snap-stop:normal]";
+// Phone pager: one full-width list per swipe in every pose, including the
+// unfolded iPhone Duo in landscape (Eddie, 2026-11-06: "for landscape it should
+// just show one list at a time"). scroll-snap-stop on the slide (not the track,
+// where it has no effect) makes a fling stop at the next list.
+const SLIDE_CLASS = "w-screen [scroll-snap-stop:always]";
 
 export type HomeTile = {
   list: ListInfo;
@@ -67,13 +60,13 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
   const [activeIdx, setActiveIdx] = useState(0);
   const scrollRafRef = useRef<number | null>(null);
 
-  // Width of one pager column as rendered (0 before layout or when hidden).
+  // Width of one pager slide as rendered (0 before layout or when hidden).
   function columnWidth() {
     const first = trackRef.current?.firstElementChild as HTMLElement | null;
     return first?.offsetWidth ?? 0;
   }
 
-  // The active list is the leftmost snapped column.
+  // The active list is the snapped slide.
   function onTrackScroll() {
     if (scrollRafRef.current != null) return;
     scrollRafRef.current = requestAnimationFrame(() => {
@@ -146,8 +139,7 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
       {/* Mobile: scrollable pill bar (one chip per list with count) + pager.
           Both bleed to the screen edge by cancelling the page gutter
           (px-4, sm:px-6 in app/page.tsx), so the track is exactly the screen
-          width. Lists sit side by side as columns (see COLUMN_CLASS); a
-          trailing spacer lets the last one become the leftmost. */}
+          width and each w-screen slide is exactly one list. */}
       <div className="md:hidden">
         <div className="mb-3 -mx-4 px-4 sm:-mx-6 sm:px-6 flex gap-1.5 overflow-x-auto scrollbar-none">
           {tiles.map((t, i) => {
@@ -183,17 +175,11 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
           className="flex -mx-4 sm:-mx-6 overflow-x-auto snap-x snap-mandatory scrollbar-none"
           style={{ overscrollBehaviorX: "contain" }}
         >
-          {tiles.map((t, i) => (
+          {tiles.map((t) => (
             <div
               key={t.list.id}
               data-pager-column
-              className={cn(
-                "snap-start shrink-0 px-4 sm:px-6",
-                COLUMN_CLASS,
-                SNAP_STOP_CLASS,
-                // Chrome-less tiles need a hairline once two share the screen.
-                i > 0 && "border-l border-[var(--color-separator)]"
-              )}
+              className={cn("snap-start shrink-0 px-4 sm:px-6", SLIDE_CLASS)}
             >
               <ListTile
                 list={t.list}
@@ -203,7 +189,6 @@ export function HomeTiles({ tiles: initialTiles }: { tiles: HomeTile[] }) {
               />
             </div>
           ))}
-          <div aria-hidden data-pager-spacer className={cn("shrink-0", SPACER_CLASS)} />
         </div>
       </div>
 

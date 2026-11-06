@@ -276,3 +276,8 @@ Home should keep daily check-ins quiet: nest a compact Call Sheet entry inside T
 ## 2026-11-05 — follow-up commits went to an already-merged PR
 **Context**: PR #96 was squash-merged at 21:12 while I kept pushing the next two rounds (phone chrome everywhere, column row) to its branch and reporting "PR #96 updated". Eddie: "I already merged it before. Do we need a new pr". The later work was never on main; it needed PR #97 from a fresh branch off main.
 **Rule**: Before pushing a follow-up to a PR branch, run `gh pr view <n> --json state,mergedAt`. If it is merged, branch from `origin/main`, cherry-pick the new commits, and open a new PR. Squash merges mean later commits on the old branch never reach main.
+
+## 2026-11-06 — Home on a phone is one list per swipe, in every pose
+**Context**: After the Duo got the phone chrome in landscape, Eddie asked for "horizontal scroll"; I offered side-by-side 400px columns as the recommended option and shipped them (#97). Next message: "for landscape it should just show one list at a time", then "one list everywhere".
+**Mistake / surprise**: I read "horizontal scroll" as a board of columns when the pager he already had was the horizontal scroll he meant; my recommended option steered him into a layout he then reverted.
+**Rule**: The phone Home is one full-width list per swipe on every screen size. Don't propose multi-column boards for it. When an ask names a behaviour that already exists ("horizontal scroll"), first confirm what's missing from the current version before offering a redesign.
