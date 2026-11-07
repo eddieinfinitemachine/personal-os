@@ -11,6 +11,52 @@ reads Prisma in a server component and no route returned it. Branch `claude/heal
 
 ## Review
 New tests: summary route 9, project route 3, ask +1. `pnpm typecheck` clean; `pnpm test` 176 files / 1758 tests pass (24 files / 184 tests skipped, none of them new). Not run against a live DB or the deployed host.
+# Reader routes for the native app (2026-11-07)
+
+Native Phase 5 (board and reader): the iOS app reads Read Later over JSON with
+the bearer session from #101 (open); `/reader/[id]` read Prisma directly, so
+the app had no article route.
+
+- [x] `GET /api/reader/[id]`: the article (`contentHtml`, `minutes`, `archivedAt`, Kindle fields + `kindleStatus`, highlights createdAt asc) and `kindle: { configured, autoSend }`; 404 for another user's id; `Cache-Control: no-store`
+- [x] `GET /api/reader` list: adds `archivedAt`, `kindleSentAt`, `kindleError`, `kindleStatus`, `minutes` per item and top-level `kindle`; `?archived=1` and the `?url=` save branch unchanged
+- [x] `GET /api/reader/[id]/highlights` and `GET /api/settings/reading`
+- [x] Malformed JSON on the reader PATCH and highlights POST/DELETE is a 400 `{ error: "invalid json" }`, not a 500
+- [x] Shared `src/lib/reader-api.ts` (`readingMinutes`, `withReadingMeta`, `kindleConfig`); README "Read Later" section
+- [x] Tests; `pnpm typecheck`; `pnpm test`
+- [ ] Review, merge, deploy
+
+## Review
+No schema change. `pnpm typecheck` clean; `pnpm test` 178 files / 1767 tests
+pass, 184 skipped. The 4 new route test files add 22 tests; against the old
+routes 19 fail and the 3 that guard unchanged behaviour (list 401, `?url=`
+save, bearer fallback) pass. `kindle.autoSend` is the stored toggle, not "will
+auto-send": it only takes effect once `configured` is true. Not run against a
+live server.
+# Capture routes accept the app session (2026-11-07)
+
+The native iOS app signs in with a magic link and holds the session JWT
+(PR #101), but `/api/capture/*` only knew the static capture tokens, so the app
+would have needed two credentials. Branch `claude/capture-app-session` off
+main, independent of #101 but meant to land with it.
+
+- [x] `resolveCaptureUser` (src/lib/capture-auth.ts): static tokens first,
+      exactly as before (bearer or `?token=`, dev with no `CAPTURE_TOKEN` →
+      founder); otherwise a JWT-shaped bearer goes through `verifySession` and
+      resolves to `session.userId` once `prisma.user.findUnique` confirms the
+      row (missing row logs and returns null); otherwise null
+- [x] Session accepted from the `Authorization` header only, never `?token=`
+- [x] Middleware untouched; `@/lib/auth` imports fine under vitest, so no
+      `session-token.ts` split was needed
+- [x] Header comment in capture-auth.ts and a README sentence under iOS capture
+- [x] `src/lib/capture-auth.test.ts`: 9 cases
+
+## Review
+`pnpm typecheck` clean. `pnpm test`: 175 files / 1754 tests pass, 24 files /
+184 tests skipped (main: 174 / 1745). The 3 session-positive cases fail
+against the old capture-auth.ts and pass on the new one. Not verified against
+a live app session: that needs #101 deployed. PR #101's README paragraph says
+`/api/capture/*` doesn't read the bearer session; drop capture from that list
+when both land.
 # Mobile capture responses carry reviewId (2026-11-07)
 
 The native "ec" app is getting a Captures inbox (Phase 2) and needs to link a

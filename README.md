@@ -76,6 +76,9 @@ Optional:
 The native Personal OS app connects to `https://internal.eddiecohen.com` using
 the existing `CAPTURE_TOKEN` (or a user token in `CAPTURE_TOKENS`). Never put
 credentials in the app bundle or this repository.
+Capture routes also accept the app's signed-in session JWT as
+`Authorization: Bearer <jwt>` (header only, never `?token=`) and resolve it to
+that session's user, so a signed-in app needs no separate capture token.
 
 - `GET /api/capture/mobile` verifies the token and returns `{ ok, email,
   maxRequestBytes, maxFiles }` as JSON.
@@ -127,6 +130,10 @@ Vercel project needs every env var above, plus the Blob store connected (Storage
 ## Quick Todo
 
 The menu-bar Mac app under `quick-todo/` registers a global hotkey (default ⌃Space), pops a HUD input, and POSTs to `/api/capture/todo`. The endpoint looks up `FOUNDER_EMAIL` and attaches every todo to that user — friends don't have the Mac app.
+
+## Read Later
+
+`/reader` saves articles from the share sheet, the Chrome extension or the app (`POST /api/reader`, or a GET with `?url=`) and can email them to a Kindle. JSON reads for the native app, session-authenticated and scoped to the caller (another user's id is a 404): `GET /api/reader` (list, `?archived=1` for the archive; items carry `minutes`, `archivedAt`, `kindleSentAt`, `kindleError` and `kindleStatus`, plus a top-level `kindle: { configured, autoSend }`), `GET /api/reader/[id]` (the article with `contentHtml` and its highlights oldest first), `GET /api/reader/[id]/highlights` and `GET /api/settings/reading` (`{ kindleEmail, kindleAutoSend }`).
 
 ## Research
 
