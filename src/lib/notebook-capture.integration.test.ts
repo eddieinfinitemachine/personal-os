@@ -52,6 +52,8 @@ describe.skipIf(!databaseUrl)("notebook capture — real Postgres", () => {
     console.info(`notebook capture: 40 items committed in ${elapsed} ms on local Postgres`);
     expect(elapsed).toBeLessThan(20_000);
     expect(result.items.map(item => item.title)).toEqual(titles);
+    expect(result.items.map(item => item.reviewId)).toEqual(titles.map((_, i) => reviewId(userId, input.requestId, i)));
+    expect(await state.db!.captureReview.count({ where: { userId, id: { in: result.items.map(item => item.reviewId) } } })).toBe(40);
 
     const onHome = await state.db!.todo.findMany({ where: { userId, completedAt: null, parentId: null }, orderBy: homeOrder, include: { list: true } });
     expect(onHome.map(todo => todo.title)).toEqual(titles);

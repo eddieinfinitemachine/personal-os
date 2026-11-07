@@ -50,15 +50,17 @@ export async function sendKindleEmail({
 /**
  * Send a magic-link email. Pass `originUrl` to use the request's actual host
  * (e.g. so a sign-up from kaizen.eddiecohen.com gets a link back to that host
- * rather than whatever APP_URL is set to globally).
+ * rather than whatever APP_URL is set to globally). Pass `client: "app"` for a
+ * sign-in from the native app: the link then hands the session to the app.
  */
 export async function sendMagicLinkEmail(
   email: string,
   token: string,
   originUrl?: string,
+  client?: "app",
 ): Promise<void> {
   const base = originUrl?.replace(/\/$/, "") ?? APP_URL_FALLBACK;
-  const link = `${base}/api/auth/verify?token=${token}`;
+  const link = `${base}/api/auth/verify?token=${token}${client === "app" ? "&client=app" : ""}`;
 
   const { error } = await getResend().emails.send({
     from: FROM_EMAIL,

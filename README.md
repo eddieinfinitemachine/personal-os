@@ -86,6 +86,9 @@ credentials in the app bundle or this repository.
   `assetKind` for assets). Supported types are todo, asset, person, trip, and
   interaction. Organizer or upload failures leave the capture on the phone
   for retry.
+- Like the other capture routes, mobile responses carry the Captures inbox row
+  id: `reviewId` on `POST /api/capture/mobile`, and on each `items[]` entry from
+  `POST /api/capture/mobile/notebook`. A retry returns the same ids.
 - Saves require the additive `MobileCaptureReceipt` table proposed in the
   native app handoff. It stores each user's request hash and saved result in
   the same transaction as the record. Repeating the same UUID and content
@@ -104,6 +107,8 @@ do not use it with `VERCEL_ENV=production` for a narrowly approved rollout.
 2. Clicks **Sign up** → `/signup` form → POST `/api/auth/request-link` → magic-link email.
 3. Clicks link in email → `GET /api/auth/verify?token=…` → token consumed, User upserted, JWT cookie set, redirect to `/`.
 4. Every API handler calls `getCurrentUserId(req)` and scopes its Prisma queries by the resulting `userId`. Middleware forwards the verified user id via `x-user-id` so handlers don't re-verify the JWT.
+
+**Native app.** The iOS app POSTs `/api/auth/request-link` with `{ email, client: "app" }`, so the emailed link carries `&client=app`. Verify then sets no cookie and redirects (302) to `personalos://signin#token=<jwt>&email=<email>`, with the token in the fragment so it never lands in a query-string log. App sessions are the same JWT with a `client: "app"` claim and a 180-day expiry, sent as `Authorization: Bearer <jwt>`; an unauthenticated `/api/*` call that carries an `Authorization` header gets a JSON 401 instead of the `/login` redirect. `GET /api/auth/session` returns `{ userId, email }` or 401. Sessions can't be revoked server-side before they expire: there is no session table, and adding one would be a schema change. `/api/capture/*` routes resolve their own credential and accept the app session as well as the capture token (see `src/lib/capture-auth.ts`); the other passthrough routes (reader and board saves, cron) don't read the bearer session.
 
 ## Deploy
 

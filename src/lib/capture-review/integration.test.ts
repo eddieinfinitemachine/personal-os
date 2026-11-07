@@ -52,6 +52,7 @@ describe.skipIf(!databaseUrl)("capture review — real Postgres", () => {
     const review = await state.db!.captureReview.findFirstOrThrow({ where: { userId } });
     expect(review.source).toBe("ec");
     expect(review.placement).toMatchObject({ type: "todo", id: first.id });
+    expect(first.reviewId).toBe(review.id);
   });
   it("resolves ordinary destination moves and renames without stale placement text", async () => {
     const userId = await user();

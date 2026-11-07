@@ -19,6 +19,57 @@ routes 19 fail and the 3 that guard unchanged behaviour (list 401, `?url=`
 save, bearer fallback) pass. `kindle.autoSend` is the stored toggle, not "will
 auto-send": it only takes effect once `configured` is true. Not run against a
 live server.
+# Mobile capture responses carry reviewId (2026-11-07)
+
+The native "ec" app is getting a Captures inbox (Phase 2) and needs to link a
+capture it just made to its `CaptureReview` row, as the other capture routes already allow.
+
+- [x] `POST /api/capture/mobile` returns `reviewId` (the receipt id, which is the review id) on new saves and on both replay paths, including receipts written before this change
+- [x] `POST /api/capture/mobile/notebook` returns `reviewId` on each `items[]` entry (`captureKey(userId, "notebook:<index>", requestId)`); stored in the receipt so retries return it
+- [x] Tests: unit, route and response-contract tests assert the ids against an independently computed sha256; Postgres integration tests assert the ids are real rows (skipped without the scratch DB)
+- [x] README iOS capture section; branch `claude/mobile-capture-review-id`, PR open, not merged
+
+## Review
+`pnpm typecheck` clean. `pnpm test`: 174 files / 1745 tests pass (24 files / 184 tests skipped).
+Capture files alone: 4 files / 59 tests; with main's capture code, 8 of those tests fail on the new
+assertions. Not run: the Postgres integration assertions. Notebook receipts written before this
+deploy replay without per-item `reviewId`; the app should treat it as optional.
+# App sessions for the native Personal OS app (2026-11-07)
+
+Eddie: "Should we just make personal os a native swift app? I think we
+should" → "Ok build it". This PR is phase 0, the server side: the iOS app
+(separate repo) signs in by magic link and calls the same API with a bearer
+session. Branch `claude/app-sessions` off main. No schema change.
+
+- Middleware: after the bearer passthrough block, a request with no valid cookie session may send `Authorization: Bearer <jwt>`; a valid one forwards `x-user-id` like the cookie. Capture/cron/reader/board passthrough stays first and untouched (their bearer tokens aren't JWTs)
+- Unauthenticated `/api/*` request that carries an `Authorization` header → JSON 401 `{ error: "unauthorized" }`; everything else keeps the `/login` redirect, so the web app doesn't change. Client-supplied `x-user-id` is still dropped
+- `signSession(user, { maxAge, client })`: default 7 days; `APP_SESSION_MAX_AGE` = 180 days; app sessions carry `client: "app"`. `verifySession` ignores the extra claim
+- Magic link: `client: "app"` in the request-link body puts `&client=app` on the emailed link (copy unchanged). Verify with `client=app` signs a 180-day app session, sets no cookie and 302s to `personalos://signin#token=<jwt>&email=<email>` (fragment, so no query log); other values run the cookie flow; failures still go to `/login?error=…`
+- `GET /api/auth/session` → `{ userId, email }` or 401, for cookie or bearer
+- No revocation before expiry (no session table; one would be a schema change)
+
+- [x] Bearer sessions + JSON 401 in `src/middleware.ts`
+- [x] `APP_SESSION_MAX_AGE` and `signSession` options in `src/lib/auth.ts`
+- [x] `client: "app"` through request-link → `sendMagicLinkEmail` → verify
+- [x] `GET /api/auth/session`
+- [x] README "Auth flow": Native app paragraph
+- [x] Tests: auth, middleware, verify, request-link, session, email link; `pnpm typecheck`, `pnpm test`
+- [x] PR (not merged, not deployed)
+
+## Review
+`pnpm typecheck` clean; `pnpm test` 180 files passed / 24 skipped, 1778
+tests passed. New: `src/lib/auth.test.ts` (7- vs 180-day `exp - iat`,
+`client: "app"`, garbage / foreign signature / expired / missing claims
+rejected), `src/middleware.test.ts` (cookie, bearer on API and page,
+invalid cookie falls back to bearer, bad bearer → JSON 401, no header →
+`/login`, capture bearer passes with no `x-user-id`, spoofed `x-user-id`
+dropped), verify, request-link, session and `src/lib/email.test.ts` (the
+emailed link carries `&client=app`). Run against main's middleware and verify
+route, the six new-behaviour tests fail and the unchanged-behaviour ones pass.
+Not verified: a real email send or the deep link opening the app (no device,
+no production). Routes the middleware passes straight through
+(`/api/capture/*`, reader and board saves) don't read the bearer session; the
+app needs the capture token there until those routes learn it.
 
 # Capture Inbox off Home + dated todos sink — shipped 2026-11-05
 

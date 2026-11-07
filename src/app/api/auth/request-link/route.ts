@@ -8,12 +8,15 @@ const TOKEN_TTL_MS = 15 * 60 * 1000;
 
 export async function POST(req: NextRequest) {
   let email: string;
+  // `client: "app"` marks a sign-in from the native app; anything else is web.
+  let client: "app" | undefined;
   try {
-    const body = (await req.json()) as { email?: string };
+    const body = (await req.json()) as { email?: string; client?: unknown };
     if (!body.email || typeof body.email !== "string") {
       return NextResponse.json({ error: "email required" }, { status: 400 });
     }
     email = body.email.trim().toLowerCase();
+    client = body.client === "app" ? "app" : undefined;
   } catch {
     return NextResponse.json({ error: "bad request" }, { status: 400 });
   }
@@ -82,7 +85,7 @@ export async function POST(req: NextRequest) {
   const origin = forwardedProto && host ? `${forwardedProto}://${host}` : new URL(req.url).origin;
 
   try {
-    await sendMagicLinkEmail(email, token, origin);
+    await sendMagicLinkEmail(email, token, origin, client);
   } catch (err) {
     console.error("magic link email failed", err);
     return NextResponse.json(
