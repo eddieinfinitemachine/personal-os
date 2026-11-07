@@ -89,6 +89,9 @@ that session's user, so a signed-in app needs no separate capture token.
   `assetKind` for assets). Supported types are todo, asset, person, trip, and
   interaction. Organizer or upload failures leave the capture on the phone
   for retry.
+- Like the other capture routes, mobile responses carry the Captures inbox row
+  id: `reviewId` on `POST /api/capture/mobile`, and on each `items[]` entry from
+  `POST /api/capture/mobile/notebook`. A retry returns the same ids.
 - Saves require the additive `MobileCaptureReceipt` table proposed in the
   native app handoff. It stores each user's request hash and saved result in
   the same transaction as the record. Repeating the same UUID and content
