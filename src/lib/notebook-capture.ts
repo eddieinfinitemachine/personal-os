@@ -27,7 +27,8 @@ export interface NotebookCaptureResult {
   title: string;
   destination: string;
   path: string;
-  items: Array<{ id: string; title: string; dueDate: string | null }>;
+  /** reviewId is the item's own CaptureReview row. The receipt stores it, so a retry returns the same ids. */
+  items: Array<{ id: string; title: string; dueDate: string | null; reviewId: string }>;
   skipped: string[];
 }
 
@@ -136,15 +137,16 @@ async function commitPage(tx: Prisma.TransactionClient, userId: string, input: M
   for (const [order, { item, index }] of fresh.entries()) {
     const journal = journalClient(tx, userId);
     const proposal = { type: "todo" as const, title: item.title, notes: item.notes, dueDate: item.dueDate };
+    const reviewId = captureKey(userId, `notebook:${index}`, input.requestId);
     const placement = await commitCore(journal.client, userId, { text: "", url: null }, proposal, [], { mode: "mobile", createdAt: new Date(base + order) });
     // One "file" row owns the blob for quota and deletion; the rest link to it.
     await journal.client.attachment.create({ data: { userId, todoId: placement.id, kind: order === 0 ? "file" : "link", title: PAGE_TITLE, url, mimeType: file.type.toLowerCase(), size: order === 0 ? file.size : null } });
     await recordCapture(tx, {
-      id: captureKey(userId, `notebook:${index}`, input.requestId), userId, source: "ec", requestHash, proposal, placement,
+      id: reviewId, userId, source: "ec", requestHash, proposal, placement,
       input: { text: input.text, url: null, files: [{ name: file.name || PAGE_TITLE, mimeType: file.type.toLowerCase(), size: file.size, url }] },
       effects: journal.effects(), createdAt: new Date(base - order),
     });
-    created.push({ id: placement.id, title: placement.title, dueDate: item.dueDate });
+    created.push({ id: placement.id, title: placement.title, dueDate: item.dueDate, reviewId });
   }
   return { ok: true, id: created[0]?.id ?? firstExisting!, type: "todo", title: titleFor(created.length), destination: CAPTURE_LIST_NAME, path: "/", items: created, skipped };
 }
