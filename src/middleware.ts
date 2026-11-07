@@ -30,6 +30,17 @@ function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
 
+// The session's user id, or null when the token is missing, invalid or expired.
+async function sessionUserId(token: string | undefined): Promise<string | null> {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, jwtSecret());
+    return typeof payload.userId === "string" ? payload.userId : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -79,16 +90,12 @@ export async function middleware(req: NextRequest) {
     return passthrough();
   }
 
-  // Verify session — populate x-user-id on success.
-  const token = req.cookies.get(SESSION_COOKIE)?.value;
-  let userId: string | null = null;
-  if (token) {
-    try {
-      const { payload } = await jwtVerify(token, jwtSecret());
-      if (typeof payload.userId === "string") userId = payload.userId;
-    } catch {
-      // Invalid/expired — fall through.
-    }
+  // Verify session — populate x-user-id on success. The web app sends the
+  // session cookie; the native app sends the same kind of JWT as a bearer.
+  const authorization = req.headers.get("authorization");
+  let userId = await sessionUserId(req.cookies.get(SESSION_COOKIE)?.value);
+  if (!userId && authorization?.startsWith("Bearer ")) {
+    userId = await sessionUserId(authorization.slice("Bearer ".length));
   }
 
   if (userId) {
@@ -97,6 +104,12 @@ export async function middleware(req: NextRequest) {
 
   if (isPublic(pathname)) {
     return passthrough();
+  }
+
+  // A native client (it sends Authorization) can't follow a login redirect:
+  // answer its API calls with a JSON 401 instead.
+  if (authorization && pathname.startsWith("/api/")) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   // Unauthenticated request to a gated route → redirect to /login.
