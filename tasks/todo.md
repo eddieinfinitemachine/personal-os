@@ -1,3 +1,24 @@
+# Reader routes for the native app (2026-11-07)
+
+Native Phase 5 (board and reader): the iOS app reads Read Later over JSON with
+the bearer session from #101 (open); `/reader/[id]` read Prisma directly, so
+the app had no article route.
+
+- [x] `GET /api/reader/[id]`: the article (`contentHtml`, `minutes`, `archivedAt`, Kindle fields + `kindleStatus`, highlights createdAt asc) and `kindle: { configured, autoSend }`; 404 for another user's id; `Cache-Control: no-store`
+- [x] `GET /api/reader` list: adds `archivedAt`, `kindleSentAt`, `kindleError`, `kindleStatus`, `minutes` per item and top-level `kindle`; `?archived=1` and the `?url=` save branch unchanged
+- [x] `GET /api/reader/[id]/highlights` and `GET /api/settings/reading`
+- [x] Malformed JSON on the reader PATCH and highlights POST/DELETE is a 400 `{ error: "invalid json" }`, not a 500
+- [x] Shared `src/lib/reader-api.ts` (`readingMinutes`, `withReadingMeta`, `kindleConfig`); README "Read Later" section
+- [x] Tests; `pnpm typecheck`; `pnpm test`
+- [ ] Review, merge, deploy
+
+## Review
+No schema change. `pnpm typecheck` clean; `pnpm test` 178 files / 1767 tests
+pass, 184 skipped. The 4 new route test files add 22 tests; against the old
+routes 19 fail and the 3 that guard unchanged behaviour (list 401, `?url=`
+save, bearer fallback) pass. `kindle.autoSend` is the stored toggle, not "will
+auto-send": it only takes effect once `configured` is true. Not run against a
+live server.
 # Capture routes accept the app session (2026-11-07)
 
 The native iOS app signs in with a magic link and holds the session JWT
