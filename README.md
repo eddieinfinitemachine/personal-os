@@ -76,6 +76,9 @@ Optional:
 The native Personal OS app connects to `https://internal.eddiecohen.com` using
 the existing `CAPTURE_TOKEN` (or a user token in `CAPTURE_TOKENS`). Never put
 credentials in the app bundle or this repository.
+Capture routes also accept the app's signed-in session JWT as
+`Authorization: Bearer <jwt>` (header only, never `?token=`) and resolve it to
+that session's user, so a signed-in app needs no separate capture token.
 
 - `GET /api/capture/mobile` verifies the token and returns `{ ok, email,
   maxRequestBytes, maxFiles }` as JSON.

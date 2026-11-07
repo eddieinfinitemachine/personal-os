@@ -19,6 +19,31 @@ routes 19 fail and the 3 that guard unchanged behaviour (list 401, `?url=`
 save, bearer fallback) pass. `kindle.autoSend` is the stored toggle, not "will
 auto-send": it only takes effect once `configured` is true. Not run against a
 live server.
+# Capture routes accept the app session (2026-11-07)
+
+The native iOS app signs in with a magic link and holds the session JWT
+(PR #101), but `/api/capture/*` only knew the static capture tokens, so the app
+would have needed two credentials. Branch `claude/capture-app-session` off
+main, independent of #101 but meant to land with it.
+
+- [x] `resolveCaptureUser` (src/lib/capture-auth.ts): static tokens first,
+      exactly as before (bearer or `?token=`, dev with no `CAPTURE_TOKEN` →
+      founder); otherwise a JWT-shaped bearer goes through `verifySession` and
+      resolves to `session.userId` once `prisma.user.findUnique` confirms the
+      row (missing row logs and returns null); otherwise null
+- [x] Session accepted from the `Authorization` header only, never `?token=`
+- [x] Middleware untouched; `@/lib/auth` imports fine under vitest, so no
+      `session-token.ts` split was needed
+- [x] Header comment in capture-auth.ts and a README sentence under iOS capture
+- [x] `src/lib/capture-auth.test.ts`: 9 cases
+
+## Review
+`pnpm typecheck` clean. `pnpm test`: 175 files / 1754 tests pass, 24 files /
+184 tests skipped (main: 174 / 1745). The 3 session-positive cases fail
+against the old capture-auth.ts and pass on the new one. Not verified against
+a live app session: that needs #101 deployed. PR #101's README paragraph says
+`/api/capture/*` doesn't read the bearer session; drop capture from that list
+when both land.
 # Mobile capture responses carry reviewId (2026-11-07)
 
 The native "ec" app is getting a Captures inbox (Phase 2) and needs to link a
