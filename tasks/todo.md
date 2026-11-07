@@ -1,3 +1,17 @@
+# Health summary route for the native app (2026-11-07)
+
+Native Phase 4: the iOS app needs the Health page's data as JSON, but the page
+reads Prisma in a server component and no route returned it. Branch `claude/health-api` off main.
+
+- [x] `GET /api/health/summary`: projectId, human (care team, no policy number), `HealthSummary`, stored picture + `stale` (no Claude call), vaccinations with overdue/due-soon/ok, latest 12 visits, 30 DNA results, latest biometric per kind with labels, latest 12 fitness sessions; empty shape without a health record
+- [x] `GET /api/health/project`: `{ projectId }` for the existing ask and picture routes
+- [x] Shared helpers: `src/lib/health/dashboard.ts` (biometric labels/order incl. HRV, VO2 max, Steps, Sleep; booster status) used by the page and the route; `findHealthProjectId` in `load.ts` used by `/health` and both routes
+- [x] `POST /api/projects/[id]/ask`: malformed JSON → 400 `{ error: "invalid json" }`
+- [x] README Health section
+
+## Review
+New tests: summary route 9, project route 3, ask +1. `pnpm typecheck` clean; `pnpm test` 176 files / 1758 tests pass (24 files / 184 tests skipped, none of them new). Not run against a live DB or the deployed host.
+
 # Capture Inbox off Home + dated todos sink — shipped 2026-11-05
 
 Eddie: "move the capture inbox to another page i dont like it in the way of

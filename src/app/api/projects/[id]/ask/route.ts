@@ -265,10 +265,12 @@ export async function POST(
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const body = (await request.json()) as {
-    question?: string;
-    history?: ChatTurn[];
-  };
+  let body: { question?: string; history?: ChatTurn[] };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return NextResponse.json({ error: "invalid json" }, { status: 400 });
+  }
   const question = body.question?.trim();
   if (!question) {
     return NextResponse.json({ error: "question required" }, { status: 400 });
