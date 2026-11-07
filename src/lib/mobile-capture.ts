@@ -20,11 +20,15 @@ export interface MobileCaptureResult {
   title: string;
   destination: string;
   path: string;
+  /** The CaptureReview row this capture created; a retry returns the same one. */
+  reviewId: string;
 }
+/** What commitCore returns and the receipt stores. The review id is the receipt's own id, so it is added per response. */
+type MobilePlacement = Omit<MobileCaptureResult, "reviewId">;
 type Tx = Prisma.TransactionClient;
 const VISION_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
-export function replay<T = MobileCaptureResult>(receipt: { requestHash: string; result: unknown }, requestHash: string): T {
+export function replay<T = MobilePlacement>(receipt: { requestHash: string; result: unknown }, requestHash: string): T {
   if (receipt.requestHash !== requestHash) throw new MobileCaptureError(409, "This requestId was already used for different content. Create a new capture to change its content.");
   return receipt.result as T;
 }
@@ -37,14 +41,17 @@ export async function assertQuota(db: Pick<Tx, "attachment">, userId: string, by
   if ((used._sum.size ?? 0) + bytes > MOBILE_QUOTA_BYTES) throw new MobileCaptureError(413, "Storage quota exceeded. Remove some files from Personal OS and retry.");
 }
 export async function captureMobile(userId: string, input: MobileCaptureInput): Promise<MobileCaptureResult> {
+  // The receipt id is also the CaptureReview id.
   const id = mobileReceiptId(userId, input.requestId);
   const requestHash = await mobileCaptureHash(input);
+  const replayed = async (receipt: { requestHash: string; result: unknown }, db?: Tx): Promise<MobileCaptureResult> => {
+    const original = replay(receipt, requestHash);
+    const review = await getCaptureReview(userId, id, db);
+    const current = review && (review.correctedAt || review.placement.missing) ? { ok: true, ...review.placement } as MobilePlacement : original;
+    return { ...current, reviewId: id };
+  };
   const previous = await prisma.mobileCaptureReceipt.findFirst({ where: { id, userId } });
-  if (previous) {
-    const original = replay(previous, requestHash);
-    const review = await getCaptureReview(userId, id);
-    return review && (review.correctedAt || review.placement.missing) ? { ok: true, ...review.placement } as MobileCaptureResult : original;
-  }
+  if (previous) return replayed(previous);
   const fileBytes = input.files.reduce((sum, file) => sum + file.size, 0);
   await assertQuota(prisma, userId, fileBytes);
   const projects = await prisma.project.findMany({ where: { userId, archived: false }, select: { id: true, name: true, kind: true }, orderBy: [{ position: "asc" }, { createdAt: "asc" }] });
@@ -80,22 +87,18 @@ export async function captureMobile(userId: string, input: MobileCaptureInput): 
       // No external calls occur while the per-user transaction lock is held.
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`mobile-capture:${userId}`}, 0))::text AS locked`;
       const existing = await tx.mobileCaptureReceipt.findFirst({ where: { id, userId } });
-      if (existing) {
-        const original = replay(existing, requestHash);
-        const review = await getCaptureReview(userId, id, tx);
-        return { result: review && (review.correctedAt || review.placement.missing) ? { ok: true, ...review.placement } as MobileCaptureResult : original, created: false };
-      }
+      if (existing) return { result: await replayed(existing, tx), created: false };
       await captureLock(tx, userId);
       await assertQuota(tx, userId, fileBytes);
       const journal = journalClient(tx, userId);
-      const result = await commitCore(journal.client, userId, input, proposal as CoreProposal, stored, { mode: "mobile" }) as MobileCaptureResult;
+      const result = await commitCore(journal.client, userId, input, proposal as CoreProposal, stored, { mode: "mobile" }) as MobilePlacement;
       await recordCapture(tx, {
         id, userId, source: "ec", requestHash,
         input: { text: input.text, url: input.url, files: stored.map(item => ({ name: item.file.name, mimeType: item.file.type || null, size: item.file.size, url: item.url })) },
         proposal, placement: result, effects: journal.effects(),
       });
       await tx.mobileCaptureReceipt.create({ data: { id, userId, requestHash, result: result as unknown as Prisma.InputJsonValue } });
-      return { result, created: true };
+      return { result: { ...result, reviewId: id }, created: true };
     }, { maxWait: 10_000, timeout: 15_000, isolationLevel: "ReadCommitted" });
     committed = outcome.created;
     return outcome.result;

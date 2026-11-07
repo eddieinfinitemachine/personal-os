@@ -1,3 +1,19 @@
+# Mobile capture responses carry reviewId (2026-11-07)
+
+The native "ec" app is getting a Captures inbox (Phase 2) and needs to link a
+capture it just made to its `CaptureReview` row, as the other capture routes already allow.
+
+- [x] `POST /api/capture/mobile` returns `reviewId` (the receipt id, which is the review id) on new saves and on both replay paths, including receipts written before this change
+- [x] `POST /api/capture/mobile/notebook` returns `reviewId` on each `items[]` entry (`captureKey(userId, "notebook:<index>", requestId)`); stored in the receipt so retries return it
+- [x] Tests: unit, route and response-contract tests assert the ids against an independently computed sha256; Postgres integration tests assert the ids are real rows (skipped without the scratch DB)
+- [x] README iOS capture section; branch `claude/mobile-capture-review-id`, PR open, not merged
+
+## Review
+`pnpm typecheck` clean. `pnpm test`: 174 files / 1745 tests pass (24 files / 184 tests skipped).
+Capture files alone: 4 files / 59 tests; with main's capture code, 8 of those tests fail on the new
+assertions. Not run: the Postgres integration assertions. Notebook receipts written before this
+deploy replay without per-item `reviewId`; the app should treat it as optional.
+
 # Capture Inbox off Home + dated todos sink — shipped 2026-11-05
 
 Eddie: "move the capture inbox to another page i dont like it in the way of
