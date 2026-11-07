@@ -83,6 +83,16 @@ async function loadNutrition(userId: string, now: Date): Promise<NutritionDayRow
   return rows.map((r) => ({ ...r, date: r.date.toISOString().slice(0, 10) }));
 }
 
+/** The person's Health tracker: their oldest human project that isn't archived. /health opens the same one. */
+export async function findHealthProjectId(userId: string): Promise<string | null> {
+  const project = await prisma.project.findFirst({
+    where: { userId, kind: "human", archived: false },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+  return project?.id ?? null;
+}
+
 /** Reads everything the summary needs. Lab history is never truncated: trends depend on the oldest draw. */
 export async function loadHealthSummary(human: HumanForSummary, now: Date): Promise<HealthSummary> {
   const humanId = human.id;

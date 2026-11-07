@@ -15,6 +15,7 @@ import {
 import Link from "next/link";
 import { SimpleMarkdown } from "@/components/simple-markdown";
 import { prisma } from "@/lib/prisma";
+import { biometricLabel, biometricRank, vaccinationStatus } from "@/lib/health/dashboard";
 import { loadHealthSummary } from "@/lib/health/load";
 import { labDate } from "@/lib/health/lab-value";
 import type { NutritionSummary } from "@/lib/health/nutrition";
@@ -51,33 +52,6 @@ const MARQUEE_MARKERS = [
   "TPO Antibodies",
   "Free Testosterone",
 ];
-
-// Plain names for biometric kinds, in the order they appear. Any other kind shows as stored.
-const BIOMETRIC_LABELS: Record<string, string> = {
-  weight: "Weight",
-  bodyFat: "Body fat",
-  visceralFat: "Visceral fat",
-  bmi: "BMI",
-  rhr: "RHR",
-  bpSystolic: "BP systolic",
-  bpDiastolic: "BP diastolic",
-  heartAge: "Heart age",
-  abi: "ABI",
-  anklePressure: "Ankle pressure",
-  spo2: "Blood oxygen",
-  ekgConductionTime: "EKG conduction",
-  ekgVentricularContraction: "EKG contraction",
-  ekgContractAndReset: "EKG contract + reset",
-  gripRight: "Grip, right hand",
-  eyePressure: "Eye pressure",
-  skinMarkings: "Skin markings",
-};
-const BIOMETRIC_ORDER = Object.keys(BIOMETRIC_LABELS);
-
-function biometricRank(kind: string): number {
-  const rank = BIOMETRIC_ORDER.indexOf(kind);
-  return rank === -1 ? BIOMETRIC_ORDER.length : rank;
-}
 
 function fmtDate(d: Date | string | null | undefined): string {
   if (!d) return "—";
@@ -212,14 +186,8 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
 
   // Vaccination overdue / due-soon badges.
   const now = new Date();
-  const horizon = new Date(now);
-  horizon.setDate(horizon.getDate() + 60);
-  const dueVax = human.vaccinations.filter(
-    (v) => v.boosterDueAt && v.boosterDueAt >= now && v.boosterDueAt <= horizon
-  );
-  const overdueVax = human.vaccinations.filter(
-    (v) => v.boosterDueAt && v.boosterDueAt < now
-  );
+  const dueVax = human.vaccinations.filter((v) => vaccinationStatus(v.boosterDueAt, now) === "due-soon");
+  const overdueVax = human.vaccinations.filter((v) => vaccinationStatus(v.boosterDueAt, now) === "overdue");
 
   return (
     <div className="space-y-6">
@@ -317,7 +285,7 @@ export async function HumanDashboard({ projectId }: { projectId: string }) {
             {[...human.biometrics]
               .sort((a, b) => biometricRank(a.kind) - biometricRank(b.kind))
               .map((b) => (
-                <BioCard key={b.id} label={BIOMETRIC_LABELS[b.kind] ?? b.kind} reading={b} />
+                <BioCard key={b.id} label={biometricLabel(b.kind)} reading={b} />
               ))}
           </div>
         )}
