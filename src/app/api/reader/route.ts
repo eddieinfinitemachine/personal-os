@@ -11,6 +11,7 @@ import { findCaptureReplay, quickSource, withCaptureReview } from "@/lib/capture
 import { intakeMeta } from "@/lib/capture-review/intake";
 import { CaptureReviewError } from "@/lib/capture-review/types";
 import { sendReaderItemToKindle } from "@/lib/kindle-send";
+import { KINDLE_USER_SELECT, kindleConfig, withReadingMeta } from "@/lib/reader-api";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -140,23 +141,32 @@ export async function GET(request: Request) {
   const userId = await getCurrentUserId(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const archived = new URL(request.url).searchParams.get("archived") === "1";
-  const items = await prisma.readerItem.findMany({
-    where: { userId, archivedAt: archived ? { not: null } : null },
-    orderBy: { savedAt: "desc" },
-    select: {
-      id: true,
-      url: true,
-      title: true,
-      byline: true,
-      siteName: true,
-      excerpt: true,
-      imageUrl: true,
-      wordCount: true,
-      savedAt: true,
-      readAt: true,
-      _count: { select: { highlights: true } },
-    },
-    take: 200,
-  });
-  return NextResponse.json({ items });
+  const [items, user] = await Promise.all([
+    prisma.readerItem.findMany({
+      where: { userId, archivedAt: archived ? { not: null } : null },
+      orderBy: { savedAt: "desc" },
+      select: {
+        id: true,
+        url: true,
+        title: true,
+        byline: true,
+        siteName: true,
+        excerpt: true,
+        imageUrl: true,
+        wordCount: true,
+        savedAt: true,
+        readAt: true,
+        archivedAt: true,
+        kindleSentAt: true,
+        kindleError: true,
+        _count: { select: { highlights: true } },
+      },
+      take: 200,
+    }),
+    prisma.user.findUnique({ where: { id: userId }, select: KINDLE_USER_SELECT }),
+  ]);
+  return NextResponse.json(
+    { items: items.map(withReadingMeta), kindle: kindleConfig(user) },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
