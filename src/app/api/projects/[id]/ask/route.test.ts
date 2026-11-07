@@ -70,6 +70,16 @@ describe("POST /api/projects/[id]/ask for a health project", () => {
     expect((await call({ question: "  " })).status).toBe(400);
   });
 
+  it("rejects malformed JSON", async () => {
+    const res = await POST(new Request("http://test.local/api/projects/p1/ask", { method: "POST", body: "{not json" }), {
+      params: Promise.resolve({ id: "p1" }),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid json" });
+    expect(mocks.projectFind).not.toHaveBeenCalled();
+    expect(mocks.askAboutHealth).not.toHaveBeenCalled();
+  });
+
   it("answers from the summary and saves nothing", async () => {
     const res = await call({ question: "How am I doing?", history: [{ role: "user", content: "Earlier" }, { role: "system", content: "Bad" }] });
     expect(res.status).toBe(200);

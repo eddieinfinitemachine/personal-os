@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { findHealthProjectId } from "@/lib/health/load";
 import ProjectPage from "@/app/projects/[id]/page";
 
 export const dynamic = "force-dynamic";
@@ -10,12 +10,8 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
   const session = await getSession();
   if (!session) notFound();
 
-  const project = await prisma.project.findFirst({
-    where: { userId: session.userId, kind: "human", archived: false },
-    orderBy: { createdAt: "asc" },
-    select: { id: true },
-  });
-  if (!project) notFound();
+  const projectId = await findHealthProjectId(session.userId);
+  if (!projectId) notFound();
 
-  return <ProjectPage params={Promise.resolve({ id: project.id })} searchParams={searchParams} />;
+  return <ProjectPage params={Promise.resolve({ id: projectId })} searchParams={searchParams} />;
 }

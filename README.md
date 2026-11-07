@@ -104,6 +104,11 @@ generic schema-push helper so a deploy cannot apply unrelated database drift.
 The `pnpm build` script still contains that helper for existing manual workflows;
 do not use it with `VERCEL_ENV=production` for a narrowly approved rollout.
 
+## Health
+
+- `GET /api/health/summary` returns everything the Health page shows as JSON for the native app: `{ projectId, human, summary, picture: { stored, stale, generatedAt }, vaccinations, visits, dna, biometrics, fitnessSessions }`, with empty values and `projectId: null` when there is no health record. It never writes the picture or calls Claude, and leaves out the policy number; when `picture.stale` is true the app POSTs `/api/projects/<projectId>/picture`.
+- `GET /api/health/project` returns `{ projectId }` (or `null`) for the app's calls to `/api/projects/<projectId>/ask` and `/picture`. Both are per-user, session-authenticated and `Cache-Control: private, no-store`.
+
 ## Auth flow
 
 1. Visitor opens `/` → sees public landing page (no session) or dashboard (with session).
