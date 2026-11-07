@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { signSession, setSessionCookie } from "@/lib/auth";
+import { APP_SESSION_MAX_AGE, signSession, setSessionCookie } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token");
@@ -28,6 +28,20 @@ export async function GET(req: NextRequest) {
     update: { lastSeenAt: new Date() },
     create: { email: link.email },
   });
+
+  // Native app sign-in: hand a long-lived session to the app through its URL
+  // scheme instead of setting a cookie. The token rides in the fragment so it
+  // never lands in a query-string log.
+  if (req.nextUrl.searchParams.get("client") === "app") {
+    const appJwt = await signSession(
+      { id: user.id, email: user.email },
+      { maxAge: APP_SESSION_MAX_AGE, client: "app" },
+    );
+    const appUrl = `personalos://signin#token=${appJwt}&email=${encodeURIComponent(user.email)}`;
+    const res = NextResponse.redirect(appUrl, 302);
+    res.headers.set("Cache-Control", "no-store");
+    return res;
+  }
 
   const jwt = await signSession({ id: user.id, email: user.email });
   await setSessionCookie(jwt);
