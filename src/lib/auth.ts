@@ -27,20 +27,28 @@ function jwtSecret(): Uint8Array {
 
 export const SESSION_COOKIE = "ec-session";
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
+// Native app sessions: the app keeps the JWT and sends it as
+// `Authorization: Bearer`. There is no session table, so a session can't be
+// revoked server-side before it expires.
+export const APP_SESSION_MAX_AGE = 180 * 24 * 60 * 60; // 180 days
 
 export interface Session {
   userId: string;
   email: string;
 }
 
-export async function signSession(user: { id: string; email: string }): Promise<string> {
-  return new SignJWT({ userId: user.id, email: user.email })
+export async function signSession(
+  user: { id: string; email: string },
+  { maxAge = SESSION_MAX_AGE, client }: { maxAge?: number; client?: "app" } = {},
+): Promise<string> {
+  return new SignJWT({ userId: user.id, email: user.email, ...(client ? { client } : {}) })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime(`${SESSION_MAX_AGE}s`)
+    .setExpirationTime(`${maxAge}s`)
     .sign(jwtSecret());
 }
 
+// Extra claims (e.g. `client: "app"`) are ignored: a session is its user.
 export async function verifySession(token: string): Promise<Session | null> {
   try {
     const { payload } = await jwtVerify(token, jwtSecret());
