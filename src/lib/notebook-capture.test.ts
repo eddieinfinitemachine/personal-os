@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ claude: vi.fn(), put: vi.fn(), del: vi.fn(), transaction: vi.fn(), receiptFind: vi.fn(), aggregate: vi.fn(), attachmentCount: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({ prisma: {
@@ -22,6 +23,8 @@ const jpeg = () => new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])],
 const input = (overrides: Partial<MobileCaptureInput> = {}): MobileCaptureInput => ({ requestId, text: "", url: null, files: [jpeg()], ...overrides });
 const BLOB = "https://blob.example.com/page.jpg";
 const DAY = 24 * 60 * 60 * 1000;
+// Computed here rather than through captureKey, so the test pins the key itself.
+const reviewKey = (userId: string, index: number) => createHash("sha256").update(JSON.stringify([userId, `notebook:${index}`, requestId])).digest("hex");
 type Row = Record<string, unknown> & { id: string };
 let todos: Row[], attachments: Row[], reviews: Row[], receipts: Row[], serial: number;
 
@@ -111,8 +114,9 @@ describe("notebook capture", () => {
     const result = await captureNotebook("alice", input());
     expect(result).toEqual({
       ok: true, id: todos[0].id, type: "todo", title: "2 items from your notebook", destination: "To Do", path: "/",
-      items: [{ id: todos[0].id, title: "Call plumber", dueDate: "2026-11-07" }, { id: todos[1].id, title: "Email Dana", dueDate: null }], skipped: [],
+      items: [{ id: todos[0].id, title: "Call plumber", dueDate: "2026-11-07", reviewId: reviewKey("alice", 0) }, { id: todos[1].id, title: "Email Dana", dueDate: null, reviewId: reviewKey("alice", 1) }], skipped: [],
     });
+    expect(reviews.map(review => review.id)).toEqual(result.items.map(item => item.reviewId));
     expect(todos.map(todo => [todo.title, todo.notes, todo.listId, todo.projectId])).toEqual([["Call plumber", "House stuff", "list-todo", "project-inbox"], ["Email Dana", null, "list-todo", "project-inbox"]]);
     expect((todos[0].dueDate as Date).toISOString()).toBe("2026-11-07T00:00:00.000Z");
     expect(reviews).toHaveLength(2); expect(new Set(reviews.map(review => review.id)).size).toBe(2);
@@ -149,6 +153,7 @@ describe("notebook capture", () => {
     modelReturns("One", "Two");
     await captureNotebook("alice", input());
     const first = reviews.map(review => review.id);
+    expect(first).toEqual([reviewKey("alice", 0), reviewKey("alice", 1)]);
     reviews.length = 0; receipts.length = 0; todos.length = 0;
     await captureNotebook("alice", input());
     expect(reviews.map(review => review.id)).toEqual(first);
@@ -161,6 +166,7 @@ describe("notebook capture", () => {
     const first = await captureNotebook("alice", input());
     const result = await captureNotebook("alice", input());
     expect(result).toEqual(first);
+    expect(result.items.map(item => item.reviewId)).toEqual([reviewKey("alice", 0), reviewKey("alice", 1)]);
     expect(mocks.claude).toHaveBeenCalledTimes(1); expect(mocks.put).toHaveBeenCalledTimes(1); expect(mocks.transaction).toHaveBeenCalledTimes(1);
     expect(todos).toHaveLength(2); expect(reviews).toHaveLength(2);
   });
@@ -242,6 +248,9 @@ describe("notebook capture", () => {
     expect(attachments.map(row => row.kind)).toEqual(["file", "link"]);
     expect(attachments[0].todoId).toBe(result.items[0].id);
     expect(reviews.map(review => (review.proposal as { title: string }).title)).toEqual(["Call plumber", "Email Dana"]);
+    // Ids follow the page index, so skipped lines leave gaps.
+    expect(result.items.map(item => item.reviewId)).toEqual([reviewKey("alice", 1), reviewKey("alice", 3)]);
+    expect(reviews.map(review => review.id)).toEqual(result.items.map(item => item.reviewId));
   });
   it("still succeeds when every item is a duplicate, and deletes the unreferenced photo", async () => {
     const first = existing("Call plumber"); existing("Email Dana");
@@ -304,17 +313,20 @@ describe("response contract", () => {
     {
       "id": "todo-2",
       "title": "Call plumber",
-      "dueDate": "2026-11-07"
+      "dueDate": "2026-11-07",
+      "reviewId": "${reviewKey("alice", 0)}"
     },
     {
       "id": "todo-4",
       "title": "Buy milk",
-      "dueDate": null
+      "dueDate": null,
+      "reviewId": "${reviewKey("alice", 1)}"
     },
     {
       "id": "todo-6",
       "title": "Book dentist",
-      "dueDate": null
+      "dueDate": null,
+      "reviewId": "${reviewKey("alice", 2)}"
     }
   ],
   "skipped": [

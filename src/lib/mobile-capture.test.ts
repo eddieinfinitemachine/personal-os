@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   review: vi.fn(), record: vi.fn(), receiptFind: vi.fn(), receiptCreate: vi.fn(), transaction: vi.fn(), lock: vi.fn(),
@@ -20,6 +21,8 @@ import { captureMobile } from "./mobile-capture";
 import { mobileReceiptId, type MobileCaptureInput } from "./mobile-capture-input";
 const requestId = "12345678-1234-4234-8234-123456789abc";
 const input = (overrides: Partial<MobileCaptureInput> = {}): MobileCaptureInput => ({ requestId, text: "buy milk", url: null, files: [], ...overrides });
+// Computed here rather than through mobileReceiptId, so the test pins the key itself.
+const reviewKey = (userId: string, id = requestId) => createHash("sha256").update(JSON.stringify([userId, id.toLowerCase()])).digest("hex");
 type Row = Record<string, unknown> & { id: string };
 let records: Array<{ table: string; row: Row }>;
 let receipts: Map<string, { id: string; userId: string; requestHash: string; result: unknown }>;
@@ -68,15 +71,19 @@ beforeEach(() => {
 describe("mobile capture receipts", () => {
   it("commits receipt and organized record together, then replays without AI", async () => {
     const first = await captureMobile("alice", input());
-    expect(first).toMatchObject({ ok: true, type: "todo", title: "Buy milk", destination: "To Do", path: "/" });
+    expect(first).toMatchObject({ ok: true, type: "todo", title: "Buy milk", destination: "To Do", path: "/", reviewId: reviewKey("alice") });
     expect(events).toEqual(["lock", "todo", "receipt"]); expect(receipts.size).toBe(1);
+    // The review row is written under the id the response names; the stored placement and receipt stay without it.
+    expect(mocks.record.mock.calls[0][1]).toMatchObject({ id: first.reviewId });
+    expect(mocks.record.mock.calls[0][1].placement).not.toHaveProperty("reviewId");
+    expect(receipts.get(first.reviewId)!.result).not.toHaveProperty("reviewId");
     expect(await captureMobile("alice", input())).toEqual(first);
     expect(mocks.parse).toHaveBeenCalledTimes(1); expect(mocks.todoCreate).toHaveBeenCalledTimes(1);
   });
   it("replays the current placement after an Inbox correction without recreating the original", async () => {
     await captureMobile("alice", input());
     mocks.review.mockResolvedValue({ correctedAt: "2026-11-01T12:00:00Z", placement: { type: "asset", id: "corrected", title: "Milk", assetKind: "inventory", destination: "Inventory", path: "/inventory" } });
-    expect(await captureMobile("alice", input())).toMatchObject({ id: "corrected", type: "asset", path: "/inventory" });
+    expect(await captureMobile("alice", input())).toMatchObject({ id: "corrected", type: "asset", path: "/inventory", reviewId: reviewKey("alice") });
     expect(mocks.todoCreate).toHaveBeenCalledTimes(1);
     expect(mocks.parse).toHaveBeenCalledTimes(1);
   });
@@ -91,14 +98,15 @@ describe("mobile capture receipts", () => {
     expect(mocks.parse).toHaveBeenCalledTimes(1); expect(records).toHaveLength(1);
   });
   it("isolates identical request identifiers between users", async () => {
-    await captureMobile("alice", input()); await captureMobile("bob", input());
+    const [alice, bob] = [await captureMobile("alice", input()), await captureMobile("bob", input())];
     expect(receipts.has(mobileReceiptId("alice", requestId))).toBe(true); expect(receipts.has(mobileReceiptId("bob", requestId))).toBe(true);
+    expect([alice.reviewId, bob.reviewId]).toEqual([reviewKey("alice"), reviewKey("bob")]);
     expect(records.filter(item => item.table === "todo").map(item => item.row.userId)).toEqual(["alice", "bob"]);
   });
   it("serializes concurrent duplicate captures and removes the unused upload", async () => {
     const shared = input({ files: [new File(["hello"], "note.txt", { type: "text/plain" })] });
     const [first, second] = await Promise.all([captureMobile("alice", shared), captureMobile("alice", shared)]);
-    expect(first).toEqual(second); expect(receipts.size).toBe(1); expect(records.filter(item => item.table === "todo")).toHaveLength(1);
+    expect(first).toEqual(second); expect(second.reviewId).toBe(reviewKey("alice")); expect(receipts.size).toBe(1); expect(records.filter(item => item.table === "todo")).toHaveLength(1);
     const attachments = records.filter(item => item.table === "attachment"); expect(attachments).toHaveLength(1);
     expect(mocks.put).toHaveBeenCalledTimes(2); expect(mocks.del).toHaveBeenCalledTimes(1);
     expect(mocks.del.mock.calls[0][0]).not.toContain(attachments[0].row.url);
