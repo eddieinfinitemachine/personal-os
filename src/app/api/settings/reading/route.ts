@@ -5,6 +5,20 @@ import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
+export async function GET(request: Request) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { kindleEmail: true, kindleAutoSend: true },
+  });
+  return NextResponse.json(
+    { kindleEmail: user?.kindleEmail ?? null, kindleAutoSend: user?.kindleAutoSend ?? false },
+    { headers: { 'Cache-Control': 'no-store' } },
+  );
+}
+
 export async function PATCH(request: Request) {
   const userId = await getCurrentUserId(request);
   if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
