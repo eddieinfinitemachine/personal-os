@@ -1,3 +1,18 @@
+# Todo metadata and list members for the native app (2026-11-08)
+
+The iOS app reads Home over `GET /api/todos` and `GET /api/lists`, but the
+paperclip, comment bubble, unread badge and "added by …" were only computed in
+`src/app/page.tsx`. Branch `feat/todo-meta-api` off main.
+
+- [x] `src/lib/home-meta.ts`: `commentStatsByTodo`, `todoMeta`, `creatorName`, `listSharing`; page.tsx uses them
+- [x] `GET /api/todos`: `creatorName`, `attachmentCount`, `commentCount`, `unreadCommentCount` per todo, `creatorName` per subtask; one comment query and one read-marker query for the same todo filter, run in parallel with the todo query
+- [x] `GET /api/lists`: `collaborative`, `sharedWithNames` (`shared`, `ownerName` already there); loads every member, so a member's tile color is now found by userId
+- [x] Tests; README "Todos and lists"; `pnpm typecheck`; `pnpm test`
+- [ ] Review, merge, deploy
+
+## Review
+No schema change; additive JSON only. New tests: helper 10, todos route 4, lists route 4. `pnpm typecheck` clean; `pnpm test` 190 files / 1842 tests pass (184 skipped). Checked against a scratch local Postgres: for an owner and a member, the API's todo and list metadata equal the Home tiles' exactly (comments on completed todos counted with `includeCompleted=1`, another user's private comments never counted). Not run against the deployed host.
+
 # Health summary route for the native app (2026-11-07)
 
 Native Phase 4: the iOS app needs the Health page's data as JSON, but the page

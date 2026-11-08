@@ -1,9 +1,11 @@
 import { NextResponse, after } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
 import { syncRecentTodos } from "@/lib/gcal";
 import { listAccessWhere } from "@/lib/list-access";
 import { notifySharedListAdd } from "@/lib/notify";
+import { commentStatsByTodo, creatorName, todoMeta } from "@/lib/home-meta";
 
 export async function GET(request: Request) {
   const userId = await getCurrentUserId(request);
@@ -32,22 +34,43 @@ export async function GET(request: Request) {
     where.createdAt = { lt: new Date(Date.now() - 14 * 864e5) };
   }
 
-  const rows = await prisma.todo.findMany({
-    where: { ...where, parentId: null },
-    orderBy: stale
-      ? [{ createdAt: "asc" }]
-      : [
-          { completedAt: "asc" },
-          // Undated todos stay in manual order on top; dated ones sink to the bottom.
-          { dueDate: { sort: "asc", nulls: "first" } },
-          { position: "asc" },
-          { createdAt: "asc" },
-        ],
-    include: {
-      project: { select: { name: true } },
-      subtasks: { orderBy: [{ position: "asc" }, { createdAt: "asc" }] },
-    },
-  });
+  const todoWhere: Prisma.TodoWhereInput = { ...where, parentId: null };
+  const creator = { select: { name: true, email: true } } as const;
+  // Comment counts and unread badges as on the web Home: one comment query and
+  // one read-marker query for the same set of todos, bucketed in memory.
+  const [rows, comments, commentReads] = await Promise.all([
+    prisma.todo.findMany({
+      where: todoWhere,
+      orderBy: stale
+        ? [{ createdAt: "asc" }]
+        : [
+            { completedAt: "asc" },
+            // Undated todos stay in manual order on top; dated ones sink to the bottom.
+            { dueDate: { sort: "asc", nulls: "first" } },
+            { position: "asc" },
+            { createdAt: "asc" },
+          ],
+      include: {
+        project: { select: { name: true } },
+        _count: { select: { attachments: true } },
+        // Creator, surfaced as "added by …" on collaborative lists.
+        user: creator,
+        subtasks: {
+          orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+          include: { user: creator },
+        },
+      },
+    }),
+    prisma.comment.findMany({
+      where: { todo: todoWhere },
+      select: { todoId: true, authorId: true, createdAt: true },
+    }),
+    prisma.commentRead.findMany({
+      where: { userId, todo: todoWhere },
+      select: { todoId: true, lastReadAt: true },
+    }),
+  ]);
+  const commentStats = commentStatsByTodo(comments, commentReads, userId);
   const todos = rows.map((t) => ({
     id: t.id,
     title: t.title,
@@ -63,12 +86,14 @@ export async function GET(request: Request) {
     snoozedUntil: t.snoozedUntil,
     lastDiscussedAt: t.lastDiscussedAt,
     discussCount: t.discussCount,
+    ...todoMeta(t, commentStats),
     subtasks: t.subtasks.map((s) => ({
       id: s.id,
       title: s.title,
       notes: s.notes,
       dueDate: s.dueDate,
       completedAt: s.completedAt,
+      creatorName: creatorName(s),
     })),
   }));
   return NextResponse.json({ todos });

@@ -14,6 +14,7 @@ import { getSession } from "@/lib/auth";
 import { isFounderUser } from "@/lib/cron";
 import { isPrivateHost } from "@/lib/hosts";
 import { listAccessWhere } from "@/lib/list-access";
+import { commentStatsByTodo, creatorName, listSharing, todoMeta } from "@/lib/home-meta";
 import type { TodoLike } from "@/components/todo-row";
 
 export const dynamic = "force-dynamic";
@@ -90,22 +91,8 @@ export default async function HomePage() {
   ]);
 
   // Per-todo comment stats: total count + unread (others' comments newer than
-  // this user's last read of that thread).
-  const lastReadByTodo = new Map(
-    commentReads.map((r) => [r.todoId, r.lastReadAt.getTime()]),
-  );
-  const commentStats = new Map<string, { count: number; unread: number }>();
-  for (const c of comments) {
-    const s = commentStats.get(c.todoId) ?? { count: 0, unread: 0 };
-    s.count++;
-    if (c.authorId !== userId && c.createdAt.getTime() > (lastReadByTodo.get(c.todoId) ?? 0)) {
-      s.unread++;
-    }
-    commentStats.set(c.todoId, s);
-  }
-
-  const creatorLabel = (u: { name: string | null; email: string } | null) =>
-    u ? u.name ?? u.email : null;
+  // this user's last read of that thread). Shared with GET /api/todos.
+  const commentStats = commentStatsByTodo(comments, commentReads, userId);
 
   const toLike = (t: (typeof allTodos)[number]): TodoLike => ({
     id: t.id,
@@ -116,10 +103,7 @@ export default async function HomePage() {
     createdAt: t.createdAt,
     snoozedUntil: t.snoozedUntil,
     projectId: t.projectId,
-    creatorName: creatorLabel(t.user),
-    commentCount: commentStats.get(t.id)?.count ?? 0,
-    attachmentCount: t._count.attachments,
-    unreadCommentCount: commentStats.get(t.id)?.unread ?? 0,
+    ...todoMeta(t, commentStats),
     subtasks: t.subtasks.map((s) => ({
       id: s.id,
       title: s.title,
@@ -127,7 +111,7 @@ export default async function HomePage() {
       dueDate: s.dueDate,
       completedAt: s.completedAt,
       projectId: s.projectId,
-      creatorName: creatorLabel(s.user),
+      creatorName: creatorName(s),
     })),
   });
 
@@ -139,10 +123,8 @@ export default async function HomePage() {
 
   const tiles: HomeTile[] = lists.map((list) => {
     const all = byList.get(list.id) ?? [];
-    const shared = list.userId !== userId;
-    // A list is collaborative if it has any members — true for both the
-    // owner's view (members > 0) and a member's view (they're in the set).
-    const collaborative = list._count.members > 0;
+    // shared, ownerName, collaborative, sharedWithNames. Shared with GET /api/lists.
+    const sharing = listSharing(list, userId);
     return {
       list: {
         id: list.id,
@@ -150,16 +132,10 @@ export default async function HomePage() {
         // Members see their personal tile color when they've set one;
         // otherwise everyone sees the owner's color.
         color:
-          (shared ? list.members.find((m) => m.userId === userId)?.color : null) ??
+          (sharing.shared ? list.members.find((m) => m.userId === userId)?.color : null) ??
           list.color,
         isDefault: list.isDefault,
-        shared,
-        ownerName: shared ? list.user.name ?? list.user.email : null,
-        collaborative,
-        // Owner's view: names of everyone the list is shared with.
-        sharedWithNames: shared
-          ? []
-          : list.members.map((m) => m.user.name ?? m.user.email),
+        ...sharing,
       },
       todos: all.map(toLike),
       totalCount: all.length,
