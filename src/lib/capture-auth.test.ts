@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ findUnique: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({ prisma: { user: { findUnique: mocks.findUnique } } }));
 import { signSession } from "@/lib/auth";
-import { resolveCaptureUser } from "./capture-auth";
+import { bearerSession, resolveCaptureUser } from "./capture-auth";
 
 const users: Record<string, { id: string; email: string }> = {
   "founder@example.com": { id: "founder-id", email: "founder@example.com" },
@@ -92,5 +92,22 @@ describe("resolveCaptureUser: app session", () => {
     vi.stubEnv("CAPTURE_TOKEN", undefined);
     expect(await resolveCaptureUser(req({ query: await appSession() }))).toBeNull();
     expect(mocks.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe("bearerSession", () => {
+  it("returns the session for a valid session bearer, without touching the database", async () => {
+    expect(await bearerSession(req({ bearer: await appSession() }))).toEqual({ userId: "app-id", email: "app@example.com" });
+    expect(mocks.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("is null for the static capture token, garbage, a forged payload, and no header", async () => {
+    expect(await bearerSession(req({ bearer: "founder-token" }))).toBeNull();
+    expect(await bearerSession(req({ bearer: "a.b.c" }))).toBeNull();
+    const [header, , signature] = (await appSession()).split(".");
+    const forged = Buffer.from(JSON.stringify({ userId: "founder-id", email: "founder@example.com" })).toString("base64url");
+    expect(await bearerSession(req({ bearer: `${header}.${forged}.${signature}` }))).toBeNull();
+    expect(await bearerSession(req({ query: await appSession() }))).toBeNull();
+    expect(await bearerSession(req())).toBeNull();
   });
 });
