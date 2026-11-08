@@ -1,4 +1,4 @@
-import { verifySession } from "@/lib/auth";
+import { verifySession, type Session } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 // Resolves a capture request's credential to a user id. Two credentials work,
@@ -29,6 +29,16 @@ export async function resolveCaptureUser(request: Request): Promise<string | nul
     return null;
   }
   return user.id;
+}
+
+// The native app's session, when the request carries one as a bearer: the
+// same JWT the web app keeps in its cookie. Null for the static capture token
+// and for anything that doesn't verify. Routes that treat a signed-in save
+// differently from a Shortcut/extension save (`/api/board`) use this to tell
+// the two bearers apart.
+export async function bearerSession(request: Request): Promise<Session | null> {
+  const bearer = bearerToken(request);
+  return bearer && JWT_SHAPE.test(bearer) ? verifySession(bearer) : null;
 }
 
 // Three base64url segments: header.payload.signature.

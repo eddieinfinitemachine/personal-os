@@ -1,7 +1,7 @@
 import { after, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
-import { resolveCaptureUser } from "@/lib/capture-auth";
+import { getCurrentUserId, getSession } from "@/lib/auth";
+import { bearerSession, resolveCaptureUser } from "@/lib/capture-auth";
 import { InputError, parseBoardInput } from "@/lib/board-input";
 import { saveToBoard } from "@/lib/board-save";
 import { MAX_UPLOAD_BYTES } from "@/lib/board";
@@ -18,10 +18,13 @@ export const maxDuration = 60;
 //   - multipart form with a `file` image and/or text fields
 //   - a raw image body (Content-Type: image/*)
 //   - plain text, or ?url= / ?text= query params
-// Auth: session cookie (the app) or the capture bearer token (Shortcut,
-// extension); middleware lets POST through so the route decides.
+// Auth: session cookie (the web app), the same session as a bearer (the
+// native app, ec) or the capture bearer token (Shortcut, extension);
+// middleware lets POST through so the route decides.
 export async function POST(request: Request) {
-  const session = await getSession();
+  const cookieSession = await getSession();
+  const appSession = cookieSession ? null : await bearerSession(request);
+  const session = cookieSession ?? appSession;
   const userId = session?.userId ?? (await resolveCaptureUser(request));
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
@@ -29,7 +32,8 @@ export async function POST(request: Request) {
     const input = await parseBoardInput(request, MAX_UPLOAD_BYTES);
     if (!session && input.via === "app") input.via = "shortcut";
     const marker = request.headers.get("X-Capture-Source") ?? input.source;
-    const source = marker === "mac" || marker === "chrome" ? quickSource(marker) : session ? "web" : "quick";
+    const source =
+      marker === "mac" || marker === "chrome" ? quickSource(marker) : appSession ? "ec" : session ? "web" : "quick";
     const { item, duplicate, reviewId, created } = await saveToBoard(userId, input, { request, source });
     if (created && !duplicate) after(() => tagInBackground(userId, item.id));
     const label = item.title ?? item.siteName ?? item.kind;
@@ -49,11 +53,13 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+// Cookie or bearer: middleware has already verified either and forwards the
+// user id, so the native app reads the board with the same session it saves with.
+export async function GET(request: Request) {
+  const userId = await getCurrentUserId(request);
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const items = await prisma.boardItem.findMany({
-    where: { userId: session.userId },
+    where: { userId },
     orderBy: { savedAt: "desc" },
     take: 3000,
   });
