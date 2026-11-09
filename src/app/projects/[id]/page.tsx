@@ -2,9 +2,8 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { ensureDefaultLists } from "@/lib/lists";
+import { findOwnProject, getProjectTasks, hasDashboard as projectHasDashboard, projectContentWhere } from "@/lib/project-detail";
 import { KeyboardListNav } from "@/components/keyboard-nav";
-import { listAccessWhere } from "@/lib/list-access";
 import { ListTile } from "@/components/list-tile";
 import { ProjectTabs, type ProjectTab } from "@/components/project-tabs";
 import { NotesPane } from "@/components/notes-pane";
@@ -39,13 +38,10 @@ export default async function ProjectPage({
   if (!session) notFound();
   const userId = session.userId;
 
-  const project = await prisma.project.findUnique({ where: { id } });
-  if (!project || project.userId !== userId) notFound();
+  const project = await findOwnProject(userId, id);
+  if (!project) notFound();
 
-  const hasDashboard =
-    project.kind === "vehicle" ||
-    project.kind === "pet" ||
-    project.kind === "human";
+  const hasDashboard = projectHasDashboard(project.kind);
   const defaultTab: ProjectTab = hasDashboard ? "dashboard" : "tasks";
   const tab: ProjectTab = VALID_TABS.includes(rawTab as ProjectTab)
     ? (rawTab as ProjectTab)
@@ -115,70 +111,10 @@ function TabSkeleton() {
 }
 
 async function TasksTab({ projectId, userId }: { projectId: string; userId: string }) {
-  await ensureDefaultLists(userId);
-
   // Project pages always show only the three canonical lists (To Do, Monitor,
-  // Later). Custom lists belong to the personal/Home view. The list +
-  // todo queries are independent — fire in parallel.
-  const [lists, allTodos] = await Promise.all([
-    prisma.list.findMany({
-      where: { userId, isDefault: true },
-      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-    }),
-    prisma.todo.findMany({
-      where: {
-        projectId,
-        completedAt: null,
-        parentId: null,
-        // Snoozed todos stay hidden until their resurface time passes.
-        OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: new Date() } }],
-        // Allow shared-list collaborators to see/edit todos on this project's
-        // tabs. Note: the project itself is still owned by `userId` (project
-        // sharing is a future scope).
-        list: listAccessWhere(userId),
-      },
-      orderBy: [
-        // Undated todos stay in manual order on top; dated ones sink to the bottom.
-        { dueDate: { sort: "asc", nulls: "first" } },
-        { position: "asc" },
-        { createdAt: "asc" },
-      ],
-      include: {
-        subtasks: { orderBy: [{ position: "asc" }, { createdAt: "asc" }] },
-        _count: { select: { attachments: true } },
-      },
-    }),
-  ]);
-  const byList = new Map<string, typeof allTodos>();
-  for (const t of allTodos) {
-    (byList.get(t.listId) ?? byList.set(t.listId, []).get(t.listId))!.push(t);
-  }
-  const grouped = lists.map((list) => {
-    const all = byList.get(list.id) ?? [];
-    return {
-      list,
-      todos: all.map((t) => ({
-        id: t.id,
-        title: t.title,
-        notes: t.notes,
-        dueDate: t.dueDate,
-        completedAt: t.completedAt,
-        createdAt: t.createdAt,
-        snoozedUntil: t.snoozedUntil,
-        attachmentCount: t._count.attachments,
-        projectId: t.projectId,
-        subtasks: t.subtasks.map((s) => ({
-          id: s.id,
-          title: s.title,
-          notes: s.notes,
-          dueDate: s.dueDate,
-          completedAt: s.completedAt,
-          projectId: s.projectId,
-        })),
-      })),
-      totalCount: all.length,
-    };
-  });
+  // Later). Custom lists belong to the personal/Home view. Shared with
+  // GET /api/projects/[id].
+  const grouped = await getProjectTasks(userId, projectId);
 
   return (
     <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
@@ -198,7 +134,7 @@ async function TasksTab({ projectId, userId }: { projectId: string; userId: stri
 
 async function NotesTab({ projectId, userId }: { projectId: string; userId: string }) {
   const notes = await prisma.note.findMany({
-    where: { userId, projectId },
+    where: projectContentWhere(userId, projectId),
     orderBy: { updatedAt: "desc" },
   });
   return <NotesPane projectId={projectId} notes={notes} />;
@@ -206,7 +142,7 @@ async function NotesTab({ projectId, userId }: { projectId: string; userId: stri
 
 async function FilesTab({ projectId, userId }: { projectId: string; userId: string }) {
   const attachments = await prisma.attachment.findMany({
-    where: { userId, projectId },
+    where: projectContentWhere(userId, projectId),
     orderBy: { createdAt: "desc" },
   });
   return <FilesPane projectId={projectId} attachments={attachments} />;

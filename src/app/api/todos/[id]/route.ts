@@ -1,6 +1,8 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
+import { readJsonObject } from "@/lib/request-json";
+import { isDateOnly } from "@/lib/utils";
 import { deleteTodoEvent, syncRecentTodos } from "@/lib/gcal";
 import { listAccessWhere } from "@/lib/list-access";
 import { deleteTodo } from "@/lib/todo-delete";
@@ -22,7 +24,7 @@ export async function PATCH(
   if (!existing) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
-  const body = (await request.json()) as {
+  const body = await readJsonObject<{
     title?: string;
     notes?: string | null;
     listId?: string;
@@ -34,7 +36,13 @@ export async function PATCH(
     reference?: boolean;
     snoozedUntil?: string | null;
     discussed?: boolean;
-  };
+  }>(request);
+  if (!body) return NextResponse.json({ error: "invalid json" }, { status: 400 });
+  // A calendar day, as PATCH /api/capture/todo/[id] takes it. Anything else
+  // used to become an Invalid Date and a 500.
+  if (body.dueDate !== undefined && body.dueDate !== null && !isDateOnly(body.dueDate)) {
+    return NextResponse.json({ error: "dueDate must be YYYY-MM-DD or null" }, { status: 400 });
+  }
 
   const updates: Record<string, unknown> = {};
   if (body.title !== undefined) updates.title = body.title;

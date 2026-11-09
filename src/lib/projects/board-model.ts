@@ -3,6 +3,7 @@
 // or hide. Pure: no Prisma here.
 
 import type { Company } from "./company";
+import type { ProjectStep } from "./infer";
 import { EVIDENCE_KINDS, type EvidenceKind, type StoredEvidence } from "./signals/types";
 
 export type Visibility = "auto" | "pinned" | "hidden" | "finished";
@@ -18,6 +19,10 @@ export type BoardCard = {
   lastActivityAt: string | null;
   status: string | null;
   next: string | null;
+  /** Up to 3 next steps; `next` is the first one's text. The web card shows only `next`. */
+  steps: ProjectStep[];
+  /** What's blocking it, if Claude saw something. The web card doesn't show it. */
+  problem: string | null;
   /** Upcoming first (soonest first), then newest first. */
   evidence: StoredEvidence[];
   /** The latest run didn't return it, so it has gone quiet: it shows its saved data. */

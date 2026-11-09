@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists, isListColor } from "@/lib/lists";
 import { getCurrentUserId } from "@/lib/auth";
-import { listAccessWhere } from "@/lib/list-access";
+import { listAccessWhere, listColorFor } from "@/lib/list-access";
 import { listSharing } from "@/lib/home-meta";
 
 export async function GET(request: Request) {
@@ -30,9 +30,7 @@ export async function GET(request: Request) {
     return {
       id: l.id,
       name: l.name,
-      color:
-        (sharing.shared ? l.members.find((m) => m.userId === userId)?.color : null) ??
-        l.color,
+      color: listColorFor(l, userId),
       position: l.position,
       isDefault: l.isDefault,
       createdAt: l.createdAt,

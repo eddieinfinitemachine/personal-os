@@ -14,6 +14,8 @@ const card = (name: string, daysAgo: number | null, over: Partial<BoardCard> = {
   lastActivityAt: daysAgo === null ? null : ago(daysAgo).toISOString(),
   status: null,
   next: null,
+  steps: [],
+  problem: null,
   evidence: [],
   stale: false,
   sourceId: name,
@@ -143,6 +145,33 @@ describe("getProjectsBoard", () => {
     // Pinned and not returned by the latest run: stale. Unknown company / state fall back.
     expect(board.cards[0]).toMatchObject({ visibility: "pinned", stale: true, company: "Personal" });
     expect(board.cards.find((x) => x.name === "weird")).toMatchObject({ visibility: "auto", next: null });
+  });
+
+  it("carries every step and the problem line, which the web card leaves out", async () => {
+    mocks.sourceFindMany.mockResolvedValueOnce([
+      row("launch", {
+        plan: [
+          { text: "Send the deck", due: "2026-10-30", who: null, waiting: false },
+          { text: "Hear back on pricing", due: null, who: "Dana", waiting: true },
+          { type: "problem", text: "Pricing is still open" },
+        ],
+      }),
+      row("legacy", { plan: [{ text: "Old-style step" }] }),
+    ]);
+    const board = await getProjectsBoard("u1", true, NOW);
+    expect(board.cards.find((c) => c.name === "launch")).toMatchObject({
+      next: "Send the deck",
+      steps: [
+        { text: "Send the deck", due: "2026-10-30", who: null, waiting: false },
+        { text: "Hear back on pricing", due: null, who: "Dana", waiting: true },
+      ],
+      problem: "Pricing is still open",
+    });
+    expect(board.cards.find((c) => c.name === "legacy")).toMatchObject({
+      next: "Old-style step",
+      steps: [{ text: "Old-style step", due: null, who: null, waiting: false }],
+      problem: null,
+    });
   });
 
   it("marks any shown card the latest run didn't return as quiet, but never a hidden one", async () => {
