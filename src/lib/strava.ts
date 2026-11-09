@@ -196,13 +196,17 @@ export async function syncStrava(userId: string, opts: { force?: boolean; now?: 
           source: { not: "strava" },
           finishedAt: { gte: new Date(Math.min(...records.map((r) => r.startedAt))) },
         },
-        select: { startedAt: true, finishedAt: true },
+        select: { startedAt: true, finishedAt: true, source: true },
       })
     : [];
+  // A strength activity over a guided or whiteboard session is that session; any activity over an Apple Watch
+  // workout the ec app already imported is the same workout recorded twice.
+  const overlaps = (r: WorkoutRecord, o: { startedAt: Date; finishedAt: Date }) =>
+    o.startedAt.getTime() < r.finishedAt && o.finishedAt.getTime() > r.startedAt;
   const keep = records.filter(
     (r) =>
-      r.focus !== "full-body" ||
-      !ours.some((o) => o.startedAt.getTime() < r.finishedAt && o.finishedAt.getTime() > r.startedAt),
+      !ours.some((o) => o.source === "apple-health" && overlaps(r, o)) &&
+      (r.focus !== "full-body" || !ours.some((o) => overlaps(r, o))),
   );
   for (const r of keep) {
     const data = {
