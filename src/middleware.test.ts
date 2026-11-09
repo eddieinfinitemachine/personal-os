@@ -69,6 +69,17 @@ describe("middleware sessions", () => {
     expect(forwardedUserId(res)).toBeNull();
   });
 
+  it("passes POST /api/calendar/events through for the route's capture-token check; GET /api/calendar keeps the session gate", async () => {
+    const post = await run("/api/calendar/events", { authorization: "Bearer static-capture-token", "x-user-id": "spoofed" }, "POST");
+    expect(passedThrough(post)).toBe(true);
+    expect(forwardedUserId(post)).toBeNull();
+
+    for (const [path, method] of [["/api/calendar/events", "GET"], ["/api/calendar", "POST"], ["/api/calendar", "GET"]]) {
+      const res = await run(path, { authorization: "Bearer static-capture-token" }, method);
+      expect(res.status).toBe(401);
+    }
+  });
+
   it("drops a client-supplied x-user-id when there is no session", async () => {
     for (const path of ["/api/auth/session", "/api/capture/todo"]) {
       const res = await run(path, { "x-user-id": "spoofed", authorization: "Bearer not-a-jwt" });
