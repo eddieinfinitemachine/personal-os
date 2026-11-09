@@ -78,6 +78,18 @@ describe("middleware sessions", () => {
     }
   });
 
+  it("lets an unauthenticated POST to the password sign-in route through, with or without a bad bearer", async () => {
+    for (const headers of [
+      { "content-type": "application/json" } as Record<string, string>,
+      { "content-type": "application/json", authorization: "Bearer not-a-jwt" },
+    ]) {
+      const res = await run("/api/auth/password", headers, "POST");
+      expect(passedThrough(res)).toBe(true);
+      expect(res.headers.get("location")).toBeNull();
+      expect(forwardedUserId(res)).toBeNull();
+    }
+  });
+
   it("replaces a client-supplied x-user-id with the session's", async () => {
     const res = await run("/api/todos", {
       "x-user-id": "spoofed",

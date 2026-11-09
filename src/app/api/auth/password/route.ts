@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { signSession, setSessionCookie } from "@/lib/auth";
+import { APP_SESSION_MAX_AGE, signSession, setSessionCookie } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { isPrivateHost } from "@/lib/hosts";
 
@@ -9,6 +9,11 @@ import { isPrivateHost } from "@/lib/hosts";
 // Public multi-tenant EC stays magic-link only. The shared password lives in
 // INTERNAL_PASSWORD; the account it signs into is FOUNDER_EMAIL (same account the
 // bearer-token / cron endpoints attach data to).
+//
+// The web sends { password } and gets the session cookie. The native app sends
+// { password, client: "app" } and gets a long-lived session back in the body
+// instead (the same kind of session the magic link's `client=app` issues), which
+// it keeps and sends as `Authorization: Bearer`.
 
 function safeEqual(a: string, b: string): boolean {
   // Hash both sides so timingSafeEqual gets equal-length buffers and we never
@@ -43,12 +48,15 @@ export async function POST(req: NextRequest) {
   }
 
   let provided: string;
+  // `client: "app"` marks a sign-in from the native app; anything else is web.
+  let client: "app" | undefined;
   try {
-    const body = (await req.json()) as { password?: string };
+    const body = (await req.json()) as { password?: string; client?: unknown };
     if (!body.password || typeof body.password !== "string") {
       return NextResponse.json({ error: "password required" }, { status: 400 });
     }
     provided = body.password;
+    client = body.client === "app" ? "app" : undefined;
   } catch {
     return NextResponse.json({ error: "bad request" }, { status: 400 });
   }
@@ -62,6 +70,17 @@ export async function POST(req: NextRequest) {
     update: { lastSeenAt: new Date() },
     create: { email },
   });
+
+  if (client === "app") {
+    const token = await signSession(
+      { id: user.id, email: user.email },
+      { maxAge: APP_SESSION_MAX_AGE, client: "app" },
+    );
+    return NextResponse.json(
+      { ok: true, token, email: user.email },
+      { headers: { "Cache-Control": "private, no-store" } },
+    );
+  }
 
   const jwt = await signSession({ id: user.id, email: user.email });
   await setSessionCookie(jwt);
