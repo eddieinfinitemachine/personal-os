@@ -26,28 +26,38 @@ const TITLE_MAX = 300;
  *     start: string, end: string,    // RFC 3339 with an offset; end > start
  *     allDay?: boolean,              // true: YYYY-MM-DD, end exclusive
  *     timeZone?: string,             // IANA, default America/New_York
- *     notes?: string | null }        // the event's description
+ *     notes?: string | null,         // the event's description
+ *     id?: string | null }           // Google's event id, [a-v0-9]{5,1024}
  *
- * 201 { id, htmlLink, title, start, end, allDay, calendar: "primary" }, with
- * start and end as Google stored them. 401, 403, 400, 503 and 502 are
- * `{ error }`; the 502 adds `detail` (Google's status and message).
+ * `id` makes a retry safe: the client picks it once per event and sends it
+ * again on every retry. If Google already has an event with that id (the first
+ * try saved it and the reply was lost), the route answers 200 with that event
+ * instead of adding a second one.
+ *
+ * 201 (created) or 200 (an event with this id already existed)
+ * { id, htmlLink, title, start, end, allDay, calendar: "primary" }, with start
+ * and end as Google stored them. 401, 403, 400, 503 and 502 are `{ error }`;
+ * the 502 adds `detail` (Google's status and message). Siri reads the 403, 503
+ * and 502 `error` aloud, so those are plain sentences; the 400s are for
+ * developers.
  */
 export async function POST(request: Request) {
   const userId = (await getCurrentUserId(request)) ?? (await resolveCaptureUser(request));
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!(await isFounderUser(userId))) {
-    return NextResponse.json({ error: "calendar writes are founder only" }, { status: 403 });
+    return NextResponse.json({ error: "Only the owner's account can add calendar events." }, { status: 403 });
   }
   if (!isGoogleConfigured()) {
-    return NextResponse.json({ error: "google calendar not configured" }, { status: 503 });
+    return NextResponse.json({ error: "Google Calendar isn't connected to Personal OS." }, { status: 503 });
   }
 
   const parsed = parseEventBody(await request.json().catch(() => null));
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
-  const { title, start, end, allDay, timeZone, notes } = parsed;
+  const { title, start, end, allDay, timeZone, notes, id } = parsed;
 
   const at = (value: string): EventTime => (allDay ? { date: value } : { dateTime: value, timeZone });
   const result = await insertPrimaryEvent({
+    ...(id ? { id } : {}),
     summary: title,
     ...(notes ? { description: notes } : {}),
     start: at(start),
@@ -55,7 +65,7 @@ export async function POST(request: Request) {
   });
   if (!result.ok) {
     return NextResponse.json(
-      { error: "google calendar insert failed", detail: result.detail },
+      { error: "Google Calendar didn't accept the event.", detail: result.detail },
       { status: 502 },
     );
   }
@@ -71,7 +81,7 @@ export async function POST(request: Request) {
       allDay,
       calendar: "primary",
     },
-    { status: 201 },
+    { status: result.created ? 201 : 200 },
   );
 }
 
@@ -82,7 +92,11 @@ type EventBody = {
   allDay: boolean;
   timeZone: string;
   notes: string | null;
+  id: string | null;
 };
+
+// Google's rule for an event id it's given: base32hex, lower case, 5–1024 characters.
+const EVENT_ID = /^[a-v0-9]{5,1024}$/;
 
 function parseEventBody(body: unknown): EventBody | { error: string } {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -104,6 +118,11 @@ function parseEventBody(body: unknown): EventBody | { error: string } {
   const notes = raw.notes ?? null;
   if (notes !== null && typeof notes !== "string") return { error: "notes must be a string or null" };
 
+  const id = raw.id ?? null;
+  if (id !== null && (typeof id !== "string" || !EVENT_ID.test(id))) {
+    return { error: "id must be 5–1024 characters of a–v and 0–9" };
+  }
+
   let start: string;
   let end: string;
   if (allDay) {
@@ -120,7 +139,7 @@ function parseEventBody(body: unknown): EventBody | { error: string } {
     [start, end] = [from.value, to.value];
   }
 
-  return { title, start, end, allDay, timeZone, notes: notes?.trim() || null };
+  return { title, start, end, allDay, timeZone, notes: notes?.trim() || null, id };
 }
 
 // RFC 3339 date-time with a required offset. T and Z may be lower case
