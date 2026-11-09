@@ -85,7 +85,11 @@ export async function middleware(req: NextRequest) {
       (req.method === "POST" || req.nextUrl.searchParams.has("url"))) ||
     // Mood board save: share-sheet Shortcut / extension (bearer) or the app
     // (cookie); the route resolves either itself.
-    (pathname === "/api/board" && req.method === "POST")
+    (pathname === "/api/board" && req.method === "POST") ||
+    // Create a Google Calendar event (the ec app's Schedule intent): app
+    // session or capture bearer token, resolved by the route, founder only.
+    // GET /api/calendar stays behind the session.
+    (pathname === "/api/calendar/events" && req.method === "POST")
   ) {
     return passthrough();
   }

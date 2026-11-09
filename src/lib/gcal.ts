@@ -341,3 +341,83 @@ export async function reconcileCalendar(): Promise<{
 
   return result;
 }
+
+// ---------------------------------------------------------------------------
+// Real appointments (the ec app's Schedule intent, POST /api/calendar/events)
+// go on the connected account's primary calendar, not the "EC" todo calendar
+// above. Never an invite: no attendees, no conferencing, sendUpdates=none.
+
+export type EventTime = { dateTime: string; timeZone: string } | { date: string };
+
+export type PrimaryEventInput = {
+  summary: string;
+  description?: string;
+  start: EventTime;
+  end: EventTime;
+};
+
+type GoogleEventTime = { dateTime?: string; date?: string; timeZone?: string };
+
+export type InsertedEvent = {
+  id: string;
+  htmlLink: string;
+  summary?: string;
+  start: GoogleEventTime;
+  end: GoogleEventTime;
+};
+
+export type InsertPrimaryEventResult =
+  | { ok: true; event: InsertedEvent }
+  | { ok: false; detail: string };
+
+const DETAIL_MAX = 200;
+
+const shortText = (text: string) => {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > DETAIL_MAX ? `${flat.slice(0, DETAIL_MAX)}…` : flat;
+};
+
+/** "<status> <message>": Google's JSON error message when there is one, else the raw body. */
+async function googleErrorDetail(response: Response): Promise<string> {
+  let text = "";
+  try {
+    text = await response.text();
+    const message = (JSON.parse(text) as { error?: { message?: unknown } }).error?.message;
+    if (typeof message === "string") text = message;
+  } catch {
+    // Not JSON (or unreadable): keep whatever text came back.
+  }
+  return shortText(`${response.status} ${text}`);
+}
+
+/** Creates one event on the primary calendar. Never throws; failures come back as `detail`. */
+export async function insertPrimaryEvent(
+  input: PrimaryEventInput,
+): Promise<InsertPrimaryEventResult> {
+  try {
+    const token = await getGoogleAccessToken();
+    const response = await fetch(
+      `${CALENDAR_API}/calendars/primary/events?sendUpdates=none`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(input),
+      },
+    );
+    if (!response.ok) {
+      const detail = await googleErrorDetail(response);
+      console.error(`[gcal] insert primary event failed: ${detail}`);
+      return { ok: false, detail };
+    }
+    return { ok: true, event: (await response.json()) as InsertedEvent };
+  } catch (err) {
+    // Token refresh and transport errors. Their messages carry Google's error
+    // body at most, never a token.
+    const detail = shortText(err instanceof Error ? err.message : String(err));
+    console.error(`[gcal] insert primary event failed: ${detail}`);
+    return { ok: false, detail };
+  }
+}
