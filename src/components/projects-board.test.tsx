@@ -17,6 +17,8 @@ const card = (name: string, hoursAgo: number, over: Partial<BoardCard> = {}): Bo
   lastActivityAt: iso(hoursAgo),
   status: null,
   next: null,
+  steps: [],
+  problem: null,
   evidence: [],
   stale: false,
   sourceId: `s-${name}`,

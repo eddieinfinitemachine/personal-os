@@ -28,6 +28,15 @@ export function toDateInputValue(d: Date | string | null | undefined): string {
   return date.toISOString().slice(0, 10);
 }
 
+/** A real calendar date in `YYYY-MM-DD` form (2026-02-30 doesn't round-trip). */
+export function isDateOnly(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    toDateInputValue(new Date(value)) === value
+  );
+}
+
 /** True if a date-only due date is before today's local calendar date. */
 export function isCalendarDateOverdue(d: Date | string): boolean {
   const date = typeof d === "string" ? new Date(d) : d;

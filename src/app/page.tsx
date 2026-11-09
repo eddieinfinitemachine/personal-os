@@ -13,7 +13,7 @@ import { ensureDefaultLists } from "@/lib/lists";
 import { getSession } from "@/lib/auth";
 import { isFounderUser } from "@/lib/cron";
 import { isPrivateHost } from "@/lib/hosts";
-import { listAccessWhere } from "@/lib/list-access";
+import { listAccessWhere, listColorFor } from "@/lib/list-access";
 import { commentStatsByTodo, creatorName, listSharing, todoMeta } from "@/lib/home-meta";
 import type { TodoLike } from "@/components/todo-row";
 
@@ -131,9 +131,7 @@ export default async function HomePage() {
         name: list.name,
         // Members see their personal tile color when they've set one;
         // otherwise everyone sees the owner's color.
-        color:
-          (sharing.shared ? list.members.find((m) => m.userId === userId)?.color : null) ??
-          list.color,
+        color: listColorFor(list, userId),
         isDefault: list.isDefault,
         ...sharing,
       },

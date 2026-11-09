@@ -17,7 +17,7 @@ function speciesIcon(species: string) {
   if (species === "dog") return Dog;
   return PawPrint;
 }
-import { prisma } from "@/lib/prisma";
+import { loadPetDashboard, vaccinationStatus, type VaccinationDueStatus } from "@/lib/pet-dashboard";
 import { cn } from "@/lib/utils";
 import { PhotoGallery } from "../photo-gallery";
 import { AddWeight } from "./add-weight";
@@ -28,9 +28,7 @@ import { BreedQA } from "./breed-qa";
 import { CoachingPanel } from "../coaching-panel";
 import { HeroWeightEditor } from "./hero-weight-editor";
 
-type DueStatus = "overdue" | "due-soon" | "ok" | "unknown";
-
-const DUE_SOON_DAYS = 30;
+type DueStatus = VaccinationDueStatus;
 
 function formatDate(d: Date | string | null | undefined): string {
   if (!d) return "—";
@@ -52,22 +50,6 @@ function ageFrom(dob: Date | string, now = new Date()): string {
   if (months < 24) return `${months}mo old`;
   const years = months / 12;
   return `${years.toFixed(1)}y old`;
-}
-
-function daysFromNow(date: Date | string, today = new Date()): number {
-  return Math.floor(
-    (new Date(date).getTime() - today.getTime()) / 86_400_000
-  );
-}
-
-function vaccinationStatus(
-  boosterDueAt: Date | string | null
-): { status: DueStatus; daysFromNow: number | null } {
-  if (!boosterDueAt) return { status: "unknown", daysFromNow: null };
-  const days = daysFromNow(boosterDueAt);
-  if (days < 0) return { status: "overdue", daysFromNow: days };
-  if (days <= DUE_SOON_DAYS) return { status: "due-soon", daysFromNow: days };
-  return { status: "ok", daysFromNow: days };
 }
 
 function statusColor(status: DueStatus) {
@@ -97,22 +79,7 @@ function formatRelDays(days: number): string {
 }
 
 export async function PetDashboard({ projectId }: { projectId: string }) {
-  const pet = await prisma.pet.findUnique({
-    where: { projectId },
-    include: {
-      weights: { orderBy: { measuredAt: "desc" } },
-      vaccinations: { orderBy: { administeredAt: "desc" } },
-      vetVisits: { orderBy: { performedAt: "desc" } },
-      photos: { orderBy: { position: "asc" } },
-      shoppingItems: {
-        orderBy: [{ completedAt: "asc" }, { position: "asc" }, { createdAt: "asc" }],
-      },
-      recommendations: {
-        where: { completedAt: null, dismissedAt: null },
-        orderBy: { position: "asc" },
-      },
-    },
-  });
+  const pet = await loadPetDashboard(projectId);
 
   if (!pet) {
     return (

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isDropboxFolderUrl } from "@/lib/dropbox";
 import { getCurrentUserId } from "@/lib/auth";
+import { readJsonObject } from "@/lib/request-json";
 import { listAccessWhere } from "@/lib/list-access";
 
 const VALID_KINDS = new Set(["file", "link", "dropbox"]);
@@ -81,7 +82,7 @@ export async function POST(request: Request) {
   const userId = await getCurrentUserId(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const body = (await request.json()) as {
+  const body = await readJsonObject<{
     projectId?: string;
     todoId?: string;
     assetId?: string;
@@ -90,7 +91,8 @@ export async function POST(request: Request) {
     url?: string;
     mimeType?: string;
     size?: number;
-  };
+  }>(request);
+  if (!body) return NextResponse.json({ error: "invalid json" }, { status: 400 });
 
   const owner = await resolveOwner(userId, body.projectId, body.todoId, body.assetId);
   if ("error" in owner) return owner.error;

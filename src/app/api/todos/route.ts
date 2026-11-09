@@ -2,6 +2,7 @@ import { NextResponse, after } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
+import { readJsonObject } from "@/lib/request-json";
 import { syncRecentTodos } from "@/lib/gcal";
 import { listAccessWhere } from "@/lib/list-access";
 import { notifySharedListAdd } from "@/lib/notify";
@@ -103,14 +104,15 @@ export async function POST(request: Request) {
   const userId = await getCurrentUserId(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const body = (await request.json()) as {
+  const body = await readJsonObject<{
     title?: string;
     listId?: string;
     projectId?: string | null;
     notes?: string;
     dueDate?: string | null;
     parentId?: string | null;
-  };
+  }>(request);
+  if (!body) return NextResponse.json({ error: "invalid json" }, { status: 400 });
   const title = body.title?.trim();
   if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
 

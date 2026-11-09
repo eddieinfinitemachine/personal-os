@@ -17,3 +17,15 @@ export function listAccessWhere(userId: string): Prisma.ListWhereInput {
     ],
   };
 }
+
+/**
+ * The color the caller sees for a list: a member of someone else's list sees
+ * their own ListMember color when they've set one; everyone else sees the
+ * owner's List.color. Shared by Home, GET /api/lists and the calendar.
+ */
+export function listColorFor(
+  list: { userId: string; color: string; members: readonly { userId: string; color: string | null }[] },
+  userId: string,
+): string {
+  return (list.userId !== userId ? list.members.find((m) => m.userId === userId)?.color : null) ?? list.color;
+}

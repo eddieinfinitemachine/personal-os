@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
+import { readJsonObject } from "@/lib/request-json";
 
 export async function PATCH(
   request: Request,
@@ -10,10 +11,11 @@ export async function PATCH(
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const body = (await request.json()) as {
+  const body = await readJsonObject<{
     title?: string | null;
     body?: string;
-  };
+  }>(request);
+  if (!body) return NextResponse.json({ error: "invalid json" }, { status: 400 });
   const updates: Record<string, unknown> = {};
   if (body.title !== undefined) {
     const t = body.title?.trim();

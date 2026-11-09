@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
+import { readJsonObject } from "@/lib/request-json";
 
 export async function GET(request: Request) {
   const userId = await getCurrentUserId(request);
@@ -26,11 +27,12 @@ export async function POST(request: Request) {
   const userId = await getCurrentUserId(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const body = (await request.json()) as {
+  const body = await readJsonObject<{
     projectId?: string;
     title?: string;
     body?: string;
-  };
+  }>(request);
+  if (!body) return NextResponse.json({ error: "invalid json" }, { status: 400 });
   if (!body.projectId) {
     return NextResponse.json({ error: "projectId required" }, { status: 400 });
   }

@@ -2,7 +2,7 @@ import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveCaptureUser } from "@/lib/capture-auth";
 import { deleteTodoEvent, syncRecentTodos } from "@/lib/gcal";
-import { toDateInputValue } from "@/lib/utils";
+import { isDateOnly, toDateInputValue } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -75,13 +75,4 @@ export async function PATCH(
     dueDate: todo.dueDate ? toDateInputValue(todo.dueDate) : null,
     completedAt: todo.completedAt ? todo.completedAt.toISOString() : null,
   });
-}
-
-// A real calendar date in YYYY-MM-DD form (2026-02-30 doesn't round-trip).
-function isDateOnly(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
-    toDateInputValue(new Date(value)) === value
-  );
 }

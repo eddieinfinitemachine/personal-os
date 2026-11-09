@@ -32,6 +32,8 @@ export async function getProjectsBoard(userId: string, isFounder: boolean, now =
     lastActivityAt: p.lastActivityAt,
     status: p.status,
     next: p.next,
+    steps: p.steps,
+    problem: p.problem,
     evidence: orderEvidence(p.evidence, now),
     stale: (p.state === "auto" || p.state === "pinned") && !!run?.lastSuccessAt && !returned.has(p.key),
     sourceId: p.id,

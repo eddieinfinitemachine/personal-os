@@ -15,7 +15,8 @@ vi.mock("@/lib/auth", () => ({ getSession: mocks.session }));
 vi.mock("@/lib/hosts", () => ({ isPrivateHost: () => false }));
 vi.mock("@/lib/cron", () => ({ isFounderUser: async () => false }));
 vi.mock("@/lib/lists", () => ({ ensureDefaultLists: async () => {} }));
-vi.mock("@/lib/list-access", () => ({
+vi.mock("@/lib/list-access", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/list-access")>()),
   listAccessWhere: () => ({ userId: "user" }),
 }));
 vi.mock("@/lib/prisma", () => ({

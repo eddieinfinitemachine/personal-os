@@ -7,7 +7,7 @@ import {
   Shield,
   Wrench,
 } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import { loadVehicleDashboard } from "@/lib/vehicle-dashboard";
 import {
   computeDue,
   formatRelativeDays,
@@ -42,23 +42,7 @@ function formatDate(d: Date | string | null | undefined): string {
 }
 
 export async function VehicleDashboard({ projectId }: { projectId: string }) {
-  const vehicle = await prisma.vehicle.findUnique({
-    where: { projectId },
-    include: {
-      serviceItems: { orderBy: { position: "asc" } },
-      serviceRecords: { orderBy: { performedAt: "desc" } },
-      contacts: { orderBy: { position: "asc" } },
-      photos: { orderBy: { position: "asc" } },
-      shoppingItems: {
-        orderBy: [{ completedAt: "asc" }, { position: "asc" }, { createdAt: "asc" }],
-      },
-      recommendations: {
-        where: { completedAt: null, dismissedAt: null },
-        orderBy: { position: "asc" },
-      },
-      drives: { orderBy: { drivenAt: "desc" }, take: 20 },
-    },
-  });
+  const vehicle = await loadVehicleDashboard(projectId);
 
   if (!vehicle) {
     return (
