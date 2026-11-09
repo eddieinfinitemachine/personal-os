@@ -104,7 +104,7 @@ describe("POST /api/calendar/events: auth", () => {
     for (const auth of ["Bearer mate-token", `Bearer ${mateSession}`]) {
       const res = await POST(req(LUNCH, auth));
       expect(res.status).toBe(403);
-      expect(await res.json()).toEqual({ error: "calendar writes are founder only" });
+      expect(await res.json()).toEqual({ error: "Only the owner's account can add calendar events." });
     }
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
@@ -113,7 +113,7 @@ describe("POST /api/calendar/events: auth", () => {
     mocks.googleConfigured.mockReturnValue(false);
     const res = await POST(req(LUNCH));
     expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({ error: "google calendar not configured" });
+    expect(await res.json()).toEqual({ error: "Google Calendar isn't connected to Personal OS." });
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
 
@@ -132,6 +132,7 @@ describe("POST /api/calendar/events: auth", () => {
 
 describe("POST /api/calendar/events: validation", () => {
   const long = "x".repeat(301);
+  const ID_ERROR = "id must be 5–1024 characters of a–v and 0–9";
   it.each([
     ["malformed JSON", "{not json", "body must be a JSON object"],
     ["an array", [LUNCH], "body must be a JSON object"],
@@ -145,6 +146,13 @@ describe("POST /api/calendar/events: validation", () => {
     ["an offset for a time zone", { ...LUNCH, timeZone: "+05:00" }, "timeZone must be an IANA time zone"],
     ["a non-string time zone", { ...LUNCH, timeZone: -5 }, "timeZone must be an IANA time zone"],
     ["non-string notes", { ...LUNCH, notes: ["bring the deck"] }, "notes must be a string or null"],
+    ["a 4-character id", { ...LUNCH, id: "abcd" }, ID_ERROR],
+    ["a 1025-character id", { ...LUNCH, id: "a".repeat(1025) }, ID_ERROR],
+    ["an id with a w", { ...LUNCH, id: "abcdw" }, ID_ERROR],
+    ["an upper-case id", { ...LUNCH, id: "ABCDE" }, ID_ERROR],
+    ["an id with a hyphen", { ...LUNCH, id: "6f1c2a0e-1234" }, ID_ERROR],
+    ["an empty id", { ...LUNCH, id: "" }, ID_ERROR],
+    ["a numeric id", { ...LUNCH, id: 12345 }, ID_ERROR],
     ["no start", { ...LUNCH, start: undefined }, "start and end must be RFC 3339 date-times"],
     ["a date for a timed event", { ...LUNCH, start: "2026-11-15", end: "2026-11-16" }, "start and end must be RFC 3339 date-times"],
     ["a date-time without an offset", { ...LUNCH, start: "2026-11-15T12:00:00" }, "start and end must be RFC 3339 date-times"],
@@ -253,6 +261,105 @@ describe("POST /api/calendar/events: insert", () => {
   });
 });
 
+describe("POST /api/calendar/events: id (idempotent retries)", () => {
+  // What ec sends: a UUID in base32hex, 26 characters.
+  const ID = "c5h6ar3k1d0qg9v2m8tbe4lu7s";
+  const EVENT_URL = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${ID}`;
+  const duplicate = () =>
+    googleReply(409, {
+      error: { code: 409, message: "The requested identifier already exists.", errors: [{ domain: "global", reason: "duplicate" }] },
+    });
+  /** Google answers the insert with `insert`, then the GET of the event with `get`. */
+  const google = (insert: () => Response, get: () => Response) =>
+    mocks.fetch.mockImplementation(async (url: string) => (url === GOOGLE_URL ? insert() : get()));
+
+  it("passes the id to Google as the event's id and answers 201", async () => {
+    mocks.fetch.mockImplementation(async () => googleCreated({ id: ID }));
+    const res = await POST(req({ ...LUNCH, id: ID }));
+    const { url, body } = googleCall();
+    expect(url).toBe(GOOGLE_URL);
+    expect(body).toEqual({
+      id: ID,
+      summary: "Lunch with Erin Miles",
+      start: { dateTime: LUNCH.start, timeZone: "America/New_York" },
+      end: { dateTime: LUNCH.end, timeZone: "America/New_York" },
+    });
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({ id: ID, calendar: "primary" });
+  });
+
+  it("takes ids of 5 and 1024 characters, and a null id as none", async () => {
+    for (const id of ["0a1b2", "v".repeat(1024)]) {
+      mocks.fetch.mockClear();
+      expect((await POST(req({ ...LUNCH, id }))).status).toBe(201);
+      expect(googleCall().body.id).toBe(id);
+    }
+    mocks.fetch.mockClear();
+    expect((await POST(req({ ...LUNCH, id: null }))).status).toBe(201);
+    expect(googleCall().body).not.toHaveProperty("id");
+  });
+
+  it("answers 200 with the stored event when Google already has the id, without a second insert", async () => {
+    google(duplicate, () =>
+      googleCreated({
+        id: ID,
+        htmlLink: `https://www.google.com/calendar/event?eid=${ID}`,
+        status: "confirmed",
+        start: { dateTime: "2026-11-15T12:00:00-05:00", timeZone: "America/New_York" },
+      }),
+    );
+    const res = await POST(req({ ...LUNCH, id: ID }));
+
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+    const [[insertUrl, insert], [getUrl, get]] = mocks.fetch.mock.calls as [string, RequestInit][];
+    expect([insertUrl, insert.method]).toEqual([GOOGLE_URL, "POST"]);
+    expect(JSON.parse(insert.body as string).id).toBe(ID);
+    expect(getUrl).toBe(EVENT_URL);
+    expect(get.method ?? "GET").toBe("GET");
+    expect(get.headers).toEqual({ Authorization: `Bearer ${ACCESS_TOKEN}` });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      id: ID,
+      htmlLink: `https://www.google.com/calendar/event?eid=${ID}`,
+      title: "Lunch with Erin Miles",
+      start: "2026-11-15T12:00:00-05:00",
+      end: "2026-11-15T13:00:00-05:00",
+      allDay: false,
+      calendar: "primary",
+    });
+    expect(quiet).not.toHaveBeenCalled();
+  });
+
+  it("502s when the existing event can't be read", async () => {
+    google(duplicate, () => googleReply(404, { error: { code: 404, message: "Not Found" } }));
+    const res = await POST(req({ ...LUNCH, id: ID }));
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: "Google Calendar didn't accept the event.", detail: "409, then 404 Not Found" });
+  });
+
+  it("502s when the id belongs to a deleted event, rather than reporting it added", async () => {
+    google(duplicate, () => googleCreated({ id: ID, status: "cancelled" }));
+    const res = await POST(req({ ...LUNCH, id: ID }));
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({
+      error: "Google Calendar didn't accept the event.",
+      detail: `409, and event ${ID} was deleted`,
+    });
+  });
+
+  it("treats a 409 without an id as Google's refusal, and never looks anything up", async () => {
+    mocks.fetch.mockImplementation(async () => duplicate());
+    const res = await POST(req(LUNCH));
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({
+      error: "Google Calendar didn't accept the event.",
+      detail: "409 The requested identifier already exists.",
+    });
+    expect(mocks.fetch).toHaveBeenCalledOnce();
+  });
+});
+
 describe("POST /api/calendar/events: Google failures", () => {
   const logged = () => quiet.mock.calls.flat().map(String).join("\n");
 
@@ -263,7 +370,7 @@ describe("POST /api/calendar/events: Google failures", () => {
     const res = await POST(req(LUNCH));
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({
-      error: "google calendar insert failed",
+      error: "Google Calendar didn't accept the event.",
       detail: "503 The service is currently unavailable.",
     });
     expect(logged()).toContain("503 The service is currently unavailable.");
@@ -286,7 +393,7 @@ describe("POST /api/calendar/events: Google failures", () => {
     const res = await POST(req(LUNCH));
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({
-      error: "google calendar insert failed",
+      error: "Google Calendar didn't accept the event.",
       detail: 'Google token refresh failed (400): {"error": "invalid_grant"}',
     });
     expect(mocks.fetch).not.toHaveBeenCalled();
@@ -296,7 +403,7 @@ describe("POST /api/calendar/events: Google failures", () => {
     mocks.fetch.mockRejectedValue(new TypeError("fetch failed"));
     const res = await POST(req(LUNCH));
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: "google calendar insert failed", detail: "fetch failed" });
+    expect(await res.json()).toEqual({ error: "Google Calendar didn't accept the event.", detail: "fetch failed" });
     expect(logged()).not.toContain(ACCESS_TOKEN);
   });
 });

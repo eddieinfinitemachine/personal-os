@@ -350,6 +350,8 @@ export async function reconcileCalendar(): Promise<{
 export type EventTime = { dateTime: string; timeZone: string } | { date: string };
 
 export type PrimaryEventInput = {
+  /** Google's event id, chosen by the caller (base32hex: `[a-v0-9]{5,1024}`) so a retry can't add a second event. */
+  id?: string;
   summary: string;
   description?: string;
   start: EventTime;
@@ -362,12 +364,14 @@ export type InsertedEvent = {
   id: string;
   htmlLink: string;
   summary?: string;
+  status?: string;
   start: GoogleEventTime;
   end: GoogleEventTime;
 };
 
+/** `created` is false when an event with the input's `id` was already there and came back instead. */
 export type InsertPrimaryEventResult =
-  | { ok: true; event: InsertedEvent }
+  | { ok: true; event: InsertedEvent; created: boolean }
   | { ok: false; detail: string };
 
 const DETAIL_MAX = 200;
@@ -390,34 +394,48 @@ async function googleErrorDetail(response: Response): Promise<string> {
   return shortText(`${response.status} ${text}`);
 }
 
-/** Creates one event on the primary calendar. Never throws; failures come back as `detail`. */
+function insertFailed(text: string): InsertPrimaryEventResult {
+  const detail = shortText(text);
+  console.error(`[gcal] insert primary event failed: ${detail}`);
+  return { ok: false, detail };
+}
+
+/**
+ * Creates one event on the primary calendar. Never throws; failures come back as `detail`.
+ *
+ * With an `id` a retry is safe. If the first try saved the event but its reply was lost, Google
+ * answers the retry's insert with 409 (the id exists), and the event it already has comes back
+ * with `created: false`. It isn't compared with the input. Google keeps a deleted event's id
+ * (`status: "cancelled"`), so an id whose event was deleted is a failure, not an event to report.
+ */
 export async function insertPrimaryEvent(
   input: PrimaryEventInput,
 ): Promise<InsertPrimaryEventResult> {
   try {
-    const token = await getGoogleAccessToken();
+    const auth = { Authorization: `Bearer ${await getGoogleAccessToken()}` };
     const response = await fetch(
       `${CALENDAR_API}/calendars/primary/events?sendUpdates=none`,
       {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+        headers: { ...auth, "Content-Type": "application/json" },
         body: JSON.stringify(input),
       },
     );
-    if (!response.ok) {
-      const detail = await googleErrorDetail(response);
-      console.error(`[gcal] insert primary event failed: ${detail}`);
-      return { ok: false, detail };
+    if (response.status === 409 && input.id) {
+      const existing = await fetch(
+        `${CALENDAR_API}/calendars/primary/events/${encodeURIComponent(input.id)}`,
+        { headers: auth },
+      );
+      if (!existing.ok) return insertFailed(`409, then ${await googleErrorDetail(existing)}`);
+      const event = (await existing.json()) as InsertedEvent;
+      if (event.status === "cancelled") return insertFailed(`409, and event ${input.id} was deleted`);
+      return { ok: true, event, created: false };
     }
-    return { ok: true, event: (await response.json()) as InsertedEvent };
+    if (!response.ok) return insertFailed(await googleErrorDetail(response));
+    return { ok: true, event: (await response.json()) as InsertedEvent, created: true };
   } catch (err) {
     // Token refresh and transport errors. Their messages carry Google's error
     // body at most, never a token.
-    const detail = shortText(err instanceof Error ? err.message : String(err));
-    console.error(`[gcal] insert primary event failed: ${detail}`);
-    return { ok: false, detail };
+    return insertFailed(err instanceof Error ? err.message : String(err));
   }
 }
