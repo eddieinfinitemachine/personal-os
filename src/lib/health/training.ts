@@ -115,7 +115,7 @@ export function summarizeTraining(records: WorkoutRecord[], now: Date): Training
   const windowStart = nowMs - TRAINING_WINDOW_DAYS * DAY;
   const inWindow = records.filter((r) => r.finishedAt >= windowStart).sort((a, b) => b.finishedAt - a.finishedAt);
 
-  const bySource: Record<WorkoutSource, number> = { guided: 0, board: 0, strava: 0 };
+  const bySource: Record<WorkoutSource, number> = { guided: 0, board: 0, strava: 0, "apple-health": 0 };
   const byFocus: Record<string, number> = {};
   for (const r of inWindow) {
     bySource[r.source ?? "guided"]++;

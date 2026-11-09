@@ -71,7 +71,7 @@ function ageYears(dob: Date | null): number | null {
   return y;
 }
 
-const SOURCE_LABELS: Record<WorkoutSource, string | null> = { guided: null, board: "Whiteboard", strava: "Strava" };
+const SOURCE_LABELS: Record<WorkoutSource, string | null> = { guided: null, board: "Whiteboard", strava: "Strava", "apple-health": "Apple Watch" };
 const APPLE_HEALTH_SHORTCUT =
   "https://github.com/eddieinfinitemachine/personal-os/blob/main/docs/shortcuts/apple-health.md";
 

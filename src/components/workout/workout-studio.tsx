@@ -731,7 +731,7 @@ function Setup({
 }
 
 /** A past session; tap to see each exercise's sets and weights. */
-const SOURCE_LABEL: Record<WorkoutSource, string> = { guided: "", board: "Whiteboard", strava: "Strava" };
+const SOURCE_LABEL: Record<WorkoutSource, string> = { guided: "", board: "Whiteboard", strava: "Strava", "apple-health": "Apple Watch" };
 
 function RecentRow({ entry: h }: { entry: HistoryEntry }) {
   const [open, setOpen] = useState(false);

@@ -28,7 +28,7 @@ export type ExerciseRecord = {
   sets: SetRecord[];
 };
 
-export const WORKOUT_SOURCES = ["guided", "board", "strava"] as const;
+export const WORKOUT_SOURCES = ["guided", "board", "strava", "apple-health"] as const;
 export type WorkoutSource = (typeof WORKOUT_SOURCES)[number];
 
 export type WorkoutRecord = {
@@ -256,7 +256,7 @@ function ago(ts: number, now: number): string {
 }
 
 /** The training log for the planner; "" with no history. */
-const SOURCE_NOTE: Record<WorkoutSource, string> = { guided: "", board: " · class whiteboard", strava: " · from Strava" };
+const SOURCE_NOTE: Record<WorkoutSource, string> = { guided: "", board: " · class whiteboard", strava: " · from Strava", "apple-health": " · from Apple Watch" };
 
 export function historyPrompt(records: WorkoutRecord[], now: number, readiness: Readiness | null = null): string {
   const sorted = promptRecords(records, now);

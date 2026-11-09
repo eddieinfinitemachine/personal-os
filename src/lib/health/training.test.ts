@@ -36,7 +36,7 @@ describe("summarizeTraining", () => {
       windowDays: 90,
       sessions: 0,
       minutes: 0,
-      bySource: { guided: 0, board: 0, strava: 0 },
+      bySource: { guided: 0, board: 0, strava: 0, "apple-health": 0 },
       byFocus: {},
       sessionsPerWeek: null,
       lastSession: null,
@@ -80,7 +80,7 @@ describe("summarizeTraining", () => {
       ],
       now,
     );
-    expect(t.bySource).toEqual({ guided: 1, board: 1, strava: 1 });
+    expect(t.bySource).toEqual({ guided: 1, board: 1, strava: 1, "apple-health": 0 });
     expect(t.byFocus).toEqual({ conditioning: 1, pull: 1, upper: 1 });
     expect(t.lastSession).toEqual({ date: "2030-06-11", title: "Upper day", focus: "upper", durationMin: 50, source: "guided" });
     expect(t.recent.map((r) => [r.title, r.exercises])).toEqual([
