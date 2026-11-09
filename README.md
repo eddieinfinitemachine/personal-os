@@ -109,6 +109,10 @@ do not use it with `VERCEL_ENV=production` for a narrowly approved rollout.
 - `GET /api/health/summary` returns everything the Health page shows as JSON for the native app: `{ projectId, human, summary, picture: { stored, stale, generatedAt }, vaccinations, visits, dna, biometrics, fitnessSessions }`, with empty values and `projectId: null` when there is no health record. It never writes the picture or calls Claude, and leaves out the policy number; when `picture.stale` is true the app POSTs `/api/projects/<projectId>/picture`.
 - `GET /api/health/project` returns `{ projectId }` (or `null`) for the app's calls to `/api/projects/<projectId>/ask` and `/picture`. Both are per-user, session-authenticated and `Cache-Control: private, no-store`.
 
+## Todos and lists
+
+`GET /api/todos` and `GET /api/lists` carry the per-item metadata the web Home shows, so the native app can draw the same paperclip, comment bubble, unread badge and "added by …". Each todo has `creatorName` (the creator's name, else email), `attachmentCount`, `commentCount` and `unreadCommentCount` (comments by others newer than the caller's last read of that thread); each subtask has `creatorName`. Each list has `shared`, `ownerName` (null for your own lists), `collaborative` (the list has any members) and `sharedWithNames` (members' names or emails, owner's view only). The Home and the routes compute these with the same helpers in `src/lib/home-meta.ts`.
+
 ## Auth flow
 
 1. Visitor opens `/` → sees public landing page (no session) or dashboard (with session).

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureDefaultLists, isListColor } from "@/lib/lists";
 import { getCurrentUserId } from "@/lib/auth";
 import { listAccessWhere } from "@/lib/list-access";
+import { listSharing } from "@/lib/home-meta";
 
 export async function GET(request: Request) {
   const userId = await getCurrentUserId(request);
@@ -15,22 +16,31 @@ export async function GET(request: Request) {
     include: {
       // Hint for the UI: shared lists show a small chip + the owner's name.
       user: { select: { id: true, name: true, email: true } },
-      // The caller's own membership row, for their personal tile color.
-      members: { where: { userId }, select: { color: true } },
+      // Every member: the owner sees who it's shared with, and the caller's
+      // own row carries their personal tile color.
+      members: {
+        select: { userId: true, color: true, user: { select: { name: true, email: true } } },
+      },
+      _count: { select: { members: true } },
     },
   });
-  const lists = rows.map((l) => ({
-    id: l.id,
-    name: l.name,
-    color: (l.userId !== userId ? l.members[0]?.color : null) ?? l.color,
-    position: l.position,
-    isDefault: l.isDefault,
-    createdAt: l.createdAt,
-    updatedAt: l.updatedAt,
-    userId: l.userId,
-    shared: l.userId !== userId,
-    ownerName: l.userId === userId ? null : l.user.name ?? l.user.email,
-  }));
+  const lists = rows.map((l) => {
+    // shared, ownerName, collaborative, sharedWithNames: as on the web Home.
+    const sharing = listSharing(l, userId);
+    return {
+      id: l.id,
+      name: l.name,
+      color:
+        (sharing.shared ? l.members.find((m) => m.userId === userId)?.color : null) ??
+        l.color,
+      position: l.position,
+      isDefault: l.isDefault,
+      createdAt: l.createdAt,
+      updatedAt: l.updatedAt,
+      userId: l.userId,
+      ...sharing,
+    };
+  });
   return NextResponse.json({ lists });
 }
 
