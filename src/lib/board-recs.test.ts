@@ -1,6 +1,25 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildRecsPrompt, parseRecsReply, searchUrl } from "@/lib/board-recs";
-import { callClaudeWithServerTools } from "@/lib/claude";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const db = vi.hoisted(() => ({
+  boardItem: { findMany: vi.fn(), findFirst: vi.fn() },
+  boardRec: { findMany: vi.fn(), deleteMany: vi.fn(), createMany: vi.fn() },
+  boardTaste: { update: vi.fn() },
+  $transaction: vi.fn(),
+}));
+const resolveLink = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/prisma", () => ({ prisma: db }));
+vi.mock("@/lib/board", () => ({ resolveLink }));
+
+import {
+  CLAUDE_DEADLINE_MS,
+  SEARCHES_PER_RUN,
+  buildRecsPrompt,
+  describeFailure,
+  generateRecs,
+  parseRecsReply,
+  searchUrl,
+} from "@/lib/board-recs";
+import { ClaudeAPIError, callClaudeWithServerTools } from "@/lib/claude";
 
 describe("buildRecsPrompt", () => {
   it("lists the board, the kind mix, and feedback", () => {
@@ -130,5 +149,139 @@ describe("callClaudeWithServerTools", () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
     vi.stubGlobal("fetch", vi.fn(async () => new Response("overloaded", { status: 529 })));
     await expect(callClaudeWithServerTools({ user: "hi", maxTokens: 10, tools: [] })).rejects.toThrow(/Claude error 529/);
+  });
+});
+
+describe("generateRecs", () => {
+  const items = Array.from({ length: 5 }, (_, i) => ({
+    kind: "music",
+    title: `Record ${i}`,
+    siteName: null,
+    note: null,
+    price: null,
+    url: `https://board.test/${i}`,
+  }));
+  const reply = (recs: object[]) =>
+    new Response(
+      JSON.stringify({
+        content: [
+          { type: "server_tool_use", id: "srvtoolu_1", name: "web_search", input: { query: "q" } },
+          { type: "web_search_tool_result", tool_use_id: "srvtoolu_1", content: [] },
+          { type: "text", text: JSON.stringify({ taste: "Warm and analog.", recs }) },
+        ],
+        stop_reason: "end_turn",
+      }),
+      { status: 200 },
+    );
+
+  beforeEach(() => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+    db.boardItem.findMany.mockResolvedValue(items);
+    db.boardRec.findMany.mockResolvedValue([]);
+    db.boardRec.deleteMany.mockReturnValue("delete");
+    db.boardRec.createMany.mockReturnValue("create");
+    db.boardTaste.update.mockReturnValue("taste");
+    db.$transaction.mockResolvedValue([]);
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+  });
+
+  it("runs a bounded turn and doesn't wait on a link that never answers", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        bodies.push(JSON.parse(String(init.body)));
+        return reply([
+          { kind: "music", title: "Fast", creator: null, reason: "Like Record 0.", url: "https://fast.test/a" },
+          { kind: "music", title: "Hung", creator: "Band", reason: "Like Record 1.", url: "https://hung.test/b" },
+        ]);
+      }),
+    );
+    resolveLink.mockImplementation((url: string) =>
+      url.startsWith("https://fast")
+        ? Promise.resolve({ ok: true, kind: "music", url, imageSrc: "https://img.test/a.jpg", siteName: "Fast", price: null })
+        : new Promise(() => {}),
+    );
+
+    const run = generateRecs("u1");
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(await run).toBe(2);
+
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatchObject({
+      tools: [{ type: "web_search_20260209", name: "web_search", max_uses: SEARCHES_PER_RUN }],
+      output_config: { effort: "low" },
+    });
+    expect(db.boardRec.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({ title: "Fast", url: "https://fast.test/a", imageUrl: "https://img.test/a.jpg" }),
+        expect.objectContaining({ title: "Hung", url: searchUrl("music", "Hung", "Band"), imageUrl: null }),
+      ],
+    });
+    expect(db.boardTaste.update).toHaveBeenCalledWith({
+      where: { userId: "u1" },
+      data: expect.objectContaining({ status: "idle", error: null, profile: "Warm and analog." }),
+    });
+  });
+
+  it("gives the Claude turn its deadline and reports running out of it", async () => {
+    const timeout = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation(() => AbortSignal.abort(new DOMException("The operation was aborted due to timeout", "TimeoutError")));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        init.signal?.throwIfAborted();
+        return reply([]);
+      }),
+    );
+
+    expect(await generateRecs("u1")).toBe(0);
+    expect(timeout).toHaveBeenCalledWith(CLAUDE_DEADLINE_MS);
+    expect(db.boardTaste.update).toHaveBeenCalledWith({
+      where: { userId: "u1" },
+      data: { status: "error", error: "Searching for picks took too long. Try again." },
+    });
+    expect(console.error).toHaveBeenCalledWith(
+      "[board-recs] generation failed",
+      expect.objectContaining({ userId: "u1", cause: "timeout" }),
+    );
+  });
+
+  it("reports an overloaded API as busy, not as a timeout, and doesn't log the body", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response('{"type":"overloaded_error"}', { status: 529 })));
+
+    expect(await generateRecs("u1")).toBe(0);
+    expect(db.boardTaste.update).toHaveBeenCalledWith({
+      where: { userId: "u1" },
+      data: { status: "error", error: "Claude is busy right now. Try again in a few minutes." },
+    });
+    const logged = vi.mocked(console.error).mock.calls[0];
+    expect(logged[1]).toMatchObject({ cause: "claude 529" });
+    expect(JSON.stringify(logged)).not.toContain("overloaded_error");
+  });
+});
+
+describe("describeFailure", () => {
+  it("keeps causes apart", () => {
+    expect(describeFailure(new ClaudeAPIError(401, "bad key"))).toEqual({
+      cause: "claude 401",
+      error: "Couldn't get picks right now. Try again.",
+    });
+    expect(describeFailure(new Error("no JSON in reply")).cause).toBe("parse");
+    expect(describeFailure(new SyntaxError("Unexpected token")).cause).toBe("parse");
+    expect(describeFailure(new TypeError("fetch failed"))).toEqual({
+      cause: "TypeError",
+      error: "Couldn't get picks right now. Try again.",
+    });
   });
 });
