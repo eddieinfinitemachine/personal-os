@@ -11,7 +11,7 @@ const headers = { "Cache-Control": "private, no-store" };
 
 /**
  * What /projects/[id] reads, for the native app: the project, its note and
- * file counts, the Tasks tab (the caller's default lists) and, for a
+ * file counts, the Tasks tab (the caller's three default lists) and, for a
  * vehicle or pet, the dashboard's data. Someone else's project is 404, as on
  * the page. A human project's dashboard is served by /api/health/*.
  */

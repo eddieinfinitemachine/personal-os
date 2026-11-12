@@ -101,11 +101,10 @@ export type TodoProposal = {
   title: string;
   notes?: string | null;
   dueDate?: string | null;     // ISO YYYY-MM-DD
-  listName?: string | null;    // "To Do" | "Monitor" | "Later" | one of the user's lists
+  listName?: string | null;    // "To Do" | "Monitor" | "Later" | custom
   projectId?: string | null;
   // Set ONLY by the deterministic "@name" token parser (never by Claude).
-  // The one case where commit files into listName: user-directed routing.
-  // Otherwise the todo lands in Inbox and listName becomes its suggestion.
+  // The one case where commit honors listName: user-directed routing.
   routedByAlias?: boolean;
 };
 
@@ -166,10 +165,6 @@ interface ParseInput {
   activeProjects: ActiveProject[];
   forceType?: ForceType;
   categoryHints?: string[];
-  // Names of the user's own lists (and shared ones they can edit), Inbox
-  // excluded. A todo's listName may be one of these; it is stored as a
-  // suggestion, never acted on.
-  listNames?: string[];
 }
 
 const SYSTEM_PROMPT = `You classify a user's quick "capture" into one of SIX structured record types and extract the fields needed to file it. The user may have attached a photo (an object, a receipt, a business card, a screenshot) and a short typed description.
@@ -297,7 +292,7 @@ For todo:
 - "title": the user's task PRESERVED AS THEY WROTE IT. Do NOT reword, rephrase, expand, prepend an imperative verb, or otherwise "improve" it. If they typed "dave hiring memo", the title is "dave hiring memo" — NOT "Read Dave hiring memo". The ONLY edits allowed: trim surrounding whitespace, and strip a leading task lead-in if present ("todo:", "to do:", "remind me to", "I need to", "I have to" → drop just that prefix, keep the rest verbatim, e.g. "remind me to call dentist" → "call dentist"). Never change the words otherwise.
 - "notes": null by DEFAULT. Set it ONLY when the user themselves typed extra detail beyond the one-line task — verbatim, not paraphrased. NEVER fabricate, summarize, speculate about, or describe the capture. Specifically forbidden: meta-commentary like "User captured a reference to…", "likely a memo about…", or any guess at what the task means. When unsure, use null.
 - "dueDate": ISO if user said "tomorrow" / "Friday" / "by next week". Resolve against <TODAY>. Default null.
-- "listName": "To Do" by default. "Monitor" if user said "watch / monitor / keep an eye on". "Later" if "someday / eventually / no rush". Or the exact name from USER_LISTS (when given) of a list the task clearly belongs on.
+- "listName": "To Do" by default. "Monitor" if user said "watch / monitor / keep an eye on". "Later" if "someday / eventually / no rush".
 - "projectId": match ACTIVE_PROJECTS like for asset (e.g. "todo: change Ferrari oil" → Ferrari project). Null otherwise.
 
 For call_sheet:
@@ -372,7 +367,6 @@ export async function parseCapture(input: ParseInput): Promise<CaptureProposal> 
     "ACTIVE_PROJECTS:",
     projectsList || "(none)",
     "",
-    ...(input.listNames?.length ? ["USER_LISTS:", ...input.listNames.map((name) => `- ${name}`), ""] : []),
     "CAPTURE TEXT:",
     input.text || "(no text provided)",
     ...requiredTypeBlock(input.forceType, input.categoryHints),

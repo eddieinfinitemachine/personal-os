@@ -33,7 +33,7 @@ describe("notebook capture route", () => {
     expect(mocks.capture).not.toHaveBeenCalled();
   });
   it("passes the parsed page to the service, returns its result uncached, and syncs the calendar afterward", async () => {
-    const result = { ok: true, id: "todo-1", type: "todo", title: "1 item from your notebook", destination: "Inbox", path: "/", items: [{ id: "todo-1", title: "Call plumber", dueDate: null, reviewId: "review-1" }], skipped: [] };
+    const result = { ok: true, id: "todo-1", type: "todo", title: "1 item from your notebook", destination: "To Do", path: "/", items: [{ id: "todo-1", title: "Call plumber", dueDate: null, reviewId: "review-1" }], skipped: [] };
     mocks.capture.mockResolvedValue(result);
     const response = await POST(multipart({ requestId, text: "" }, [page()]));
     expect(response.status).toBe(200); expect(await response.json()).toEqual(result);

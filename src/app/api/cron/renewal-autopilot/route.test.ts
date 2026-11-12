@@ -30,16 +30,15 @@ const vehicle = (id: string, days: number) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("CRON_SECRET", "test-secret");
-  // The founder has both To Do and the capture Inbox.
   mocks.findList.mockImplementation(async ({ where }: { where: { name: string; isDefault: boolean } }) =>
-    where.isDefault && where.name === "To Do" ? { id: "todo" } : where.name === "Inbox" ? { id: "inbox" } : null,
+    where.isDefault && where.name === "To Do" ? { id: "todo" } : null,
   );
   mocks.aggregate.mockResolvedValue({ _max: { position: 8 } });
   mocks.vehicles.mockResolvedValue([vehicle("a", 3), vehicle("b", 5)]);
 });
 
 describe("GET /api/cron/renewal-autopilot", () => {
-  it("still files into To Do (not the capture Inbox), after its existing todos, in order", async () => {
+  it("files into To Do, after its existing todos, in order", async () => {
     const res = await GET(new Request("https://example.invalid/api/cron/renewal-autopilot", { headers: { authorization: "Bearer test-secret" } }));
     expect(res.status).toBe(200);
     expect(mocks.findList).toHaveBeenCalledWith({ where: { userId: "founder", isDefault: true, name: "To Do" } });

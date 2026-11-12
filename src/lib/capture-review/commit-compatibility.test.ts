@@ -75,7 +75,7 @@ describe("capture commit backward compatibility", () => {
     else expect(raw.interaction.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ personIds: [person.id] }) }));
   });
 
-  it.each(["media", "place"] as const)("keeps canonical URL and organizer notes on automatic %s companion tasks (Inbox, suggesting Later)", async assetKind => {
+  it.each(["media", "place"] as const)("keeps canonical URL and organizer notes on automatic %s Later tasks", async assetKind => {
     const { tx, raw } = client();
     await commitCore(tx, "alice", { text: "Save for the lighting project", url: "https://short.test/a" }, {
       type: "asset", assetKind, title: "Synthetic reference", url: "https://canonical.test/reference",

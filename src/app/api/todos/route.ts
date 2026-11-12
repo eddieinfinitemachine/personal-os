@@ -81,8 +81,8 @@ export async function GET(request: Request) {
     completedAt: t.completedAt,
     createdAt: t.createdAt,
     listId: t.listId,
-    // A capture's AI-suggested list (captures land in Inbox); accept it with
-    // PATCH /api/todos/[id] { listId }, which clears it. null otherwise.
+    // A list suggestion from the retired Inbox list. Captures no longer set
+    // it (null in practice); kept so clients that decode it still work.
     suggestedListId: t.suggestedListId,
     projectId: t.projectId,
     projectName: t.project?.name ?? null,

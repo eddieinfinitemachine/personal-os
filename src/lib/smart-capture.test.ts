@@ -162,28 +162,3 @@ describe("call_sheet captures", () => {
     }
   });
 });
-
-describe("list suggestions in the parse prompt", () => {
-  it("offers the user's list names for a todo's listName, only when given", async () => {
-    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
-    const fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ content: [{ type: "text", text: '{"type":"todo","title":"fix the hinge","listName":"Garage"}' }] }),
-    });
-    vi.stubGlobal("fetch", fetch);
-    try {
-      const proposal = await parseCapture({ text: "fix the hinge", today: "2026-11-12", activeProjects: [], listNames: ["To Do", "Garage"] });
-      expect(proposal).toMatchObject({ type: "todo", listName: "Garage" });
-      const body = JSON.parse(fetch.mock.calls[0][1].body);
-      expect(body.system).toContain('"listName": "To Do" by default.');
-      expect(body.system).toContain("Or the exact name from USER_LISTS (when given)");
-      expect(body.messages[0].content[0].text).toContain("USER_LISTS:\n- To Do\n- Garage\n\nCAPTURE TEXT:");
-      await parseCapture({ text: "fix the hinge", today: "2026-11-12", activeProjects: [] });
-      await parseCapture({ text: "fix the hinge", today: "2026-11-12", activeProjects: [], listNames: [] });
-      for (const call of fetch.mock.calls.slice(1)) expect(JSON.parse(call[1].body).messages[0].content[0].text).not.toContain("USER_LISTS");
-    } finally {
-      vi.unstubAllGlobals();
-      vi.unstubAllEnvs();
-    }
-  });
-});
