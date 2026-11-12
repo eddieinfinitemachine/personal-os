@@ -106,6 +106,7 @@ export function palette(color: string) {
 const ensuredForUser = new Set<string>();
 export async function ensureDefaultLists(userId: string): Promise<void> {
   if (ensuredForUser.has(userId)) return;
+  await mergeDuplicateInboxes(userId);
   for (const def of DEFAULT_LISTS) {
     const existing =
       def.name === INBOX_LIST_NAME
@@ -123,6 +124,23 @@ export async function ensureDefaultLists(userId: string): Promise<void> {
   ensuredForUser.add(userId);
 }
 
+// Two server instances reaching an account at the same moment can each create
+// its Inbox (it happened on the day Inbox shipped: two lists 18 ms apart). The
+// oldest is the Inbox; any other gives it its todos and goes.
+async function mergeDuplicateInboxes(userId: string): Promise<void> {
+  const inboxes = await prisma.list.findMany({
+    where: { userId, isDefault: true, name: INBOX_LIST_NAME },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true },
+  });
+  const [keep, ...extra] = inboxes;
+  for (const list of extra) {
+    await prisma.todo.updateMany({ where: { listId: list.id }, data: { listId: keep.id } });
+    await prisma.todo.updateMany({ where: { suggestedListId: list.id }, data: { suggestedListId: null } });
+    await prisma.list.delete({ where: { id: list.id } });
+  }
+}
+
 // The default Inbox list, created the first time it's needed. It's the first
 // list: accounts from before it existed get room made at the top (every list
 // moves down one place, so they keep their order), and a
@@ -133,8 +151,10 @@ export async function ensureInboxList(
   db: Pick<Prisma.TransactionClient, "list">,
   userId: string,
 ) {
+  // The oldest, so a capture never lands in a duplicate that's about to be merged away.
   const existing = await db.list.findFirst({
     where: { userId, isDefault: true, name: INBOX_LIST_NAME },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
   if (existing) return existing;
   const def = DEFAULT_LISTS.find((l) => l.name === INBOX_LIST_NAME)!;
