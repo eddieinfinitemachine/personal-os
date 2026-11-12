@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
 import { syncRecentTodos } from "@/lib/gcal";
 import { listAccessWhere } from "@/lib/list-access";
+import { nextTodoPosition } from "@/lib/todo-position";
 
 // Undo for a delete. The client snapshots the row before removing it and
 // posts it back here; we re-create it with its ORIGINAL id so subtasks
@@ -88,7 +89,8 @@ export async function POST(request: Request) {
       listId: todo.listId,
       projectId,
       parentId,
-      position: todo.position ?? 0,
+      // No position in the snapshot: a top-level todo goes after the list's.
+      position: todo.position ?? (parentId ? 0 : await nextTodoPosition(prisma, todo.listId)),
       dueDate: date(todo.dueDate),
       completedAt: date(todo.completedAt),
       droppedAt: date(todo.droppedAt),

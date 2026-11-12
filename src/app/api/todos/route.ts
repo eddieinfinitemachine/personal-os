@@ -7,6 +7,7 @@ import { syncRecentTodos } from "@/lib/gcal";
 import { listAccessWhere } from "@/lib/list-access";
 import { notifySharedListAdd } from "@/lib/notify";
 import { commentStatsByTodo, creatorName, todoMeta } from "@/lib/home-meta";
+import { nextTodoPosition } from "@/lib/todo-position";
 
 export async function GET(request: Request) {
   const userId = await getCurrentUserId(request);
@@ -80,6 +81,9 @@ export async function GET(request: Request) {
     completedAt: t.completedAt,
     createdAt: t.createdAt,
     listId: t.listId,
+    // A capture's AI-suggested list (captures land in Inbox); accept it with
+    // PATCH /api/todos/[id] { listId }, which clears it. null otherwise.
+    suggestedListId: t.suggestedListId,
     projectId: t.projectId,
     projectName: t.project?.name ?? null,
     droppedAt: t.droppedAt,
@@ -167,6 +171,7 @@ export async function POST(request: Request) {
       userId,
       title,
       listId: body.listId,
+      position: await nextTodoPosition(prisma, body.listId),
       notes: body.notes ?? null,
       dueDate: body.dueDate ? new Date(body.dueDate) : null,
       projectId: body.projectId ?? null,

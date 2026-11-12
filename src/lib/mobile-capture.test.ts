@@ -3,13 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   review: vi.fn(), record: vi.fn(), receiptFind: vi.fn(), receiptCreate: vi.fn(), transaction: vi.fn(), lock: vi.fn(),
   projectMany: vi.fn(), projectFirst: vi.fn(), projectCreate: vi.fn(),
-  listFirst: vi.fn(), listCreate: vi.fn(), aggregate: vi.fn(), attachmentCreate: vi.fn(), attachmentMany: vi.fn(),
+  listFirst: vi.fn(), listCreate: vi.fn(), listMany: vi.fn(), todoAggregate: vi.fn(), aggregate: vi.fn(), attachmentCreate: vi.fn(), attachmentMany: vi.fn(),
   todoCreate: vi.fn(), todoUpdate: vi.fn(), assetCreate: vi.fn(), personFirst: vi.fn(), personCreate: vi.fn(), personUpdate: vi.fn(), personUpdateMany: vi.fn(),
   tripCreate: vi.fn(), interactionCreate: vi.fn(), parse: vi.fn(), put: vi.fn(), del: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: {
   mobileCaptureReceipt: { findFirst: mocks.receiptFind }, $transaction: mocks.transaction,
-  project: { findMany: mocks.projectMany }, list: { findFirst: mocks.listFirst },
+  project: { findMany: mocks.projectMany }, list: { findFirst: mocks.listFirst, findMany: mocks.listMany },
   attachment: { aggregate: mocks.aggregate, findMany: mocks.attachmentMany },
 } }));
 vi.mock("@/lib/smart-capture", () => ({ parseCapture: mocks.parse }));
@@ -40,7 +40,14 @@ beforeEach(() => {
   mocks.projectMany.mockResolvedValue([]);
   mocks.projectFirst.mockImplementation(async ({ where }) => where.name ? { id: `inbox-${where.userId}`, name: "Inbox" } : null);
   mocks.projectCreate.mockImplementation(create("project"));
-  mocks.listFirst.mockImplementation(async ({ where }) => where.OR ? null : { id: `list-${where.userId}-${where.name.equals}`, name: where.name.equals });
+  // Every named list exists, by its exact name; alias (OR) and shared-list (members) lookups find nothing.
+  mocks.listFirst.mockImplementation(async ({ where }) => {
+    if (where.OR || where.members) return null;
+    const name = typeof where.name === "string" ? where.name : where.name.equals;
+    return { id: `list-${where.userId}-${name}`, name };
+  });
+  mocks.listMany.mockResolvedValue([{ name: "To Do" }, { name: "Inbox" }, { name: "Garage" }]);
+  mocks.todoAggregate.mockImplementation(async ({ where }) => ({ _max: { position: records.filter(item => item.table === "todo" && item.row.listId === where.listId).length ? 7 : null } }));
   mocks.listCreate.mockImplementation(create("list"));
   mocks.aggregate.mockImplementation(async ({ where }) => ({ _sum: { size: records.filter(item => item.table === "attachment" && item.row.userId === where.userId).reduce((sum, item) => sum + Number(item.row.size), 0) } }));
   mocks.attachmentCreate.mockImplementation(create("attachment"));
@@ -54,7 +61,7 @@ beforeEach(() => {
   const tx = {
     $queryRaw: mocks.lock, mobileCaptureReceipt: { findFirst: mocks.receiptFind, create: mocks.receiptCreate },
     project: { findFirst: mocks.projectFirst, create: mocks.projectCreate }, list: { findFirst: mocks.listFirst, create: mocks.listCreate },
-    attachment: { aggregate: mocks.aggregate, create: mocks.attachmentCreate }, todo: { create: mocks.todoCreate, update: mocks.todoUpdate },
+    attachment: { aggregate: mocks.aggregate, create: mocks.attachmentCreate }, todo: { create: mocks.todoCreate, update: mocks.todoUpdate, aggregate: mocks.todoAggregate },
     asset: { create: mocks.assetCreate }, person: { findFirst: mocks.personFirst, create: mocks.personCreate, update: mocks.personUpdate, updateMany: mocks.personUpdateMany },
     trip: { create: mocks.tripCreate }, interaction: { create: mocks.interactionCreate },
   };
@@ -71,7 +78,7 @@ beforeEach(() => {
 describe("mobile capture receipts", () => {
   it("commits receipt and organized record together, then replays without AI", async () => {
     const first = await captureMobile("alice", input());
-    expect(first).toMatchObject({ ok: true, type: "todo", title: "Buy milk", destination: "To Do", path: "/", reviewId: reviewKey("alice") });
+    expect(first).toMatchObject({ ok: true, type: "todo", title: "Buy milk", destination: "Inbox", path: "/", reviewId: reviewKey("alice") });
     expect(events).toEqual(["lock", "todo", "receipt"]); expect(receipts.size).toBe(1);
     // The review row is written under the id the response names; the stored placement and receipt stay without it.
     expect(mocks.record.mock.calls[0][1]).toMatchObject({ id: first.reviewId });
@@ -153,6 +160,15 @@ describe("mobile capture organization and files", () => {
     const result = await captureMobile("alice", input({ text: "@shane discuss shipping" }));
     expect(result.destination).toBe("EC/Shane"); expect(mocks.parse).not.toHaveBeenCalled();
     expect(mocks.todoCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ title: "discuss shipping", listId: "shane", projectId: null, userId: "alice" }) });
+  });
+  it("files a classified todo in Inbox with the AI's list as its suggestion", async () => {
+    mocks.parse.mockResolvedValue({ type: "todo", title: "Fix the garage door", listName: "garage" });
+    const result = await captureMobile("alice", input({ text: "fix the garage door" }));
+    expect(result).toMatchObject({ type: "todo", destination: "Inbox" });
+    // The user's list names (Inbox left out) go into the prompt.
+    expect(mocks.parse).toHaveBeenCalledWith(expect.objectContaining({ listNames: ["To Do", "Garage"] }));
+    expect(mocks.listMany.mock.calls[0][0].where.OR).toEqual([{ userId: "alice" }, { isDefault: false, members: { some: { userId: "alice", role: { in: ["editor", "admin"] } } } }]);
+    expect(records.find(item => item.table === "todo")!.row).toMatchObject({ listId: "list-alice-Inbox", suggestedListId: "list-alice-garage", projectId: "inbox-alice", position: 0 });
   });
   it("uses the first supported image for vision and attaches every original to the asset", async () => {
     mocks.parse.mockResolvedValue({ type: "asset", assetKind: "inventory", title: "Camera", projectId: "another-user-project" });

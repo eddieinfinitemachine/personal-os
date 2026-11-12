@@ -1,3 +1,27 @@
+# Captures land in an Inbox list, with the AI's list as a suggestion; manual todo order (2026-11-12)
+
+Captured todos went straight into To Do, so To Do mixed decided work with
+unsorted captures, and the AI's list pick was ignored. Now everything captured
+lands in a new default "Inbox" list and the pick is stored on the todo for a
+one-tap accept. Also: manual reordering of todos within a list. Branch
+`feat/capture-inbox` off main. Schema change approved by Eddie (additive,
+nullable `Todo.suggestedListId`).
+
+- [x] `DEFAULT_LISTS`: To Do 0, Inbox 1 (zinc), Monitor 2, Later 3. `ensureInboxList` makes room after To Do for existing accounts (lists from position 1 move down one, order kept), adopts an unshared list already called "inbox" (any case), creates otherwise. The legacy "fold Inbox into To Do" cleanup is gone
+- [x] `INBOX_LIST_NAME`; captures (EC mobile, smart auto, smart parse+commit, notebook, quick todo without a list, Read/Watch/Try and follow-up companions) land in Inbox with the Inbox project as before; `@alias`, explicit list/listId and correction lists file directly. Renewal autopilot and Granola imports still use To Do
+- [x] `Todo.suggestedListId` (FK to List, `ON DELETE SET NULL`, indexed) + `prisma/changes/20261112_todo_suggested_list.sql`. Resolved case-insensitively among own lists and editable shared lists; no name → To Do; default names created as needed; unknown → null; Inbox → null. Companions: Read/Watch/Try suggest Later, follow-ups suggest To Do
+- [x] Parse prompt gets `USER_LISTS` (own + editable shared list names, Inbox excluded) via optional `listNames`
+- [x] PATCH `listId` change (and an in-place capture correction that changes list) clears the suggestion and puts the todo last in the target list
+- [x] `suggestedListId` in GET /api/todos, the web Home serializer and `TodoLike`; web Home row shows a "→ List" chip that reuses "Move to…" (optimistic move + undo)
+- [x] `POST /api/todos/reorder { listId, ids }`; new top-level todos (POST /api/todos, captures, imports, autopilot, restore without a position, PATCH moves) get max(position)+1
+- [x] Capture-review whole-row conflict checks compare only the columns the capture recorded, so the new column doesn't make older captures uncorrectable
+- [x] README "Todos and lists", "iOS capture", "Quick Todo"
+- [ ] Apply the SQL to production by hand before merging (agents can't; see 2026-11-04 lesson), verify with information_schema
+- [ ] Review, merge, deploy; check the iOS app shows the Inbox list
+
+## Review
+SQL tested on a scratch local Postgres: origin/main schema, then the change file twice (idempotent), then `prisma migrate diff` against the new schema is empty. The capture-review/notebook DB suites plus a new `capture-inbox.integration.test.ts` (adoption + shift, shared-list suggestion, reorder, PATCH clear, FK SetNull) pass there: 6 files / 37 tests. `pnpm typecheck` clean; `pnpm test` 210 files / 2082 tests pass (25 files / 187 tests skipped, all gated on DB or feature env vars). `pnpm lint` fails before running anything: `next lint` no longer exists in Next 16 and the repo has no ESLint config (same on main). Not run against the deployed host.
+
 # Todo metadata and list members for the native app (2026-11-08)
 
 The iOS app reads Home over `GET /api/todos` and `GET /api/lists`, but the

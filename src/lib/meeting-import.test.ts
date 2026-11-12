@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   lists: vi.fn(),
   createMany: vi.fn((args: unknown) => ({ op: "createMany", args })),
+  aggregate: vi.fn(),
   upsert: vi.fn((args: unknown) => ({ op: "upsert", args })),
   transaction: vi.fn(),
   claude: vi.fn(),
@@ -9,7 +10,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     list: { findMany: mocks.lists },
-    todo: { createMany: mocks.createMany },
+    todo: { createMany: mocks.createMany, aggregate: mocks.aggregate },
     granolaImport: { upsert: mocks.upsert },
     $transaction: mocks.transaction,
   },
@@ -25,6 +26,8 @@ import { commitItems, extractFromNote, provenanceLine } from "@/lib/meeting-impo
 
 const LISTS = [
   { id: "todo", name: "To Do", isDefault: true, userId: "founder" },
+  // Captures land in Inbox; meeting action items still go to To Do.
+  { id: "inbox", name: "Inbox", isDefault: true, userId: "founder" },
   { id: "ob", name: "EC/Obie", isDefault: false, userId: "founder" },
   { id: "dv", name: "EC/Dave", isDefault: false, userId: "founder" },
 ];
@@ -39,6 +42,8 @@ const base = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.lists.mockResolvedValue(LISTS);
+  // To Do already holds todos up to position 4; the other lists are empty.
+  mocks.aggregate.mockImplementation(async ({ where }: { where: { listId: string } }) => ({ _max: { position: where.listId === "todo" ? 4 : null } }));
   mocks.transaction.mockImplementation(async (ops: { op: string; args: { data?: unknown[] } }[]) =>
     ops.map((o) => (o.op === "createMany" ? { count: o.args.data!.length } : { id: "gi" })),
   );
@@ -72,6 +77,9 @@ describe("commitItems", () => {
     expect(data[1]).toMatchObject({ listId: "todo", projectId: "inbox-project" });
     expect(data[1].notes).toBe("From meeting: GTM Meeting 9/28 (2026-09-28)\nhttps://notes.granola.ai/d/note-1");
     expect(data[2]).toMatchObject({ listId: "todo", projectId: "inbox-project" });
+    // After each list's existing todos, in meeting order.
+    expect(data.map((d) => [d.listId, d.position])).toEqual([["ob", 0], ["todo", 5], ["todo", 6]]);
+    expect(mocks.aggregate).toHaveBeenCalledWith({ where: { listId: "todo", parentId: null }, _max: { position: true } });
     expect(mocks.upsert).not.toHaveBeenCalled(); // no noteId, no GranolaImport row
     expect(res).toEqual({
       created: 3,

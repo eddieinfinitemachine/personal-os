@@ -9,6 +9,7 @@ import {
   type CaptureProposal,
 } from "@/lib/smart-capture";
 import { parseAliasToken } from "@/lib/alias";
+import { captureListNames } from "@/lib/lists";
 import { userLocalToday } from "@/lib/call-sheet/reminder-capture";
 
 // Same per-user storage caps as the regular attachments upload route.
@@ -140,6 +141,8 @@ export async function POST(request: Request) {
       today,
       activeProjects,
       categoryHints,
+      // A forced type is never a todo, so only free captures need list names.
+      listNames: forceType ? undefined : await captureListNames(userId),
     });
   } catch (err) {
     console.error("smart-capture parse failed", err);

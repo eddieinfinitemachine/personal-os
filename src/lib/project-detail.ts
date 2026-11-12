@@ -57,7 +57,7 @@ export function projectContentWhere(userId: string, projectId: string) {
 }
 
 /**
- * The Tasks tab: the caller's three default lists (To Do, Monitor, Later),
+ * The Tasks tab: the caller's default lists (To Do, Inbox, Monitor, Later),
  * each holding the project's open top-level todos the caller can access, not
  * snoozed into the future. Todos on custom or shared lists aren't shown.
  */

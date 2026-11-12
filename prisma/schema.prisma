@@ -95,8 +95,10 @@ model List {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  todos   Todo[]
-  members ListMember[]
+  todos          Todo[]       @relation("TodoList")
+  // Captured todos (in Inbox) whose AI-suggested destination is this list.
+  suggestedTodos Todo[]       @relation("TodoSuggestedList")
+  members        ListMember[]
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -964,7 +966,12 @@ model Todo {
   discussCount    Int       @default(0)
 
   listId String
-  list   List   @relation(fields: [listId], references: [id], onDelete: Cascade)
+  list   List   @relation("TodoList", fields: [listId], references: [id], onDelete: Cascade)
+
+  // Captures land in the Inbox list; this is the list the AI suggested, which
+  // a client accepts with PATCH { listId }. Cleared whenever listId changes.
+  suggestedListId String?
+  suggestedList   List?   @relation("TodoSuggestedList", fields: [suggestedListId], references: [id], onDelete: SetNull)
 
   projectId String?
   project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
@@ -985,6 +992,7 @@ model Todo {
   @@index([projectId, completedAt, position])
   @@index([parentId, completedAt, position])
   @@index([userId])
+  @@index([suggestedListId])
 }
 
 // One row per Granola note turned into todos (auto-import cron or the

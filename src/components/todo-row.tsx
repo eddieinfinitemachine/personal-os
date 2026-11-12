@@ -52,6 +52,9 @@ export type TodoLike = {
   attachmentCount?: number;
   createdAt?: Date | string | null;
   snoozedUntil?: Date | string | null;
+  // The list Capture suggested for a todo that landed in Inbox. Shown as a
+  // one-click "→ List" chip while the todo sits anywhere else.
+  suggestedListId?: string | null;
   subtasks?: TodoLike[];
 };
 
@@ -280,6 +283,27 @@ function TodoRowImpl({
       .then((lists) => setAvailableLists(lists))
       .catch(() => {});
   }, [ctx.isOpen, availableLists.length]);
+
+  const suggestedListId =
+    !isSubtask && !completed && todo.suggestedListId && todo.suggestedListId !== sourceListId
+      ? todo.suggestedListId
+      : null;
+  const [suggestedListName, setSuggestedListName] = useState<string | null>(null);
+  useEffect(() => {
+    if (!suggestedListId) return;
+    let live = true;
+    getLists()
+      .then((lists) => {
+        if (!live) return;
+        setAvailableLists((current) => (current.length ? current : lists));
+        // A list that's gone (or no longer shared with you) shows no chip.
+        setSuggestedListName(lists.find((l) => l.id === suggestedListId)?.name ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [suggestedListId]);
 
   async function deleteSelf() {
     if (onDelete) {
@@ -1028,6 +1052,22 @@ function TodoRowImpl({
               added by {todo.creatorName}
             </div>
           ) : null}
+          {suggestedListId && suggestedListName ? (
+            <button
+              type="button"
+              data-list-suggestion
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => {
+                e.stopPropagation();
+                void moveToList(suggestedListId);
+              }}
+              title={`Move to ${suggestedListName}`}
+              className="mt-1 mr-2 inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[12px] leading-[16px] text-[var(--color-muted-foreground)] transition hover:border-[var(--color-foreground)] hover:text-[var(--color-foreground)] md:text-[11px] md:leading-[14px]"
+            >
+              <ArrowRight className="size-3" />
+              {suggestedListName}
+            </button>
+          ) : null}
           {todo.attachmentCount ? (
             <div className="mt-0.5 mr-2 inline-flex items-center gap-1 text-[13px] leading-[16px] md:text-xs text-[var(--color-muted-foreground)]">
               <Paperclip className="size-3.5" />
@@ -1466,6 +1506,7 @@ function arePropsEqual(
     if (a.notes !== b.notes) return false;
     if (a.projectId !== b.projectId) return false;
     if (a.projectName !== b.projectName) return false;
+    if (a.suggestedListId !== b.suggestedListId) return false;
     if (a.creatorName !== b.creatorName) return false;
     if (a.commentCount !== b.commentCount) return false;
     if (a.attachmentCount !== b.attachmentCount) return false;

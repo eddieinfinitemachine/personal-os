@@ -5,6 +5,7 @@ import { callClaudeJSON } from "@/lib/claude";
 import { granolaNoteText, type GranolaNote } from "@/lib/granola";
 import { listAccessWhere } from "@/lib/list-access";
 import { CAPTURE_LIST_NAME, ensureDefaultLists, ensureInboxProject } from "@/lib/lists";
+import { nextTodoPosition } from "@/lib/todo-position";
 import { buildSystem, meetingDay, normalizeItems, oneOnOneList, type MeetingItem } from "@/lib/meeting-extract";
 import { prisma } from "@/lib/prisma";
 
@@ -147,8 +148,17 @@ export async function commitItems({
     ? `granola:${noteId}:${source === "manual" ? `m${Date.now().toString(36)}:` : ""}`
     : null;
 
+  // New todos go after each list's existing ones, in the meeting's order.
+  const nextPosition = new Map<string, number>();
+  for (const it of items) {
+    const list = (it.listId && listById.get(it.listId)) || toDo;
+    if (!nextPosition.has(list.id)) nextPosition.set(list.id, await nextTodoPosition(prisma, list.id));
+  }
+
   const rows = items.map((it, i) => {
     const list = (it.listId && listById.get(it.listId)) || toDo;
+    const position = nextPosition.get(list.id)!;
+    nextPosition.set(list.id, position + 1);
     const notes = typeof it.notes === "string" ? it.notes.trim() : "";
     const dueDate =
       typeof it.dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(it.dueDate) ? new Date(it.dueDate) : null;
@@ -158,6 +168,7 @@ export async function commitItems({
       notes: [notes, sourceLine].filter(Boolean).join("\n") || null,
       dueDate,
       listId: list.id,
+      position,
       projectId: list.id === toDo.id ? inboxProjectId : null,
       autopilotKey: keyPrefix ? `${keyPrefix}${i}` : null,
     };

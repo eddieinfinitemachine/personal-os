@@ -2,6 +2,7 @@ import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseCapture, type CaptureProposal } from "@/lib/smart-capture";
 import { parseAliasToken } from "@/lib/alias";
+import { captureListNames } from "@/lib/lists";
 import { resolveCaptureUser } from "@/lib/capture-auth";
 import { syncRecentTodos } from "@/lib/gcal";
 import { userLocalToday } from "@/lib/call-sheet/reminder-capture";
@@ -35,7 +36,7 @@ async function handle(request: Request, userId: string, body: Record<string, unk
     if (alias && aliasList) proposal = { type: "todo", title: alias.rest, listName: aliasList.name, routedByAlias: true };
     else {
       const projects = await prisma.project.findMany({ where: { userId, archived: false }, select: { id: true, name: true, kind: true }, orderBy: [{ position: "asc" }, { createdAt: "asc" }] });
-      try { proposal = await parseCapture({ text: [input.text, input.url].filter(Boolean).join("\n\n"), today: await userLocalToday(userId), activeProjects: projects }); }
+      try { proposal = await parseCapture({ text: [input.text, input.url].filter(Boolean).join("\n\n"), today: await userLocalToday(userId), activeProjects: projects, listNames: await captureListNames(userId) }); }
       catch (error) { console.error("smart auto parse failed", error); return NextResponse.json({ error: error instanceof Error ? error.message : "parse failed" }, { status: 502 }); }
       if (proposal.type === "todo") proposal = { ...proposal, routedByAlias: false };
     }
