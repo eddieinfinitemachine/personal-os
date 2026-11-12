@@ -1,5 +1,5 @@
 import { NextResponse, after } from "next/server";
-import { DEFAULT_LISTS, INBOX_LIST_NAME, ensureInboxList } from "@/lib/lists";
+import { DEFAULT_LISTS, CAPTURE_LIST_NAME } from "@/lib/lists";
 import { parseAliasToken } from "@/lib/alias";
 import { resolveCaptureUser } from "@/lib/capture-auth";
 import { syncRecentTodos } from "@/lib/gcal";
@@ -46,17 +46,15 @@ async function handle(request: Request, userId: string, body: Record<string, unk
           if (!project) throw new CaptureReviewError(404, `project "${projectName}" not found`);
           projectId = project.id;
         }
-        // An explicit list or alias files straight there; otherwise the todo
-        // lands in Inbox like every other capture (suggesting To Do).
-        const listName = str(body.list);
-        let list = aliasList ?? (listName ? await tx.list.findFirst({ where: { userId, name: { equals: listName, mode: "insensitive" } } }) : null);
-        if (!list && listName) {
-          const defaults = DEFAULT_LISTS.find(item => item.name.toLowerCase() === listName.toLowerCase());
+        const listName = str(body.list) ?? aliasList?.name ?? CAPTURE_LIST_NAME;
+        let list = aliasList ?? await tx.list.findFirst({ where: { userId, name: { equals: listName, mode: "insensitive" } } });
+        if (!list) {
+          const defaults = DEFAULT_LISTS.find(item => item.name === listName);
           if (!defaults) throw new CaptureReviewError(404, `list "${listName}" not found`);
-          list = defaults.name === INBOX_LIST_NAME ? await ensureInboxList(tx, userId) : await tx.list.create({ data: { ...defaults, userId, isDefault: true } });
+          list = await tx.list.create({ data: { ...defaults, userId, isDefault: true } });
         }
         const finalProposal = { ...proposal, title: actualTitle };
-        const placement = await commitCore(tx, userId, input, finalProposal, [], { mode: "web", ...(list ? { listId: list.id } : {}), ...(projectId !== undefined ? { projectId } : {}) });
+        const placement = await commitCore(tx, userId, input, finalProposal, [], { mode: "web", listId: list.id, ...(projectId !== undefined ? { projectId } : {}) });
         // Explicit legacy lists still inherit the Inbox project unless an alias routes them.
         if (projectId === undefined) {
           const inbox = await tx.project.findFirst({ where: { userId, name: { equals: "Inbox", mode: "insensitive" } } }) ?? await tx.project.create({ data: { userId, name: "Inbox", icon: "Inbox", color: "neutral", position: 0 } });

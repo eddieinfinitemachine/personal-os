@@ -52,8 +52,8 @@ export type TodoLike = {
   attachmentCount?: number;
   createdAt?: Date | string | null;
   snoozedUntil?: Date | string | null;
-  // The list Capture suggested for a todo that landed in Inbox. Shown as a
-  // one-click "→ List" chip while the todo sits anywhere else.
+  // A list suggestion from the retired Inbox list (captures no longer set
+  // it). Shown as a one-click "→ List" chip while the todo sits anywhere else.
   suggestedListId?: string | null;
   subtasks?: TodoLike[];
 };

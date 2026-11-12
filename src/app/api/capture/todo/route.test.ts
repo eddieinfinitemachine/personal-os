@@ -3,7 +3,6 @@ const mocks = vi.hoisted(() => ({
   commitCore: vi.fn(),
   listFirst: vi.fn(),
   listCreate: vi.fn(),
-  listUpdateMany: vi.fn(),
   projectFirst: vi.fn(),
   todoUpdate: vi.fn(),
 }));
@@ -18,7 +17,7 @@ vi.mock("@/lib/capture-review/record", () => ({
   // Runs the commit against the fake transaction below, as a first capture.
   withCaptureReview: vi.fn(async (_meta: unknown, { commit }: { commit: (tx: unknown) => Promise<{ value: unknown }> }) => ({
     value: (await commit({
-      list: { findFirst: mocks.listFirst, create: mocks.listCreate, updateMany: mocks.listUpdateMany },
+      list: { findFirst: mocks.listFirst, create: mocks.listCreate },
       project: { findFirst: mocks.projectFirst },
       todo: { update: mocks.todoUpdate },
     })).value,
@@ -29,6 +28,7 @@ vi.mock("@/lib/capture-review/record", () => ({
 import { POST } from "./route";
 
 const LISTS = [
+  { id: "todo", name: "To Do", userId: "alice", isDefault: true },
   { id: "garage", name: "Garage", userId: "alice", isDefault: false },
   { id: "later", name: "Later", userId: "alice", isDefault: true },
 ];
@@ -38,7 +38,7 @@ const options = () => mocks.commitCore.mock.calls[0][5] as Record<string, unknow
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.commitCore.mockResolvedValue({ ok: true, id: "todo-1", type: "todo", title: "x", destination: "Inbox", path: "/" });
+  mocks.commitCore.mockResolvedValue({ ok: true, id: "todo-1", type: "todo", title: "x", destination: "To Do", path: "/" });
   mocks.listFirst.mockImplementation(async ({ where }: { where: { name?: { equals: string } | string; OR?: Array<{ name: { equals: string } }> } }) => {
     const names = where.OR ? where.OR.map((c) => c.name.equals.toLowerCase()) : [typeof where.name === "string" ? where.name.toLowerCase() : where.name!.equals.toLowerCase()];
     return LISTS.find((l) => names.includes(l.name.toLowerCase())) ?? null;
@@ -48,11 +48,12 @@ beforeEach(() => {
 });
 
 describe("POST /api/capture/todo", () => {
-  it("lands a todo with no list in Inbox through the capture path (no explicit list)", async () => {
+  it("files a todo with no list into To Do, with the Inbox project", async () => {
     const res = await post({ title: "Call the bank" });
     expect(res.status).toBe(200);
-    expect(options()).toEqual({ mode: "web" });
+    expect(options()).toEqual({ mode: "web", listId: "todo" });
     expect(mocks.listCreate).not.toHaveBeenCalled();
+    expect(mocks.todoUpdate).toHaveBeenCalledWith({ where: { id: "todo-1" }, data: { projectId: "inbox-project" } });
   });
 
   it("files an explicit list straight there", async () => {
@@ -66,11 +67,17 @@ describe("POST /api/capture/todo", () => {
     expect(mocks.commitCore.mock.calls[0][3]).toMatchObject({ title: "fix the hinge" });
   });
 
-  it("creates a missing default list named explicitly, Inbox included", async () => {
-    await post({ title: "Sort later", list: "inbox" });
-    expect(mocks.listUpdateMany).toHaveBeenCalled(); // made room at the top
-    expect(mocks.listCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ name: "Inbox", isDefault: true, userId: "alice", position: 0 }) });
+  it("creates a missing default list named explicitly", async () => {
+    await post({ title: "Keep an eye on it", list: "Monitor" });
+    expect(mocks.listCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ name: "Monitor", isDefault: true, userId: "alice", position: 1 }) });
     expect(options()).toEqual({ mode: "web", listId: "created" });
+  });
+
+  it("no longer creates an Inbox list", async () => {
+    const res = await post({ title: "Sort later", list: "Inbox" });
+    expect(res.status).toBe(404);
+    expect(mocks.listCreate).not.toHaveBeenCalled();
+    expect(mocks.commitCore).not.toHaveBeenCalled();
   });
 
   it("404s an unknown explicit list", async () => {

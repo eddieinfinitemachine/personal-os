@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { put, del } from "@vercel/blob";
 import type { Prisma } from "@prisma/client";
 import { callClaudeJSON } from "@/lib/claude";
-import { INBOX_LIST_NAME } from "@/lib/lists";
+import { CAPTURE_LIST_NAME } from "@/lib/lists";
 import { meetingDay } from "@/lib/meeting-extract";
 import { prisma } from "@/lib/prisma";
 import { assertQuota, replay } from "./mobile-capture";
@@ -131,9 +131,9 @@ async function commitPage(tx: Prisma.TransactionClient, userId: string, input: M
   });
   if (fresh.length) await assertQuota(tx, userId, file.size);
   const created: NotebookCaptureResult["items"] = [];
-  // The Inbox list breaks position ties by createdAt ascending and the Capture
-  // Inbox sorts by createdAt descending, and rows in one transaction can tie,
-  // so each gets its own millisecond.
+  // To Do breaks position ties by createdAt ascending and the Capture Inbox
+  // sorts by createdAt descending, and rows in one transaction can tie, so
+  // each gets its own millisecond.
   const base = Date.now();
   for (const [order, { item, index }] of fresh.entries()) {
     const journal = journalClient(tx, userId);
@@ -149,7 +149,7 @@ async function commitPage(tx: Prisma.TransactionClient, userId: string, input: M
     });
     created.push({ id: placement.id, title: placement.title, dueDate: item.dueDate, reviewId });
   }
-  return { ok: true, id: created[0]?.id ?? firstExisting!, type: "todo", title: titleFor(created.length), destination: INBOX_LIST_NAME, path: "/", items: created, skipped };
+  return { ok: true, id: created[0]?.id ?? firstExisting!, type: "todo", title: titleFor(created.length), destination: CAPTURE_LIST_NAME, path: "/", items: created, skipped };
 }
 
 export async function captureNotebook(userId: string, input: MobileCaptureInput): Promise<NotebookCaptureResult> {

@@ -43,8 +43,8 @@ beforeEach(() => {
   mocks.attachmentCount.mockImplementation(async ({ where }) => attachments.filter(row => row.url === where.url).length);
   const tx = {
     $queryRaw: vi.fn().mockResolvedValue([]),
-    // Each default list exists under its own id; shared-list lookups find nothing.
-    list: { findFirst: vi.fn(async ({ where }) => { const name = typeof where.name === "string" ? where.name : where.name?.equals; return where.members || !name ? null : { id: `list-${name.toLowerCase().replace(/ /g, "")}`, name }; }), create: vi.fn() },
+    // Each named list exists under its own id.
+    list: { findFirst: vi.fn(async ({ where }) => ({ id: `list-${where.name.equals.toLowerCase().replace(/ /g, "")}`, name: where.name.equals })), create: vi.fn() },
     project: { findFirst: vi.fn().mockResolvedValue({ id: "project-inbox", name: "Inbox" }), create: vi.fn() },
     todo: {
       create: vi.fn(async ({ data }) => { const row = { id: `todo-${++serial}`, completedAt: null, ...data } as Row; todos.push(row); return row; }),
@@ -115,12 +115,12 @@ describe("notebook capture", () => {
     modelReturns({ title: "Call plumber", notes: "House stuff", dueDate: "2026-11-07" }, "Email Dana");
     const result = await captureNotebook("alice", input());
     expect(result).toEqual({
-      ok: true, id: todos[0].id, type: "todo", title: "2 items from your notebook", destination: "Inbox", path: "/",
+      ok: true, id: todos[0].id, type: "todo", title: "2 items from your notebook", destination: "To Do", path: "/",
       items: [{ id: todos[0].id, title: "Call plumber", dueDate: "2026-11-07", reviewId: reviewKey("alice", 0) }, { id: todos[1].id, title: "Email Dana", dueDate: null, reviewId: reviewKey("alice", 1) }], skipped: [],
     });
     expect(reviews.map(review => review.id)).toEqual(result.items.map(item => item.reviewId));
-    // Inbox, in page order, each suggesting To Do.
-    expect(todos.map(todo => [todo.title, todo.notes, todo.listId, todo.suggestedListId, todo.position, todo.projectId])).toEqual([["Call plumber", "House stuff", "list-inbox", "list-todo", 0, "project-inbox"], ["Email Dana", null, "list-inbox", "list-todo", 1, "project-inbox"]]);
+    // To Do, in page order, with no list suggestion.
+    expect(todos.map(todo => [todo.title, todo.notes, todo.listId, todo.suggestedListId, todo.position, todo.projectId])).toEqual([["Call plumber", "House stuff", "list-todo", undefined, 0, "project-inbox"], ["Email Dana", null, "list-todo", undefined, 1, "project-inbox"]]);
     expect((todos[0].dueDate as Date).toISOString()).toBe("2026-11-07T00:00:00.000Z");
     expect(reviews).toHaveLength(2); expect(new Set(reviews.map(review => review.id)).size).toBe(2);
     expect(reviews.map(review => review.source)).toEqual(["ec", "ec"]);
@@ -259,7 +259,7 @@ describe("notebook capture", () => {
     const first = existing("Call plumber"); existing("Email Dana");
     modelReturns("Call plumber", "Email Dana");
     const result = await captureNotebook("alice", input());
-    expect(result).toEqual({ ok: true, id: first.id, type: "todo", title: "Already on your list", destination: "Inbox", path: "/", items: [], skipped: ["Call plumber", "Email Dana"] });
+    expect(result).toEqual({ ok: true, id: first.id, type: "todo", title: "Already on your list", destination: "To Do", path: "/", items: [], skipped: ["Call plumber", "Email Dana"] });
     expect(mocks.del).toHaveBeenCalledWith(BLOB);
     expect(attachments).toEqual([]); expect(reviews).toEqual([]); expect(receipts).toHaveLength(1);
     mocks.del.mockClear();
@@ -310,7 +310,7 @@ describe("response contract", () => {
   "id": "todo-2",
   "type": "todo",
   "title": "3 items from your notebook",
-  "destination": "Inbox",
+  "destination": "To Do",
   "path": "/",
   "items": [
     {

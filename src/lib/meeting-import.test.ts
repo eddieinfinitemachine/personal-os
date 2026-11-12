@@ -26,8 +26,6 @@ import { commitItems, extractFromNote, provenanceLine } from "@/lib/meeting-impo
 
 const LISTS = [
   { id: "todo", name: "To Do", isDefault: true, userId: "founder" },
-  // Captures land in Inbox; meeting action items still go to To Do.
-  { id: "inbox", name: "Inbox", isDefault: true, userId: "founder" },
   { id: "ob", name: "EC/Obie", isDefault: false, userId: "founder" },
   { id: "dv", name: "EC/Dave", isDefault: false, userId: "founder" },
 ];

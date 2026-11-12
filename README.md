@@ -92,10 +92,6 @@ that session's user, so a signed-in app needs no separate capture token.
 - Like the other capture routes, mobile responses carry the Captures inbox row
   id: `reviewId` on `POST /api/capture/mobile`, and on each `items[]` entry from
   `POST /api/capture/mobile/notebook`. A retry returns the same ids.
-- Captured todos (and the supporting todos other captures create) land in the
-  default **Inbox** list, so `destination` reads `"Inbox"`. The list the AI
-  picked is stored as the todo's `suggestedListId` (see Todos and lists). An
-  `@name` alias still files straight into that list.
 - Saves require the additive `MobileCaptureReceipt` table proposed in the
   native app handoff. It stores each user's request hash and saved result in
   the same transaction as the record. Repeating the same UUID and content
@@ -117,9 +113,9 @@ do not use it with `VERCEL_ENV=production` for a narrowly approved rollout.
 
 `GET /api/todos` and `GET /api/lists` carry the per-item metadata the web Home shows, so the native app can draw the same paperclip, comment bubble, unread badge and "added by …". Each todo has `creatorName` (the creator's name, else email), `attachmentCount`, `commentCount` and `unreadCommentCount` (comments by others newer than the caller's last read of that thread); each subtask has `creatorName`. Each list has `shared`, `ownerName` (null for your own lists), `collaborative` (the list has any members) and `sharedWithNames` (members' names or emails, owner's view only). The Home and the routes compute these with the same helpers in `src/lib/home-meta.ts`.
 
-Every account has four default lists (`isDefault: true`), in this order: **Inbox** (`position` 0), To Do (1), Monitor (2), Later (3); custom lists follow. Inbox is created lazily like the others; an older account gets room made at the top (its other lists move down one, keeping their order), and a list it already called "Inbox" becomes the default one. Everything captured lands in Inbox (EC captures, Smart Capture, notebook pages, the Mac quick todo without a list, and supporting "Read/Watch/Try" and follow-up todos). To Do is the list of things you've decided to do: renewal autopilot and Granola imports still file there.
+Every account has three default lists (`isDefault: true`), in this order: To Do (`position` 0), Monitor (1), Later (2); custom lists follow. Captures file into To Do (EC captures, Smart Capture, notebook pages, the Mac quick todo without a list, and supporting follow-up todos; "Read/Watch/Try" todos go to Later); an `@name` alias or an explicit list files straight there. A default **Inbox** list that captures briefly landed in (November 2026) is retired the next time an account's default lists are checked: its todos move to the end of To Do in their order, suggestions pointing at it are cleared, it is deleted, and the lists below it move up one. A custom list you named "Inbox" is left alone.
 
-Each todo from `GET /api/todos` (and the web Home) has `suggestedListId` (string or null): the list Capture suggested for a todo sitting in Inbox. It resolves the AI's pick by name, ignoring case, among your own lists and shared lists you can edit (To Do when the AI gave none; an unknown name is null; Inbox itself is never suggested). Accept it with the existing `PATCH /api/todos/[id] { listId }`; any change of `listId` clears the suggestion (the PATCH response carries the full row, field included). A deleted list's suggestions become null.
+Each todo from `GET /api/todos` (and the web Home) has `suggestedListId` (string or null), a list suggestion from the retired Inbox. Captures no longer set it, so it is null in practice; any change of `listId` through `PATCH /api/todos/[id]` clears it, and a deleted list's suggestions become null. The column stays so older clients keep decoding it.
 
 Manual order within a list: `POST /api/todos/reorder` with `{ listId, ids }` sets each named top-level todo's `position` to its index, in one transaction; ids that aren't top-level todos in that list are ignored and unnamed todos keep their position. The caller needs access to the list as for `PATCH` (owner or member), else 404 `{ error: "list not found" }`; a missing `listId` or non-array `ids` (or more than 1,000) is a 400. Returns `{ ok: true }`. Reads order by completion, then due date (undated first), then `position`, so this orders the undated todos and breaks ties within a day. A new top-level todo (created, captured, imported, restored without a position, or moved in by `PATCH`) goes after the list's existing ones (`max(position) + 1`).
 
@@ -143,7 +139,7 @@ Vercel project needs every env var above, plus the Blob store connected (Storage
 
 ## Quick Todo
 
-The menu-bar Mac app under `quick-todo/` registers a global hotkey (default ⌃Space), pops a HUD input, and POSTs to `/api/capture/todo`. The endpoint looks up `FOUNDER_EMAIL` and attaches every todo to that user — friends don't have the Mac app. Without a `list` (or an `@alias`) the todo lands in Inbox, suggesting To Do.
+The menu-bar Mac app under `quick-todo/` registers a global hotkey (default ⌃Space), pops a HUD input, and POSTs to `/api/capture/todo`. The endpoint looks up `FOUNDER_EMAIL` and attaches every todo to that user — friends don't have the Mac app.
 
 ## Read Later
 

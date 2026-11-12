@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import type { CaptureProposal } from "@/lib/smart-capture";
 import { requireListWrite } from "./access";
-import { DEFAULT_LISTS, CAPTURE_LIST_NAME, INBOX_LIST_NAME, INBOX_PROJECT_NAME, ensureInboxList } from "@/lib/lists";
+import { DEFAULT_LISTS, CAPTURE_LIST_NAME, INBOX_PROJECT_NAME } from "@/lib/lists";
 import { nextTodoPosition } from "@/lib/todo-position";
 import { ASSET_PLACES as ASSET_DESTINATIONS, CaptureReviewError, type ReviewPlacement } from "./types";
 export type CoreProposal = Extract<CaptureProposal, { type: "todo" | "asset" | "person" | "trip" | "interaction" }>;
@@ -70,41 +70,21 @@ function joinNotes(...parts: Array<string | null | undefined>): string | null {
   return kept.join("\n\n") || null;
 }
 async function ensureList(tx: Tx, userId: string, name: string) {
-  if (name.toLowerCase() === INBOX_LIST_NAME.toLowerCase()) return ensureInboxList(tx, userId);
   const existing = await tx.list.findFirst({ where: { userId, name: { equals: name, mode: "insensitive" } } });
   if (existing) return existing;
   const defaults = DEFAULT_LISTS.find(item => item.name === name);
   if (!defaults) throw new CaptureReviewError(404, "The selected list no longer exists.");
   return tx.list.create({ data: { ...defaults, userId, isDefault: true } });
 }
-/**
- * The list the AI picked for a capture, as an id the user can file into: one of
- * their own lists or a shared list they can edit, matched by name ignoring case.
- * No name means To Do. A default list name is created when missing, as any
- * capture destination is; an unknown name never creates a list. The Inbox
- * itself is no suggestion.
- */
-async function suggestedListId(tx: Tx, userId: string, inboxId: string, name: string | null | undefined): Promise<string | null> {
-  const wanted = name?.trim() || CAPTURE_LIST_NAME;
-  const named = { equals: wanted, mode: "insensitive" as const };
-  const defaults = DEFAULT_LISTS.find(item => item.name.toLowerCase() === wanted.toLowerCase());
-  const list = await tx.list.findFirst({ where: { userId, name: named }, orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }] })
-    ?? await tx.list.findFirst({ where: { name: named, isDefault: false, members: { some: { userId, role: { in: ["editor", "admin"] } } } }, orderBy: { createdAt: "asc" } })
-    ?? (defaults ? await ensureList(tx, userId, defaults.name) : null);
-  return list && list.id !== inboxId ? list.id : null;
-}
-/** Every capture lands in the Inbox list, last in order, carrying the AI's list pick as a suggestion. */
-async function inboxTodo(tx: Tx, userId: string, todo: { title: string; notes: string | null; projectId?: string | null; dueDate?: Date | null; createdAt?: Date; suggest?: string | null }) {
-  const { title, notes, createdAt } = todo;
-  const list = await ensureInboxList(tx, userId);
-  let projectId = todo.projectId;
+async function inboxTodo(tx: Tx, userId: string, title: string, notes: string | null, explicitProjectId?: string | null, dueDate: Date | null = null, createdAt?: Date) {
+  const list = await ensureList(tx, userId, CAPTURE_LIST_NAME);
+  let projectId = explicitProjectId;
   if (projectId === undefined) {
     let project = await tx.project.findFirst({ where: { userId, name: { equals: INBOX_PROJECT_NAME, mode: "insensitive" } } });
     if (!project) project = await tx.project.create({ data: { userId, name: INBOX_PROJECT_NAME, icon: "Inbox", color: "neutral", position: 0 } });
     projectId = project.id;
   }
-  const suggested = await suggestedListId(tx, userId, list.id, todo.suggest);
-  return tx.todo.create({ data: { userId, title, notes, listId: list.id, suggestedListId: suggested, position: await nextTodoPosition(tx, list.id), projectId, dueDate: todo.dueDate ?? null, ...(createdAt ? { createdAt } : {}) } });
+  return tx.todo.create({ data: { userId, title, notes, listId: list.id, position: await nextTodoPosition(tx, list.id), projectId, dueDate, ...(createdAt ? { createdAt } : {}) } });
 }
 
 export async function commitCore(tx: Tx, userId: string, input: { text: string; url: string | null }, proposal: CoreProposal, stored: StoredCaptureFile[], options: { mode?: "mobile" | "web" | "auto" | "correction"; listId?: string | null; projectId?: string | null; autoFollowup?: boolean; createdAt?: Date } = {}): Promise<ReviewPlacement & { ok: true }> {
@@ -127,10 +107,13 @@ export async function commitCore(tx: Tx, userId: string, input: { text: string; 
   if (options.projectId && !ownedProject) throw new CaptureReviewError(404, "Project not found.");
   const projectId = ownedProject?.id ?? null;
   const related: ReviewPlacement[] = [];
-  // Supporting todos land in the Inbox too; "Read/Watch/Try: X" ones suggest Later.
   async function companion(title: string, notes: string | null, toLater = false) {
-    const todo = await inboxTodo(tx, userId, { title, notes, projectId: toLater || mode === "auto" ? projectId : undefined, suggest: toLater ? "Later" : null });
-    related.push({ type: "todo", id: todo.id, title: todo.title, destination: INBOX_LIST_NAME, path: "/" });
+    let todo;
+    if (toLater) {
+      const later = await ensureList(tx, userId, "Later");
+      todo = await tx.todo.create({ data: { userId, title, notes, listId: later.id, position: await nextTodoPosition(tx, later.id), projectId } });
+    } else todo = await inboxTodo(tx, userId, title, notes, mode === "auto" ? projectId : undefined);
+    related.push({ type: "todo", id: todo.id, title: todo.title, destination: toLater ? "Later" : CAPTURE_LIST_NAME, path: "/" });
     return todo;
   }
   const imageUrl = stored.find(item => VISION_TYPES.has(item.file.type.toLowerCase()))?.url ?? ("photoUrl" in proposal ? proposal.photoUrl ?? null : null);
@@ -147,8 +130,8 @@ export async function commitCore(tx: Tx, userId: string, input: { text: string; 
       todo = await tx.todo.create({ data: { userId, title: proposal.title, notes, listId: list.id, position: await nextTodoPosition(tx, list.id), projectId, dueDate: date(proposal.dueDate) } });
       result = { ok: true, id: todo.id, type: "todo", title: todo.title, destination: list.name, path: "/" };
     } else {
-      todo = await inboxTodo(tx, userId, { title: proposal.title, notes, projectId: options.projectId !== undefined ? projectId : undefined, dueDate: date(proposal.dueDate), createdAt: options.createdAt, suggest: proposal.listName });
-      result = { ok: true, id: todo.id, type: "todo", title: todo.title, destination: INBOX_LIST_NAME, path: "/" };
+      todo = await inboxTodo(tx, userId, proposal.title, notes, options.projectId !== undefined ? projectId : undefined, date(proposal.dueDate), options.createdAt);
+      result = { ok: true, id: todo.id, type: "todo", title: todo.title, destination: CAPTURE_LIST_NAME, path: "/" };
     }
     attachmentOwner = { todoId: todo.id };
   } else if (proposal.type === "asset") {
