@@ -68,8 +68,8 @@ describe("POST /api/capture/todo", () => {
 
   it("creates a missing default list named explicitly, Inbox included", async () => {
     await post({ title: "Sort later", list: "inbox" });
-    expect(mocks.listUpdateMany).toHaveBeenCalled(); // made room after To Do
-    expect(mocks.listCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ name: "Inbox", isDefault: true, userId: "alice", position: 1 }) });
+    expect(mocks.listUpdateMany).toHaveBeenCalled(); // made room at the top
+    expect(mocks.listCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ name: "Inbox", isDefault: true, userId: "alice", position: 0 }) });
     expect(options()).toEqual({ mode: "web", listId: "created" });
   });
 

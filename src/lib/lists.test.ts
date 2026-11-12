@@ -58,10 +58,10 @@ beforeEach(() => {
 });
 
 describe("DEFAULT_LISTS", () => {
-  it("has Inbox directly after To Do", () => {
+  it("has Inbox first, then To Do", () => {
     expect(DEFAULT_LISTS.map((l) => [l.name, l.position, l.color])).toEqual([
-      ["To Do", 0, "blue"],
-      ["Inbox", 1, "zinc"],
+      ["Inbox", 0, "zinc"],
+      ["To Do", 1, "blue"],
       ["Monitor", 2, "orange"],
       ["Later", 3, "violet"],
     ]);
@@ -69,13 +69,13 @@ describe("DEFAULT_LISTS", () => {
 });
 
 describe("ensureDefaultLists", () => {
-  it("gives a new account To Do, Inbox, Monitor, Later in that order", async () => {
+  it("gives a new account Inbox, To Do, Monitor, Later in that order", async () => {
     await ensureDefaultLists(user);
-    expect(order()).toEqual(["To Do", "Inbox", "Monitor", "Later"]);
+    expect(order()).toEqual(["Inbox", "To Do", "Monitor", "Later"]);
     expect(lists.every((l) => l.isDefault)).toBe(true);
   });
 
-  it("adds Inbox after To Do for an existing account, keeping custom lists in their order", async () => {
+  it("adds Inbox at the top for an existing account, keeping the other lists in their order", async () => {
     add({ name: "To Do", color: "blue", position: 0, isDefault: true });
     add({ name: "Monitor", color: "orange", position: 1, isDefault: true });
     add({ name: "Later", color: "violet", position: 2, isDefault: true });
@@ -84,8 +84,8 @@ describe("ensureDefaultLists", () => {
     // A list reordered above Monitor stays above it.
     add({ name: "Work", position: 1 });
     await ensureDefaultLists(user);
-    expect(order()).toEqual(["To Do", "Inbox", "Monitor", "Work", "Later", "Garage", "Wedding"]);
-    expect(lists.find((l) => l.name === "Inbox")).toMatchObject({ isDefault: true, color: "zinc", position: 1 });
+    expect(order()).toEqual(["Inbox", "To Do", "Monitor", "Work", "Later", "Garage", "Wedding"]);
+    expect(lists.find((l) => l.name === "Inbox")).toMatchObject({ isDefault: true, color: "zinc", position: 0 });
     expect(lists.filter((l) => l.name === "Inbox")).toHaveLength(1);
   });
 
@@ -106,8 +106,8 @@ describe("ensureDefaultLists", () => {
     const mine = add({ name: "inbox", color: "rose", position: 5 });
     await ensureDefaultLists(user);
     expect(lists.filter((l) => l.name.toLowerCase() === "inbox")).toHaveLength(1);
-    expect(mine).toMatchObject({ name: "Inbox", isDefault: true, color: "zinc", position: 1 });
-    expect(order().slice(0, 2)).toEqual(["To Do", "Inbox"]);
+    expect(mine).toMatchObject({ name: "Inbox", isDefault: true, color: "zinc", position: 0 });
+    expect(order().slice(0, 2)).toEqual(["Inbox", "To Do"]);
   });
 
   it("keeps a shared list called Inbox custom and adds the default one", async () => {
@@ -115,6 +115,16 @@ describe("ensureDefaultLists", () => {
     await ensureDefaultLists(user);
     expect(shared.isDefault).toBe(false);
     expect(lists.filter((l) => l.name === "Inbox" && l.isDefault)).toHaveLength(1);
+  });
+
+  it("moves an Inbox that was created after To Do up to the top", async () => {
+    add({ name: "To Do", color: "blue", position: 0, isDefault: true });
+    add({ name: "Inbox", color: "zinc", position: 1, isDefault: true });
+    add({ name: "Monitor", color: "orange", position: 2, isDefault: true });
+    add({ name: "Later", color: "violet", position: 3, isDefault: true });
+    add({ name: "Garage", position: 4 });
+    await ensureDefaultLists(user);
+    expect(order()).toEqual(["Inbox", "To Do", "Monitor", "Later", "Garage"]);
   });
 
   it("no longer folds an Inbox list into To Do", async () => {
