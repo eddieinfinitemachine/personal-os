@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolveCaptureUser } from "@/lib/capture-auth";
 import { IntakeError, readJSON } from "@/lib/dating-intake/contracts";
+import { scheduleFirstCheckIn } from "@/lib/call-sheet/first-check-in";
 import { PEOPLE_CAPTURE_LIMITS, parsePeopleCapture, planPeopleCapture, type SkipReason } from "@/lib/people-capture";
 
 export const dynamic = "force-dynamic";
@@ -29,10 +30,19 @@ export async function POST(request: Request) {
     const plan = planPeopleCapture(cards, existing);
     const created: { cardId: string; personId: string }[] = [];
     const skipped: { cardId: string; reason: SkipReason }[] = [...plan.skipped];
+    const metAt = new Map(cards.map((card) => [card.cardId, card.createdAt]));
     for (const { cardId, data } of plan.create) {
       try {
         const person = await prisma.person.create({ data: { ...data, userId }, select: { id: true } });
         created.push({ cardId, personId: person.id });
+        // New people first come up on the call sheet 30 days after the card was
+        // made (when you met). The person is saved either way.
+        try {
+          const met = metAt.get(cardId);
+          await scheduleFirstCheckIn(prisma, userId, { id: person.id, ...data }, met ? new Date(met) : new Date());
+        } catch {
+          console.error("first check-in not scheduled");
+        }
       } catch (e) {
         // externalId is globally unique: a concurrent run (or another account) already holds it.
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") skipped.push({ cardId, reason: "exists" });

@@ -3,6 +3,8 @@ import { Prisma } from "@prisma/client";
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), findMany: vi.fn(), create: vi.fn() }));
 vi.mock("@/lib/capture-auth", () => ({ resolveCaptureUser: mocks.auth }));
 vi.mock("@/lib/prisma", () => ({ prisma: { person: { findMany: mocks.findMany, create: mocks.create } } }));
+const schedule = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/call-sheet/first-check-in", () => ({ scheduleFirstCheckIn: schedule }));
 import { POST } from "./route";
 
 const req = (body: unknown) => new Request("https://example.invalid/api/capture/people", { method: "POST", body: typeof body === "string" ? body : JSON.stringify(body) });
@@ -30,6 +32,15 @@ describe("POST /api/capture/people", () => {
     expect(await res.json()).toEqual({ created: [{ cardId: "A1", personId: "p-contacts:A1" }], skipped: [{ cardId: "B2", reason: "email-match" }] });
     expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: "owner" } }));
     expect(mocks.create).toHaveBeenCalledWith({ data: expect.objectContaining({ userId: "owner", phone: "+15551234567", tags: ["from-contacts"], externalId: "contacts:A1" }), select: { id: true } });
+  });
+  it("gives each new person a first check-in from the day the card was made, and still adds them if that fails", async () => {
+    const res = await POST(req({ people: [{ ...avery, createdAt: "2026-11-12T04:45:57.000Z" }] }));
+    expect((await res.json()).created).toHaveLength(1);
+    expect(schedule).toHaveBeenCalledWith(expect.anything(), "owner", expect.objectContaining({ id: "p-contacts:A1", firstName: "Avery", phone: "+15551234567" }), new Date("2026-11-12T04:45:57.000Z"));
+    schedule.mockRejectedValueOnce(new Error("db"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect((await (await POST(req({ people: [{ ...avery, cardId: "A2" }] }))).json()).created).toHaveLength(1);
+    log.mockRestore();
   });
   it("treats a unique externalId race as already existing", async () => {
     mocks.create.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "6" }));
