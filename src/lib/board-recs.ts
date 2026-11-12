@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { callClaudeWithServerTools, type ClaudeResponseBlock } from "@/lib/claude";
+import { ClaudeAPIError, callClaudeWithServerTools, type ClaudeResponseBlock } from "@/lib/claude";
 import { resolveLink } from "@/lib/board";
 import { BOARD_KINDS, type BoardKind } from "@/lib/board-embed";
 
@@ -12,10 +12,18 @@ export const MIN_ITEMS_FOR_RECS = 5;
 const RECS_PER_RUN = 12;
 const SEEDED_RECS = 8;
 const BOARD_SAMPLE = 150;
-// The Claude call gets a hard deadline inside the 300 s function limit; a run
-// still "generating" past STALE_RUN_MS died with its function and is reported
-// as failed (and can be reclaimed).
-const CLAUDE_DEADLINE_MS = 220_000;
+// A run lives in the after() of a route with maxDuration = 300 s. Opus with
+// adaptive thinking takes tens of seconds per web search (each search is a
+// sampling step plus dynamic filtering), so the search budget and effort are
+// what keep the turn inside its deadline: at 10 searches and medium effort
+// the turn ran past 220 s and the whole batch was thrown away.
+// Budget: Claude turn 250 s + link checks 15 s, leaving ~35 s for the cold
+// start, the reads and the final write.
+export const SEARCHES_PER_RUN = 5;
+export const CLAUDE_DEADLINE_MS = 250_000;
+const LINK_CHECK_MS = 15_000;
+// A run still "generating" past STALE_RUN_MS died with its function and is
+// reported as failed (and can be reclaimed).
 export const STALE_RUN_MS = 320_000;
 
 // Errors whose message is safe and useful to show the user as-is.
@@ -48,7 +56,7 @@ const SYSTEM = `You are a sharp, well-read friend with great taste who recommend
 
 Work in two steps.
 1. Read the board and form a precise picture of their taste: recurring aesthetics, eras, materials, moods, genres, price points, creators. Be specific ("warm 70s Italian design, walnut and chrome", not "they like design").
-2. Use web search to find real things that exist right now and fit that taste. Prefer specific, lesser-known finds over the obvious; a few can be adjacent stretches that still fit. Never recommend anything already on the board or already shown to them. Lean toward what they saved from past picks and away from what they dismissed.
+2. Use web search to find real things that exist right now and fit that taste. You have about ${SEARCHES_PER_RUN} searches, so make each one count: one good search can turn up several picks. Prefer specific, lesser-known finds over the obvious; a few can be adjacent stretches that still fit. Never recommend anything already on the board or already shown to them. Lean toward what they saved from past picks and away from what they dismissed.
 
 Every recommendation needs a real URL you saw in search results: the product page, the YouTube or Vimeo video, the Spotify or Apple Music page, the article. Do not invent or guess URLs; if you can't find a good link for an idea, drop it.
 
@@ -183,6 +191,7 @@ export async function startRecsRun(userId: string): Promise<boolean> {
  * of the current picks instead of replacing them.
  */
 export async function generateRecs(userId: string, opts: { seedItemId?: string } = {}): Promise<number> {
+  const runStarted = Date.now();
   try {
     const [items, saved, dismissed, shown, seed] = await Promise.all([
       prisma.boardItem.findMany({
@@ -206,6 +215,7 @@ export async function generateRecs(userId: string, opts: { seedItemId?: string }
       throw new RecsError(`Save at least ${MIN_ITEMS_FOR_RECS} things to your board first.`);
     }
     const label = (r: { title: string; creator: string | null }) => (r.creator ? `${r.title} by ${r.creator}` : r.title);
+    const turnStarted = Date.now();
     const { content, stopReason } = await callClaudeWithServerTools({
       system: SYSTEM,
       user: buildRecsPrompt(items, {
@@ -213,10 +223,16 @@ export async function generateRecs(userId: string, opts: { seedItemId?: string }
         dismissed: dismissed.map(label),
         shown: shown.map((r) => r.title),
       }, seed ? SEEDED_RECS : RECS_PER_RUN, seed ?? undefined),
-      tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 10 }],
+      tools: [{ type: "web_search_20260209", name: "web_search", max_uses: SEARCHES_PER_RUN }],
       maxTokens: 16000,
-      effort: "medium",
+      effort: "low",
       timeoutMs: CLAUDE_DEADLINE_MS,
+    });
+    console.info("[board-recs] claude turn", {
+      userId,
+      ms: Date.now() - turnStarted,
+      stopReason,
+      searches: content.filter((b) => b.type === "server_tool_use" && b.name === "web_search").length,
     });
     if (stopReason === "refusal") throw new RecsError("Claude declined this batch. Try again.");
     if (stopReason === "max_tokens" || stopReason === "pause_turn") {
@@ -232,7 +248,7 @@ export async function generateRecs(userId: string, opts: { seedItemId?: string }
     // without letting one slow site hold up the batch.
     const enriched = await Promise.all(
       fresh.map(async (r) => {
-        const resolved = r.url ? await withTimeout(resolveLink(r.url), 15_000) : null;
+        const resolved = r.url ? await withTimeout(resolveLink(r.url), LINK_CHECK_MS) : null;
         const link = resolved?.ok ? resolved : null;
         // A link that 404s or never answers is likely made up or gone: point
         // at a search for the thing instead. Sites that merely block bots
@@ -264,20 +280,28 @@ export async function generateRecs(userId: string, opts: { seedItemId?: string }
     ]);
     return enriched.length;
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    console.error("[board-recs] generation failed", { userId, message });
-    await prisma.boardTaste.update({
-      where: { userId },
-      data: {
-        status: "error",
-        error:
-          e instanceof RecsError
-            ? message
-            : e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")
-              ? "That took too long. Try again."
-              : "Couldn't get picks right now. Try again.",
-      },
-    });
+    const { cause, error } = describeFailure(e);
+    console.error("[board-recs] generation failed", { userId, cause, ms: Date.now() - runStarted });
+    await prisma.boardTaste.update({ where: { userId }, data: { status: "error", error } });
     return 0;
   }
+}
+
+// What the user sees, and a failure class to log (never a response body).
+export function describeFailure(e: unknown): { cause: string; error: string } {
+  if (e instanceof RecsError) return { cause: "recs", error: e.message };
+  if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) {
+    return { cause: "timeout", error: "Searching for picks took too long. Try again." };
+  }
+  if (e instanceof ClaudeAPIError) {
+    const busy = e.status === 429 || e.status === 529;
+    return {
+      cause: `claude ${e.status}`,
+      error: busy ? "Claude is busy right now. Try again in a few minutes." : "Couldn't get picks right now. Try again.",
+    };
+  }
+  if (e instanceof SyntaxError || (e instanceof Error && e.message === "no JSON in reply")) {
+    return { cause: "parse", error: "Couldn't read that batch. Try again." };
+  }
+  return { cause: e instanceof Error ? e.name : "unknown", error: "Couldn't get picks right now. Try again." };
 }
