@@ -21,7 +21,7 @@ const STEPS: Step[] = [
   {
     icon: ListPlus,
     title: "Capture todos into lists",
-    body: "Home shows four default lists — To Do, Inbox, Monitor, Later. Captures land in Inbox until you file them. Click in any list to add a reminder, or press ⌘K from anywhere to capture fast.",
+    body: "Home shows four default lists — Inbox, To Do, Monitor, Later. Captures land in Inbox until you file them. Click in any list to add a reminder, or press ⌘K from anywhere to capture fast.",
   },
   {
     icon: FolderPlus,

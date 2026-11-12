@@ -13,8 +13,9 @@ export const INBOX_LIST_NAME = "Inbox";
 export const CAPTURE_LIST_NAME = "To Do";
 
 export const DEFAULT_LISTS = [
-  { name: "To Do", color: "blue", position: 0 },
-  { name: "Inbox", color: "zinc", position: 1 },
+  // Inbox leads: it's where captures wait to be filed, so it's the first list seen.
+  { name: "Inbox", color: "zinc", position: 0 },
+  { name: "To Do", color: "blue", position: 1 },
   { name: "Monitor", color: "orange", position: 2 },
   { name: "Later", color: "violet", position: 3 },
 ] as const;
@@ -122,9 +123,9 @@ export async function ensureDefaultLists(userId: string): Promise<void> {
   ensuredForUser.add(userId);
 }
 
-// The default Inbox list, created the first time it's needed. Accounts from
-// before it existed get room made right after To Do (every list from that
-// position down moves one place, so custom lists keep their order), and a
+// The default Inbox list, created the first time it's needed. It's the first
+// list: accounts from before it existed get room made at the top (every list
+// moves down one place, so they keep their order), and a
 // list they already called "Inbox" becomes the default one instead of gaining
 // a twin. A shared "Inbox" stays custom: default lists are never shared.
 // Takes a client so capture commits can call it inside their transaction.
@@ -138,11 +139,7 @@ export async function ensureInboxList(
   if (existing) return existing;
   const def = DEFAULT_LISTS.find((l) => l.name === INBOX_LIST_NAME)!;
   await db.list.updateMany({
-    where: {
-      userId,
-      position: { gte: def.position },
-      NOT: { isDefault: true, name: CAPTURE_LIST_NAME },
-    },
+    where: { userId, position: { gte: def.position } },
     data: { position: { increment: 1 } },
   });
   const own = await db.list.findFirst({

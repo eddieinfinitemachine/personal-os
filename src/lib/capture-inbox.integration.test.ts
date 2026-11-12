@@ -35,15 +35,15 @@ describe.skipIf(!databaseUrl)("capture Inbox — real Postgres", () => {
   const capture = (userId: string, text: string) => captureMobile(userId, { requestId: randomUUID(), text, url: null, files: [] });
   const order = async (userId: string) => (await db().list.findMany({ where: { userId }, orderBy: [{ position: "asc" }, { createdAt: "asc" }] })).map(l => l.name);
 
-  it("makes room for Inbox after To Do on an existing account and adopts a list already called inbox", async () => {
+  it("makes room for Inbox at the top on an existing account and adopts a list already called inbox", async () => {
     const userId = await user();
     for (const [name, position, isDefault] of [["To Do", 0, true], ["Monitor", 1, true], ["Later", 2, true], ["Garage", 3, false], ["inbox", 4, false]] as const) {
       await db().list.create({ data: { userId, name, position, isDefault } });
     }
     await ensureDefaultLists(userId);
-    expect(await order(userId)).toEqual(["To Do", "Inbox", "Monitor", "Later", "Garage"]);
+    expect(await order(userId)).toEqual(["Inbox", "To Do", "Monitor", "Later", "Garage"]);
     expect(await db().list.count({ where: { userId, name: { equals: "inbox", mode: "insensitive" } } })).toBe(1);
-    expect(await db().list.findFirst({ where: { userId, name: "Inbox" } })).toMatchObject({ isDefault: true, color: "zinc", position: 1 });
+    expect(await db().list.findFirst({ where: { userId, name: "Inbox" } })).toMatchObject({ isDefault: true, color: "zinc", position: 0 });
   });
 
   it("files a capture in Inbox suggesting a shared list the user can edit, but not one they can only view", async () => {
