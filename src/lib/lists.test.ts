@@ -48,6 +48,8 @@ beforeEach(() => {
   serial = 0;
   user = `user-${++userSerial}`;
   mocks.findFirst.mockImplementation(async ({ where }: { where: Where }) => lists.filter((l) => matches(l, where)).sort((a, b) => a.createdAt - b.createdAt)[0] ?? null);
+  mocks.findMany.mockImplementation(async ({ where }: { where: Where }) => lists.filter((l) => matches(l, where)).sort((a, b) => a.createdAt - b.createdAt));
+  mocks.listDelete.mockImplementation(async ({ where }: { where: { id: string } }) => { lists = lists.filter((l) => l.id !== where.id); });
   mocks.create.mockImplementation(async ({ data }: { data: Partial<ListRow> }) => add(data));
   mocks.update.mockImplementation(async ({ where, data }: { where: { id: string }; data: Partial<ListRow> }) => Object.assign(lists.find((l) => l.id === where.id)!, data));
   mocks.updateMany.mockImplementation(async ({ where, data }: { where: Where; data: { position: { increment: number } } }) => {
@@ -125,6 +127,18 @@ describe("ensureDefaultLists", () => {
     add({ name: "Garage", position: 4 });
     await ensureDefaultLists(user);
     expect(order()).toEqual(["Inbox", "To Do", "Monitor", "Later", "Garage"]);
+  });
+
+  it("merges a second default Inbox into the oldest one", async () => {
+    add({ name: "To Do", color: "blue", position: 1, isDefault: true });
+    const first = add({ name: "Inbox", color: "zinc", position: 0, isDefault: true });
+    const twin = add({ name: "Inbox", color: "zinc", position: 0, isDefault: true });
+    await ensureDefaultLists(user);
+    expect(lists.filter((l) => l.name === "Inbox")).toEqual([first]);
+    expect(mocks.todoUpdateMany).toHaveBeenCalledWith({ where: { listId: twin.id }, data: { listId: first.id } });
+    expect(mocks.todoUpdateMany).toHaveBeenCalledWith({ where: { suggestedListId: twin.id }, data: { suggestedListId: null } });
+    expect(mocks.listDelete).toHaveBeenCalledWith({ where: { id: twin.id } });
+    expect(order()).toEqual(["Inbox", "To Do", "Monitor", "Later"]);
   });
 
   it("no longer folds an Inbox list into To Do", async () => {
