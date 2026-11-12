@@ -9,6 +9,7 @@ import { requireRevision } from "./mutate";
 import { correctionData, directFields, placementIds } from "./correct-data";
 import { checkEffect, conflict, currentRow, delegate, capturedFiles, retireCapture, reconcilePeople, mergeEffects, primaryEffect } from "./correct-effects";
 import { CaptureReviewError, type ReviewCorrection, type ReviewPlacement } from "./types";
+import { nextTodoPosition } from "@/lib/todo-position";
 
 async function interactionPeople(tx: Prisma.TransactionClient, userId: string, proposal: Extract<CoreProposal, { type: "interaction" }>) {
   const ids: string[] = [];
@@ -94,6 +95,8 @@ export async function correctCaptureReview(userId: string, id: string, body: Rev
         const effect = primaryEffect(effects, previous); if (!effect) conflict();
         const existing = await checkEffect(tx, userId, effect);
         const data: Record<string, unknown> = { ...correctionData(proposal, existing), ...ids };
+        // A todo moved to another list goes last there and drops its list suggestion.
+        if (proposal.type === "todo" && ids.listId && ids.listId !== existing.listId) Object.assign(data, { suggestedListId: null, position: await nextTodoPosition(tx, ids.listId) });
         if (proposal.type === "interaction") Object.assign(data, { personIds: await interactionPeople(journal.client, userId, proposal) });
         await delegate(journal.client, effect.model as DomainModel).update({ where: { id: previous.id }, data });
         if (proposal.type === "interaction") await reconcilePeople(journal.client, userId, effects, data.personIds as string[]);

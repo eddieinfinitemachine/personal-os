@@ -103,6 +103,7 @@ export default async function HomePage() {
     createdAt: t.createdAt,
     snoozedUntil: t.snoozedUntil,
     projectId: t.projectId,
+    suggestedListId: t.suggestedListId,
     ...todoMeta(t, commentStats),
     subtasks: t.subtasks.map((s) => ({
       id: s.id,

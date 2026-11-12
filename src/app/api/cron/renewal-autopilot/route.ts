@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { computeDue } from "@/lib/maintenance";
 import { getDefaultTodoList, isAuthorizedCron } from "@/lib/cron";
 import { syncRecentTodos } from "@/lib/gcal";
+import { nextTodoPosition } from "@/lib/todo-position";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -192,7 +193,9 @@ export async function GET(request: Request) {
 
   // Single batched insert.
   if (toCreate.length > 0) {
-    await prisma.todo.createMany({ data: toCreate });
+    // After To Do's existing todos, in the order found.
+    const first = await nextTodoPosition(prisma, list.id);
+    await prisma.todo.createMany({ data: toCreate.map((row, i) => ({ ...row, position: first + i })) });
     await syncRecentTodos();
   }
 

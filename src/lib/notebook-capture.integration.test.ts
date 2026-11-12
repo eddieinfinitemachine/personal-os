@@ -58,7 +58,7 @@ describe.skipIf(!databaseUrl)("notebook capture — real Postgres", () => {
     const onHome = await state.db!.todo.findMany({ where: { userId, completedAt: null, parentId: null }, orderBy: homeOrder, include: { list: true } });
     expect(onHome.map(todo => todo.title)).toEqual(titles);
     expect(new Set(onHome.map(todo => todo.createdAt.getTime())).size).toBe(40);
-    expect(onHome.every(todo => todo.list.name === "To Do")).toBe(true);
+    expect(onHome.every(todo => todo.list.name === "Inbox")).toBe(true);
 
     const inbox: string[] = [];
     for (let offset = 0; offset < 40; offset += 10) inbox.push(...(await listCaptureReviews(userId, { offset, limit: 10 })).items.map(item => item.placement.title));

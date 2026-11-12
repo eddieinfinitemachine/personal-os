@@ -25,7 +25,7 @@ function client() {
   const tx = {
     list: { findFirst: vi.fn(async ({ where }: { where: { name: { equals: string } } }) => ({ id: "list", name: where.name.equals })), create: vi.fn(makeRow) },
     project: { findFirst: vi.fn(async () => ({ id: "inbox", name: "Inbox" })), create: vi.fn(makeRow) },
-    todo: { create: vi.fn(makeRow) }, asset: { create: vi.fn(makeRow) }, interaction: { create: vi.fn(makeRow) },
+    todo: { create: vi.fn(makeRow), aggregate: vi.fn(async () => ({ _max: { position: null } })) }, asset: { create: vi.fn(makeRow) }, interaction: { create: vi.fn(makeRow) },
     person: {
       findFirst: vi.fn(async ({ where }: { where: { userId: string; archived?: boolean; firstName: { equals: string }; lastName: { equals: string } | null } }) => people.find(item =>
         item.userId === where.userId &&
@@ -75,7 +75,7 @@ describe("capture commit backward compatibility", () => {
     else expect(raw.interaction.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ personIds: [person.id] }) }));
   });
 
-  it.each(["media", "place"] as const)("keeps canonical URL and organizer notes on automatic %s Later tasks", async assetKind => {
+  it.each(["media", "place"] as const)("keeps canonical URL and organizer notes on automatic %s companion tasks (Inbox, suggesting Later)", async assetKind => {
     const { tx, raw } = client();
     await commitCore(tx, "alice", { text: "Save for the lighting project", url: "https://short.test/a" }, {
       type: "asset", assetKind, title: "Synthetic reference", url: "https://canonical.test/reference",

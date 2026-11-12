@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseCapture, type CaptureProposal } from "@/lib/smart-capture";
 import { parseAliasToken } from "@/lib/alias";
+import { captureListNames } from "@/lib/lists";
 import { MOBILE_QUOTA_BYTES, MobileCaptureError, mobileCaptureHash, mobileReceiptId, type MobileCaptureInput } from "./mobile-capture-input";
 import { journalClient } from "./capture-review/journal";
 import { captureLock, recordCapture } from "./capture-review/record";
@@ -66,7 +67,7 @@ export async function captureMobile(userId: string, input: MobileCaptureInput): 
       proposal = await parseCapture({
         text: joinNotes(input.text, input.url, input.files.length ? `Shared files: ${input.files.map(file => file.name).join(", ")}` : null) || "Organize this shared item.",
         photo: image ? { mediaType: image.type.toLowerCase(), base64: Buffer.from(await image.arrayBuffer()).toString("base64") } : undefined,
-        today: new Date().toISOString().slice(0, 10), activeProjects: projects,
+        today: new Date().toISOString().slice(0, 10), activeProjects: projects, listNames: await captureListNames(userId),
       });
       validateCoreProposal(proposal);
       if (proposal.type === "todo") proposal = { ...proposal, routedByAlias: false };

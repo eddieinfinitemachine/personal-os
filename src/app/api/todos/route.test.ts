@@ -4,10 +4,15 @@ const mocks = vi.hoisted(() => ({
   findTodos: vi.fn(),
   findComments: vi.fn(),
   findReads: vi.fn(),
+  findList: vi.fn(),
+  findTodo: vi.fn(),
+  aggregate: vi.fn(),
+  create: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    todo: { findMany: mocks.findTodos },
+    todo: { findMany: mocks.findTodos, findFirst: mocks.findTodo, aggregate: mocks.aggregate, create: mocks.create },
+    list: { findFirst: mocks.findList },
     comment: { findMany: mocks.findComments },
     commentRead: { findMany: mocks.findReads },
   },
@@ -15,7 +20,8 @@ vi.mock("@/lib/prisma", () => ({
 vi.mock("@/lib/auth", () => ({ getCurrentUserId: mocks.user }));
 vi.mock("@/lib/gcal", () => ({ syncRecentTodos: vi.fn() }));
 vi.mock("@/lib/notify", () => ({ notifySharedListAdd: vi.fn() }));
-import { GET } from "./route";
+vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: vi.fn() }));
+import { GET, POST } from "./route";
 
 const req = (query = "") => new Request(`https://example.invalid/api/todos${query}`);
 const created = new Date("2026-11-01T09:00:00Z");
@@ -28,6 +34,7 @@ const todoRow = (over: Record<string, unknown> = {}) => ({
   completedAt: null,
   createdAt: created,
   listId: "shared-list",
+  suggestedListId: null,
   projectId: null,
   project: null,
   droppedAt: null,
@@ -113,6 +120,7 @@ describe("GET /api/todos", () => {
       completedAt: null,
       createdAt: created.toISOString(),
       listId: "shared-list",
+      suggestedListId: null,
       projectId: null,
       projectName: null,
       droppedAt: null,
@@ -141,5 +149,44 @@ describe("GET /api/todos", () => {
       user: { select: { name: true, email: true } },
       subtasks: { include: { user: { select: { name: true, email: true } } } },
     });
+  });
+});
+
+describe("GET /api/todos: list suggestions", () => {
+  it("returns a capture's suggested list id", async () => {
+    mocks.findTodos.mockResolvedValueOnce([todoRow({ id: "t3", listId: "inbox", suggestedListId: "later" })]);
+    const { todos } = await (await GET(req())).json();
+    expect(todos[0]).toMatchObject({ id: "t3", listId: "inbox", suggestedListId: "later" });
+  });
+});
+
+describe("POST /api/todos", () => {
+  const post = (body: unknown) =>
+    POST(new Request("https://example.invalid/api/todos", { method: "POST", body: JSON.stringify(body) }));
+
+  beforeEach(() => {
+    mocks.findList.mockResolvedValue({ id: "shared-list" });
+    mocks.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: "new", ...data }));
+  });
+
+  it("puts a new top-level todo after the list's existing ones", async () => {
+    mocks.aggregate.mockResolvedValue({ _max: { position: 6 } });
+    const res = await post({ title: "Order flowers", listId: "shared-list" });
+    expect(res.status).toBe(200);
+    expect(mocks.aggregate).toHaveBeenCalledWith({ where: { listId: "shared-list", parentId: null }, _max: { position: true } });
+    expect(mocks.create.mock.calls[0][0].data).toMatchObject({ title: "Order flowers", listId: "shared-list", position: 7 });
+  });
+
+  it("starts an empty list at 0", async () => {
+    mocks.aggregate.mockResolvedValue({ _max: { position: null } });
+    await post({ title: "Order flowers", listId: "shared-list" });
+    expect(mocks.create.mock.calls[0][0].data.position).toBe(0);
+  });
+
+  it("leaves subtask positions alone", async () => {
+    mocks.findTodo.mockResolvedValue({ id: "parent", listId: "shared-list", projectId: null });
+    await post({ title: "Call them", parentId: "parent" });
+    expect(mocks.aggregate).not.toHaveBeenCalled();
+    expect(mocks.create.mock.calls[0][0].data).not.toHaveProperty("position");
   });
 });

@@ -15,7 +15,9 @@ export async function currentRow(tx: Prisma.TransactionClient, userId: string, e
 }
 export async function checkEffect(tx: Prisma.TransactionClient, userId: string, effect: CaptureEffect, fields?: string[]) {
   const row = await currentRow(tx, userId, effect), snapshot = domainSnapshot(effect.model, row);
-  if (fields ? fields.some(key => !sameValue(snapshot[key], effect.after[key])) : !sameValue(snapshot, effect.after)) conflict();
+  // Whole-row checks compare the columns the capture recorded, so a column added
+  // later (Todo.suggestedListId) doesn't make every older capture look changed.
+  if ((fields ?? Object.keys(effect.after)).some(key => !sameValue(snapshot[key], effect.after[key]))) conflict();
   return row;
 }
 export async function checkDependents(tx: Prisma.TransactionClient, userId: string, effect: CaptureEffect, effects: CaptureEffects) {

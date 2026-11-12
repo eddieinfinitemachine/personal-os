@@ -6,6 +6,7 @@ import { isDateOnly } from "@/lib/utils";
 import { deleteTodoEvent, syncRecentTodos } from "@/lib/gcal";
 import { listAccessWhere } from "@/lib/list-access";
 import { deleteTodo } from "@/lib/todo-delete";
+import { nextTodoPosition } from "@/lib/todo-position";
 
 export async function PATCH(
   request: Request,
@@ -56,6 +57,12 @@ export async function PATCH(
       return NextResponse.json({ error: "list not found" }, { status: 404 });
     }
     updates.listId = body.listId;
+    if (body.listId !== existing.listId) {
+      // A move answers the capture's list suggestion (accepted or overruled),
+      // and a moved top-level todo goes after the target list's todos.
+      updates.suggestedListId = null;
+      if (!existing.parentId) updates.position = await nextTodoPosition(prisma, body.listId);
+    }
   }
   if (body.projectId !== undefined) {
     if (body.projectId) {
