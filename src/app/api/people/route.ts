@@ -1,3 +1,4 @@
+import { scheduleFirstCheckIn } from "@/lib/call-sheet/first-check-in";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
@@ -59,5 +60,11 @@ export async function POST(request: Request) {
   };
 
   const person = await prisma.person.create({ data: snapshot });
+  // New people first come up on the call sheet 30 days after they're added.
+  try {
+    await scheduleFirstCheckIn(prisma, userId, person);
+  } catch {
+    console.error("first check-in not scheduled");
+  }
   return NextResponse.json({ person });
 }
