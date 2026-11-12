@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { bearerSession } from "@/lib/capture-auth";
 import { prisma } from "@/lib/prisma";
 import { datingPhotoFolder } from "@/lib/dating-photos";
 import { readUserImage } from "@/lib/user-image";
@@ -7,10 +8,12 @@ import { readUserImage } from "@/lib/user-image";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
 
-export async function GET(_request: Request, { params }: { params: Promise<{ photoId: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ photoId: string }> }) {
   // Verify the session here, immediately before accessing storage. Never accept
   // a client URL/path or rely on middleware alone for private image delivery.
-  const session = await getSession();
+  // The web sends the session cookie; the native app sends the same session
+  // as a bearer, verified here the same way.
+  const session = (await getSession()) ?? (await bearerSession(request));
   if (!session) return new NextResponse(null, { status: 401, headers });
   const { photoId } = await params;
   const photo = await prisma.datingPhoto.findFirst({ where: { id: photoId, userId: session.userId } });

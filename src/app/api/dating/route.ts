@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
 import { newPersonError, personPatch, personPatchError, toPersonDTO } from "@/lib/dating-server";
 import { refreshDatingInsights } from "@/lib/dating-insights";
+import { datingCards } from "@/lib/dating-cards";
 
 import { createWithIdentity } from "@/lib/dating-intake/people";
 import { failure } from "@/lib/dating-intake/http";
@@ -13,11 +14,9 @@ export const maxDuration = 120;
 export async function GET(request: Request) {
   const userId = await getCurrentUserId(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const people = await prisma.datingPerson.findMany({
-    where: { userId },
-    orderBy: [{ lastMessageAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
-  });
-  return NextResponse.json({ people: people.map(toPersonDTO) });
+  // The overview's cards: each profile with its avatar, date count and the
+  // ends of its timeline, as the /dating page shows them (the native app).
+  return NextResponse.json({ people: await datingCards(userId) }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function POST(request: Request) {
