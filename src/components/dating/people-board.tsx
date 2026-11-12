@@ -8,17 +8,9 @@ import { cn } from "@/lib/utils";
 import { STAGES, isStage, type Stage } from "@/lib/dating";
 import { byActivity, byPastRelationship, matchesPersonName, relationshipDates, withStage } from "@/lib/dating-board";
 import { initials } from "@/lib/initials";
-import type { DatingPersonDTO } from "@/lib/dating-server";
+import type { DatingCard } from "@/lib/dating-cards";
 
-export type DatingCard = DatingPersonDTO & {
-  dateCount: number;
-  avgVibe: number | null;
-  /** Newest private photo, shown as a small round avatar. */
-  avatarUrl: string | null;
-  firstEventAt: string | null;
-  lastEventAt: string | null;
-  lastDate: { at: string; vibe: number | null } | null;
-};
+export type { DatingCard };
 
 const ENDED_KEY = "personalos:dating-ended-open";
 const LABEL: Record<Stage, string> = {
