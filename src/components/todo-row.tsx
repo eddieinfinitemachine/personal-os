@@ -23,6 +23,7 @@ import { cn, formatCalendarDate, toDateInputValue, isCalendarDateOverdue } from 
 import { linkify } from "@/lib/linkify";
 import { pushUndo, quoteTitle } from "@/lib/undo";
 import { pushTodoMoveUndo } from "@/lib/todo-undo";
+import { setTodoDrag } from "@/lib/todo-order";
 import { getLists } from "@/lib/todo-menu-cache";
 import { ASSET_TRACKERS, type AssetTracker } from "@/lib/asset-trackers";
 import { TOUCH_QUERY } from "@/lib/touch";
@@ -841,6 +842,7 @@ function TodoRowImpl({
         },
       })
     );
+    setTodoDrag({ todoId: todo.id, sourceListId });
     setDragging(true);
   }
 
@@ -884,7 +886,10 @@ function TodoRowImpl({
       )}
       draggable={draggable}
       onDragStart={onDragStart}
-      onDragEnd={() => setDragging(false)}
+      onDragEnd={() => {
+        setTodoDrag(null);
+        setDragging(false);
+      }}
       {...ctx.handlers}
     >
       <div
@@ -1351,6 +1356,7 @@ function TodoRowImpl({
             title: s.title,
             completedAt: s.completedAt ?? null,
           }))}
+          initialDueDate={todo.dueDate ?? null}
           onClose={() => setDetailOpen(false)}
         />
       ) : null}

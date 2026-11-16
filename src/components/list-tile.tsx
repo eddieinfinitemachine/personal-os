@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { Check, MoreHorizontal, Pencil, Plus, Trash2, Users } from "lucide-react";
 import { LIST_PALETTE, palette } from "@/lib/lists";
 import { haptic } from "@/lib/haptic";
@@ -9,6 +9,14 @@ import { pushUndo, quoteTitle } from "@/lib/undo";
 import { pushTodoMoveUndo } from "@/lib/todo-undo";
 import { cn, toDateInputValue } from "@/lib/utils";
 import { FINE_POINTER_QUERY } from "@/lib/touch";
+import {
+  applyOrder,
+  inOrder,
+  insertionIndex,
+  movableRange,
+  moveTo,
+  todoDrag,
+} from "@/lib/todo-order";
 import { TodoRow, type TodoLike } from "./todo-row";
 import { ListShareDialog } from "./list-share-dialog";
 import { AgendaLauncher } from "./agenda-mode";
@@ -28,6 +36,25 @@ export type ListInfo = {
   collaborative?: boolean;
   // Owner's view: display names of everyone the list is shared with.
   sharedWithNames?: string[];
+};
+
+// The line showing where a dragged todo will land: no height of its own, so
+// the rows don't move while it follows the pointer.
+function DropLine({ className }: { className: string }) {
+  return (
+    <li aria-hidden data-drop-line className="pointer-events-none relative h-0">
+      <div className={cn("absolute inset-x-1 -top-px h-0.5 rounded-full", className)} />
+    </li>
+  );
+}
+
+// Where a todo dragged over its own card would land: its index among the other
+// rows, and the row the line is drawn above (or, at the end, below).
+type DropPlace = {
+  todoId: string;
+  index: number;
+  beforeId: string | null;
+  afterId: string | null;
 };
 
 export function ListTile({
@@ -109,6 +136,34 @@ export function ListTile({
   const [extraTodos, setExtraTodos] = useState<TodoLike[]>([]);
   useEffect(() => {
     setExtraTodos([]);
+  }, [todos]);
+
+  // Manual order (drag a todo to a new place on its own card). Only Home's
+  // cards, which show every open todo in the list: a project-scoped tile shows
+  // some of them, and numbering those alone would collide with the rest.
+  const canReorder = projectId === undefined;
+  // The order just dropped, shown until the server's snapshot has it.
+  const [manualOrder, setManualOrder] = useState<string[] | null>(null);
+  // Set once the reorder request succeeds: the next snapshot is the truth.
+  const reorderSavedRef = useRef(false);
+  // Where the dragged todo would land, mirrored in a ref so the drop reads the
+  // latest place even if the last dragover's render hasn't landed.
+  const [dropAt, setDropAt] = useState<DropPlace | null>(null);
+  const dropAtRef = useRef<DropPlace | null>(null);
+  function showDropAt(next: DropPlace | null) {
+    const prev = dropAtRef.current;
+    if (prev === next || (prev && next && prev.todoId === next.todoId && prev.index === next.index)) return;
+    dropAtRef.current = next;
+    setDropAt(next);
+  }
+  const listRef = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    if (reorderSavedRef.current) {
+      reorderSavedRef.current = false;
+      setManualOrder(null);
+      return;
+    }
+    setManualOrder((prev) => (prev && inOrder(todos, prev) ? null : prev));
   }, [todos]);
 
   useEffect(() => {
@@ -278,7 +333,7 @@ export function ListTile({
     });
   }, [todos]);
 
-  const visibleTodos = useMemo<TodoLike[]>(() => {
+  const mergedTodos = useMemo<TodoLike[]>(() => {
     // Pending (just-added) todos render at the bottom so new reminders
     // append in the user's reading order. Server sorts by createdAt ASC
     // tiebreaker, so post-refresh order matches the optimistic order.
@@ -334,6 +389,10 @@ export function ListTile({
     pendingSubtasks,
     subtaskOverrides,
   ]);
+  const visibleTodos = useMemo(
+    () => (manualOrder ? applyOrder(mergedTodos, manualOrder) : mergedTodos),
+    [mergedTodos, manualOrder],
+  );
 
   // "All done" appears when the tile transitions to empty and the most recent
   // action was a completion; anything reappearing dismisses it.
@@ -861,10 +920,84 @@ export function ListTile({
 
   const DRAG_MIME = "application/x-personalos-todo";
 
+  // The rows a drag can reorder, top to bottom: open, saved, not mid-collapse.
+  function orderableTodos() {
+    return visibleTodos.filter(
+      (t) => !t.completedAt && !t.id.startsWith("temp-") && !leavingIds.has(t.id),
+    );
+  }
+
+  // While a todo from this card is dragged over it, find where it would land
+  // (as the iOS app: among the todos that share its due date) and draw the line.
+  function trackDropPlace(todoId: string, y: number) {
+    const rows = orderableTodos();
+    const from = rows.findIndex((t) => t.id === todoId);
+    const ul = listRef.current;
+    if (from < 0 || !ul) {
+      showDropAt(null);
+      return;
+    }
+    const others = rows.filter((t) => t.id !== todoId);
+    const middles = new Map<string, number>();
+    for (const el of ul.children) {
+      const id = (el as HTMLElement).dataset.kbdTodo;
+      if (!id) continue;
+      const r = el.getBoundingClientRect();
+      middles.set(id, r.top + r.height / 2);
+    }
+    const index = insertionIndex(
+      y,
+      others.map((t) => middles.get(t.id) ?? Number.POSITIVE_INFINITY),
+      movableRange(rows[from], others),
+    );
+    if (index === from) {
+      showDropAt(null);
+      return;
+    }
+    showDropAt({
+      todoId,
+      index,
+      beforeId: others[index]?.id ?? null,
+      afterId: index === others.length ? others[others.length - 1]?.id ?? null : null,
+    });
+  }
+
+  // Puts the todo at `index` among the other rows: on screen at once, then
+  // POST /api/todos/reorder with the card's whole order; a failure puts it back.
+  function reorder(todoId: string, index: number) {
+    const ids = orderableTodos().map((t) => t.id);
+    const next = moveTo(ids, todoId, index);
+    if (next.every((id, i) => id === ids[i])) return;
+    const before = manualOrder;
+    reorderSavedRef.current = false;
+    setManualOrder(next);
+    const rollback = () => setManualOrder(before);
+    fetch("/api/todos/reorder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ listId: list.id, ids: next }),
+    })
+      .then((res) => {
+        if (!res.ok) {
+          rollback();
+          return;
+        }
+        reorderSavedRef.current = true;
+        startTransition(() => router.refresh());
+      })
+      .catch(rollback);
+  }
+
   function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
     if (!e.dataTransfer.types.includes(DRAG_MIME)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
+    const drag = todoDrag();
+    if (canReorder && drag?.sourceListId === list.id) {
+      // Its own card: a line where it would land instead of the drop ring.
+      trackDropPlace(drag.todoId, e.clientY);
+      return;
+    }
     if (!isDragOver) setIsDragOver(true);
   }
 
@@ -872,10 +1005,13 @@ export function ListTile({
     // Only clear when the cursor actually leaves the tile (not when entering a child).
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
     setIsDragOver(false);
+    showDropAt(null);
   }
 
   async function handleDrop(e: React.DragEvent<HTMLDivElement>) {
     setIsDragOver(false);
+    const place = dropAtRef.current;
+    showDropAt(null);
     const raw = e.dataTransfer.getData(DRAG_MIME);
     if (!raw) return;
     e.preventDefault();
@@ -896,11 +1032,13 @@ export function ListTile({
     const targetProjectId =
       myProjectKey ?? payload.todo.projectId ?? null;
 
-    // Same tile (same list AND same effective project) → no-op.
+    // Same tile (same list AND same effective project) → a new place in it
+    // when the line was showing, else nothing.
     if (
       payload.sourceListId === list.id &&
       (payload.todo.projectId ?? null) === targetProjectId
     ) {
+      if (canReorder && place?.todoId === payload.todoId) reorder(place.todoId, place.index);
       return;
     }
 
@@ -965,6 +1103,8 @@ export function ListTile({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      // A drag from this card that ends anywhere (or is cancelled) clears its line.
+      onDragEnd={() => showDropAt(null)}
       data-droptarget-list={list.id}
       data-droptarget-project={myProjectKey ?? ""}
       className={cn(
@@ -1171,22 +1311,27 @@ export function ListTile({
           )}
         </div>
 
-        <ul className="space-y-px -mx-1">
+        <ul ref={listRef} className="space-y-px -mx-1">
           {visibleTodos.map((todo) => (
-            <TodoRow
-              key={todo.id}
-              todo={todo}
-              listColor={list.color}
-              sourceListId={list.id}
-              sourceProjectId={myProjectKey}
-              showCreator={list.collaborative}
-              leaving={leavingIds.has(todo.id)}
-              onToggle={toggleComplete}
-              onToggleSubtask={toggleSubtask}
-              onAddSubtask={addSubtask}
-              onSaveDueDate={saveDueDate}
-              onDelete={deleteTodo}
-            />
+            // The line slots stay in place (null when hidden) so showing one
+            // never shifts the row's position and remounts it.
+            <Fragment key={todo.id}>
+              {dropAt?.beforeId === todo.id ? <DropLine className={p.fill} /> : null}
+              <TodoRow
+                todo={todo}
+                listColor={list.color}
+                sourceListId={list.id}
+                sourceProjectId={myProjectKey}
+                showCreator={list.collaborative}
+                leaving={leavingIds.has(todo.id)}
+                onToggle={toggleComplete}
+                onToggleSubtask={toggleSubtask}
+                onAddSubtask={addSubtask}
+                onSaveDueDate={saveDueDate}
+                onDelete={deleteTodo}
+              />
+              {dropAt?.afterId === todo.id ? <DropLine className={p.fill} /> : null}
+            </Fragment>
           ))}
         </ul>
 

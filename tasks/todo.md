@@ -1,3 +1,23 @@
+# Drag to reorder within a list; change a due date from Calendar (2026-11-16)
+
+Two web gaps the iOS app already covers. Branch `feat/todo-order-calendar-edit`
+off main. No schema change and no new route: reorder uses
+`POST /api/todos/reorder`, the date uses `PATCH /api/todos/[id]`.
+
+- [x] Reorder: on Home's list cards, dragging an open todo over its own card shows a line where it will land and dropping puts it there. Same HTML5 drag the cross-list move uses (no new dependency). An undated todo moves among the undated ones and a dated one among those due the same day (the order the server keeps, as iOS `TodoOrder.movableRange`). The order changes at once and goes back if the request fails. Dropping on another card still moves it
+- [x] Reorder helpers (`src/lib/todo-order.ts`) with unit tests
+- [x] Mobile (touch long-press drag) left alone: say so in the review
+- [x] Calendar: a todo row (grid, phone agenda, Upcoming) opens Home's `TodoDetailModal`. The modal had no due date, so it gains a Due section (set, change, clear) that PATCHes the todo, as the iOS sheet's "Due"; the calendar refreshes on close, so the todo moves to its new day or leaves
+- [x] Notes and subtasks for the modal come from `GET /api/todos?listId=` before it opens (calendar items don't carry them; opening with empty notes could overwrite real ones)
+- [x] `pnpm typecheck`, `pnpm lint`, `pnpm test`; one commit per feature
+
+## Review
+Reorder: `src/lib/todo-order.ts` (range, insertion point, optimistic order) and `list-tile.tsx`. `TodoRow` records the dragged todo on dragstart, because a card can't read the drag's data until the drop; dragging over its own card draws a zero-height line in the list colour instead of the drop ring. The order is held until the server's snapshot has it, and a 4xx/5xx or network error puts it back. Project-scoped tiles (`/projects/[id]`) don't reorder: they show part of a list, and numbering that part alone would collide with the rest. Touch (the long-press drag on phones and the Duo) is unchanged: its ghost and drop targets live in `TodoRow`, and reordering there needs its own in-browser pass. No undo for a reorder (iOS has none either).
+
+Calendar: the modal gets a Due section, so the Due field also appears when the modal is opened from Home. The date saves on blur, Enter, Remove or close (not on every keystroke), and closing waits for the save before refreshing. A calendar row first loads its list (`GET /api/todos?listId=`, then `&includeCompleted=1` if the todo isn't open there) so the notes and subtasks are real. A todo that's gone refreshes the page instead.
+
+Checks: `pnpm typecheck` clean; `pnpm test` 218 files / 2131 tests pass (25 files / 189 tests skipped, gated on DB or env vars), including the new `todo-order.test.ts`, `list-tile.reorder.test.tsx` and `calendar-view.test.tsx`. `pnpm lint` fails before linting (`next lint` is gone in Next 16, same as on main). Not checked in a browser: the drag line's look and position, and the native date picker.
+
 # Captures land in an Inbox list, with the AI's list as a suggestion; manual todo order (2026-11-12)
 
 Captured todos went straight into To Do, so To Do mixed decided work with

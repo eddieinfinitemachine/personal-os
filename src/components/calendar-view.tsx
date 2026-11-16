@@ -1,27 +1,67 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { palette } from "@/lib/lists";
 import { cn, formatCalendarDate } from "@/lib/utils";
+import { TodoDetailModal, type DetailSubtask } from "./todo-detail-modal";
 
+// A calendar item (src/lib/calendar.ts): a dated open todo or subtask.
 type Event = {
   id: string;
   title: string;
   dueDate: string;
+  listId: string;
   listColor: string;
   listName: string;
   projectName: string | null;
 };
 
-type Upcoming = {
+type Upcoming = Event;
+
+type Detail = {
   id: string;
   title: string;
   dueDate: string;
-  listColor: string;
-  listName: string;
-  projectName: string | null;
+  notes: string | null;
+  subtasks: DetailSubtask[];
 };
+
+type ListTodo = {
+  id: string;
+  title: string;
+  notes: string | null;
+  subtasks: { id: string; title: string; notes: string | null; completedAt: string | null }[];
+};
+
+// The todo's notes and subtasks, which calendar items don't carry, from its
+// list (GET /api/todos). A subtask is found under its parent. Completed and
+// snoozed todos are only fetched if the open ones don't have it (a dated
+// subtask of a completed todo is still on the calendar). Null: it's gone.
+async function loadDetail(ev: Event): Promise<Detail | null> {
+  for (const extra of ["", "&includeCompleted=1"]) {
+    const res = await fetch(`/api/todos?listId=${encodeURIComponent(ev.listId)}${extra}`);
+    if (!res.ok) throw new Error(`todos ${res.status}`);
+    const { todos } = (await res.json()) as { todos: ListTodo[] };
+    const top = todos.find((t) => t.id === ev.id);
+    if (top) {
+      return {
+        id: top.id,
+        title: top.title,
+        dueDate: ev.dueDate,
+        notes: top.notes,
+        subtasks: top.subtasks.map((s) => ({ id: s.id, title: s.title, completedAt: s.completedAt })),
+      };
+    }
+    for (const t of todos) {
+      const sub = t.subtasks.find((s) => s.id === ev.id);
+      if (sub) return { id: sub.id, title: sub.title, dueDate: ev.dueDate, notes: sub.notes, subtasks: [] };
+    }
+  }
+  return null;
+}
 
 const MONTH_NAMES = [
   "January","February","March","April","May","June",
@@ -43,6 +83,38 @@ export function CalendarView({
   events: Event[];
   upcoming: Upcoming[];
 }) {
+  const router = useRouter();
+  // A row opens Home's todo detail, where the due date can be set, changed or
+  // removed; on close the modal refreshes this page, so the todo moves to its
+  // new day or leaves the calendar.
+  const [detail, setDetail] = useState<Detail | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
+  const [openFailed, setOpenFailed] = useState(false);
+
+  async function openTodo(ev: Event) {
+    if (opening) return;
+    setOpening(ev.id);
+    setOpenFailed(false);
+    try {
+      const found = await loadDetail(ev);
+      if (found) setDetail(found);
+      // Done or deleted elsewhere since the page loaded.
+      else router.refresh();
+    } catch {
+      setOpenFailed(true);
+    } finally {
+      setOpening(null);
+    }
+  }
+
+  // Row props shared by every place a todo shows.
+  const rowButton = (ev: Event) => ({
+    type: "button" as const,
+    onClick: () => void openTodo(ev),
+    disabled: opening === ev.id,
+    "aria-busy": opening === ev.id || undefined,
+  });
+
   const first = new Date(year, month, 1);
   const startWeekday = first.getDay(); // 0 = Sun
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -81,8 +153,14 @@ export function CalendarView({
     .map(([day, evs]) => ({ day, evs }));
 
   return (
+    <>
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
       <div>
+        {openFailed ? (
+          <div role="alert" className="mb-3 text-sm text-rose-500">
+            Couldn&rsquo;t open that todo. Try again.
+          </div>
+        ) : null}
         {/* Mobile agenda view — replaces the cramped 7-col grid */}
         <div className="md:hidden">
           <div className="flex items-center justify-between mb-3">
@@ -149,7 +227,10 @@ export function CalendarView({
                       {evs.map((ev) => {
                         const p = palette(ev.listColor);
                         const inner = (
-                          <div className="flex items-center gap-2 px-3 py-2.5 min-h-[44px]">
+                          <button
+                            {...rowButton(ev)}
+                            className="flex w-full items-center gap-2 px-3 py-2.5 min-h-[44px] text-left active:bg-[var(--color-accent)]/60 disabled:opacity-60"
+                          >
                             <span
                               className={cn(
                                 "size-2 rounded-full shrink-0",
@@ -170,7 +251,7 @@ export function CalendarView({
                                 </div>
                               )}
                             </div>
-                          </div>
+                          </button>
                         );
                         return (
                           <li key={ev.id}>{inner}</li>
@@ -265,14 +346,14 @@ export function CalendarView({
                           </>
                         );
                         return (
-                          <li
-                            key={ev.id}
-                            className="rounded px-1 py-0.5 hover:bg-[var(--color-accent)]/60 truncate"
-                            title={`${ev.title}${ev.projectName ? ` · ${ev.projectName}` : ""} · ${ev.listName}`}
-                          >
-                            <span className="flex items-center">
+                          <li key={ev.id}>
+                            <button
+                              {...rowButton(ev)}
+                              className="flex w-full items-center rounded px-1 py-0.5 text-left hover:bg-[var(--color-accent)]/60 truncate disabled:opacity-60"
+                              title={`${ev.title}${ev.projectName ? ` · ${ev.projectName}` : ""} · ${ev.listName}`}
+                            >
                               {content}
-                            </span>
+                            </button>
                           </li>
                         );
                       })}
@@ -302,24 +383,29 @@ export function CalendarView({
             {upcoming.map((ev) => {
               const p = palette(ev.listColor);
               return (
-                <li key={ev.id} className="flex items-start gap-2 text-sm">
-                  <span
-                    className={cn(
-                      "mt-1.5 size-2 shrink-0 rounded-full",
-                      p.dot
-                    )}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate">{ev.title}</div>
-                    <div className="text-[11px] text-[var(--color-muted-foreground)]">
-                      {formatCalendarDate(ev.dueDate, {
-                        weekday: "short",
-                        month: "short",
-                        day: "numeric",
-                      })}
-                      {ev.projectName ? ` · ${ev.projectName}` : ""}
+                <li key={ev.id}>
+                  <button
+                    {...rowButton(ev)}
+                    className="flex w-full items-start gap-2 rounded text-left text-sm hover:bg-[var(--color-accent)]/60 disabled:opacity-60"
+                  >
+                    <span
+                      className={cn(
+                        "mt-1.5 size-2 shrink-0 rounded-full",
+                        p.dot
+                      )}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate">{ev.title}</div>
+                      <div className="text-[11px] text-[var(--color-muted-foreground)]">
+                        {formatCalendarDate(ev.dueDate, {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                        {ev.projectName ? ` · ${ev.projectName}` : ""}
+                      </div>
                     </div>
-                  </div>
+                  </button>
                 </li>
               );
             })}
@@ -327,5 +413,17 @@ export function CalendarView({
         )}
       </aside>
     </div>
+    {detail ? (
+      <TodoDetailModal
+        open
+        todoId={detail.id}
+        initialTitle={detail.title}
+        initialNotes={detail.notes}
+        initialSubtasks={detail.subtasks}
+        initialDueDate={detail.dueDate}
+        onClose={() => setDetail(null)}
+      />
+    ) : null}
+    </>
   );
 }
