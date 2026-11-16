@@ -60,6 +60,40 @@ const hiddenDetails = () =>
 const shownNames = () =>
   [...container.querySelectorAll("article")].filter((a) => !a.closest("details")).map((a) => a.querySelector("h3")?.textContent);
 
+const column = (stage: string) => container.querySelector(`section[data-stage=${stage}]`) as HTMLElement;
+const columnNames = (stage: string) => [...column(stage).querySelectorAll("article h3")].map((h) => h.textContent);
+const article = (name: string) => container.querySelector(`[data-card-id='inferred:${name}']`) as HTMLElement;
+
+/** jsdom has no DragEvent: a plain event carrying a minimal DataTransfer, as React reads it. */
+function dragEvent(type: string, data: Map<string, string>) {
+  const e = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(e, "dataTransfer", {
+    value: {
+      get types() {
+        return [...data.keys()];
+      },
+      setData: (k: string, v: string) => data.set(k, v),
+      getData: (k: string) => data.get(k) ?? "",
+      effectAllowed: "all",
+      dropEffect: "none",
+    },
+  });
+  return e;
+}
+
+/** Drags a card onto a column; true when the column took the drop (dragover was cancelled). */
+async function dragTo(name: string, stage: string) {
+  const data = new Map<string, string>();
+  await act(async () => article(name).dispatchEvent(dragEvent("dragstart", data)));
+  let accepted = false;
+  await act(async () => {
+    accepted = !column(stage).dispatchEvent(dragEvent("dragover", data));
+  });
+  await act(async () => column(stage).dispatchEvent(dragEvent("drop", data)));
+  await act(async () => article(name)?.dispatchEvent(dragEvent("dragend", data)));
+  return accepted;
+}
+
 async function choose(name: string, action: string) {
   await act(async () => button(`More actions for ${name}`).click());
   await act(async () => button(action).click());
@@ -128,22 +162,84 @@ describe("ProjectsBoardView", () => {
     expect(fetch.mock.calls.map((c) => JSON.parse(c[1].body).state)).toEqual(["pinned", "auto"]);
   });
 
-  it("closes a project out into Finished, and reopens it", async () => {
+  it("closes a project out into the Finished column, and reopens it", async () => {
     const fetch = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
     vi.stubGlobal("fetch", fetch);
     await act(async () => root.render(<ProjectsBoardView board={board} />));
     await choose("Product launch", "Mark finished");
-    expect(shownNames()).not.toContain("Product launch");
-    const finished = () => [...container.querySelectorAll("details")].find((d) => d.querySelector("summary")?.textContent?.startsWith("Finished"));
-    expect(finished()?.querySelector("summary")?.textContent).toBe("Finished · 1");
-    expect(finished()?.textContent).toContain("Product launch");
+    expect(columnNames("onMe")).toEqual(["Apartment search"]);
+    expect(columnNames("finished")).toEqual(["Product launch"]);
+    expect(column("finished").querySelector("h2")?.textContent).toBe("Finished · 1");
     // A closed project has no next step, even before the next run clears it.
-    expect(finished()?.textContent).not.toContain("Next:");
+    expect(column("finished").textContent).not.toContain("Next:");
 
     await choose("Product launch", "Reopen");
-    expect(shownNames()).toContain("Product launch");
-    expect(finished()).toBeUndefined();
+    expect(columnNames("onMe")).toEqual(["Product launch", "Apartment search"]);
+    expect(columnNames("finished")).toEqual([]);
     expect(fetch.mock.calls.map((c) => JSON.parse(c[1].body).state)).toEqual(["finished", "auto"]);
+  });
+
+  it("lays the cards out in four columns by whose move it is", async () => {
+    const waiting = card("Series A", 2, {
+      next: "Term sheet back",
+      steps: [{ text: "Term sheet back", due: null, who: "Kepler", waiting: true }],
+    });
+    const quiet = card("Old idea", 24 * 20, { stale: true });
+    const hiddenCard = card("Noise", 1, { visibility: "hidden" });
+    await act(async () =>
+      root.render(<ProjectsBoardView board={{ ...board, cards: [...board.cards, waiting, quiet], hidden: [hiddenCard] }} />),
+    );
+    expect([...container.querySelectorAll("section h2")].map((h) => h.textContent)).toEqual([
+      "On me · 2",
+      "Waiting · 1",
+      "Quiet · 1",
+      "Finished · 0",
+    ]);
+    expect(columnNames("onMe")).toEqual(["Product launch", "Apartment search"]);
+    expect(columnNames("waiting")).toEqual(["Series A"]);
+    expect(columnNames("quiet")).toEqual(["Old idea"]);
+    expect(column("finished").textContent).toContain("Nothing finished yet.");
+    expect(article("Series A").textContent).toContain("Waiting on Kepler: Term sheet back");
+    // Hidden stays its own fold, and isn't draggable.
+    expect(hiddenDetails()?.querySelector("summary")?.textContent).toBe("Hidden · 1");
+    expect(article("Noise").getAttribute("draggable")).toBe("false");
+    expect(article("Series A").getAttribute("draggable")).toBe("true");
+  });
+
+  it("dragging a card onto Finished finishes it; dragging it out reopens it", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    await act(async () => root.render(<ProjectsBoardView board={board} />));
+    expect(await dragTo("Product launch", "finished")).toBe(true);
+    expect(columnNames("finished")).toEqual(["Product launch"]);
+    expect(columnNames("onMe")).toEqual(["Apartment search"]);
+    expect(await dragTo("Product launch", "quiet")).toBe(true);
+    expect(columnNames("onMe")).toEqual(["Product launch", "Apartment search"]);
+    expect(columnNames("finished")).toEqual([]);
+    expect(fetch.mock.calls.map((c) => [c[0], JSON.parse(c[1].body).state])).toEqual([
+      ["/api/projects/sources/s-Product launch", "finished"],
+      ["/api/projects/sources/s-Product launch", "auto"],
+    ]);
+  });
+
+  it("the inference's columns take no drop", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    await act(async () => root.render(<ProjectsBoardView board={board} />));
+    expect(await dragTo("Product launch", "waiting")).toBe(false);
+    expect(await dragTo("Product launch", "quiet")).toBe(false);
+    expect(await dragTo("Product launch", "onMe")).toBe(false);
+    expect(columnNames("onMe")).toEqual(["Product launch", "Apartment search"]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("a refused drop puts the card back and says so", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 500 })));
+    await act(async () => root.render(<ProjectsBoardView board={board} />));
+    await dragTo("Product launch", "finished");
+    expect(columnNames("finished")).toEqual([]);
+    expect(columnNames("onMe")).toEqual(["Product launch", "Apartment search"]);
+    expect(container.querySelector("[role=alert]")?.textContent).toBe("Couldn't update Product launch. Try again.");
   });
 
   it("says when a pinned card has gone quiet", async () => {

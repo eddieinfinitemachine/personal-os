@@ -2169,3 +2169,15 @@ Ask: read routes so the iOS app can build Calendar and Projects, sharing the pag
 - [x] Tests: route tests for the four GETs, the PATCH and the guards; unit tests for every new helper. The guard/dueDate tests fail 36/48 on the old routes. Repo suite 1962 passed / 184 skipped, 0 failed (was 1857); typecheck clean.
 - [x] Live check on a scratch Postgres (no `.env` in the worktree) with `next dev` and app bearer tokens: every route above, the 400s, founder/friend 404s; `/calendar`, `/projects`, `/projects/{id}` (generic, vehicle, pet, someone else's) render. The calendar shows the shared-list todo in the member color and the subtask, and leaves out snoozed, completed, the friend's private and a creator-only todo on an inaccessible list. Scratch cluster removed.
 - Not done: strict `dueDate` on `POST /api/todos` (not asked); JSON guards on agenda recap, dropbox list and vehicles.
+
+## 2026-11-16 — Projects as a kanban on the web
+
+Ask: port ec build 35's Projects kanban (On me, Waiting, Quiet, Finished) to the web's `/projects`, computed client-side from what the board already returns. No schema change, no new route.
+
+- [x] `src/lib/projects/kanban.ts`: the Swift `ProjectRules` kanban rules (stage, columns, drop, next-step lead-in), pure, with vitest tests mirroring `ProjectTests.testTheKanbanSortsCardsByWhoseMoveItIs`
+- [x] `projects-board.tsx`: four columns at desktop (`md`), stacked sections in the same order below it; empty-column lines; Hidden stays a fold below; Finished is a column, not a fold
+- [x] Native HTML drag (as the sidebar's trackers): onto Finished finishes, a finished card dropped on another column reopens; the computed columns take no other drop; optimistic with rollback via the existing `setVisibility`
+- [x] Card shows "Waiting on <who>:" when the first step is someone else's
+- [x] Update `projects-board.test.tsx`; typecheck, lint, test
+- Layout: one CSS grid in an `@container`: stacked (one column, in column order) below `md`; at `md` two columns once the content is 512px wide and four at 1036px (ec's "each column at least 250pt, never three"). Checked the compiled CSS: `md:@min-[32rem]:grid-cols-2` emits the repo's compound `md` media query wrapping `@container (width >= 32rem)`.
+- Results: typecheck clean; `pnpm lint` is broken on main (`next lint` was removed in Next 16, and the repo has no `eslint.config`), so the four changed files were linted with `eslint-config-next` core-web-vitals + typescript from a scratch config: 0 problems. Repo suite 2114 passed / 189 skipped, 0 failed. Not seen in a browser.
