@@ -1,3 +1,16 @@
+# Drag to reorder within a list; change a due date from Calendar (2026-11-16)
+
+Two web gaps the iOS app already covers. Branch `feat/todo-order-calendar-edit`
+off main. No schema change and no new route: reorder uses
+`POST /api/todos/reorder`, the date uses `PATCH /api/todos/[id]`.
+
+- [x] Reorder: on Home's list cards, dragging an open todo over its own card shows a line where it will land and dropping puts it there. Same HTML5 drag the cross-list move uses (no new dependency). An undated todo moves among the undated ones and a dated one among those due the same day (the order the server keeps, as iOS `TodoOrder.movableRange`). The order changes at once and goes back if the request fails. Dropping on another card still moves it
+- [x] Reorder helpers (`src/lib/todo-order.ts`) with unit tests
+- [x] Mobile (touch long-press drag) left alone: say so in the review
+- [ ] Calendar: a todo row (grid, phone agenda, Upcoming) opens Home's `TodoDetailModal`. The modal had no due date, so it gains a Due section (set, change, clear) that PATCHes the todo, as the iOS sheet's "Due"; the calendar refreshes on close, so the todo moves to its new day or leaves
+- [ ] Notes and subtasks for the modal come from `GET /api/todos?listId=` before it opens (calendar items don't carry them; opening with empty notes could overwrite real ones)
+- [ ] `pnpm typecheck`, `pnpm lint`, `pnpm test`; one commit per feature
+
 # Captures land in an Inbox list, with the AI's list as a suggestion; manual todo order (2026-11-12)
 
 Captured todos went straight into To Do, so To Do mixed decided work with
