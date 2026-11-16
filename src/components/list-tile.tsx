@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
-import { Check, MoreHorizontal, Plus, Trash2, Users } from "lucide-react";
+import { Check, MoreHorizontal, Pencil, Plus, Trash2, Users } from "lucide-react";
 import { LIST_PALETTE, palette } from "@/lib/lists";
 import { haptic } from "@/lib/haptic";
 import { pushUndo, quoteTitle } from "@/lib/undo";
@@ -807,6 +807,25 @@ export function ListTile({
     if (res.ok) startTransition(() => router.refresh());
   }
 
+  // Your own lists only, and not To Do, Monitor or Later: ensureDefaultLists
+  // finds those by name and would make a new one beside a renamed one.
+  async function renameList() {
+    setMenuOpen(false);
+    const name = prompt("Rename list", list.name)?.trim();
+    if (!name || name === list.name) return;
+    const res = await fetch(`/api/lists/${list.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (res.ok) {
+      startTransition(() => router.refresh());
+    } else {
+      const { error } = (await res.json().catch(() => ({}))) as { error?: string };
+      alert(error ?? "Could not rename list");
+    }
+  }
+
   async function deleteList() {
     // For a list shared WITH you, DELETE only removes your membership — the
     // list and its todos stay intact for the owner.
@@ -1052,6 +1071,15 @@ export function ListTile({
                     );
                   })}
                 </div>
+                {!list.isDefault && !list.shared ? (
+                  <button
+                    onClick={renameList}
+                    className="flex w-full items-center gap-2 border-t border-[var(--color-border)] px-3 py-2 text-left text-sm hover:bg-[var(--color-accent)]"
+                    style={{ color: "var(--color-foreground)" }}
+                  >
+                    <Pencil className="size-3.5" /> Rename…
+                  </button>
+                ) : null}
                 {!list.isDefault && !list.shared ? (
                   <button
                     onClick={() => {
