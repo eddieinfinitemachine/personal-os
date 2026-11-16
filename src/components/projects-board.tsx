@@ -28,12 +28,22 @@ import {
   type ProjectsBoard,
   type Visibility,
 } from "@/lib/projects/board-model";
+import {
+  STAGE_EMPTY,
+  STAGE_TITLE,
+  dropVisibility,
+  kanban,
+  nextStep,
+  type ProjectColumn,
+  type ProjectStage,
+} from "@/lib/projects/kanban";
 import { EVIDENCE_KINDS, type EvidenceKind, type StoredEvidence } from "@/lib/projects/signals/types";
 
 const SECTION_LABEL =
   "text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]";
 const CHIP_BUTTON =
   "pressable inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-accent)] disabled:opacity-50";
+const PROJECT_MIME = "application/x-personalos-project";
 
 const KIND_ICON: Record<EvidenceKind, typeof Mail> = {
   meeting: CalendarDays,
@@ -177,6 +187,27 @@ export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
     router.refresh();
   }
 
+  // The card being dragged, and the column it would land in.
+  const [dragging, setDragging] = useState<BoardCard | null>(null);
+  const [dropTarget, setDropTarget] = useState<ProjectStage | null>(null);
+  const endDrag = () => {
+    setDragging(null);
+    setDropTarget(null);
+  };
+  const drag: KanbanDrag = {
+    dragging,
+    dropTarget,
+    start: setDragging,
+    end: endDrag,
+    over: setDropTarget,
+    drop(stage) {
+      const card = dragging;
+      endDrag();
+      const visibility = card ? dropVisibility(card, stage) : null;
+      if (card && visibility) void setVisibility(card, visibility);
+    },
+  };
+
   return (
     <div className="space-y-8">
       {error ? (
@@ -185,8 +216,15 @@ export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
         </p>
       ) : null}
 
-      {cards.length ? (
-        <CardGrid cards={cards} onVisibility={setVisibility} />
+      {cards.length || finished.length ? (
+        // Four columns when each gets 250px (as ec), else two; stacked below md.
+        <div className="@container">
+          <div className="grid gap-x-3 gap-y-6 md:@min-[32rem]:grid-cols-2 md:@min-[64.75rem]:grid-cols-4">
+            {kanban({ cards, finished }).map((column) => (
+              <KanbanColumn key={column.stage} column={column} drag={drag} onVisibility={setVisibility} />
+            ))}
+          </div>
+        </div>
       ) : (
         <p className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-6 text-sm text-[var(--color-muted-foreground)]">
           No projects inferred yet.
@@ -198,13 +236,79 @@ export function ProjectsBoardView({ board }: { board: ProjectsBoard }) {
           <CardGrid cards={hidden} onVisibility={setVisibility} />
         </Collapsible>
       ) : null}
-
-      {finished.length ? (
-        <Collapsible label={`Finished · ${finished.length}`}>
-          <CardGrid cards={finished} onVisibility={setVisibility} />
-        </Collapsible>
-      ) : null}
     </div>
+  );
+}
+
+type KanbanDrag = {
+  dragging: BoardCard | null;
+  dropTarget: ProjectStage | null;
+  start: (card: BoardCard) => void;
+  end: () => void;
+  over: (stage: ProjectStage | null) => void;
+  drop: (stage: ProjectStage) => void;
+};
+
+/**
+ * One column of the kanban. Only a move the rules allow is a drop target: onto
+ * Finished, or a finished card out to any other column (it reopens). On me,
+ * Waiting and Quiet are the inference's, so they take nothing else.
+ */
+function KanbanColumn({
+  column: { stage, cards },
+  drag,
+  onVisibility,
+}: {
+  column: ProjectColumn;
+  drag: KanbanDrag;
+  onVisibility: (card: BoardCard, v: Visibility) => void;
+}) {
+  const accepts = (e: React.DragEvent) =>
+    !!drag.dragging && e.dataTransfer.types.includes(PROJECT_MIME) && dropVisibility(drag.dragging, stage) !== null;
+
+  return (
+    <section
+      data-stage={stage}
+      aria-label={`${STAGE_TITLE[stage]}, ${cards.length}`}
+      onDragOver={(e) => {
+        if (!accepts(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        if (drag.dropTarget !== stage) drag.over(stage);
+      }}
+      onDragLeave={(e) => {
+        if (drag.dropTarget === stage && !e.currentTarget.contains(e.relatedTarget as Node | null)) drag.over(null);
+      }}
+      onDrop={(e) => {
+        if (!accepts(e)) return;
+        e.preventDefault();
+        drag.drop(stage);
+      }}
+      className={cn(
+        "flex min-h-[120px] min-w-0 flex-col gap-3 rounded-2xl pb-2 transition-colors",
+        drag.dropTarget === stage && "bg-[var(--color-accent)]",
+      )}
+    >
+      <h2 className={SECTION_LABEL}>
+        {STAGE_TITLE[stage]} · {cards.length}
+      </h2>
+      {cards.length ? (
+        cards.map((c) => (
+          <ProjectCard
+            key={c.id}
+            card={c}
+            onVisibility={onVisibility}
+            dragging={drag.dragging?.id === c.id}
+            onDragStart={() => drag.start(c)}
+            onDragEnd={drag.end}
+          />
+        ))
+      ) : (
+        <p className="rounded-2xl border border-dashed border-[var(--color-border)] p-4 text-sm text-[var(--color-muted-foreground)]">
+          {STAGE_EMPTY[stage]}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -259,12 +363,26 @@ function EvidenceRow({ item }: { item: StoredEvidence }) {
   );
 }
 
-function ProjectCard({ card, onVisibility }: { card: BoardCard; onVisibility: (card: BoardCard, v: Visibility) => void }) {
+function ProjectCard({
+  card,
+  onVisibility,
+  dragging = false,
+  onDragStart,
+  onDragEnd,
+}: {
+  card: BoardCard;
+  onVisibility: (card: BoardCard, v: Visibility) => void;
+  /** On the kanban: the card drags to another column. */
+  dragging?: boolean;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
+}) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const pinned = card.visibility === "pinned";
   const hiddenCard = card.visibility === "hidden";
   const finishedCard = card.visibility === "finished";
+  const next = nextStep(card);
 
   const choose = (v: Visibility) => {
     setMenuOpen(false);
@@ -274,7 +392,22 @@ function ProjectCard({ card, onVisibility }: { card: BoardCard; onVisibility: (c
   return (
     <article
       data-card-id={card.id}
-      className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4"
+      // The open menu's backdrop sits inside the card; a press there closes it, not drags.
+      draggable={!!onDragStart && !menuOpen}
+      onDragStart={
+        onDragStart
+          ? (e) => {
+              e.dataTransfer.effectAllowed = "move";
+              e.dataTransfer.setData(PROJECT_MIME, card.id);
+              onDragStart();
+            }
+          : undefined
+      }
+      onDragEnd={onDragEnd}
+      className={cn(
+        "flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-card)] p-4",
+        dragging && "opacity-40",
+      )}
     >
       <header className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
@@ -327,9 +460,9 @@ function ProjectCard({ card, onVisibility }: { card: BoardCard; onVisibility: (c
       </header>
 
       {card.status ? <p className="text-sm">{card.status}</p> : null}
-      {card.next && !finishedCard ? (
+      {next ? (
         <p className="text-sm text-[var(--color-label-secondary)]">
-          <span className="font-medium text-[var(--color-foreground)]">Next:</span> {card.next}
+          <span className="font-medium text-[var(--color-foreground)]">{next.label}</span> {next.text}
         </p>
       ) : null}
       {card.stale && card.lastActivityAt && !finishedCard ? (
