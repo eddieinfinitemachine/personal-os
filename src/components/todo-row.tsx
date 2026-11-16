@@ -1356,6 +1356,7 @@ function TodoRowImpl({
             title: s.title,
             completedAt: s.completedAt ?? null,
           }))}
+          initialDueDate={todo.dueDate ?? null}
           onClose={() => setDetailOpen(false)}
         />
       ) : null}

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, ExternalLink, Loader2, Paperclip, Send, Trash2, Upload, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, toDateInputValue } from "@/lib/utils";
 import { haptic } from "@/lib/haptic";
 import { extractUrls, linkify } from "@/lib/linkify";
 import { timeAgo } from "@/lib/time";
@@ -71,6 +71,7 @@ export function TodoDetailModal({
   initialTitle,
   initialNotes,
   initialSubtasks,
+  initialDueDate,
   onClose,
 }: {
   open: boolean;
@@ -78,10 +79,24 @@ export function TodoDetailModal({
   initialTitle: string;
   initialNotes: string | null;
   initialSubtasks: DetailSubtask[];
+  initialDueDate: string | Date | null;
   onClose: () => void;
 }) {
   const router = useRouter();
   const [notes, setNotes] = useState(initialNotes ?? "");
+  // Due day as the date input holds it (YYYY-MM-DD, "" for none). Saved on
+  // blur, Enter, Remove or close, not on every change: typing a year passes
+  // through dates nobody meant (0002, 0020, 0202).
+  const [due, setDue] = useState(toDateInputValue(initialDueDate));
+  const dueDraftRef = useRef(due);
+  const savedDueRef = useRef(due);
+  const [dueError, setDueError] = useState(false);
+  // Saves still in flight; closing waits for them so the refresh shows them.
+  const pendingSavesRef = useRef(new Set<Promise<unknown>>());
+  function track(p: Promise<unknown>) {
+    pendingSavesRef.current.add(p);
+    void p.finally(() => pendingSavesRef.current.delete(p));
+  }
   const [subtasks, setSubtasks] = useState<DetailSubtask[]>(initialSubtasks);
   const [newSubtask, setNewSubtask] = useState("");
   const [addingPending, setAddingPending] = useState(false);
@@ -107,10 +122,13 @@ export function TodoDetailModal({
     // here: flip to data-state="closed", let the transition play, then close.
     if (closing) return;
     setClosing(true);
-    window.setTimeout(() => {
+    // A date picked but not yet saved (Esc or Done while the input has focus).
+    saveDue(dueDraftRef.current);
+    window.setTimeout(async () => {
+      await Promise.allSettled([...pendingSavesRef.current]);
       // Sync the parent (server-rendered) list when something changed while
-      // the modal was open — notes, subtasks, files, or reading the comment
-      // thread (which clears the row's unread badge).
+      // the modal was open — notes, subtasks, files, the due date, or reading
+      // the comment thread (which clears the row's unread badge).
       if (needsRefreshRef.current) {
         needsRefreshRef.current = false;
         router.refresh();
@@ -127,6 +145,11 @@ export function TodoDetailModal({
       setNotes(initialNotes ?? "");
       setSubtasks(initialSubtasks);
       setNewSubtask("");
+      const day = toDateInputValue(initialDueDate);
+      dueDraftRef.current = day;
+      savedDueRef.current = day;
+      setDue(day);
+      setDueError(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, todoId]);
@@ -190,6 +213,37 @@ export function TodoDetailModal({
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Uses refs only: the Escape handler holds the first render's closeModal.
+  function saveDue(value: string) {
+    if (value === savedDueRef.current) return;
+    const before = savedDueRef.current;
+    savedDueRef.current = value;
+    setDueError(false);
+    const revert = () => {
+      savedDueRef.current = before;
+      dueDraftRef.current = before;
+      setDue(before);
+      setDueError(true);
+    };
+    track(
+      fetch(`/api/todos/${todoId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dueDate: value || null }),
+      })
+        .then((res) => {
+          if (!res.ok) return revert();
+          needsRefreshRef.current = true;
+        })
+        .catch(revert),
+    );
+  }
+
+  function changeDue(value: string) {
+    dueDraftRef.current = value;
+    setDue(value);
+  }
 
   async function saveNotes(next: string) {
     if ((initialNotes ?? "") === next) return;
@@ -436,6 +490,43 @@ export function TodoDetailModal({
           >
             <X className="size-4" />
           </button>
+        </div>
+
+        {/* Due */}
+        <div className="border-b border-[var(--color-border)] px-5 py-4">
+          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+            Due
+          </div>
+          <div className="flex items-center gap-3">
+            <input
+              type="date"
+              aria-label="Due date"
+              value={due}
+              onChange={(e) => changeDue(e.target.value)}
+              onBlur={(e) => saveDue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  saveDue(e.currentTarget.value);
+                }
+              }}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-1.5 text-sm tabular-nums focus:border-[var(--color-ring)] focus:outline-none"
+            />
+            {due ? (
+              <button
+                onClick={() => {
+                  changeDue("");
+                  saveDue("");
+                }}
+                className="text-[12px] text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
+              >
+                Remove
+              </button>
+            ) : null}
+          </div>
+          {dueError ? (
+            <div className="mt-1.5 text-[12px] text-rose-500">Couldn&rsquo;t save the date.</div>
+          ) : null}
         </div>
 
         {/* Notes */}
