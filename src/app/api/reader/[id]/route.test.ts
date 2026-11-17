@@ -12,6 +12,8 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 vi.mock("@/lib/auth", () => ({ getCurrentUserId: mocks.user }));
+// No capture token in these tests: the session is the only credential.
+vi.mock("@/lib/capture-auth", () => ({ resolveCaptureUser: async () => null }));
 import { GET, PATCH } from "./route";
 
 const url = "https://example.invalid/api/reader/a1";
@@ -98,6 +100,7 @@ describe("GET /api/reader/[id]", () => {
           { id: "h1", text: "First line", note: null, createdAt: first.toISOString() },
           { id: "h2", text: "Later line", note: "Worth it", createdAt: second.toISOString() },
         ],
+        markdown: "Body",
       },
       kindle: { configured: true, autoSend: false },
     });

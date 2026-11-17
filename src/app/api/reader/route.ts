@@ -7,6 +7,7 @@ import {
   type ExtractedArticle,
 } from "@/lib/reader-extract";
 import { resolveCaptureUser } from "@/lib/capture-auth";
+import { afterCursor, encodeReaderCursor, parseReaderPage } from "@/lib/reader-page";
 import { findCaptureReplay, quickSource, withCaptureReview } from "@/lib/capture-review/record";
 import { intakeMeta } from "@/lib/capture-review/intake";
 import { CaptureReviewError } from "@/lib/capture-review/types";
@@ -136,15 +137,22 @@ async function saveFromRequest(request: Request): Promise<Response> {
   }
 }
 
+// GET with ?url= saves (the share-sheet Shortcut). A bare GET lists the queue for
+// the web and native apps (session) and for EC Pad's Read Later sync (capture
+// token), newest first, in pages: `limit` (1–200, default 200) and the previous
+// page's `nextCursor` as `cursor`; `nextCursor` is null on the last page.
 export async function GET(request: Request) {
-  if (new URL(request.url).searchParams.has("url")) return saveFromRequest(request);
-  const userId = await getCurrentUserId(request);
+  const params = new URL(request.url).searchParams;
+  if (params.has("url")) return saveFromRequest(request);
+  const userId = (await getCurrentUserId(request)) ?? (await resolveCaptureUser(request));
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const archived = new URL(request.url).searchParams.get("archived") === "1";
-  const [items, user] = await Promise.all([
+  const archived = params.get("archived") === "1";
+  const page = parseReaderPage(params);
+  if ("error" in page) return NextResponse.json({ error: page.error }, { status: 400 });
+  const [rows, user] = await Promise.all([
     prisma.readerItem.findMany({
-      where: { userId, archivedAt: archived ? { not: null } : null },
-      orderBy: { savedAt: "desc" },
+      where: { userId, archivedAt: archived ? { not: null } : null, ...afterCursor(page.cursor) },
+      orderBy: [{ savedAt: "desc" }, { id: "desc" }],
       select: {
         id: true,
         url: true,
@@ -161,12 +169,14 @@ export async function GET(request: Request) {
         kindleError: true,
         _count: { select: { highlights: true } },
       },
-      take: 200,
+      take: page.limit + 1,
     }),
     prisma.user.findUnique({ where: { id: userId }, select: KINDLE_USER_SELECT }),
   ]);
+  const items = rows.slice(0, page.limit);
+  const nextCursor = rows.length > page.limit ? encodeReaderCursor(items[items.length - 1]) : null;
   return NextResponse.json(
-    { items: items.map(withReadingMeta), kindle: kindleConfig(user) },
+    { items: items.map(withReadingMeta), nextCursor, kindle: kindleConfig(user) },
     { headers: { "Cache-Control": "no-store" } },
   );
 }

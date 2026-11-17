@@ -41,6 +41,17 @@ async function sessionUserId(token: string | undefined): Promise<string | null> 
   }
 }
 
+// EC Pad's Read Later sync reads the queue with the capture token, which is not
+// a session JWT: the list (GET /api/reader), one item (GET /api/reader/<id>)
+// and its read/archive flags (PATCH /api/reader/<id>). Such a bearer request
+// reaches the route, which checks the token itself; every other method or
+// sub-route (DELETE, highlights, kindle) still needs a session.
+function isReaderTokenRequest(req: NextRequest): boolean {
+  const { pathname } = req.nextUrl;
+  if (pathname === "/api/reader") return req.method === "GET";
+  return /^\/api\/reader\/[^/]+$/.test(pathname) && (req.method === "GET" || req.method === "PATCH");
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -107,6 +118,10 @@ export async function middleware(req: NextRequest) {
   }
 
   if (isPublic(pathname)) {
+    return passthrough();
+  }
+
+  if (authorization?.startsWith("Bearer ") && isReaderTokenRequest(req)) {
     return passthrough();
   }
 

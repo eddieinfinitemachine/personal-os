@@ -109,3 +109,57 @@ describe("middleware sessions", () => {
     expect(forwardedUserId(res)).toBe("user-1");
   });
 });
+
+describe("middleware: Read Later capture-token reads (EC Pad)", () => {
+  const capture = { authorization: "Bearer static-capture-token" };
+  const rejected = async (res: Response) => res.status === 401 && (await res.json()).error === "unauthorized";
+  const toLogin = (res: Response) => res.status === 307 && new URL(res.headers.get("location")!).pathname === "/login";
+
+  it("lets a non-JWT bearer reach the route for the list, one item and its PATCH, with no x-user-id", async () => {
+    for (const [path, method] of [
+      ["/api/reader", "GET"],
+      ["/api/reader?limit=50&cursor=abc", "GET"],
+      ["/api/reader?archived=1", "GET"],
+      ["/api/reader/item-1", "GET"],
+      ["/api/reader/item-1", "PATCH"],
+    ]) {
+      const res = await run(path, { ...capture, "x-user-id": "spoofed" }, method);
+      expect(passedThrough(res), `${method} ${path}`).toBe(true);
+      expect(forwardedUserId(res)).toBeNull();
+    }
+  });
+
+  it("still forwards the session's user when the bearer is an app session", async () => {
+    const res = await run("/api/reader/item-1", { authorization: `Bearer ${await appSession()}` });
+    expect(passedThrough(res)).toBe(true);
+    expect(forwardedUserId(res)).toBe("user-1");
+  });
+
+  it("rejects a capture bearer everywhere else under /api/reader and beyond", async () => {
+    for (const [path, method] of [
+      ["/api/reader/item-1", "DELETE"],
+      ["/api/reader/item-1/highlights", "GET"],
+      ["/api/reader/item-1/highlights", "POST"],
+      ["/api/reader/item-1/highlights", "DELETE"],
+      ["/api/reader/item-1/kindle", "POST"],
+      ["/api/reader", "DELETE"],
+      ["/api/reader", "PATCH"],
+      ["/api/reading", "GET"],
+      ["/api/todos", "GET"],
+    ]) {
+      const res = await run(path, capture, method);
+      expect(await rejected(res), `${method} ${path}`).toBe(true);
+    }
+  });
+
+  it("keeps cookie-less, bearer-less reads behind the login redirect", async () => {
+    expect(toLogin(await run("/api/reader"))).toBe(true);
+    expect(toLogin(await run("/api/reader/item-1"))).toBe(true);
+    expect(toLogin(await run("/api/reader/item-1", {}, "PATCH"))).toBe(true);
+  });
+
+  it("still lets the Shortcut's save through without any credential", async () => {
+    expect(passedThrough(await run("/api/reader?url=https%3A%2F%2Fx.test"))).toBe(true);
+    expect(passedThrough(await run("/api/reader", {}, "POST"))).toBe(true);
+  });
+});
