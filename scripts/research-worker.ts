@@ -3,6 +3,11 @@
  * Claims the oldest queued report, runs Claude Code headless with the
  * deep-research skill in ~/Library/Application Support/personal-os/research/<id>/,
  * uploads report.pdf to Vercel Blob and marks the row ready (or failed).
+ * Each poll also sends ready reports to EC Pad: the run's report.md becomes an
+ * illustrated note in the Research project's "Claude Code" folder (see
+ * scripts/lib/research-pad.ts). RESEARCH_PAD_PROJECT_DIR overrides the project
+ * folder (default: Projects/Research in EC Pad's iCloud folder); until it
+ * exists, finished reports wait.
  * Polls every 30 s; SIGTERM stops it cleanly and puts a running job back in the queue.
  *
  *   pnpm exec tsx scripts/research-worker.ts [--once]
@@ -11,7 +16,7 @@
  * BLOB_READ_WRITE_TOKEN (read from .env in the working directory). Only claims
  * reports belonging to RESEARCH_ALLOWED_EMAILS (comma-separated; defaults to
  * FOUNDER_EMAIL), because Claude runs here with every permission.
- * Logs report ids, statuses and costs only, never topics.
+ * Logs report ids, statuses and costs only, never topics, titles or file names.
  */
 import { execFile } from "node:child_process";
 import { mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
@@ -23,6 +28,7 @@ import { PrismaClient, type ResearchReport } from "@prisma/client";
 import { put, del } from "@vercel/blob";
 import { claimNextReport, failStaleReports, requeueReport } from "../src/lib/research/claim";
 import { childEnv, claudeBin, describeError, parseWorkerFlags, runClaude, untilSaved, type Env } from "./lib/headless-claude";
+import { capImageSize, isCompletePdf, padProjectDir, sendReadyReportsToPad } from "./lib/research-pad";
 import { OUTPUT_FILES, buildResearchPrompt, claudeArgs } from "../src/lib/research/prompt";
 import {
   cleanSummary, cleanTitle, parseClaudeResult, parsePdfPageCount, parseSources, researchBlobKey, tailText,
@@ -34,7 +40,7 @@ const WORK_DIR_RETENTION_MS = 30 * 86_400_000;
 const FINISH_ATTEMPTS = 30;
 export const FINISH_RETRY_MS = 60_000;
 
-export { describeError, parseWorkerFlags };
+export { describeError, padProjectDir, parseWorkerFlags, sendReadyReportsToPad };
 export type { WorkerFlags } from "./lib/headless-claude";
 
 export function allowedEmails(env: Env): string[] {
@@ -77,18 +83,6 @@ async function pdfPageCount(path: string): Promise<number | null> {
   return null;
 }
 
-/** A PDF header and an end-of-file marker: rules out a file cut off mid-write by a kill. */
-async function isCompletePdf(path: string): Promise<boolean> {
-  try {
-    const info = await stat(path);
-    if (!info.isFile() || info.size < 1024) return false;
-    const bytes = await readFile(path);
-    return bytes.subarray(0, 5).toString("latin1") === "%PDF-" && bytes.subarray(-1024).toString("latin1").includes("%%EOF");
-  } catch {
-    return false;
-  }
-}
-
 /** Removes report working directories untouched for 30 days (images add up). */
 async function sweepOldWorkDirs(root: string, now = Date.now()) {
   let names: string[] = [];
@@ -116,6 +110,10 @@ export type Context = {
   log: (line: string) => void;
   /** Wait between attempts to record a finished run (FINISH_RETRY_MS). */
   retryMs: number;
+  /** The EC Pad project ready reports go to (padProjectDir). */
+  padProjectDir: string;
+  /** Caps a picture copied to EC Pad at 2000 px on the long side (capImageSize). */
+  resizeImage: (path: string) => Promise<void>;
 };
 
 async function markFailed(ctx: Context, id: string, error: string) {
@@ -235,6 +233,8 @@ export async function runResearchWorker(argv: string[]): Promise<number> {
     registerStop: (stop) => { stopCurrent = stop; if (stop && stopping) stop(); },
     log: (line) => console.log(`${new Date().toISOString()} ${line}`),
     retryMs: FINISH_RETRY_MS,
+    padProjectDir: padProjectDir(process.env),
+    resizeImage: (path) => capImageSize(path),
   };
   if (!ctx.skillPath) ctx.log("Research worker: deep-research SKILL.md not found under ~/.claude/skills; relying on the Skill tool");
   ctx.log(`Research worker: started${flags.once ? " (--once)" : ""}, timeout ${Math.round(limit / 60_000)} min`);
@@ -246,6 +246,7 @@ export async function runResearchWorker(argv: string[]): Promise<number> {
         // Leave room for the kill grace period before calling a run abandoned.
         const stale = await failStaleReports(prisma, new Date(Date.now() - limit - 5 * 60_000));
         if (stale) ctx.log(`Research worker: marked ${stale} abandoned report(s) failed`);
+        await sendReadyReportsToPad(ctx);
         const report = await claimNextReport(prisma, { allowedEmails: emails });
         if (report) {
           processed = true;
