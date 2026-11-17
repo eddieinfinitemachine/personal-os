@@ -2211,3 +2211,20 @@ EC Pad (build 157) imports the Read Later queue as Markdown notes. Rebased onto 
 - [x] Middleware: after main's session check fails, a bearer reaches the route only for GET /api/reader, GET and PATCH /api/reader/<id>; everything else still gets main's JSON 401 (or the login redirect without a bearer).
 - [x] Verify: main's reader/middleware tests pass (item test adds `markdown` and mocks capture-auth); new capture-token route tests (token ok, missing/wrong 401, other user's 404, paging, `?url=` save, DELETE session-only) and middleware tests (capture bearer passes only the three pairs; DELETE/highlights/kindle 401). Typecheck, `pnpm test`, `pnpm build` green. `pnpm lint` still broken on main (`next lint` gone in Next 16).
 - [ ] After deploy: with a bogus bearer, GET /api/reader and GET /api/reader/<id> are answered by the route (two-hop `x-vercel-id`), DELETE by the middleware (one hop); then an authenticated `GET /api/reader?limit=1` and one item from the deployed host return the contract (lessons 2026-11-01), then a Sync Now in EC Pad.
+
+## 2026-11-17 — Research reports go to EC Pad as illustrated Markdown notes
+
+Goal: every finished research report shows up in EC Pad's Research project as a
+Markdown note Eddie can highlight and mark up, with the report's pictures and a link
+to the illustrated PDF. Markdown, not PDF: EC Pad notes take text highlights on Mac
+and iPhone plus Pencil Mark Up; PDFs only take Pencil ink on iOS (checked in ec-pad source).
+
+- [ ] Research run writes `report.md` from the same content as `report.pdf` (build_report.py emits both)
+- [ ] Worker sweep: each poll, a ready report whose work dir has `report.md` and no `sent-to-pad.json`
+      is written to `Projects/Research/Claude Code/<Title>.md`, its pictures to
+      `Claude Code/images/<reportId>/` (long side capped at 2000 px), then marked sent
+- [ ] Never overwrite a note (Eddie annotates them): a taken name gets " 2"
+- [ ] Missing Research project: log once, wait, send when it appears
+- [ ] Tests for note composition, file naming and the sweep
+- [ ] Backfill the existing reports' `report.md` (one-off, outside the repo)
+- [ ] Ship: PR, merge, pull personal-os-sync, restart the research worker, confirm notes land
