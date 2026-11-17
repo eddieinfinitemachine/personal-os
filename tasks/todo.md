@@ -2219,12 +2219,21 @@ Markdown note Eddie can highlight and mark up, with the report's pictures and a 
 to the illustrated PDF. Markdown, not PDF: EC Pad notes take text highlights on Mac
 and iPhone plus Pencil Mark Up; PDFs only take Pencil ink on iOS (checked in ec-pad source).
 
-- [ ] Research run writes `report.md` from the same content as `report.pdf` (build_report.py emits both)
-- [ ] Worker sweep: each poll, a ready report whose work dir has `report.md` and no `sent-to-pad.json`
+- [x] Research run writes `report.md` from the same content as `report.pdf` (build_report.py emits both)
+- [x] Worker sweep: each poll, a ready report whose work dir has `report.md` and no `sent-to-pad.json`
       is written to `Projects/Research/Claude Code/<Title>.md`, its pictures to
       `Claude Code/images/<reportId>/` (long side capped at 2000 px), then marked sent
-- [ ] Never overwrite a note (Eddie annotates them): a taken name gets " 2"
-- [ ] Missing Research project: log once, wait, send when it appears
-- [ ] Tests for note composition, file naming and the sweep
-- [ ] Backfill the existing reports' `report.md` (one-off, outside the repo)
+- [x] Never overwrite a note (Eddie annotates them): a taken name gets " 2"
+- [x] Missing Research project: log once, wait, send when it appears
+- [x] Tests for note composition, file naming and the sweep
+- [x] Backfill the existing reports' `report.md` (one-off, outside the repo)
 - [ ] Ship: PR, merge, pull personal-os-sync, restart the research worker, confirm notes land
+
+Review (2026-11-17):
+- report.md comes from the same build_report.py content as the PDF; the PDF stays the only success signal.
+- scripts/lib/research-pad.ts: per-poll sweep, sent-to-pad.json marker per work dir, deleted reports get a
+  skipped marker, failed sends back off 10 min, logs carry ids only. Pictures capped at 2000 px with sips.
+- Checked: full vitest suite, typecheck, eslint on changed files; a scratch-folder run against the real work
+  dirs (two notes, pictures resized, second run sends nothing); then the same code sent the two existing
+  reports to the real Research project. The project was created as EC Pad does it (project.md = "# Research").
+- Open: whether the LaunchAgent's node may write to iCloud Drive (TCC) is only provable after deploy.
