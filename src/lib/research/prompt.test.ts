@@ -40,6 +40,16 @@ describe("buildResearchPrompt", () => {
     expect(prompt).toMatch(/no git commands/);
   });
 
+  it("has build_report.py write report.md from the same content, with checks", () => {
+    expect(OUTPUT_FILES.markdown).toBe("report.md");
+    expect(prompt).toMatch(/one structure inside build_report\.py and have the script write both report\.pdf and report\.md/);
+    for (const part of ['"# <title>"', '"## Why it matters"', '"### "', "![<short description>](images/<file>)", "lowercase, no spaces", "*The signature piece. ...*", "- **Claim.** Support.", "Date | What happened", "- [Title](URL)", "## Image credits", "No HTML, no front matter, no bare URLs"]) {
+      expect(prompt).toContain(part);
+    }
+    expect(prompt).toMatch(/report\.md must exist, start with "# ", and every images\/\.\.\. file it references must exist/);
+    expect(prompt).toMatch(/When report\.pdf, report\.md and the three files exist, reply with one line/);
+  });
+
   it("runs claude headless with bypassed permissions and a JSON result", () => {
     expect(claudeArgs("hi")).toEqual(["-p", "hi", "--permission-mode", "bypassPermissions", "--output-format", "json"]);
   });
