@@ -1,15 +1,25 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
+import { resolveCaptureUser } from "@/lib/capture-auth";
 import { KINDLE_USER_SELECT, kindleConfig, withReadingMeta } from "@/lib/reader-api";
+import { readerHtmlToMarkdown } from "@/lib/reader-markdown";
 
-// The article as JSON for the native app: what /reader/[id] renders, plus
-// the Kindle state its send button needs.
+// GET and PATCH answer the web and native apps (session) and EC Pad's Read
+// Later sync (capture token); DELETE stays session-only. Every query is scoped
+// to the resolved user, so another user's id reads as not found.
+async function readerUser(request: Request): Promise<string | null> {
+  return (await getCurrentUserId(request)) ?? (await resolveCaptureUser(request));
+}
+
+// The article as JSON: what /reader/[id] renders, plus the Kindle state the
+// native app's send button needs, plus `markdown` (the article converted for
+// EC Pad; "" when extraction failed).
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getCurrentUserId(request);
+  const userId = await readerUser(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { id } = await params;
   const [item, user] = await Promise.all([
@@ -40,7 +50,10 @@ export async function GET(
   ]);
   if (!item) return NextResponse.json({ error: "not found" }, { status: 404 });
   return NextResponse.json(
-    { item: withReadingMeta(item), kindle: kindleConfig(user) },
+    {
+      item: { ...withReadingMeta(item), markdown: readerHtmlToMarkdown(item.contentHtml, item.url) },
+      kindle: kindleConfig(user),
+    },
     { headers: { "Cache-Control": "no-store" } },
   );
 }
@@ -49,7 +62,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await getCurrentUserId(request);
+  const userId = await readerUser(request);
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { id } = await params;
   const existing = await prisma.readerItem.findFirst({ where: { id, userId } });

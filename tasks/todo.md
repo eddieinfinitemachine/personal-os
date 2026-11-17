@@ -2201,3 +2201,13 @@ Ask: port ec build 35's Projects kanban (On me, Waiting, Quiet, Finished) to the
 - [x] Update `projects-board.test.tsx`; typecheck, lint, test
 - Layout: one CSS grid in an `@container`: stacked (one column, in column order) below `md`; at `md` two columns once the content is 512px wide and four at 1036px (ec's "each column at least 250pt, never three"). Checked the compiled CSS: `md:@min-[32rem]:grid-cols-2` emits the repo's compound `md` media query wrapping `@container (width >= 32rem)`.
 - Results: typecheck clean; `pnpm lint` is broken on main (`next lint` was removed in Next 16, and the repo has no `eslint.config`), so the four changed files were linted with `eslint-config-next` core-web-vitals + typescript from a scratch config: 0 problems. Repo suite 2114 passed / 189 skipped, 0 failed. Not seen in a browser.
+
+## 2026-11-17 — Read Later for EC Pad: capture-token reads, pagination and Markdown
+
+EC Pad (build 157) imports the Read Later queue as Markdown notes. Rebased onto main after #101 (app-session bearer JWTs) and #104 (JSON reader reads for the native app); both consumers share one response shape. No schema change.
+- [x] `readerHtmlToMarkdown` (`src/lib/reader-markdown.ts`, turndown 7.2.0 + GFM): deterministic, absolute URLs, images as their own paragraphs, "" for an empty article; tested.
+- [x] `GET /api/reader`: session (cookie or app JWT) or capture token; keyset pages (`limit` 1–200, default 200; opaque `cursor` → `nextCursor`, savedAt desc then id desc; 400 on a bad limit/cursor). Main's items/kindle fields unchanged; `nextCursor` added. `?url=` still saves.
+- [x] `GET /api/reader/[id]`: main's native-app item plus `item.markdown`; `PATCH` takes the capture token too. DELETE, highlights and kindle stay session-only.
+- [x] Middleware: after main's session check fails, a bearer reaches the route only for GET /api/reader, GET and PATCH /api/reader/<id>; everything else still gets main's JSON 401 (or the login redirect without a bearer).
+- [x] Verify: main's reader/middleware tests pass (item test adds `markdown` and mocks capture-auth); new capture-token route tests (token ok, missing/wrong 401, other user's 404, paging, `?url=` save, DELETE session-only) and middleware tests (capture bearer passes only the three pairs; DELETE/highlights/kindle 401). Typecheck, `pnpm test`, `pnpm build` green. `pnpm lint` still broken on main (`next lint` gone in Next 16).
+- [ ] After deploy: with a bogus bearer, GET /api/reader and GET /api/reader/<id> are answered by the route (two-hop `x-vercel-id`), DELETE by the middleware (one hop); then an authenticated `GET /api/reader?limit=1` and one item from the deployed host return the contract (lessons 2026-11-01), then a Sync Now in EC Pad.
